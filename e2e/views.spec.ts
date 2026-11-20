@@ -3,7 +3,7 @@
 // GLIMPSE_E2E_REPO when set.
 import {expectSettled, expectSurface, openViewer, pageState, recordTiming} from './support/glimpse.ts';
 import {EXTRA_REPO, ROOT} from './support/paths.ts';
-import {expect, knownDefect, test} from './support/test.ts';
+import {expect, test} from './support/test.ts';
 
 interface Target { label: string; dir: string | undefined; file: string; symbol: string; range: string }
 
@@ -68,13 +68,14 @@ test('catalog answers the index, a component, a source and a preset', async ({gl
   expect(detail.text).toContain("root=Page('Changes'");
 });
 
-// A dataset ref with a bad target is reported to the agent ("warn git.churn nosuchdir: E_TARGET ..."). A CodeView,
-// SymbolOutline or DiffView with a bad target is not: the call answers a bare "ok", the person sees "does not exist"
-// or a redline, and nothing (result, events) ever tells the agent, so it cannot correct a mistyped path or revision.
-knownDefect('E2E-04', 'show tells the agent when a code or diff target does not exist', async ({glimpse}) => {
+// Decision D3 (was known defect E2E-04): a dataset ref with a bad target was reported to the agent, but a CodeView or
+// DiffView with one answered a bare "ok" while the person saw "does not exist" or a redline. The server now checks
+// literal files and revisions itself and says so in the result.
+test('show tells the agent when a code or diff target does not exist', async ({glimpse}) => {
   const datasets = await glimpse.call('show', {id: 'typo', spec: "root=Page('Typos',[DataTable('git.churn nosuchdir top=5')])"});
   expect(datasets.text).toContain('warn git.churn nosuchdir top=5: E_TARGET');
   const code = await glimpse.call('show', {id: 'typo2', spec: "root=Page('Typos',[CodeView('src/does-not-exist.ts'),DiffView('nosuchbranch..HEAD')])"});
-  expect(code.text, 'the missing file is reported').toMatch(/does-not-exist\.ts/);
-  expect(code.text, 'the unknown revision is reported').toMatch(/nosuchbranch/);
+  expect(code.isError, code.text).toBe(false);
+  expect(code.lines.filter(line => line.startsWith('warn ') && /does-not-exist\.ts/.test(line)), code.text).toHaveLength(1);
+  expect(code.lines.filter(line => line.startsWith('warn ') && /nosuchbranch/.test(line)), code.text).toHaveLength(1);
 });

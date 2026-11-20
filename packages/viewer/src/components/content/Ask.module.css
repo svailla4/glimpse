@@ -53,6 +53,14 @@
   .option[data-chosen] svg {
     color: var(--gl-surface);
   }
+  /* The session has ended: a pick can only be answered with "not sent". A pick made before keeps its mark. */
+  .option[aria-disabled='true']:not([data-chosen]),
+  .option[aria-disabled='true']:not([data-chosen]):hover {
+    border-color: var(--gl-rule-strong);
+    background: transparent;
+    color: var(--gl-ink-3);
+    cursor: not-allowed;
+  }
   .optionLabel {
     overflow-wrap: anywhere;
   }

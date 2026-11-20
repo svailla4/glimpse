@@ -157,18 +157,23 @@ test.describe('request guards', () => {
     }
   });
 
-  test('at most eight tabs hold an event stream', async ({glimpse}) => {
+  // Finding F025: a browser keeps six HTTP/1.1 connections per origin, so six streams would starve every fetch.
+  test('at most five tabs hold an event stream', async ({glimpse}) => {
     await glimpse.call('show', {view: 'gallery'});
     const port = glimpse.port();
-    const sockets = await Promise.all(Array.from({length: 8}, () => new Promise<ReturnType<typeof connect>>((resolve, reject) => {
+    const sockets = await Promise.all(Array.from({length: 5}, () => new Promise<ReturnType<typeof connect>>((resolve, reject) => {
       const socket = connect({host: '127.0.0.1', port});
       socket.once('error', reject);
       socket.once('connect', () => socket.write(`GET /api/events?t=${TOKEN} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n\r\n`));
-      socket.once('data', () => resolve(socket));
+      socket.once('data', chunk => {
+        expect(String(chunk), 'each of the five is accepted').toMatch(/^HTTP\/1\.1 200 /);
+        resolve(socket);
+      });
     })));
     try {
-      const ninth = await raw(port, `/api/events?t=${TOKEN}`, {auth: false});
-      expect(ninth.status).toBe(503);
+      const sixth = await raw(port, `/api/events?t=${TOKEN}`, {auth: false});
+      expect(sixth.status).toBe(503);
+      expect(sixth.body).toContain('too many Glimpse tabs');
     } finally {
       for (const socket of sockets) socket.destroy();
     }
@@ -236,13 +241,46 @@ test.describe('containment', () => {
       expect(result.isError, spec).toBe(true);
       expect(result.lines[0]).toMatch(/^E_PATH /);
     }
-    for (const id of ['../x', 'a b', '9lives', 'x'.repeat(33), 'a/b', '__proto__.x']) {
+    // Decision D2: an id is letters, digits, - and _ (at most 48). Path characters become the slug they plainly meant,
+    // said in a fix note, so they never reach a path or another surface; what has no usable slug, or would name a
+    // prototype, is refused.
+    for (const id of ['...', '///', 'x'.repeat(49), '__proto__', 'constructor', 'prototype']) {
       const result = await glimpse.call('show', {id, spec: "root=Page('x',[Text('y')])"});
       expect.soft(result.isError, `id ${JSON.stringify(id)}`).toBe(true);
+      expect.soft(result.lines[0], `id ${JSON.stringify(id)}`).toMatch(/^E_ID /);
+    }
+    for (const [id, slug] of [['../x', 'x'], ['a/b', 'a-b'], ['a b', 'a-b'], ['__proto__.x', '__proto__-x']]) {
+      const result = await glimpse.call('show', {id, spec: "root=Page('x',[Text('y')])"});
+      expect.soft(result.isError, `id ${JSON.stringify(id)}: ${result.text}`).toBe(false);
+      expect.soft(result.lines[0], `id ${JSON.stringify(id)}`).toMatch(new RegExp(`^ok ${slug} \\S+/#/${slug} `));
+      expect.soft(result.text, `id ${JSON.stringify(id)}`).toContain(`-> ${slug}`);
     }
     const unknown = await glimpse.call('show', {view: 'overveiw'});
     expect(unknown.isError).toBe(true);
     expect(unknown.lines[0]).toMatch(/^E_VIEW .*overview/);
+  });
+});
+
+test.describe('prototype pollution', () => {
+  // Decision D10: no data path a spec writes may name __proto__, constructor or prototype, in the server or in the tab.
+  test('a $/__proto__ spec is refused and the server goes on answering', async ({page, glimpse, watched}) => {
+    const created = await glimpse.call('show', {id: 'proto', spec: "root=Page('Proto',[Text($/msg)])\n$/msg='before'"});
+    expect(created.isError, created.text).toBe(false);
+    await openViewer(page, glimpse);
+    await expect(page.locator('[data-gl="Text"]')).toContainText('before');
+    for (const spec of ["$/__proto__/x='polluted'", "$/constructor/prototype/x='polluted'", "$/msg/__proto__/x='polluted'", "$/prototype='polluted'", "root=Page('P',[Text($/__proto__/x)])"]) {
+      const refused = await glimpse.call('show', {id: 'proto', spec});
+      expect.soft(refused.isError, `${spec}: ${refused.text}`).toBe(true);
+      expect.soft(refused.lines[0], spec).toMatch(/^E_PATH /);
+      expect.soft(refused.lines.at(-1), spec).toBe('Nothing was rendered; the previous view is unchanged.');
+    }
+    // still answering, and the surface took the next patch
+    const after = await glimpse.call('show', {id: 'proto', spec: "$/msg='after'"});
+    expect(after.isError, after.text).toBe(false);
+    await expect(page.locator('[data-gl="Text"]')).toContainText('after');
+    expect((await glimpse.call('catalog', {names: ['Text']})).isError).toBe(false);
+    expect(await page.evaluate(() => ({} as Record<string, unknown>).x)).toBeUndefined();
+    expect(watched.problems).toEqual([]);
   });
 });
 

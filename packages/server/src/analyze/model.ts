@@ -18,8 +18,17 @@ export interface RepoModel {
   links: ImportEdge[];
   manifests: Manifests;
   cut: ModuleCut;
-  /** File-level import cycles, largest first. Type-only imports and package-level imports do not make a cycle. */
+  /**
+   * File-level import cycles, largest first. Only imports that run when a file loads make a cycle: type-only imports,
+   * lazy `import()` calls (the way code is split on purpose) and package-level imports do not.
+   */
   cycles: string[][];
+  /**
+   * How many modules the repository has, as a fact that can be counted and does not depend on any display cap: the
+   * packages its manifests declare when there are at least two (the rows of repo.packages), otherwise the
+   * directories that hold source files.
+   */
+  modules: {count: number; unit: 'packages' | 'source directories'};
   /** Import statements seen and how many of them matched nothing; undefined when the index was not built here. */
   imports?: number;
   unresolved?: number;
@@ -53,6 +62,19 @@ export function manifestsOf(root: string, name: string, files: readonly FileEntr
   }, name);
 }
 
+/** Packages that are projects of their own: a Makefile declares scripts, not a package. */
+export function declaredPackages(manifests: Manifests): Manifests['packages'] {
+  return manifests.packages.filter(pkg => pkg.ecosystem !== 'make');
+}
+
+function countModules(files: readonly FileEntry[], manifests: Manifests): RepoModel['modules'] {
+  const packages = declaredPackages(manifests).length;
+  if (packages >= 2) return {count: packages, unit: 'packages'};
+  const dirs = new Set<string>();
+  for (const file of files) if (sourceLines(file) > 0) dirs.add(dirName(file.path));
+  return {count: dirs.size, unit: 'source directories'};
+}
+
 export function buildModel(
   parts: {files: FileEntry[]; facts: ReadonlyMap<string, FileFacts>; links: ImportEdge[]; manifests: Manifests; warnings: string[]; imports?: number; unresolved?: number},
 ): RepoModel {
@@ -60,12 +82,28 @@ export function buildModel(
   const byPath = new Map(files.map(file => [file.path, file]));
   const cut = cutModules(files.map(file => ({path: file.path, weight: sourceLines(file)})), {manifestDirs: new Set(manifests.packages.map(pkg => pkg.dir))});
   const runtime: Array<[string, string]> = [];
-  for (const edge of links) if (edge.kind !== 'type' && byPath.has(edge.to)) runtime.push([edge.from, edge.to]);
+  for (const edge of links) if (edge.kind !== 'type' && edge.kind !== 'dynamic' && !isPackageImport(edge) && byPath.has(edge.to)) runtime.push([edge.from, edge.to]);
   return {
-    files, byPath, facts, links, manifests, cut, cycles: findCycles(runtime),
+    files, byPath, facts, links, manifests, cut, cycles: findCycles(runtime), modules: countModules(files, manifests),
     ...(parts.imports !== undefined ? {imports: parts.imports, unresolved: parts.unresolved ?? 0} : {}),
     warnings: [...parts.warnings, ...manifests.warnings],
   };
+}
+
+/** True for an edge that names a whole package (Go, C#, JVM wildcards) or module tree (Swift) instead of one file. */
+export function isPackageImport(edge: Pick<ImportEdge, 'kind'>): boolean {
+  return edge.kind === 'package' || edge.kind === 'module';
+}
+
+/**
+ * Whether an import of a package reaches `file`: a source file of the importer's language (tests and generated
+ * files aside) directly in the package directory, or anywhere beneath it when the import names a module tree.
+ * This is the one rule: expandLinks (RepoIndex.edges, diff.impact) and deps.files both apply it.
+ */
+export function packageMember(model: Pick<RepoModel, 'byPath'>, link: ImportEdge, file: FileEntry): boolean {
+  if (file.isTest || file.generated || file.binary || file.path === link.from) return false;
+  if (file.lang !== model.byPath.get(link.from)?.lang) return false;
+  return link.kind === 'module' ? file.path.startsWith(`${link.to}/`) : dirName(file.path) === link.to;
 }
 
 /** Cap on edges produced by expanding package imports; past it a package is represented by its largest file. */
@@ -106,12 +144,14 @@ export function expandLinks(model: Pick<RepoModel, 'links' | 'files' | 'byPath'>
     if (members.length === 0) continue;
     if (expanded + members.length > MAX_EXPANDED_EDGES) {
       const largest = members.reduce((a, b) => (b.loc > a.loc ? b : a));
-      edges.push({from: link.from, to: largest.path, kind: 'import'});
+      edges.push({from: link.from, to: largest.path, kind: link.kind === 'module' ? 'module' : 'package'});
       sampled++;
       continue;
     }
     expanded += members.length;
-    for (const member of members) edges.push({from: link.from, to: member.path, kind: 'import'});
+    // The kind stays 'package' or 'module', so a consumer can tell "imports this file" from "imports its package".
+    const kind = link.kind === 'module' ? 'module' : 'package';
+    for (const member of members) edges.push({from: link.from, to: member.path, kind});
   }
   return {edges, sampled};
 }

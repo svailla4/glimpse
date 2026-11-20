@@ -6,7 +6,7 @@ import type {OutlineResult, SymbolRow} from '@glimpse/catalog';
 import {SourceError, type RepoContext} from '../contracts.ts';
 import {repoPath} from './file.ts';
 
-const KINDS: ReadonlySet<string> = new Set<SymbolRow['kind']>(['fn', 'class', 'method', 'type', 'iface', 'const', 'var', 'enum', 'mod']);
+const KINDS: ReadonlySet<string> = new Set<SymbolRow['kind']>(['fn', 'class', 'method', 'type', 'iface', 'const', 'var', 'enum', 'mod', 'heading']);
 
 function isSymbol(value: unknown): value is SymbolRow {
   if (typeof value !== 'object' || value === null) return false;

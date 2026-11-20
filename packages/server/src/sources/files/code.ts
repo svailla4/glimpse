@@ -97,9 +97,16 @@ export function codeSources(): Source[] {
     const warnings: string[] = [];
     if (file.binary) warnings.push('binary file: no outline');
     else if (file.generated) warnings.push('generated file: not scanned');
-    else if (!languageOf(target)?.scan) warnings.push(`no symbol patterns for ${file.lang ?? 'this file type'}: the outline is empty`);
+    else if (!languageOf(target)?.scan && !languageOf(target)?.outline) warnings.push(`no symbol patterns for ${file.lang ?? 'this file type'}: the outline is empty`);
     const lead = rows.filter(row => row.depth === 0).slice(0, 6).map(row => String(row.name)).join(' ');
-    return rowsResult(meta, ref, rows, {by: 'line', lead, warnings});
+    const result = rowsResult(meta, ref, rows, {by: 'line', lead, warnings});
+    // The scanner keeps the first 2,000 declarations of a file; a longer outline says so instead of looking complete.
+    const found = model.facts.get(target)?.symbolsFound;
+    if (found !== undefined && found > rows.length) {
+      result.truncated = {total: found, returned: result.data.length, strategy: 'topN', by: 'line'};
+      result.warnings = [...(result.warnings ?? []), `outline shows the first ${rows.length.toLocaleString('en-US')} of about ${found.toLocaleString('en-US')} declarations`];
+    }
+    return result;
   });
 
   const refs = define('code.refs', async (ctx, ref, signal, meta) => {

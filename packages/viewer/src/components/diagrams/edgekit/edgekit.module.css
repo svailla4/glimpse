@@ -24,7 +24,14 @@
   .root[data-pending] {
     height: 280px;
   }
+  .root[data-failed] {
+    min-height: 0;
+    overflow: visible;
+  }
   .note {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font: 11px/16px var(--gl-font-mono);
     font-feature-settings: 'tnum' 1, 'zero' 1;
     color: var(--gl-ink-3);
@@ -37,6 +44,8 @@
     height: 100%;
     background-image: radial-gradient(circle, var(--gl-rule) 0.8px, transparent 1px);
     cursor: grab;
+    /* One finger pans and two pinch the stage, not the page. */
+    touch-action: none;
     user-select: none;
     -webkit-user-select: none;
     outline: none;
@@ -100,6 +109,11 @@
     stroke-linejoin: round;
     pointer-events: none;
   }
+  /* One of many light edges: the rule colour, so the heavy ones lead. */
+  .edge[data-faint] .line,
+  .edge[data-faint] .mark {
+    stroke: var(--gl-rule-strong);
+  }
   .edge:hover .line,
   .edge:hover .mark {
     stroke: var(--gl-ink);
@@ -138,10 +152,17 @@
   .group {
     pointer-events: none;
   }
+  /* A faint wash sets a group apart from the paper, so an edge that only passes it reads as passing. */
   .groupBox {
-    fill: none;
+    fill: var(--gl-sunken);
+    fill-opacity: 0.28;
     stroke: var(--gl-rule-strong);
     stroke-dasharray: 4 3;
+  }
+  .groupHit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 10;
   }
   .groupTab {
     fill: var(--dg-paper);
@@ -153,6 +174,28 @@
     fill: var(--gl-ink-3);
     dominant-baseline: central;
   }
+  /* Zoomed out, a hairline stays a hairline instead of thinning away. */
+  .viewport[data-far] .line,
+  .viewport[data-far] .mark,
+  .viewport[data-far] .groupBox {
+    vector-effect: non-scaling-stroke;
+  }
+  /* A group that can be opened: its label and its frame line take the double-click. */
+  .group[data-drillable] .groupTab,
+  .group[data-drillable] .groupText {
+    pointer-events: all;
+    cursor: zoom-in;
+  }
+  .group[data-drillable] .groupHit {
+    pointer-events: stroke;
+    cursor: zoom-in;
+  }
+  .group[data-drillable]:hover .groupBox {
+    stroke: var(--gl-ink-3);
+  }
+  .group[data-drillable]:hover .groupText {
+    fill: var(--gl-ink);
+  }
 
   .controls {
     position: absolute;
@@ -161,13 +204,24 @@
     display: flex;
     align-items: center;
     gap: 2px;
+    padding: 2px 2px 2px 8px;
+    border-radius: var(--gl-r-1);
+    background: var(--dg-paper);
   }
+  .inView,
   .zoom {
-    margin-right: 6px;
     font: 10.5px/16px var(--gl-font-mono);
     font-feature-settings: 'tnum' 1, 'zero' 1;
     letter-spacing: 0.04em;
     color: var(--gl-ink-3);
+    white-space: nowrap;
+  }
+  .inView {
+    margin-right: 8px;
+    text-transform: uppercase;
+  }
+  .zoom {
+    margin-right: 6px;
   }
   .control {
     display: grid;
@@ -187,8 +241,36 @@
     color: var(--gl-ink);
   }
 
+  /* The whole diagram, bottom left, when the stage shows a part of it. */
+  .overview {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    box-sizing: content-box;
+    padding: 4px;
+    border: 1px solid var(--gl-rule-strong);
+    border-radius: var(--gl-r-1);
+    background: var(--dg-paper);
+    cursor: crosshair;
+    touch-action: none;
+  }
+  .overviewNode {
+    fill: var(--gl-ink-3);
+  }
+  .overviewNode[data-selected] {
+    fill: var(--gl-accent);
+  }
+  .overviewView {
+    fill: var(--gl-ink);
+    fill-opacity: 0.07;
+    stroke: var(--gl-ink);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+
   .relayout {
     display: inline-flex;
+    flex: none;
     align-items: center;
     gap: 6px;
     height: 22px;

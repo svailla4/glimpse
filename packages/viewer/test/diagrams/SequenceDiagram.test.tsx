@@ -153,7 +153,39 @@ describe('planSequence', () => {
     // centred
     expect(narrow.actors[0]!.x + narrow.actors[1]!.x).toBeCloseTo(900, -1);
     const wide = planSequence(ast(Array.from({length: 12}, (_, i) => `P${i}->>P${i + 1}: go`).join('; ')), 600);
-    expect(wide.width).toBeGreaterThan(13 * 140);
+    // thirteen lifelines cannot be had in 600 px: the gaps close up to 95 px and the rest scrolls
+    expect(wide.actors[1]!.x - wide.actors[0]!.x).toBe(95);
+    expect(wide.width * wide.scale).toBeGreaterThan(600);
+  });
+
+  it('fits a cell that is a little too narrow: gaps close up first, then the drawing is scaled, never below 80%', () => {
+    const six = ast('User->>Agent: ask; Agent->>Server: show; Server->>Sources: run; Sources-->>Server: rows; Server->>Viewer: frame; Viewer->>Hub: event; Hub-->>User: done');
+    const natural = planSequence(six, 0);
+    expect(natural.scale).toBe(1);
+    expect(natural.actors[1]!.x - natural.actors[0]!.x).toBe(140);
+    expect(natural.width).toBe(5 * 140 + 2 * 76);
+
+    // 60 px short: closing the gaps is enough, nothing is scaled and nothing scrolls
+    const snug = planSequence(six, natural.width - 60);
+    expect(snug.scale).toBe(1);
+    expect(snug.width).toBe(natural.width - 60);
+    expect(snug.actors[1]!.x - snug.actors[0]!.x).toBeLessThan(140);
+    expect(snug.actors[1]!.x - snug.actors[0]!.x).toBeGreaterThanOrEqual(95);
+
+    // span=5 of a 1440 px page: the case from the review, six lifelines in 510 px
+    const narrow = planSequence(six, 510);
+    expect(narrow.scale).toBeLessThan(1);
+    expect(narrow.scale).toBeGreaterThanOrEqual(0.8);
+    expect(narrow.width * narrow.scale).toBeLessThanOrEqual(510.5);
+    for (const actor of narrow.actors) {
+      expect((actor.x - actor.w / 2) * narrow.scale).toBeGreaterThanOrEqual(0);
+      expect((actor.x + actor.w / 2) * narrow.scale).toBeLessThanOrEqual(510);
+    }
+
+    // far too narrow: 80% is the floor, the rest scrolls
+    const tiny = planSequence(six, 300);
+    expect(tiny.scale).toBe(0.8);
+    expect(tiny.width * tiny.scale).toBeGreaterThan(300);
   });
 
   it('gives a self-message on the last lifeline room on the right', () => {

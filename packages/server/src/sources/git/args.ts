@@ -5,7 +5,7 @@ import type {Rows, SourceMeta, SourceRef} from '@glimpse/catalog';
 import {repoPath} from '../../code/file.ts';
 import {SourceError, type GitInfo, type RepoContext, type SourceResult} from '../../contracts.ts';
 
-export const SHALLOW_WARNING = 'shallow clone: history is incomplete';
+export {SHALLOW_WARNING} from '../../git/log.ts';
 const SUMMARY_MAX = 160;
 const DAY = 86_400;
 const UNIT_DAYS: Readonly<Record<string, number>> = {d: 1, w: 7, m: 30, y: 365};
@@ -62,7 +62,8 @@ export const round = (value: number, digits: number): number => Number(value.toF
 export const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 export function summarize(text: string): string {
-  const line = text.replace(/\s+/g, ' ').trim();
+  // One line of printable text: subjects, names and paths from the repository cannot bring line breaks or control characters.
+  const line = text.replace(/[\s\p{Cc}]+/gu, ' ').trim();
   return line.length > SUMMARY_MAX ? `${line.slice(0, SUMMARY_MAX - 1)}…` : line;
 }
 

@@ -142,6 +142,40 @@
     fill: var(--gl-ink-3);
   }
 
+  /* More of the diagram lies beyond this edge: the drawing fades into the paper, and the right edge says so. */
+  .more {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 40px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .more[data-more='left'] {
+    left: 0;
+    background: linear-gradient(to right, var(--sq-paper), transparent);
+  }
+  .more[data-more='right'] {
+    right: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    width: 72px;
+    background: linear-gradient(to left, var(--sq-paper) 20%, transparent);
+  }
+  .moreHint {
+    margin: 0 6px 6px 0;
+    padding: 1px 6px;
+    border: 1px solid var(--gl-rule-strong);
+    border-radius: var(--gl-r-1);
+    background: var(--sq-paper);
+    font: 10.5px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--gl-ink-2);
+    white-space: nowrap;
+  }
+
   .live {
     position: absolute;
     width: 1px;

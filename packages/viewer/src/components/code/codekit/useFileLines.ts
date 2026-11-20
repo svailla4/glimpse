@@ -25,6 +25,8 @@ interface Store {
   /** Window -> the revision it was last asked for at: loaded, or on its way. */
   askedAt: Map<number, number>;
   controls: Set<AbortController>;
+  /** Window -> why its last request failed. Cleared when the window loads or is asked for again. */
+  failed: Map<number, string>;
   cols: number;
 }
 
@@ -34,6 +36,10 @@ export interface FileLines {
   loading: boolean;
   /** The current path could not be read at all. */
   error?: string;
+  /** Windows of `file` in view whose lines could not be loaded, as 1-based line ranges, with the reason of the first. */
+  failed?: {ranges: Array<[number, number]>; message: string};
+  /** Asks again for everything that failed: the file itself, or its failed windows. */
+  retry(): void;
   cols: number;
   /** Tokens of a 1-based line of `file`, or undefined while its window is on the way. */
   line(n: number): TokenLine | undefined;
@@ -91,7 +97,9 @@ export function useFileLines(path: string | undefined, rev: number, around: numb
           for (const [key, bucket] of fresh) {
             store.windows.set(key, bucket);
             store.askedAt.set(key, asked);
+            store.failed.delete(key);
           }
+          store.failed.delete(index);
           store.cols = Math.max(store.cols, maxCols(lines));
           for (const key of [...store.windows.keys()]) {
             if (key * WINDOW >= total && key !== 0) store.windows.delete(key);
@@ -115,7 +123,11 @@ export function useFileLines(path: string | undefined, rev: number, around: numb
         failure => {
           store.controls.delete(control);
           if (control.signal.aborted) return;
-          // A window of a file that is already on screen keeps what it shows; it is asked for again at the next revision.
+          // A window of a file that is already on screen keeps what it shows. The failure is kept, so the view can
+          // say which lines are missing and offer to load them again; it is not marked as asked, so scrolling back
+          // to it, the next revision or retry() all ask again.
+          store.failed.set(index, errorText(failure));
+          store.askedAt.delete(index);
           if (!store.info) setError({path: store.path, message: errorText(failure)});
           redraw();
         },
@@ -137,7 +149,7 @@ export function useFileLines(path: string | undefined, rev: number, around: numb
       redraw();
       return;
     }
-    const store: Store = {path, windows: new Map(), askedAt: new Map(), controls: new Set(), cols: 0};
+    const store: Store = {path, windows: new Map(), askedAt: new Map(), controls: new Set(), failed: new Map(), cols: 0};
     next.current = store;
     request(store, windowOf(aroundRef.current));
     redraw();
@@ -146,6 +158,11 @@ export function useFileLines(path: string | undefined, rev: number, around: numb
 
   // `rev` is the trigger: request() reads the revision from a ref.
   useEffect(() => {
+    // A file whose first window failed is read again when the working tree moves.
+    const waiting = next.current;
+    if (waiting && !waiting.info && waiting.failed.size > 0) {
+      for (const index of [...waiting.failed.keys()]) request(waiting, index);
+    }
     const store = shown.current;
     if (!store?.info) return;
     const [from, to] = inView.current;
@@ -161,17 +178,47 @@ export function useFileLines(path: string | undefined, rev: number, around: numb
       if (!store?.info || store.info.skipped) return;
       const from = windowOf(first);
       const to = Math.max(from, windowOf(Math.min(last, Math.max(1, store.info.total))));
+      const moved = inView.current[0] !== from || inView.current[1] !== to;
       inView.current = [from, to];
-      for (let index = from; index <= to; index++) request(store, index);
+      // A failed window is not asked for on every render of the same range (that would loop on a host that keeps
+      // failing): only when the range moves, on the next revision, or through retry().
+      for (let index = from; index <= to; index++) if (moved || !store.failed.has(index)) request(store, index);
+      if (moved) redraw();
     },
     [request],
   );
+  const retry = useCallback(() => {
+    for (const store of [next.current, shown.current]) {
+      if (!store) continue;
+      const indexes = [...store.failed.keys()];
+      for (const index of indexes) {
+        store.failed.delete(index);
+        store.askedAt.delete(index);
+      }
+      for (const index of indexes) request(store, index);
+    }
+    setError(undefined);
+    redraw();
+  }, [request]);
 
   const store = shown.current;
+  let failed: FileLines['failed'];
+  if (store?.info && store.failed.size > 0) {
+    const [from, to] = inView.current;
+    const indexes = [...store.failed.keys()].filter(index => index >= from && index <= to).sort((a, b) => a - b);
+    if (indexes.length > 0) {
+      failed = {
+        ranges: indexes.map(index => [index * WINDOW + 1, Math.min(store.info!.total, (index + 1) * WINDOW)]),
+        message: store.failed.get(indexes[0]!) ?? 'failed',
+      };
+    }
+  }
   return {
     file: store?.info,
     loading: next.current !== undefined,
     error: path && error?.path === path && store?.path !== path ? error.message : undefined,
+    failed,
+    retry,
     cols: store?.cols ?? 0,
     line,
     ensure,

@@ -102,11 +102,13 @@
     },
     {
       "key": "module",
-      "kind": "module"
+      "kind": "module",
+      "label": "Main module"
     },
     {
       "key": "commits",
-      "kind": "num"
+      "kind": "num",
+      "label": "Commits by main module"
     }
   ],
   "roles": {
@@ -117,6 +119,7 @@
     "series": "module"
   },
   "total": 18,
+  "wt": true,
   "cache": "miss",
   "elapsedMs": 12
 }

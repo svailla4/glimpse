@@ -9,7 +9,7 @@ import {DataGate, Empty, fmtNum, useDataset, type DataState, type GlView} from '
 import css from './Histogram.module.css';
 import {
   DEFAULT_HEIGHT, Figure, Note, ShapeError, ValueGrid, count, fmtValue, formatOf, inspect, kit, linearAxis, logAxis, notes, num, pick,
-  say, textWidth, tickFormat, useChartBox, useDrawIn, useMarkNav, widest, type FieldInfo, type Mark, type ValueAxis,
+  reserve, say, textWidth, tickFormat, useChartBox, useDrawIn, useMarkNav, widest, type FieldInfo, type Mark, type ValueAxis,
 } from './chartkit/index.ts';
 
 const MAX_BINS = 40;
@@ -184,11 +184,11 @@ function Bins(p: {id: string; model: Model; props: C.ViewProps<typeof C.Histogra
 
 export const HistogramView: GlView<typeof C.Histogram> = ({id, props}) => {
   const state = useDataset<Rows | number[]>(props.data);
-  return (
+  return reserve(state, props.size, (
     <DataGate state={state} id={`Histogram#${id}`}>
       {(data, ready) => (Array.isArray(data)
         ? <Plot id={id} data={data} state={ready} props={props} />
         : <ShapeError name="Histogram" id={id} expected="rows or an array of numbers" value={data} />)}
     </DataGate>
-  );
+  ));
 };

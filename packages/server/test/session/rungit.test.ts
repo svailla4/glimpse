@@ -2,10 +2,10 @@
 // die with the session.
 import {execFileSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {writeFile} from 'node:fs/promises';
+import {rm, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
-import {createRunGit, GIT_MAX_BUFFER} from '../../src/session/rungit.ts';
+import {createRunGit, GIT_MAX_BUFFER, SAFE_CONFIG} from '../../src/session/rungit.ts';
 import {tempRoot} from './fakes.ts';
 
 let dir: Awaited<ReturnType<typeof tempRoot>>;
@@ -73,6 +73,31 @@ describe('createRunGit', () => {
     const already = new AbortController();
     already.abort();
     await expect(runGit(['version'], {signal: already.signal})).rejects.toThrow(/aborted/);
+  });
+
+  // Finding F052: the repository's .git/config is untrusted. core.fsmonitor names a program git runs for a plain
+  // `git status`; Glimpse only reads, so it is switched off on every call (and so are hooks).
+  it.skipIf(!posix)('a core.fsmonitor program set by the repository never runs', async () => {
+    const repo = await tempRoot();
+    try {
+      execFileSync('git', ['init', '-q', repo.root]);
+      const marker = join(repo.root, 'fsmonitor-ran');
+      const hook = join(repo.root, 'monitor.sh');
+      await writeFile(hook, `#!/bin/sh\ntouch '${marker}'\n`, {mode: 0o755});
+      execFileSync('git', ['-C', repo.root, 'config', 'core.fsmonitor', hook]);
+      // without the override git does run it, so the test can tell
+      execFileSync('git', ['-C', repo.root, 'status', '--porcelain'], {stdio: 'ignore'});
+      const runs = existsSync(marker);
+      await rm(marker, {force: true});
+      const {runGit} = createRunGit(repo.root);
+      await runGit(['status', '--porcelain', '-z', '--', '.']);
+      await runGit(['diff', '--numstat']);
+      expect(runs).toBe(true);
+      expect(existsSync(marker)).toBe(false);
+      expect(SAFE_CONFIG).toEqual(expect.arrayContaining(['core.fsmonitor=false', 'core.hooksPath=/dev/null']));
+    } finally {
+      await repo.cleanup();
+    }
   });
 
   it.skipIf(!posix)('killAll ends running children and refuses new work', async () => {

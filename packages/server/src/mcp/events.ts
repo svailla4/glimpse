@@ -1,7 +1,7 @@
 // The `events` tool (design 6.4): what the user did in the tab since the last Glimpse call, with an optional
 // long-poll. Era-neutral: it only answers the request and sends progress for it; the server never initiates anything.
 import type {EventQueue} from '../session/events.ts';
-import {text, type ToolResult} from './result.ts';
+import {viewerLines, type ToolResult} from './result.ts';
 
 export const EVENTS_DESCRIPTION =
   'What the user did in the Glimpse tab since your last Glimpse call: selections, button presses, answers. wait > 0 long-polls that many seconds.';
@@ -33,6 +33,5 @@ export async function eventsTool(queue: EventQueue, args: {wait?: unknown}, opti
       clearInterval(beat);
     }
   }
-  const lines = queue.drain();
-  return text(lines.length > 0 ? lines.join('\n') : 'none');
+  return viewerLines(queue.drain());
 }

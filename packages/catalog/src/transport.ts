@@ -76,7 +76,10 @@ export interface FileSlice {
   end: number;
   lines: TokenLine[];
   size: number;
-  /** Set instead of lines when the file cannot be shown. */
+  /**
+   * Set instead of lines when the file cannot be shown. 'outside-root' is said of every path that is not a file of
+   * the project's inventory, whether or not it exists on disk: outside the root, ignored by git, under .git.
+   */
   skipped?: 'binary' | 'too-large' | 'missing' | 'outside-root';
   /** /meta/rev the slice was read at. */
   rev: number;

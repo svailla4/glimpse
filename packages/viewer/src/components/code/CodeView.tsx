@@ -1,11 +1,11 @@
 import type * as C from '@glimpse/catalog';
-import {formatFileLoc, parseFileLoc, parseLineRanges, type CodeNote, type DataInput} from '@glimpse/catalog';
+import {formatFileLoc, parseFileLoc, type CodeNote, type DataInput} from '@glimpse/catalog';
 import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode} from 'react';
 import {
   Drafting, Empty, Icon, PlateAside, Redline, fmtNum, toNumber, useDataset, useFollowedFile, useHostActions, useRev, useSelection,
   type GlView,
 } from '../../kit/index.ts';
-import {Crumbs, inRanges, TokenSpans} from './codekit/lines.tsx';
+import {Crumbs, ignoredMarksText, inRanges, parseMarks, TokenSpans} from './codekit/lines.tsx';
 import k from './codekit/lines.module.css';
 import {useFileLines} from './codekit/useFileLines.ts';
 import {VirtualRows, type VirtualRowsHandle} from './codekit/VirtualRows.tsx';
@@ -18,7 +18,9 @@ const SKIPPED: Record<string, (path: string, size: number) => string> = {
   binary: path => `${path} is a binary file`,
   'too-large': (path, size) => `${path} is too large to show (${fmtNum(size, 'bytes')})`,
   missing: path => `${path} does not exist`,
-  'outside-root': path => `${path} is outside the repository`,
+  // The file service answers this for anything that is not in the project's inventory, whether or not it exists on
+  // disk: outside the root, ignored by git, under .git, in a dependency tree.
+  'outside-root': path => `${path} is not a file of this project (outside it, ignored, or under .git)`,
 };
 const NOTE_TAG: Record<string, string> = {note: 'Note', warn: 'Warning', risk: 'Risk'};
 
@@ -96,7 +98,7 @@ export function CodeFile(props: CodeFileProps): ReactNode {
   const current = file !== undefined && file.path === path;
   const total = file?.total ?? 0;
 
-  const marks = useMemo(() => parseLineRanges(props.mark), [props.mark]);
+  const {ranges: marks, ignored: badMarks} = useMemo(() => parseMarks(props.mark), [props.mark]);
   const notesState = useDataset<CodeNote[]>(props.notes);
   const {notes, dropped} = useMemo(() => readNotes(notesState.data, total), [notesState.data, total]);
   const byAnchor = useMemo(() => {
@@ -134,7 +136,14 @@ export function CodeFile(props: CodeFileProps): ReactNode {
   }, [current, total, path, targetFrom, targetTo]);
 
   if (!path) return <Empty message="no file selected" />;
-  if (lines.error) return <Redline code="E_FILE" id={`CodeView#${id}`} message={`${path}: ${lines.error}`} />;
+  if (lines.error) {
+    return (
+      <div className={k.failed} data-gl-code-failed="">
+        <Redline code="E_FILE" id={`CodeView#${id}`} message={`${path}: ${lines.error}`} />
+        <button type="button" className={k.retry} onClick={lines.retry}>Retry</button>
+      </div>
+    );
+  }
   if (!file) return <Drafting label={`reading ${path}`} />;
   if (file.skipped) return <Empty message={(SKIPPED[file.skipped] ?? SKIPPED.missing!)(file.path, file.size)} />;
   if (total === 0) return <Empty message={`${file.path} is empty`} />;
@@ -198,6 +207,7 @@ export function CodeFile(props: CodeFileProps): ReactNode {
       <Crumbs path={shownPath} />
       {file.lang ? <span className={k.badge} data-gl-lang="">{file.lang}</span> : null}
       <span className={k.meta}>{fmtNum(total)} {total === 1 ? 'line' : 'lines'}</span>
+      {badMarks.length > 0 ? <span className={k.meta} data-gl-marginal="" data-gl-mark-ignored="" title={ignoredMarksText(badMarks)}>{ignoredMarksText(badMarks)}</span> : null}
       {current && (dropped > 0 || notesState.status === 'error') ? (
         <span className={k.meta} data-gl-marginal="">
           {notesState.status === 'error' ? `notes: ${notesState.message}` : `${fmtNum(dropped)} malformed ${dropped === 1 ? 'note' : 'notes'} dropped`}
@@ -271,6 +281,14 @@ export function CodeFile(props: CodeFileProps): ReactNode {
       ) : (
         <div className={k.head}><span className={k.bits}>{bits}</span><span className={k.grow} />{open}</div>
       )}
+      {current && lines.failed ? (
+        <div className={k.notice} role="alert" data-gl-code-failed="">
+          <span className={k.noticeText}>
+            lines {lines.failed.ranges.map(([from, to]) => `${fmtNum(from)}–${fmtNum(to)}`).join(', ')} did not load: {lines.failed.message}
+          </span>
+          <button type="button" className={k.retry} onClick={lines.retry}>Retry</button>
+        </div>
+      ) : null}
       <VirtualRows
         key={shownPath}
         handle={rows}

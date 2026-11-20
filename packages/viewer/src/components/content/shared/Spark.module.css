@@ -27,6 +27,11 @@
     stroke-width: 1;
     paint-order: stroke;
   }
+  .cursor { stroke: var(--gl-ink-3); stroke-width: 1; pointer-events: none; }
+  .tip { display: inline-flex; align-items: baseline; gap: 8px; font: 400 11px/16px var(--gl-font-mono); font-feature-settings: 'tnum' 1, 'zero' 1; }
+  .tipName { color: var(--gl-ink-2); }
+  .tipValue { color: var(--gl-ink); font-weight: 500; }
+  .tipAt { color: var(--gl-ink-3); }
   @keyframes draw {
     from { stroke-dashoffset: 1; }
   }

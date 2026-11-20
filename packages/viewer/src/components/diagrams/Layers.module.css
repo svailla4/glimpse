@@ -21,8 +21,10 @@
   .band[data-first] {
     border-top: 0;
   }
+  /* In a sized plate the tiers share the height, but a tier is a band, not a panel: it stops growing at 96 px. */
   .root[data-sized] .band {
     flex: 1 0 auto;
+    max-height: 96px;
   }
   .name {
     margin: 0;

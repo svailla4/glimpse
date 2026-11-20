@@ -1,6 +1,7 @@
 import {fireEvent} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
 import {errorDataset} from '../harness.tsx';
+import {lastIsOpen} from '../../src/components/charts/LineChart.tsx';
 import {LONG, chart} from './util.tsx';
 
 const WEEKS = [
@@ -16,6 +17,9 @@ describe('LineChart', () => {
     expect(view.svg.getAttribute('aria-label')).toBe('Line chart, 3 series over 6 points, 5 Oct 2026 to 9 Nov 2026, largest auth');
     expect(view.all('[data-series]').map(el => el.getAttribute('data-series'))).toEqual(['auth', 'api', 'ui']);
     expect(view.all('[data-end-label]').map(el => el.textContent)).toEqual(expect.arrayContaining(['auth', 'api', 'ui']));
+    // three lines whose ends are apart: each name sits at its line end, joined to the end dot by a leader
+    expect(view.root.querySelector('[data-label-mode]')?.getAttribute('data-label-mode')).toBe('direct');
+    expect(view.all('[data-end-label] path')).toHaveLength(3);
     expect(view.all('[data-chart-legend]')).toHaveLength(0);
     expect(paths(view).every(d => d.startsWith('M') && !d.includes('NaN'))).toBe(true);
     // the server's module slots: auth 1, api 2, ui 3
@@ -23,12 +27,29 @@ describe('LineChart', () => {
     expect(view.errors).toEqual([]);
   });
 
-  it('nudges direct labels at least 14 px apart', async () => {
+  it('nudges direct labels 14 px apart, and gives up on direct labels when they would leave their line ends (F005)', async () => {
+    // two lines that end together: one label moves by a row and both stay direct
+    const pair = await chart(`LineChart($/d,'t','v','name')`, {rows: ['a', 'b'].flatMap(name => [{t: 1, name, v: 10}, {t: 2, name, v: 10.01}])});
+    expect(pair.root.querySelector('[data-label-mode]')?.getAttribute('data-label-mode')).toBe('direct');
+    const two = pair.all('[data-end-label] text').map(el => Number(el.getAttribute('y'))).sort((a, b) => a - b);
+    expect(two[1]! - two[0]!).toBeGreaterThanOrEqual(14);
+    pair.unmount();
+    // four lines that end at one point: direct labels would fan out from it on leaders, so they become a keyed column
     const rows = ['a', 'b', 'c', 'd'].flatMap(name => [{t: 1, name, v: 10}, {t: 2, name, v: 10.01}]);
     const view = await chart(`LineChart($/d,'t','v','name')`, {rows});
+    expect(view.root.querySelector('[data-label-mode]')?.getAttribute('data-label-mode')).toBe('side');
+    expect(view.all('[data-end-label] path')).toHaveLength(0);
+    expect(view.all('[data-end-label] [data-key]')).toHaveLength(4);
     const ys = view.all('[data-end-label] text').map(el => Number(el.getAttribute('y'))).sort((a, b) => a - b);
     expect(ys).toHaveLength(4);
     for (let i = 1; i < ys.length; i++) expect(ys[i]! - ys[i - 1]!).toBeGreaterThanOrEqual(14);
+    view.unmount();
+    // more than four series are never direct, however far apart they end
+    const five = ['a', 'b', 'c', 'd', 'e'].flatMap((name, i) => [{t: 1, name, v: i * 100}, {t: 2, name, v: i * 100}]);
+    const many = await chart(`LineChart($/d,'t','v','name')`, {rows: five});
+    expect(many.root.querySelector('[data-label-mode]')?.getAttribute('data-label-mode')).toBe('side');
+    // the column reads from the highest line end down
+    expect(many.all('[data-end-label]').map(el => el.getAttribute('data-end-label'))).toEqual(['e', 'd', 'c', 'b', 'a']);
   });
 
   it('shows drafting, empty, a source error and a wrong shape', async () => {
@@ -163,5 +184,117 @@ describe('LineChart', () => {
     await big.settle();
     // no props and no roles: the first date, the first numeric field, and the categorical field that repeats per date
     expect(big.svg.getAttribute('aria-label')).toContain('2 series over 3 points');
+  });
+  it('keys every name of a stack beside its text, top layer first, on a light base of other (F005)', async () => {
+    const modules = ['(root)', 'web_core', 'docs', 'community', 'ci', 'specification', 'agent', 'other'];
+    const rows = ['2026-01-05', '2026-01-12', '2026-01-19', '2026-01-26'].flatMap((week, w) => modules.map((module, m) => ({week, module, commits: (m + 1) * (w + 1)})));
+    const view = await chart(`LineChart($/d,'week','commits','module',mode='stacked')`, {rows});
+    const fill = (name: string) => (view.root.querySelector(`[data-series="${name}"] path`) as SVGElement).style.fill;
+    // `other` is the remainder: the base of the stack, in a light neutral, whatever its size
+    expect(view.all('[data-series]').map(el => el.getAttribute('data-series'))).toEqual(['other', ...modules.slice(0, 7)]);
+    expect(fill('other')).toBe('color-mix(in oklab, var(--gl-cat-other) 38%, var(--gl-surface))');
+    expect(fill('(root)')).toBe('var(--gl-cat-1)');
+    // eight names: a keyed column in stack order from the top, no leaders
+    expect(view.root.querySelector('[data-label-mode]')?.getAttribute('data-label-mode')).toBe('side');
+    const labels = view.all('[data-end-label]');
+    expect(labels.map(el => el.getAttribute('data-end-label'))).toEqual([...modules.slice(0, 7).reverse(), 'other']);
+    expect(view.all('[data-end-label] path')).toHaveLength(0);
+    for (const item of labels) {
+      const key = item.querySelector<SVGElement>('[data-key]')!;
+      const text = item.querySelector('text')!;
+      // the swatch is the layer's own fill and sits just left of the name, on its line
+      expect(key.style.fill).toBe(fill(item.getAttribute('data-end-label')!));
+      expect(Number(text.getAttribute('x')) - Number(key.getAttribute('x'))).toBe(12);
+      expect(Math.abs(Number(key.getAttribute('y')) + 4 - Number(text.getAttribute('y')))).toBeLessThan(1);
+    }
+    // the tooltip lists the series in the same order
+    view.key('ArrowRight');
+    const tip = view.tooltip();
+    expect(tip.indexOf('agent')).toBeLessThan(tip.indexOf('(root)'));
+    expect(tip.indexOf('(root)')).toBeLessThan(tip.indexOf('other'));
+    expect(tip).toContain('total 36');
+  });
+
+  it('draws a stack of one or two periods as bars, not as a sliver of area (F005)', async () => {
+    const rows = ['catalog', 'server', 'viewer'].map((module, i) => ({week: '2026-11-16', module, commits: i + 1}));
+    const view = await chart(`LineChart($/d,'week','commits','module',mode='stacked')`, {rows});
+    expect(view.svg.getAttribute('aria-label')).toMatch(/^Stacked bar chart, 3 series over 1 point/);
+    const bars = view.all('[data-bar]');
+    expect(bars).toHaveLength(3);
+    expect(view.all('[data-series] path')).toHaveLength(0);
+    for (const bar of bars) {
+      expect(Number(bar.getAttribute('width'))).toBe(56);
+      expect(Number(bar.getAttribute('height'))).toBeGreaterThan(10);
+    }
+    // counts are whole numbers: no tick at 0.5 or 1.5
+    const ticks = view.all('svg text').map(el => el.textContent ?? '').filter(text => /^[\d.,]+$/.test(text));
+    expect(ticks).toContain('6');
+    expect(ticks.every(text => !text.includes('.'))).toBe(true);
+    expect(view.all('svg text').map(el => el.textContent)).toContain('16 Nov');
+    view.unmount();
+    const three = ['2026-11-02', '2026-11-09', '2026-11-16'].flatMap(week => rows.map(row => ({...row, week})));
+    const area = await chart(`LineChart($/d,'week','commits','module',mode='stacked')`, {rows: three});
+    expect(area.svg.getAttribute('aria-label')).toMatch(/^Stacked area chart/);
+    expect(area.all('[data-bar]')).toHaveLength(0);
+  });
+
+  it('marks the period that is still open instead of drawing it as a collapse (F005)', async () => {
+    const WEEK = 7 * 86_400_000;
+    const now = Date.now();
+    expect(lastIsOpen([now - 3 * WEEK, now - 2 * WEEK, now - WEEK, now - 1000], now)).toBe(true);
+    expect(lastIsOpen([now - 4 * WEEK, now - 3 * WEEK, now - 2 * WEEK, now - WEEK - 1000], now)).toBe(false);
+    expect(lastIsOpen([now - WEEK, now - 1000], now)).toBe(false);
+    expect(lastIsOpen([now + WEEK, now + 2 * WEEK, now + 3 * WEEK], now)).toBe(false);
+
+    // weeks that start on Mondays, the last one being this week
+    const monday = Math.floor(now / WEEK) * WEEK - 3 * 86_400_000;
+    const start = monday + WEEK > now ? monday : monday + WEEK;
+    const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+    const rows = [5, 4, 3, 2, 1, 0].flatMap(back => ['auth', 'api'].map((module, i) => ({week: iso(start - back * WEEK), module, commits: back === 0 ? 1 : 6 + i})));
+    const lines = await chart(`LineChart($/d,'week','commits','module')`, {rows});
+    // the segment into the open week is its own dashed path; the solid line stops one week earlier
+    expect(lines.all('path[data-open]')).toHaveLength(2);
+    expect(lines.root.querySelector('[data-chart-note]')?.textContent).toBe('last period still open');
+    lines.key('End');
+    expect(lines.tooltip()).toContain('period still open');
+    lines.key('Home');
+    expect(lines.tooltip()).not.toContain('period still open');
+    lines.unmount();
+    const stack = await chart(`LineChart($/d,'week','commits','module',mode='stacked')`, {rows});
+    expect(stack.all('g[data-open]')).toHaveLength(2);
+    expect(stack.all('clipPath')).toHaveLength(2);
+    stack.unmount();
+    const closed = await chart(`LineChart($/d,'week','commits','module',mode='stacked')`, {rows: WEEKS});
+    expect(closed.all('[data-open]')).toHaveLength(0);
+    expect(closed.all('[data-chart-note]')).toHaveLength(0);
+  });
+
+  it('keeps the last segment of a long series name and never ticks a count at a fraction (D12, F007)', async () => {
+    const names = ['typescript/core/web_core', 'typescript/renderers/lit', 'samples/community'];
+    const rows = names.flatMap((module, i) => [{t: 1, module, n: i}, {t: 2, module, n: i + 1}]);
+    const view = await chart(`LineChart($/d,'t','n','module')`, {rows, size: {width: 400, height: 600}});
+    const labels = view.all('[data-end-label] text').map(el => el.textContent ?? '');
+    expect(labels).toHaveLength(3);
+    expect(labels.some(text => text.includes('…'))).toBe(true);
+    expect(labels.map(text => text.split('/').pop()).sort()).toEqual(['community', 'lit', 'web_core']);
+    const ticks = view.all('svg text').map(el => el.textContent ?? '').filter(text => /^[\d.]+$/.test(text));
+    expect(ticks).toEqual(expect.arrayContaining(['0', '1', '2', '3']));
+    expect(ticks.every(text => !text.includes('.'))).toBe(true);
+    view.unmount();
+    // the legend of a narrow chart follows the same rule, with the whole name in the tooltip
+    const long = 'packages/server/src/sources/git/history';
+    const narrow = await chart(`LineChart($/d,'t','n','module')`, {rows: [...rows, {t: 1, module: long, n: 4}, {t: 2, module: long, n: 5}], size: {width: 280, height: 600}});
+    const item = narrow.root.querySelector(`[data-chart-legend] [data-series="${long}"]`)!;
+    expect(item.textContent).toBe('packages/server/…/history');
+    expect(item.querySelector('[title]')?.getAttribute('title')).toBe(long);
+  });
+
+  it('holds the chart height while the dataset is pending in a cell without a size (F016)', async () => {
+    const pending = await chart(`LineChart('git.timeline')`, {datasets: 'pending'});
+    expect(pending.root.querySelector<HTMLElement>('[data-chart-reserve]')?.style.height).toBe('280px');
+    expect(pending.root.querySelector('[data-chart-reserve] [data-gl-state="drafting"]')).not.toBeNull();
+    pending.unmount();
+    const sized = await chart(`LineChart('git.timeline',size='l')`, {datasets: 'pending'});
+    expect(sized.all('[data-chart-reserve]')).toHaveLength(0);
   });
 });

@@ -6,10 +6,10 @@ import {
   type JSX, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject,
 } from 'react';
 import {
-  DataGate, PlateAside, Redline, useDataset, useHostActions, usePath, useSelection, useSize, useTooltip, type DataState,
+  DataGate, PlateAside, Redline, assignSlots, useDataset, useHostActions, usePath, useSelection, useSize, useTooltip, type DataState,
 } from '../../../kit/index.ts';
 import css from './chartkit.module.css';
-import {cleanRows, clipText, matches, received, say} from './data.ts';
+import {cleanRows, clipName, clipText, matches, received, say} from './data.ts';
 import type {ValueAxis} from './scale.ts';
 
 export interface TipRow {
@@ -302,6 +302,8 @@ export interface FigureProps {
   footer?: ReactNode;
   /** The drawing has its own height (rows, day cells): in a sized cell the footer follows it instead of sitting at the bottom. */
   compact?: boolean;
+  /** HTML directly under the drawing, inside the plot box: a legend that stays with a drawing shorter than its box. */
+  under?: ReactNode;
   /** False when the chart draws its own selection outline. */
   rings?: boolean;
   /** False when the chart draws its own hover emphasis (a crosshair) instead of the ink outline. */
@@ -348,6 +350,7 @@ export function Figure(p: FigureProps): JSX.Element {
             </svg>
           </div>
         ) : null}
+        {p.under && width > 0 && height > 0 ? <div className={css.under}>{p.under}</div> : null}
       </div>
       {p.footer}
       <span className={css.sr} aria-live="polite">{activeMark && nav.keyboard ? activeMark.say : ''}</span>
@@ -361,7 +364,16 @@ export function Figure(p: FigureProps): JSX.Element {
  * strong rule, tick labels in mono 11. `dir: 'y'` draws horizontal lines for a vertical axis with labels at the
  * left of `from`; `dir: 'x'` draws vertical lines for a horizontal axis with labels under `to`.
  */
-export function ValueGrid(p: {axis: ValueAxis; dir: 'x' | 'y'; from: number; to: number; fmt: (value: number) => string; title?: string}): JSX.Element {
+export function ValueGrid(p: {
+  axis: ValueAxis;
+  dir: 'x' | 'y';
+  from: number;
+  to: number;
+  fmt: (value: number) => string;
+  title?: string;
+  /** Where the far end of the plot is when the scale is inset from it (top for `y`, right for `x`): the title sits there. */
+  end?: number;
+}): JSX.Element {
   const {axis, dir, from, to} = p;
   const [lo, hi] = axis.scale.domain() as [number, number];
   const base = lo <= 0 && hi >= 0 && !axis.log ? 0 : lo;
@@ -385,8 +397,8 @@ export function ValueGrid(p: {axis: ValueAxis; dir: 'x' | 'y'; from: number; to:
       })}
       {p.title ? (
         dir === 'y'
-          ? <text className={css.axisTitle} x={from} y={Math.min(axis.scale(hi), axis.scale(lo)) - 10}>{p.title}</text>
-          : <text className={css.axisTitle} x={axis.scale(hi)} y={to + 30} textAnchor="end">{p.title}</text>
+          ? <text className={css.axisTitle} x={from} y={(p.end ?? Math.min(axis.scale(hi), axis.scale(lo))) - 10}>{p.title}</text>
+          : <text className={css.axisTitle} x={p.end ?? axis.scale(hi)} y={to + 30} textAnchor="end">{p.title}</text>
       ) : null}
     </g>
   );
@@ -404,19 +416,28 @@ export interface LegendItem {
   selected?: boolean;
 }
 
+/** Room for a legend label: 28 characters of mono 11. */
+const LEGEND_LABEL_PX = 28 * 6.6;
+
 /**
  * Swatch, label in ink and an optional mono value per series. Items with an entity select it on click; they are not
  * tab stops (the chart is the tab stop and its marks reach the same entities).
  */
-export function Legend(p: {items: readonly LegendItem[]; onPick?: (item: LegendItem) => void; end?: ReactNode}): JSX.Element | null {
-  if (p.items.length === 0 && !p.end) return null;
+export function Legend(p: {items: readonly LegendItem[]; onPick?: (item: LegendItem) => void; start?: ReactNode; end?: ReactNode}): JSX.Element | null {
+  if (p.items.length === 0 && !p.end && !p.start) return null;
   return (
     <div className={css.legend} data-chart-legend="">
+      {p.start ? <span className={css.legendValue} data-chart-summary="">{p.start}</span> : null}
       {p.items.map(item => {
+        // a long name gives way in the middle and keeps its last segment (design D12); the tooltip has all of it
+        const name = clipName(item.label, LEGEND_LABEL_PX);
         const body = (
           <>
             <span className={css.swatch} style={{background: item.color}} />
-            <span className={css.legendLabel} title={say(item.label, 200)}>{item.label}</span>
+            <span className={css.legendLabel} title={say(item.label, 200)}>
+              {name.dir ? <span className={css.legendDir}>{name.dir}</span> : null}
+              {name.base}
+            </span>
             {item.value ? <span className={css.legendValue}>{item.value}</span> : null}
           </>
         );
@@ -538,17 +559,29 @@ export function useInks(ref: RefObject<Element | null>, exprs: readonly string[]
 
 // ---------------------------------------------------------------- gates and boxes
 /**
+ * While a dataset is pending in a cell without a `size`, the drafting frame holds the height the chart is going to
+ * take, so the page does not reflow when the data arrives (design 5.1: drafting "at final size"). A sized cell
+ * already has its height.
+ */
+export function reserve(state: DataState<unknown>, size: string | undefined, gate: JSX.Element, height: number = DEFAULT_HEIGHT): JSX.Element {
+  return state.status === 'pending' && size == null ? <div style={{height}} data-chart-reserve="">{gate}</div> : gate;
+}
+
+/**
  * The first lines of every rows chart: dataset states through DataGate, then the shape check. `children` gets the
- * object rows, the ready state and how many entries were dropped for not being objects.
+ * object rows, the ready state and how many entries were dropped for not being objects. `size` is the cell's size
+ * prop and `height` the height the chart takes without one (see reserve).
  */
 export function RowsGate(p: {
   name: string;
   id: string;
   input: DataInput<Rows>;
+  size?: string;
+  height?: number;
   children: (rows: Rows, state: DataState<Rows>, skipped: number) => ReactNode;
 }): JSX.Element {
   const state = useDataset<Rows>(p.input);
-  return (
+  return reserve(state, p.size, (
     <DataGate state={state} id={`${p.name}#${p.id}`}>
       {(data, ready) => {
         const cleaned = cleanRows(data);
@@ -556,7 +589,7 @@ export function RowsGate(p: {
         return p.children(cleaned.rows, ready, cleaned.skipped);
       }}
     </DataGate>
-  );
+  ), p.height);
 }
 
 /** The measured plot box of a chart. Width and height are 0 until the first layout pass. */
@@ -569,6 +602,22 @@ export function useChartBox(size: string | undefined): {boxRef: RefObject<HTMLDi
 /** The server's colour slots for this surface (design 2.4), so an entity keeps its ink across plates. */
 export function useSlots(): SurfaceMeta['slots'] | undefined {
   return usePath<SurfaceMeta['slots']>(PATHS.metaSlots);
+}
+
+export type Slotter = (names: readonly string[], known?: Record<string, number>) => Map<string, number>;
+
+/**
+ * The kit's slot assignment for one chart, remembering what it gave last time (design D6): a series without a
+ * session slot keeps the ink it took when it first appeared, so a refresh that adds, drops or re-orders series does
+ * not repaint the ones that stay.
+ */
+export function useSlotter(): Slotter {
+  const held = useRef<Map<string, number> | null>(null);
+  return useCallback((names, known) => {
+    const next = assignSlots(names, known, held.current);
+    held.current = next;
+    return next;
+  }, []);
 }
 
 /** Height of a chart that is not given a size: the family default. */

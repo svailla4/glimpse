@@ -1,4 +1,4 @@
-// packages/viewer/vite.config.ts  (WP0, frozen)
+// packages/viewer/vite.config.ts  (first version by WP0; owned by the viewer kit)
 //   npm run dev   -w @glimpse/viewer    dev server on 127.0.0.1:5173
 //   npm run build -w @glimpse/viewer    static app in packages/viewer/dist (index.html + hashed files under assets/)
 // The server serves that directory under a strict Content-Security-Policy (script-src 'self'; style-src 'self'):
@@ -12,8 +12,22 @@
 //   `@layer gl.components { ... }`, kit modules in `@layer gl.kit { ... }`.
 // The dev server does not run the first step: there the order comes from src/main.tsx importing styles/tokens.css
 // before anything else.
+//
+// The eager script (budget: 200 kB gzip, design section 10). Two modules the A2UI packages import but this viewer
+// has no use for are aliased to small shims in src/kit/shims/ (each file says why it is safe):
+// - `zod-to-json-schema`: @a2ui/web_core needs it only to write a catalog out as JSON Schema;
+// - `@a2ui/web_core/v0_9/basic_catalog`: @a2ui/react takes the markdown-renderer registry from it, which drags in lit.
+// test/build.test.ts checks that both stay out and that the eager script keeps headroom under the budget.
+import {fileURLToPath} from 'node:url';
 import react from '@vitejs/plugin-react';
 import {defineConfig, type Plugin} from 'vite';
+
+const shim = (name: string) => fileURLToPath(new URL(`./src/kit/shims/${name}.ts`, import.meta.url));
+/** Exported for test/build.test.ts. */
+export const SHIMS = [
+  {find: /^zod-to-json-schema$/, replacement: shim('zod-to-json-schema')},
+  {find: /^@a2ui\/web_core\/v0_9\/basic_catalog$/, replacement: shim('a2ui-basic-catalog')},
+];
 
 const LAYER_ORDER = '@layer gl.tokens,gl.base,gl.kit,gl.components;';
 
@@ -47,6 +61,7 @@ export default defineConfig({
   resolve: {
     // @a2ui/web_core keeps module-level state (signals, registries): exactly one copy may be bundled.
     dedupe: ['@a2ui/web_core', 'react', 'react-dom', 'zod'],
+    alias: SHIMS,
   },
   server: {host: '127.0.0.1', port: 5173},
   preview: {host: '127.0.0.1', port: 4173},

@@ -4,7 +4,7 @@
 // + error boundary + lazy chunk + Suspense. Layout CSS for .gl-cell lives in styles/base.css.
 //
 // The box a view is given (one rule for the frame, base.css and every view):
-//   .gl-cell > .gl-frame > ... .gl-body > view      framed: the component carries the frame group and has a title
+//   .gl-cell > .gl-frame > ... .gl-body > view      framed: a non-layout component that takes `title` and has one
 //   .gl-cell > .gl-body > view                      everything else
 // base.css sizes the direct child of a cell that has data-size (`.gl-cell[data-size] > :is(.gl-frame, .gl-body)
 // { height: var(--gl-h) }`), and the frame lets its .gl-body take what is left under its header. So a view always
@@ -16,12 +16,14 @@
 //   handles for `child(token)`; the component ids behind them come from useChildIds(id[, prop]) and the surface id
 //   from useSurfaceId() (hooks.ts). Persistence keys (design 12.1) are built from those and useMeta().repo.name.
 // - The plate header. Controls and notes that belong in the header go through <PlateAside> (below).
+// - Errors. A view that throws shows a redline in its own cell. The boundary lets go of the error when the
+//   component's props change (new data, a patch), so a view comes back once what broke it is replaced.
 // - Other chunks. A view of another chunk is reused through borrowView() (below), never by importing its file.
 // - Styles. Component CSS Modules wrap their content in `@layer gl.components { ... }`; the build checks it.
-import {Component, Suspense, createContext, lazy, useContext, useState, type FC, type ReactNode} from 'react';
+import {Component, Suspense, createContext, lazy, useContext, useMemo, useState, type FC, type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
 import {createComponentImplementation, type ReactCatalogComponent} from '@a2ui/react';
-import type {ChildToken, Chunk, ComponentDef, PropMap, ViewProps} from '@glimpse/catalog';
+import {hasFrame, type ChildToken, type Chunk, type ComponentDef, type PropMap, type ViewProps} from '@glimpse/catalog';
 import type {AnyComponentDef} from '@glimpse/catalog';
 
 /** What every family view receives. */
@@ -45,7 +47,7 @@ export interface KitSlots {
    * with class `gl-body` that takes the height left under the header, and renders `aside` inside its header: that
    * is where <PlateAside> content of the view appears.
    */
-  Frame: FC<{id: string; def: ComponentDef; title: string; note?: string; aside?: ReactNode; children: ReactNode}>;
+  Frame: FC<{id: string; def: ComponentDef; title: string; note?: string; aside?: ReactNode; scope?: ReactNode; children: ReactNode}>;
   /** Suspense fallback and "dataset pending" look. */
   Drafting: FC<{label?: string}>;
   /** Error look. */
@@ -64,8 +66,31 @@ export interface ArrangeApi {
 /** No provider (the default) means no overrides: cells render exactly as specified. */
 export const ArrangeContext = createContext<ArrangeApi | null>(null);
 
-/** The header element <PlateAside> portals into; null when the view is not framed (or the frame did not mount it). */
-const AsideContext = createContext<HTMLElement | null>(null);
+/**
+ * Where the content of <PlateAside> (the plate header) and of the scope row under it goes: the element to portal
+ * into; null when the view has no plate (the content renders in place); false while the plate is mounting (the
+ * content waits one render instead of flashing in the body first).
+ */
+type Slot = HTMLElement | null | false;
+const AsideContext = createContext<Slot>(null);
+const ScopeContext = createContext<Slot>(null);
+
+/** The component a view renders for: what a state (Empty, Redline) reports to the host, and whose plate it sits in. */
+export interface CellInfo {
+  /** Catalog component name. */
+  name: string;
+  /** A2UI component id. */
+  id: string;
+  /** Whether implement() drew the plate frame around the view. */
+  framed: boolean;
+  /** Whether that plate gives its whole box to the view (no padding): states bring their own inset. */
+  flush: boolean;
+}
+const CellContext = createContext<CellInfo | null>(null);
+/** The cell the calling view is rendered in; null outside a component (the shell's own states). */
+export function useCell(): CellInfo | null {
+  return useContext(CellContext);
+}
 
 /**
  * Content a view owns but that belongs in its plate header: the marginal note for truncated data, a "Re-layout"
@@ -77,15 +102,58 @@ const AsideContext = createContext<HTMLElement | null>(null);
  */
 export function PlateAside(p: {children: ReactNode}): ReactNode {
   const header = useContext(AsideContext);
+  if (header === false) return null;
   return header ? createPortal(p.children, header) : <div className="gl-aside">{p.children}</div>;
 }
 
-class Boundary extends Component<{id: string; name: string; Redline: KitSlots['Redline']; children: ReactNode}, {error?: Error}> {
-  state: {error?: Error} = {};
-  static getDerivedStateFromError(error: Error) { return {error}; }
+/**
+ * The row under the plate header that says what the plate is scoped to (the drill crumb of DataGate). In place,
+ * inside <div class="gl-scope">, when there is no plate. Kit-internal: views get it through DataGate.
+ */
+export function PlateScope(p: {children: ReactNode}): ReactNode {
+  const row = useContext(ScopeContext);
+  if (row === false) return null;
+  return row ? createPortal(p.children, row) : <div className="gl-scope">{p.children}</div>;
+}
+
+const sameProps = (a: Record<string, unknown>, b: Record<string, unknown>): boolean => {
+  if (a === b) return true;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every(key => Object.is(a[key], b[key]));
+};
+
+interface BoundaryProps {
+  id: string;
+  name: string;
+  Redline: KitSlots['Redline'];
+  /** The resolved props of the component: when one of them changes, a caught error is let go and the view renders again. */
+  watch: Record<string, unknown>;
+  /** Called before the retry (a lazy chunk that failed to load is asked for again). */
+  onRetry?: () => void;
+  children: ReactNode;
+}
+interface BoundaryState {
+  error?: Error;
+  /** The props the view threw on: the retry waits until they are no longer the current ones. */
+  failed?: Record<string, unknown>;
+}
+class Boundary extends Component<BoundaryProps, BoundaryState> {
+  state: BoundaryState = {};
+  static getDerivedStateFromError(error: Error): BoundaryState { return {error, failed: undefined}; }
+  static getDerivedStateFromProps(props: BoundaryProps, state: BoundaryState): Partial<BoundaryState> | null {
+    return state.error && state.failed === undefined ? {failed: props.watch} : null;
+  }
+  componentDidUpdate() {
+    const {error, failed} = this.state;
+    if (error && failed && !sameProps(failed, this.props.watch)) {
+      this.props.onRetry?.();
+      this.setState({error: undefined, failed: undefined});
+    }
+  }
   render() {
     const {Redline, id, name, children} = this.props;
-    return this.state.error ? <Redline code="E_RENDER" id={`${name}#${id}`} message={this.state.error.message} /> : children;
+    // The redline reports itself to the host (states.tsx), so a render error always reaches the session log.
+    return this.state.error ? <Redline code="E_RENDER" id={`${name}#${id}`} message={this.state.error.message || String(this.state.error)} /> : children;
   }
 }
 
@@ -121,6 +189,54 @@ export function borrowView<D = AnyComponentDef>(load: () => Promise<ViewModule>,
 
 const SIZE_PX: Record<string, string> = {s: '160px', m: '280px', l: '420px', xl: '640px', fill: 'max(420px, calc(100vh - 160px))'};
 
+/** Families whose view is one table, code view or diagram: the plate gives them the whole box (design 8.3). */
+export const FLUSH_FAMILIES: ReadonlySet<string> = new Set(['data', 'diagram', 'code']);
+
+/**
+ * Whether implement() draws the plate when the component has a title: the catalog's rule (hasFrame), every
+ * non-layout component that carries the frame group title, note and size. Callout and CodeBlock take a `title` of
+ * their own (a lead-in, a file label) without that group and draw it themselves.
+ */
+export function isFrameable(def: {name: string; family: string; props: object}): boolean {
+  return hasFrame(def);
+}
+
+/**
+ * The id of the component whose plate implement() already drew around the calling view; null when there is none.
+ * The kit Frame reads it: a view that wraps itself in <Frame> for its own id gets no second plate.
+ */
+export const FramedContext = createContext<string | null>(null);
+
+type LazyLoader = () => Promise<ViewModule>;
+
+/**
+ * The lazy chunk modules that have arrived, by loader. React.lazy suspends on its first render even when the module
+ * is already here (a promise settles a tick later), and React 19 then holds the revealed boundary back for 300 ms:
+ * the whole grace a `show` gives a live tab to report what it drew (decision D3), and a needless drafting flash. A
+ * view of a chunk that has arrived therefore renders at once.
+ */
+const arrived = new WeakMap<LazyLoader, ViewModule>();
+
+/** Runs a lazy chunk's loader, and remembers the module once it is here. Every load of a lazy chunk goes through it. */
+export function loadChunk(loader: LazyLoader): Promise<ViewModule> {
+  return loader().then(module => {
+    arrived.set(loader, module);
+    return module;
+  });
+}
+
+/** The lazy component of one view of a lazy chunk; already resolved when the chunk has arrived (see `arrived`). */
+function lazyView(loader: LazyLoader, pick: (module: ViewModule) => FC<GlViewProps<any>>): FC<GlViewProps<any>> {
+  return lazy(() => {
+    const ready = arrived.get(loader);
+    if (!ready) return loadChunk(loader).then(module => ({default: pick(module)}));
+    // A thenable that calls back at once: React.lazy then takes the view in this very render.
+    const value = {default: pick(ready)};
+    // biome-ignore lint/suspicious/noThenProperty: a settled thenable is the point; a Promise would call back a tick later
+    return {then: (resolve: (loaded: typeof value) => void) => resolve(value)} as unknown as Promise<typeof value>;
+  }) as unknown as FC<GlViewProps<any>>;
+}
+
 export function implement<N extends string, P extends PropMap>(
   def: ComponentDef<N, P>,
   loaders: ChunkLoaders,
@@ -137,11 +253,21 @@ export function implement<N extends string, P extends PropMap>(
     </>
   );
   const loader = loaders[def.chunk];
+  // React.lazy keeps a rejection for good, so a chunk that failed to load gets a new lazy component when the
+  // boundary retries.
+  const load = typeof loader === 'function' ? () => lazyView(loader, module => module.views[def.name] ?? Missing) : undefined;
+  let Loaded: FC<GlViewProps<any>> | undefined = load?.();
+  const retry = load ? () => { Loaded = load(); } : undefined;
   const View: FC<GlViewProps<any>> =
     typeof loader === 'function'
-      ? lazy(async () => ({default: (await loader()).views[def.name] ?? Missing}))
+      ? props => {
+          const Current = Loaded as FC<GlViewProps<any>>;
+          return <Current {...props} />;
+        }
       : (loader.views[def.name] ?? Missing);
-  const frameable = def.family !== 'layout' && 'title' in def.props && 'note' in def.props && 'size' in def.props;
+  const frameable = isFrameable(def);
+  const hasNote = 'note' in def.props;
+  const flush = FLUSH_FAMILIES.has(def.family);
   const api = {
     name: def.name,
     schema: def.schema,
@@ -152,18 +278,27 @@ export function implement<N extends string, P extends PropMap>(
     const id: string = context.componentModel.id;
     const arranged = useContext(ArrangeContext)?.get(id);
     const [header, setHeader] = useState<HTMLElement | null>(null);
+    const [scope, setScope] = useState<HTMLElement | null>(null);
     const span: number | undefined = arranged?.span ?? props.span ?? undefined;
     const child = (token: ChildToken | undefined): ReactNode =>
       token == null ? null : typeof token === 'string' ? buildChild(token) : buildChild(token.id, token.basePath);
-    const framed = frameable && typeof props.title === 'string' && props.title !== '';
+    const title: string = frameable && typeof props.title === 'string' ? props.title.trim() : '';
+    const framed = title !== '';
+    const cell = useMemo<CellInfo>(() => ({name: def.name, id, framed, flush: framed && flush}), [id, framed]);
     const body = (
-      <AsideContext.Provider value={framed ? header : null}>
-        <Boundary id={id} name={def.name} Redline={Redline}>
-          <Suspense fallback={<Drafting />}>
-            <View id={id} props={props} child={child} />
-          </Suspense>
-        </Boundary>
-      </AsideContext.Provider>
+      <CellContext.Provider value={cell}>
+        <FramedContext.Provider value={framed ? id : null}>
+          <AsideContext.Provider value={framed ? (header ?? false) : null}>
+            <ScopeContext.Provider value={framed ? (scope ?? false) : null}>
+              <Boundary id={id} name={def.name} Redline={Redline} watch={props} onRetry={retry}>
+                <Suspense fallback={<Drafting />}>
+                  <View id={id} props={props} child={child} />
+                </Suspense>
+              </Boundary>
+            </ScopeContext.Provider>
+          </AsideContext.Provider>
+        </FramedContext.Provider>
+      </CellContext.Provider>
     );
     return (
       <div
@@ -182,7 +317,14 @@ export function implement<N extends string, P extends PropMap>(
         }}
       >
         {framed ? (
-          <Frame id={id} def={def as never} title={props.title} note={props.note} aside={<div className="gl-frame-aside" ref={setHeader} />}>
+          <Frame
+            id={id}
+            def={def as never}
+            title={title}
+            note={hasNote ? props.note : undefined}
+            aside={<div className="gl-frame-aside" ref={setHeader} />}
+            scope={<div className="gl-frame-scope" ref={setScope} />}
+          >
             {body}
           </Frame>
         ) : (

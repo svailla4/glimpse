@@ -220,9 +220,120 @@ describe('symbols', () => {
       .toEqual(['class point 2-4 +', 'fn helper 5-8', 'fn main 9-14 +']);
   });
 
-  it('caps the outline of a file with thousands of declarations', () => {
+  it('caps the outline of a file with thousands of declarations, and says how many there were', () => {
     const text = Array.from({length: 5000}, (_, i) => `export function f${i}() {}`).join('\n');
-    expect(scan('big.ts', text).symbols).toHaveLength(2000);
+    const facts = scan('big.ts', text);
+    expect(facts.symbols).toHaveLength(2000);
+    expect(facts.symbolsFound).toBe(5000);
+    // a file inside the cap carries no count: its outline is complete
+    expect(scan('small.ts', 'export function f() {}\n').symbolsFound).toBeUndefined();
+  });
+
+  it('Python: module constants with a type annotation, private ones included', () => {
+    const text = [
+      'PRESERVED: Final[set[str]] = load()',
+      '_DEFAULT_VERSION: Final[str] = "0.9"',
+      '_LOCALIZABLE: Final[tuple[str, ...]] = (',
+      '    "a.json",',
+      ')',
+      '__ALL_CAPS = 1',
+      '_not_a_constant = 2',
+      'value == OTHER',
+      'def f():',
+      '    LOCAL = 1',
+    ].join('\n');
+    expect(symbols('consts.py', text)).toEqual(['const PRESERVED 1 +', 'const _DEFAULT_VERSION 2', 'const _LOCALIZABLE 3-5', 'const __ALL_CAPS 6', 'fn f 9-10 +']);
+  });
+
+  it('Dart: generic return types with spaces and signatures that break after the parenthesis', () => {
+    const text = [
+      'class Processor<T> {',
+      '  PayloadValidator<T, Impl> validatorFor(',
+      '    Catalog<T, Impl> catalog, {',
+      '    Version version = Version.v1,',
+      '  }) {',
+      '    return make(catalog);',
+      '  }',
+      '',
+      '  Catalog<T, Impl> catalogFor(String id) {',
+      '    for (final Catalog<T, Impl> catalog in catalogs) {',
+      '      if (catalog.id == id) return catalog;',
+      '    }',
+      '    throw StateError(',
+      "      'none',",
+      '    );',
+      '  }',
+      '',
+      '  Future<Object?> callAgent(',
+      '    String surfaceId,',
+      '  ) async {',
+      '    final result = await run(',
+      '      surfaceId,',
+      '    );',
+      '    return Scaffold(',
+      '      body: Container(',
+      '        child: Text(surfaceId),',
+      '      ),',
+      '    );',
+      '  }',
+      '',
+      '  static Map<String, Object?> _normalize(Map<String, Object?> raw) => raw;',
+      '  String? _name() => null;',
+      '}',
+    ].join('\n');
+    // every declaration, and nothing from the bodies: calls that break after their parenthesis are not signatures
+    expect(scan('p.dart', text).symbols.map(symbol => `${symbol.kind} ${symbol.name} ${symbol.line}`)).toEqual([
+      'class Processor 1', 'method validatorFor 2', 'method catalogFor 9', 'method callAgent 18', 'method _normalize 31', 'method _name 32',
+    ]);
+  });
+});
+
+// F092: SymbolOutline on a README was always the empty state.
+describe('Markdown outline', () => {
+  const README = [
+    '---',
+    '# not a heading: a YAML comment in the front matter',
+    'title: x',
+    '---',
+    '# Glimpse',
+    '',
+    'Intro.',
+    '',
+    '## Install `npm i`',
+    '',
+    '```sh',
+    '# a shell comment, not a heading',
+    '```',
+    '',
+    '### From [source](https://example.com) ###',
+    '',
+    '## Usage',
+    '#hashtag is no heading',
+    '####### seven is no heading',
+    '',
+  ].join('\n');
+
+  it('lists ATX headings as symbols, nested by level, each running to the next heading of its level or higher', () => {
+    const facts = scan('README.md', README);
+    expect(facts.symbols).toEqual([
+      {name: 'Glimpse', kind: 'heading', line: 5, endLine: 19, depth: 0, exported: true},
+      {name: 'Install npm i', kind: 'heading', line: 9, endLine: 16, depth: 1, exported: true},
+      {name: 'From source', kind: 'heading', line: 15, endLine: 16, depth: 2, exported: true},
+      {name: 'Usage', kind: 'heading', line: 17, endLine: 19, depth: 1, exported: true},
+    ]);
+    // no imports, no complexity: prose stays prose
+    expect(facts.imports).toEqual([]);
+    expect(facts.complexity).toBe(0);
+  });
+
+  it('ignores headings in code fences of either kind and keeps a fence open until its own closing run', () => {
+    const text = '~~~~\n# in tilde fence\n~~~\n# still inside\n~~~~\n# Out\n````md\n```\n# inside\n````\n## Last\n';
+    expect(scan('notes.md', text).symbols.map(symbol => `${symbol.name} ${symbol.line}`)).toEqual(['Out 6', 'Last 11']);
+  });
+
+  it('is empty for a file with no headings, and source files keep their own outline', () => {
+    expect(scan('NOTES.md', 'just text\n').symbols).toEqual([]);
+    expect(scan('a.ts', '# not markdown\nexport function f() {}\n').symbols.map(symbol => symbol.kind)).toEqual(['fn']);
   });
 });
 

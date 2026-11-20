@@ -101,7 +101,7 @@ describe('DataTable: columns and cells', () => {
     d: '2026-11-12T00:00:00Z', ba: 50, h: 8, sp: [1, 4, 2], ch: 'A', de: {add: 12, del: 4}, co: '  return x;', bo: true};
 
   it('renders every FieldKind', async () => {
-    const view = renderExpress(page(`DataTable($/rows,'${ALL}')`), {data: {'/rows': [ROW, {...ROW, p: 'src/b.ts', ba: 100, h: 16, bo: false}]}});
+    const view = renderExpress(page(`DataTable($/rows,'${ALL}')`), {data: {'/rows': [ROW, {...ROW, p: 'src/b.ts', m: 'typescript/renderers', ba: 100, h: 16, bo: false}]}});
     await ready(view);
     const cell = (kind: string, row = 0) => rowAt(view, row).querySelector<HTMLElement>(`[data-kind="${kind}"]`)!;
     expect(new Set(cellsOf(rowAt(view, 0)).map(c => c.getAttribute('data-kind'))).size).toBe(19);
@@ -110,8 +110,12 @@ describe('DataTable: columns and cells', () => {
     expect(cell('path').querySelector('.gl-path')!.textContent).toContain('a.ts:3');
     expect(cell('symbol').querySelector('[data-entity-type="symbol"]')!.textContent).toBe('login');
     expect(cell('module').querySelector('[data-entity-type="module"]')!.getAttribute('data-entity-id')).toBe('auth');
+    // a module that is a directory keeps its last segment on screen (D12), like a path
+    expect(cell('module').querySelector('.gl-path')).toBeNull();
     expect(cell('author').querySelector('[data-entity-type="author"]')!.textContent).toBe('Mira');
     expect(cell('commit').querySelector('[data-entity-type="commit"]')!.textContent).toBe('4f2a91c');
+    expect(cell('module', 1).querySelector('.gl-path-base')!.textContent).toBe('renderers');
+    expect(cell('module', 1).querySelector('[data-entity-type="module"]')!.getAttribute('data-entity-id')).toBe('typescript/renderers');
     expect(cell('lang').textContent).toBe('TypeScript');
     expect(cell('lang').querySelector('button')).toBeNull();
     expect(cell('text').textContent).toBe('plain');
@@ -209,11 +213,12 @@ describe('DataTable: columns and cells', () => {
   it('drops priority 3 columns on a narrow plate', async () => {
     const wide = renderExpress(page("DataTable('files.list')"), {datasets: 'ready', data: {'/ds/files_list': {...datasetFixture('files.list'), pageable: false}}});
     await ready(wide);
-    expect(headers(wide).map(h => h.textContent)).toEqual(['File', 'lang', 'LOC', 'bytes', 'commits', 'complexity']);
+    const keys = (view: RenderedSpec) => [...view.cell('t').querySelectorAll<HTMLElement>('[data-head]')].map(h => h.getAttribute('data-head'));
+    expect(keys(wide)).toEqual(['path', 'lang', 'loc', 'bytes', 'commits', 'complexity']);
     wide.unmount();
     const narrow = renderExpress(page("DataTable('files.list')"), {datasets: 'ready', size: {width: 440, height: 600}, data: {'/ds/files_list': {...datasetFixture('files.list'), pageable: false}}});
     await ready(narrow);
-    expect(headers(narrow).map(h => h.textContent)).toEqual(['File', 'lang', 'LOC', 'commits']);
+    expect(keys(narrow)).toEqual(['path', 'lang', 'loc', 'commits']);
   });
 });
 
@@ -486,6 +491,30 @@ describe('DataTable: remote paging', () => {
     await waitFor(() => expect(host.queries.length).toBeGreaterThan(settled));
     expect(host.queries.at(-1)).toMatchObject({offset: 0, limit: 200});
     expect(firstCells(view)[0]).toContain('file-0.ts');
+  });
+
+  it('keeps the rows of the old run up while a re-run under the same key loads, and then shows only the new run', async () => {
+    const pending: Array<() => void> = [];
+    let run = 'old';
+    const rows = (q: RowsQuery) => {
+      const tag = run;
+      return new Promise<RowsPage>(resolve => {
+        pending.push(() => resolve({total: TOTAL, offset: q.offset ?? 0, rows: Array.from({length: 200}, (_, i) => ({path: `${tag}-${(q.offset ?? 0) + i}.ts`, loc: i}))}));
+      });
+    };
+    const view = renderExpress(page("DataTable('files.list')"), {datasets: 'ready', host: {rows}, data: {'/ds/files_list': bigDataset()}});
+    await ready(view);
+    await act(async () => pending.shift()!());
+    expect(firstCells(view)[0]).toContain('old-0.ts');
+    // a refresh: the server re-runs the source and publishes a new envelope under the same key
+    run = 'new';
+    view.setData('/ds/files_list', {...bigDataset(), elapsedMs: 7});
+    await view.settle();
+    expect(firstCells(view)[0]).toContain('old-0.ts');
+    expect(view.cell('t').querySelector('[role="grid"]')!.getAttribute('aria-busy')).toBe('true');
+    await act(async () => pending.at(-1)!());
+    expect(firstCells(view)[0]).toContain('new-0.ts');
+    expect(rowsOf(view).some(row => row.textContent?.includes('old-'))).toBe(false);
   });
 
   it('keeps the rows it shows while a new sort order loads', async () => {

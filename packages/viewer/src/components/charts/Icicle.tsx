@@ -1,5 +1,6 @@
-// Icicle: the hierarchy as stacked 20 px rows, width by a metric. Clicking a directory zooms its subtree to full
-// width; the top row (or Backspace) zooms back out.
+// Icicle: the hierarchy as stacked rows (20 px, up to 32 px in a sized cell that has the room), width by a metric.
+// Clicking a directory zooms its subtree to full width; the top row (or Backspace) zooms back out. A rollup cell
+// drills the dataset; the way back out of a drill is the scope crumb the kit shows (and Backspace at the top).
 import type {DirNode} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {partition, type HierarchyNode} from 'd3-hierarchy';
@@ -7,12 +8,16 @@ import {useId, useMemo, useRef, useState, type JSX} from 'react';
 import {Empty, fmtNum, useHostActions, useMeta, type DataState, type GlView} from '../../kit/index.ts';
 import css from './Icicle.module.css';
 import {
-  Crumbs, Figure, METRIC_FORMAT, Note, TreeGate, clip, count, createPainter, kit, nodeEntity, nodeMatches, notes, say, spatialStep,
-  useChartBox, useDrawIn, useMarkNav, useSlots, viewTree, type CleanTree, type ColorMode, type Mark, type Metric, type TreeNode,
+  Crumbs, Figure, METRIC_FORMAT, Note, TreeGate, clip, clipTail, count, createPainter, kit, nodeEntity, nodeMatches, notes, rootLabel, say, spatialStep,
+  useChartBox, useDrawIn, useMarkNav, useSlots, useSlotter, viewTree, type CleanTree, type ColorMode, type Mark, type Metric, type TreeNode,
 } from './chartkit/index.ts';
 
 const ROW = 20;
 const PITCH = ROW + 1;
+/** In a sized cell the rows grow to use the height, up to this pitch. */
+const MAX_PITCH = 33;
+/** Height kept for the legend under the rows of a sized cell. */
+const LEGEND_ROOM = 30;
 
 interface Cell {
   node: TreeNode;
@@ -25,13 +30,16 @@ interface Cell {
 interface Layout {
   width: number;
   height: number;
+  /** Height of a row. */
+  row: number;
   cells: Cell[];
   marks: Mark[];
 }
 
-function layoutRows(view: HierarchyNode<TreeNode>, metric: Metric, width: number): Layout {
+function layoutRows(view: HierarchyNode<TreeNode>, metric: Metric, width: number, pitch: number): Layout {
   const levels = view.height + 1;
-  const laid = partition<TreeNode>().size([width, levels * PITCH])(view);
+  const row = pitch - 1;
+  const laid = partition<TreeNode>().size([width, levels * pitch])(view);
   const cells: Cell[] = [];
   const marks: Mark[] = [];
   const format = METRIC_FORMAT[metric];
@@ -41,11 +49,11 @@ function layoutRows(view: HierarchyNode<TreeNode>, metric: Metric, width: number
     if (w < 1) return;
     const node = item.data;
     const value = item.value ?? 0;
-    const y = item.depth * PITCH;
+    const y = item.depth * pitch;
     cells.push({node, x: item.x0, y, w, depth: item.depth, value});
     const where = node.path || node.name || 'root';
     marks.push({
-      x: item.x0, y, w, h: ROW,
+      x: item.x0, y, w, h: row,
       title: node.rollup ? `${where} ${node.name}` : where,
       rows: [{label: metric, value: `${fmtNum(value, format)}${total > 0 ? ` (${fmtNum((value / total) * 100, 'pct')})` : ''}`}, ...(node.lang && !node.rollup ? [{label: 'lang', value: node.lang}] : [])],
       foot: node.rollup ? 'Enter drills into this directory' : item.depth === 0 ? (node.parent ? 'Enter zooms out' : undefined) : node.children.length > 0 ? 'Enter zooms in' : undefined,
@@ -53,7 +61,7 @@ function layoutRows(view: HierarchyNode<TreeNode>, metric: Metric, width: number
       say: `${say(node.rollup ? `${node.name} in ${where}` : where)}, ${fmtNum(value, format)} ${metric}${node.dir ? ', directory' : ''}`,
     });
   });
-  return {width, height: levels * PITCH - 1, cells, marks};
+  return {width, height: levels * pitch - 1, row, cells, marks};
 }
 
 function Plot(p: {id: string; tree: CleanTree; state: DataState<DirNode>; props: C.ViewProps<typeof C.Icicle>}): JSX.Element {
@@ -86,13 +94,17 @@ function Rows(p: {
 }): JSX.Element {
   const {id, tree, root, view, metric, state} = p;
   const slots = useSlots();
+  const assign = useSlotter();
   const meta = useMeta();
   const host = useHostActions(id);
-  const {boxRef, fill, width} = useChartBox(p.size);
-  const layout = useMemo(() => (width <= 0 ? undefined : layoutRows(view, metric, width)), [view, metric, width]);
+  const {boxRef, fill, width, height: boxHeight} = useChartBox(p.size);
+  // a sized cell is given to the rows: they grow from 20 px up to 32 px before any of it is left blank
+  const levels = view.height + 1;
+  const pitch = fill ? Math.max(PITCH, Math.min(MAX_PITCH, Math.floor((boxHeight - LEGEND_ROOM) / levels))) : PITCH;
+  const layout = useMemo(() => (width <= 0 ? undefined : layoutRows(view, metric, width, pitch)), [view, metric, width, pitch]);
   const painter = useMemo(
-    () => createPainter(p.color, (layout?.cells ?? []).filter(cell => cell.node.children.length === 0).map(cell => ({node: cell.node, weight: cell.value})), slots),
-    [p.color, layout, slots],
+    () => createPainter(p.color, (layout?.cells ?? []).filter(cell => cell.node.children.length === 0).map(cell => ({node: cell.node, weight: cell.value})), slots, tree.langs, assign),
+    [p.color, layout, slots, tree.langs, assign],
   );
   const zoom = (path: string) => {
     const target = tree.byPath.get(path);
@@ -126,7 +138,9 @@ function Rows(p: {
     activate,
     key: event => {
       if (event.key !== 'Backspace') return false;
-      p.onZoom(root.parent?.path ?? '');
+      // at the top of the tree Backspace steps out of a drill (design D1), else it zooms out one level
+      if (!root.parent && state.ds?.drill) host.drill(state.ds.$ds, state.ds.drill.up);
+      else p.onZoom(root.parent?.path ?? '');
       return true;
     },
   });
@@ -136,8 +150,10 @@ function Rows(p: {
   const drawing = useDrawIn();
   const uid = useId().replace(/[^A-Za-z0-9_-]/g, '');
   const picked = nav.picked;
+  const rootName = rootLabel(tree, meta?.repo.name, state.ds?.drill !== undefined);
   const drawn = useMemo(() => layout?.cells.map((cell, i) => {
     const {node} = cell;
+    const row = layout.row;
     const paint = node.children.length > 0 ? undefined : painter.fill(node, cell.depth);
     return (
       <g
@@ -151,12 +167,12 @@ function Rows(p: {
           if (!event.metaKey && !event.ctrlKey) zoomCell.current(i);
         }}
       >
-        <rect className={paint ? undefined : css.dir} x={cell.x} y={cell.y} width={cell.w} height={ROW} style={paint ? {fill: paint.color} : undefined} />
-        {node.rollup ? <rect x={cell.x} y={cell.y} width={cell.w} height={ROW} fill={`url(#${uid}-hatch)`} /> : null}
-        {cell.w >= 28 ? <text className={paint?.strong ? css.onStrong : css.onLight} x={cell.x + 5} y={cell.y + 14}>{clip(cell.depth === 0 && !node.name ? (meta?.repo.name ?? 'root') : node.name, cell.w - 10)}</text> : null}
+        <rect className={paint ? undefined : css.dir} x={cell.x} y={cell.y} width={cell.w} height={row} style={paint ? {fill: paint.color} : undefined} />
+        {node.rollup ? <rect x={cell.x} y={cell.y} width={cell.w} height={row} fill={`url(#${uid}-hatch)`} /> : null}
+        {cell.w >= 28 ? <text className={paint?.strong ? css.onStrong : css.onLight} x={cell.x + 5} y={cell.y + row / 2} dy="0.36em">{clip(node === tree.root ? clipTail(rootName, cell.w - 10) : node.name, cell.w - 10)}</text> : null}
       </g>
     );
-  }), [layout, painter, picked, uid, meta]);
+  }), [layout, painter, picked, uid, rootName, tree.root]);
 
   const selection = nav.selected;
   const outline = layout && selection ? layout.cells.find(cell => {
@@ -164,7 +180,6 @@ function Rows(p: {
     return entity.type === selection.type && entity.id === selection.id && !cell.node.rollup;
   }) : undefined;
   const leaves = layout?.cells.filter(cell => cell.node.children.length === 0).length ?? 0;
-  const levels = view.height + 1;
   const aria = `Icicle of ${metric}${root.path ? ` in ${say(root.path, 60)}` : ''}, ${levels} ${levels === 1 ? 'level' : 'levels'}, ${fmtNum(leaves)} ${leaves === 1 ? 'leaf' : 'leaves'}, total ${fmtNum(view.value ?? 0, METRIC_FORMAT[metric])}`;
 
   return (
@@ -177,10 +192,11 @@ function Rows(p: {
       width={layout?.width ?? 0}
       height={layout?.height ?? (fill ? 0 : PITCH * 3)}
       drawing={drawing}
-      compact
+      compact={!fill}
       rings={false}
-      header={<Crumbs root={meta?.repo.name ?? (tree.root.name || 'root')} node={root} onZoom={zoom} />}
-      footer={painter.legend()}
+      header={<Crumbs root={rootName} node={root} onZoom={zoom} />}
+      under={fill ? painter.legend() : undefined}
+      footer={fill ? undefined : painter.legend()}
     >
       {layout ? (
         <>
@@ -190,7 +206,7 @@ function Rows(p: {
             </pattern>
           </defs>
           <g className={kit.fade}>{drawn}</g>
-          {outline ? <rect className={kit.sel} x={outline.x + 0.75} y={outline.y + 0.75} width={Math.max(0, outline.w - 1.5)} height={ROW - 1.5} data-selected-cell="" /> : null}
+          {outline ? <rect className={kit.sel} x={outline.x + 0.75} y={outline.y + 0.75} width={Math.max(0, outline.w - 1.5)} height={layout.row - 1.5} data-selected-cell="" /> : null}
         </>
       ) : null}
     </Figure>
@@ -198,7 +214,7 @@ function Rows(p: {
 }
 
 export const IcicleView: GlView<typeof C.Icicle> = ({id, props}) => (
-  <TreeGate name="Icicle" id={id} input={props.data}>
+  <TreeGate name="Icicle" id={id} input={props.data} size={props.size} height={150}>
     {(tree, state) => <Plot id={id} tree={tree} state={state} props={props} />}
   </TreeGate>
 );

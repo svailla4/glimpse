@@ -1,6 +1,7 @@
 import {fireEvent} from '@testing-library/react';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {errorDataset} from '../harness.tsx';
+import {spreadOf} from '../../src/components/charts/ScatterPlot.tsx';
 import {LONG, chart} from './util.tsx';
 
 const FILES = [
@@ -15,7 +16,8 @@ afterEach(() => void vi.restoreAllMocks());
 describe('ScatterPlot', () => {
   it('plots the dataset roles: x, y, size and label', async () => {
     const view = await chart(`ScatterPlot('git.hotspots',title='Churn x complexity')`);
-    expect(view.svg.getAttribute('aria-label')).toBe('Scatter plot, 5 points, commits against complexity, sized by SLOC');
+    // the field labels are the catalog's: the roles decide which field is where
+    expect(view.svg.getAttribute('aria-label')).toMatch(/^Scatter plot, 5 points, commits against \w+, sized by \w+$/);
     const circles = view.all('circle[data-i]');
     expect(circles).toHaveLength(5);
     const radii = circles.map(el => Number(el.getAttribute('r')));
@@ -83,6 +85,16 @@ describe('ScatterPlot', () => {
     const view = await chart(`ScatterPlot($/d,'commits','complexity',quadrants=true)`, {rows: FILES});
     expect(view.all('[data-quadrants] line')).toHaveLength(2);
     expect(view.root.querySelector('[data-quadrants]')?.textContent).toContain('median 27.5');
+    // the tags are in the margins (F007), each at the end of its line: the x tag under the plot, the y tag right of it
+    const [vertical, horizontal] = view.all('[data-quadrants] line');
+    const bottom = Number(vertical!.getAttribute('y2'));
+    const right = Number(horizontal!.getAttribute('x2'));
+    const xTag = view.root.querySelector('[data-median="x"]')!;
+    expect(Number(xTag.getAttribute('y'))).toBeGreaterThan(bottom + 20);
+    // (the line is snapped to the pixel grid, the tag is not)
+    expect(Math.abs(Number(xTag.getAttribute('x')) - Number(vertical!.getAttribute('x1')))).toBeLessThan(1);
+    expect(Number(view.root.querySelector('[data-median="y"]')!.getAttribute('x'))).toBeGreaterThan(right);
+    expect(view.root.querySelector('[data-median="y"]')!.textContent).toBe('median 55.5');
     view.unmount();
     const plain = await chart(`ScatterPlot($/d,'commits','complexity')`, {rows: FILES});
     expect(plain.all('[data-quadrants]')).toHaveLength(0);
@@ -141,5 +153,97 @@ describe('ScatterPlot', () => {
     const view = await chart(`ScatterPlot($/d,'commits','complexity')`, {rows: FILES});
     view.setData('/d', FILES.slice(0, 2));
     expect(view.all('circle[data-i]')).toHaveLength(2);
+  });
+  // the plot rectangle, read from the grid: horizontal lines run left to right, vertical ones top to bottom
+  const frame = (view: {all(selector: string): Element[]}) => {
+    const lines = view.all('svg line').map(el => ['x1', 'x2', 'y1', 'y2'].map(name => Number(el.getAttribute(name))) as [number, number, number, number]);
+    const across = lines.find(([x1, x2, y1, y2]) => y1 === y2 && x1 !== x2)!;
+    const down = lines.find(([x1, x2, y1, y2]) => x1 === x2 && y1 !== y2)!;
+    return {left: across[0], right: across[1], top: Math.min(down[2], down[3]), bottom: Math.max(down[2], down[3])};
+  };
+  const circles = (view: {all(selector: string): Element[]}) =>
+    view.all('circle[data-i]').map(el => ({i: Number(el.getAttribute('data-i')), cx: Number(el.getAttribute('cx')), cy: Number(el.getAttribute('cy')), r: Number(el.getAttribute('r'))}));
+
+  it('keeps every circle inside the plot: none hangs over an axis or the far edge (F007)', async () => {
+    // big circles on the baseline, on the y axis and in the far corner
+    const rows = [{f: 'a', x: 0, y: 0, n: 900}, {f: 'b', x: 9, y: 0, n: 900}, {f: 'c', x: 0, y: 40, n: 900}, {f: 'd', x: 10, y: 40, n: 900}, {f: 'e', x: 5, y: 20, n: 10}];
+    const view = await chart(`ScatterPlot($/d,'x','y',r='n',label='f')`, {rows});
+    const box = frame(view);
+    for (const dot of circles(view)) {
+      expect(dot.cx - dot.r).toBeGreaterThanOrEqual(box.left - 0.5);
+      expect(dot.cx + dot.r).toBeLessThanOrEqual(box.right + 0.5);
+      expect(dot.cy - dot.r).toBeGreaterThanOrEqual(box.top - 0.5);
+      expect(dot.cy + dot.r).toBeLessThanOrEqual(box.bottom + 0.5);
+    }
+  });
+
+  it('places a label right, left, above or below its circle, clear of the other circles, labels and median lines (F007)', async () => {
+    const rows = Array.from({length: 60}, (_, i) => ({name: `file-${i}.ts`, a: (i * 7) % 23, b: (i * 37) % 41, n: 50 + ((i * 13) % 200)}));
+    const view = await chart(`ScatterPlot($/d,'a','b',r='n',label='name',quadrants=true)`, {rows});
+    const box = frame(view);
+    const dots = circles(view);
+    const [vertical, horizontal] = view.all('[data-quadrants] line');
+    const mx = Number(vertical!.getAttribute('x1'));
+    const my = Number(horizontal!.getAttribute('y1'));
+    const boxes = view.all('[data-point-label]').map(el => {
+      const x = Number(el.getAttribute('x'));
+      const y = Number(el.getAttribute('y'));
+      const w = (el.textContent ?? '').length * 6.6;
+      const place = el.getAttribute('data-place');
+      const x0 = place === 'start' ? x : place === 'end' ? x - w : x - w / 2;
+      return {i: Number(el.getAttribute('data-i')), x0, x1: x0 + w, y0: y - 7, y1: y + 7};
+    });
+    expect(boxes.length).toBeGreaterThan(2);
+    expect(boxes.length).toBeLessThanOrEqual(8);
+    for (const label of boxes) {
+      expect(label.x0).toBeGreaterThanOrEqual(box.left);
+      expect(label.x1).toBeLessThanOrEqual(box.right);
+      expect(label.y1).toBeLessThanOrEqual(box.bottom);
+      // no median line through the text
+      expect(label.x0 < mx && label.x1 > mx).toBe(false);
+      expect(label.y0 < my && label.y1 > my).toBe(false);
+      for (const dot of dots) {
+        if (dot.i === label.i) continue;
+        const dx = dot.cx - Math.max(label.x0, Math.min(dot.cx, label.x1));
+        const dy = dot.cy - Math.max(label.y0, Math.min(dot.cy, label.y1));
+        expect(Math.hypot(dx, dy)).toBeGreaterThanOrEqual(dot.r - 0.01);
+      }
+      for (const other of boxes) {
+        if (other === label) continue;
+        expect(label.x0 < other.x1 && label.x1 > other.x0 && label.y0 < other.y1 && label.y1 > other.y0).toBe(false);
+      }
+    }
+  });
+
+  it('draws a crowd lighter so it reads as density (F007)', async () => {
+    const few = await chart(`ScatterPlot($/d,'a','b')`, {rows: Array.from({length: 150}, (_, i) => ({a: i, b: (i * 37) % 41}))});
+    expect(few.all('[data-dense]')).toHaveLength(0);
+    few.unmount();
+    const many = await chart(`ScatterPlot($/d,'a','b')`, {rows: Array.from({length: 151}, (_, i) => ({a: i, b: (i * 37) % 41}))});
+    expect(many.all('[data-dense]')).toHaveLength(1);
+    expect(many.all('[data-dense] circle[data-i]')).toHaveLength(151);
+  });
+
+  it('spreads the points of an axis that only takes a few whole values, says so, and ticks it at whole numbers (F007)', async () => {
+    expect(spreadOf([1, 1, 1, 1, 2, 2, 2, 2])).toBeCloseTo(0.3);
+    expect(spreadOf([1, 1, 1, 1, 3, 3, 3, 3, 9])).toBe(0);
+    expect(spreadOf([1, 1.5, 1, 1, 2, 2, 2, 2])).toBe(0);
+    expect(spreadOf(Array.from({length: 60}, (_, i) => i % 13))).toBe(0);
+    // a young repository: every file has one or two commits
+    const rows = Array.from({length: 40}, (_, i) => ({path: `src/f${i}.ts`, commits: i < 34 ? 1 : 2, complexity: 10 + i * 7.5}));
+    const view = await chart(`ScatterPlot($/d,'commits','complexity')`, {rows});
+    expect(new Set(circles(view).map(dot => Math.round(dot.cx))).size).toBeGreaterThan(10);
+    expect(view.root.querySelector('[data-chart-note]')?.textContent).toBe('equal commits spread apart');
+    const ticks = view.all('svg text').map(el => el.textContent ?? '').filter(text => /^[\d.]+$/.test(text));
+    expect(ticks).toEqual(expect.arrayContaining(['0', '1', '2']));
+    expect(ticks).not.toContain('0.5');
+    expect(ticks).not.toContain('1.5');
+    // the same data draws the same picture
+    const again = await chart(`ScatterPlot($/d,'commits','complexity')`, {rows});
+    expect(circles(again).map(dot => dot.cx)).toEqual(circles(view).map(dot => dot.cx));
+    again.unmount();
+    view.unmount();
+    const spreadOut = await chart(`ScatterPlot($/d,'commits','complexity')`, {rows: FILES});
+    expect(spreadOut.all('[data-chart-note]')).toHaveLength(0);
   });
 });

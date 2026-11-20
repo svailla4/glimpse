@@ -5,7 +5,7 @@ import type {DiffFile, DiffLine, TokenLine} from '@glimpse/catalog';
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
 import {createCodeService} from '../../src/code/index.ts';
 import type {CodeService} from '../../src/contracts.ts';
-import {createDiffService, listChanges, wordMarks} from '../../src/git/diff.ts';
+import {capHunks, createDiffService, listChanges, MAX_FILE_DIFF_LINES, wordMarks, type RawHunk} from '../../src/git/diff.ts';
 import {FIXTURE, git, makeFixtureRepo, type FixtureRepo} from '../fixtures/repo.ts';
 import {makeContext, type TestContext} from './context.ts';
 
@@ -286,6 +286,44 @@ describe('createDiffService budget and odd content', () => {
     expect(loaded.files[0]!.hunks).toHaveLength(1);
   });
 
+  it('cuts one enormous file to 5,000 diff lines when it is asked for by path, and says what was left out', async () => {
+    await writeFile(join(repo.root, 'huge.ts'), Array.from({length: 12_000}, (_, i) => `export const n${i} = ${i};`).join('\n') + '\n');
+    const service = createDiffService(ctx, code);
+    const payload = await service.diff({range: 'wt', path: 'huge.ts'});
+    const huge = payload.files[0]!;
+    // the totals are those of the change; only what is drawn is cut
+    expect(huge).toMatchObject({add: 12_000, del: 0});
+    expect(payload.totals).toEqual({files: 1, add: 12_000, del: 0});
+    expect(huge.hunks!.reduce((sum, hunk) => sum + hunk.lines.length, 0)).toBe(MAX_FILE_DIFF_LINES);
+    expect(huge.hunks![0]).toMatchObject({oldStart: 0, oldLines: 0, newStart: 1, newLines: 5_000, header: '@@ -0,0 +1,5000 @@'});
+    expect(huge.hunks![0]!.lines.at(-1)).toMatchObject({t: '+', n: 5_000});
+    expect(huge.hunks!.at(-1)).toEqual({oldStart: 0, oldLines: 0, newStart: 5_001, newLines: 0, header: '@@ 7,000 more diff lines not shown: the change is too large for one view @@', lines: []});
+    // the answer stays small: it used to be megabytes for a file like this
+    expect(JSON.stringify(payload).length).toBeLessThan(600_000);
+  });
+
+  it('never shows what is not a file of the project: .git, ignored files, untracked dependency trees', async () => {
+    await writeFile(join(repo.root, 'debug.log'), 'marker-only-in-ignored-files\n');
+    await mkdir(join(repo.root, 'vendor/node_modules/dep'), {recursive: true});
+    await writeFile(join(repo.root, 'vendor/node_modules/dep/index.js'), 'module.exports = 1;\n');
+    await appendFile(join(repo.root, '.git/config'), '# a comment nobody should be shown\n');
+    try {
+      const service = createDiffService(ctx, code);
+      expect((await service.diff({range: 'wt'})).files).toEqual([]);
+      expect(summary((await listChanges(ctx, 'wt')).files)).toEqual([]);
+      for (const path of ['.git/config', '.git/HEAD', 'debug.log', 'vendor/node_modules/dep/index.js']) {
+        const answer = await service.diff({range: 'wt', path});
+        expect(answer.files, path).toEqual([]);
+        expect(JSON.stringify(answer), path).not.toMatch(/marker-only|nobody should/);
+      }
+      // a real untracked file beside them is still a change
+      await writeFile(join(repo.root, 'vendor/own.ts'), 'export const own = 1;\n');
+      expect(summary((await service.diff({range: 'wt'})).files)).toEqual([['vendor/own.ts', 'A', 1, 0]]);
+    } finally {
+      await rm(join(repo.root, 'debug.log'));
+    }
+  });
+
   it('leaves out the hunks of a file that alone exceeds the line budget, until it is asked for', async () => {
     await writeFile(join(repo.root, 'big.ts'), Array.from({length: 3_200}, (_, i) => `export const n${i} = ${i};`).join('\n') + '\n');
     await appendFile(join(repo.root, 'src/index.ts'), '// tail\n');
@@ -347,6 +385,30 @@ describe('createDiffService budget and odd content', () => {
       ['+', 'last line without newline'],
     ]);
     expect(payload.totals.files).toBe(payload.files.length);
+  });
+});
+
+describe('capHunks', () => {
+  const hunk = (start: number, kinds: string): RawHunk => {
+    let o = start;
+    let n = start;
+    const lines = [...kinds].map(kind => (kind === '+' ? {t: '+' as const, text: 'new', n: n++} : kind === '-' ? {t: '-' as const, text: 'old', o: o++} : {t: ' ' as const, text: 'same', o: o++, n: n++}));
+    return {oldStart: start, oldLines: o - start, newStart: start, newLines: n - start, header: `@@ -${start},${o - start} +${start},${n - start} @@ fn`, lines};
+  };
+
+  it('returns short diffs untouched', () => {
+    const hunks = [hunk(1, ' -+ '), hunk(40, '++')];
+    expect(capHunks(hunks, 6)).toBe(hunks);
+    expect(capHunks([], 0)).toEqual([]);
+  });
+
+  it('keeps whole hunks while they fit, cuts the next one with honest counts, and ends with what was left out', () => {
+    const capped = capHunks([hunk(1, ' -+ '), hunk(40, ' --++ '), hunk(90, '+++')], 7);
+    expect(capped.map(part => part.lines.length)).toEqual([4, 3, 0]);
+    expect(capped[0]!.header).toBe('@@ -1,3 +1,3 @@ fn');
+    // the cut hunk describes the three lines it still holds: one context line and two removals
+    expect(capped[1]).toMatchObject({oldStart: 40, oldLines: 3, newStart: 40, newLines: 1, header: '@@ -40,3 +40,1 @@'});
+    expect(capped[2]).toEqual({oldStart: 43, oldLines: 0, newStart: 41, newLines: 0, header: '@@ 6 more diff lines not shown: the change is too large for one view @@', lines: []});
   });
 });
 

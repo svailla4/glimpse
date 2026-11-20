@@ -57,4 +57,13 @@
   .button[data-tone='quiet']:hover {
     color: var(--gl-ink);
   }
+  /* The session has ended: the press can only be answered with "not sent". */
+  .button[aria-disabled='true'],
+  .button[aria-disabled='true']:hover,
+  .button[aria-disabled='true']:active {
+    border-color: var(--gl-rule-strong);
+    background: transparent;
+    color: var(--gl-ink-3);
+    cursor: not-allowed;
+  }
 }

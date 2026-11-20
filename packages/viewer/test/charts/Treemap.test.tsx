@@ -5,6 +5,11 @@ import {LONG, chart} from './util.tsx';
 
 const cells = (view: {all(selector: string): Element[]}) => view.all('[data-cell]').map(el => el.getAttribute('data-cell'));
 const crumbs = (view: {all(selector: string): Element[]}) => view.all('[data-chart-crumbs] button').map(el => el.textContent).join(' / ');
+const tint = (slot: number | 'other') => {
+  const ink = `var(--gl-cat-${slot})`;
+  return `light-dark(color-mix(in oklab, ${ink} 32%, var(--gl-surface)), color-mix(in oklab, ${ink} 46%, var(--gl-surface)))`;
+};
+const fillOf = (view: {root: HTMLElement}, path: string) => (view.root.querySelector(`[data-cell="${path}"] rect`) as SVGElement).style.fill;
 
 afterEach(() => void vi.restoreAllMocks());
 
@@ -15,8 +20,11 @@ describe('Treemap', () => {
     expect(cells(view).sort()).toEqual(['README.md', 'package.json', 'src/api', 'src/auth', 'src/ui']);
     expect(view.all('[data-dir]').map(el => el.getAttribute('data-dir'))).toEqual(['src']);
     // TypeScript is the server's first language slot, CSS the second
-    expect((view.root.querySelector('[data-cell="src/auth"] rect') as SVGElement).style.fill).toBe('color-mix(in oklab, var(--gl-cat-1) 28%, var(--gl-surface))');
-    expect((view.root.querySelector('[data-cell="src/ui"] rect') as SVGElement).style.fill).toBe('color-mix(in oklab, var(--gl-cat-2) 28%, var(--gl-surface))');
+    // (a tint of the ink, stronger on the dark plate: F012)
+    expect((view.root.querySelector('[data-cell="src/auth"] rect') as SVGElement).style.fill).toBe(tint(1));
+    expect((view.root.querySelector('[data-cell="src/ui"] rect') as SVGElement).style.fill).toBe(tint(2));
+    // a legend swatch is a key, not a fill: it shows the ink itself
+    expect((view.root.querySelector('[data-chart-legend] [data-series="TypeScript"] span') as HTMLElement).style.background).toBe('var(--gl-cat-1)');
     expect(view.all('[data-chart-legend] [data-series]').map(el => el.getAttribute('data-series'))).toEqual(['TypeScript', 'CSS', 'Markdown', 'JSON']);
     expect(crumbs(view)).toBe('demo');
     expect(view.errors).toEqual([]);
@@ -192,5 +200,79 @@ describe('Treemap', () => {
     const view = await chart('Treemap($/d,depth=2)', {rows: {name: '', path: '', dir: true, children: dirs}});
     expect(view.svg.getAttribute('aria-label')).toMatch(/^Treemap of loc, [\d,]+ cells/);
     expect(view.svg.innerHTML).not.toContain('NaN');
+  });
+  const file = (path: string, lang: string, loc: number, extra: Record<string, unknown> = {}) => ({name: path.split('/').pop(), path, dir: false, files: 1, loc, bytes: loc * 30, lang, ...extra});
+
+  it('gives a language without a session slot the next free ink, and never a hue to Other (D6, F006)', async () => {
+    const tree = {name: '', path: '', dir: true, files: 5, loc: 500, children: [
+      file('a.ts', 'TypeScript', 100), file('b.zig', 'Zig', 100), file('c.nim', 'Nim', 100), file('d.txt', 'Other', 100), file('e.zig', 'Zig', 100),
+    ]};
+    const view = await chart('Treemap($/d)', {rows: tree});
+    expect(fillOf(view, 'a.ts')).toBe(tint(1));
+    const zig = fillOf(view, 'b.zig');
+    const nim = fillOf(view, 'c.nim');
+    expect(zig).toMatch(/var\(--gl-cat-[2-8]\)/);
+    expect(nim).toMatch(/var\(--gl-cat-[2-8]\)/);
+    expect(zig).not.toBe(nim);
+    expect(fillOf(view, 'e.zig')).toBe(zig);
+    expect(fillOf(view, 'd.txt')).toBe(tint('other'));
+    expect(view.all('[data-chart-legend] [data-series]').map(el => el.getAttribute('data-series'))).toEqual(['Zig', 'TypeScript', 'Nim', 'other']);
+    // zooming or switching the metric repaints nothing: the inks come from the whole tree, not from what is drawn
+    view.key('v');
+    expect(fillOf(view, 'b.zig')).toBe(zig);
+    expect(fillOf(view, 'c.nim')).toBe(nim);
+  });
+
+  it('spreads a metric fill over the drawn area and reads directories per file (F012)', async () => {
+    // four large directories whose commit totals dwarf every file, and a few small files
+    const dir = (name: string, files: number, commits: number) => ({name, path: name, dir: true, files, loc: files * 400, commits, children: [file(`${name}/x.ts`, 'TypeScript', files * 400, {commits})]});
+    const tree = {name: '', path: '', dir: true, files: 400, loc: 160_000, children: [
+      dir('core', 100, 900), dir('renderers', 120, 240), dir('samples', 90, 90), dir('docs', 80, 800),
+      file('a.ts', 'TypeScript', 300, {commits: 2}), file('b.ts', 'TypeScript', 300, {commits: 5}), file('c.ts', 'TypeScript', 300, {commits: 30}),
+    ]};
+    const view = await chart(`Treemap($/d,color='churn',depth=1)`, {rows: tree});
+    const steps = ['core', 'renderers', 'samples', 'docs'].map(name => Number(/seq-(\d)/.exec(fillOf(view, name))![1]));
+    // by cell count all four would be the top step (their totals are the four largest values)
+    expect(new Set(steps).size).toBe(4);
+    expect(Math.min(...steps)).toBeLessThanOrEqual(2);
+    // per file: core 9, docs 10, renderers 2, samples 1
+    expect(steps[3]).toBeGreaterThan(steps[0]!);
+    expect(steps[0]).toBeGreaterThan(steps[1]!);
+    expect(steps[1]).toBeGreaterThan(steps[2]!);
+    // a file is its own figure: 30 commits in one file is hotter than any directory average here
+    expect(fillOf(view, 'c.ts')).toBe('var(--gl-seq-7)');
+    expect(view.root.querySelector('[data-chart-ramp]')?.textContent).toBe('commits per file 130');
+  });
+
+  it('names the scope of a drilled tree and steps out of the drill with Backspace (D1, F017, F074)', async () => {
+    const view = await chart('Treemap()');
+    view.key('Backspace');
+    expect(view.actions.filter(action => action.name === 'gl_drill')).toHaveLength(0);
+    // the server re-scoped the dataset: the envelope says where we are and what is one level out
+    const scoped = datasetFixture<{children: unknown[]}>('files.tree');
+    const data = {name: 'ui', path: 'src/ui', dir: true, files: 2, loc: 900, children: [file('src/ui/app.css', 'CSS', 700), file('src/ui/theme.css', 'CSS', 200)]};
+    view.setData('/ds/files_tree', {...scoped, data, drill: {target: 'src/ui', up: 'src'}});
+    expect(cells(view).sort()).toEqual(['src/ui/app.css', 'src/ui/theme.css']);
+    // the breadcrumb starts at the drilled directory, not at the repository; the kit's scope row has the full path
+    expect(crumbs(view)).toBe('ui');
+    expect(view.svg.getAttribute('aria-label')).toContain('in src/ui');
+    // this view has no back control of its own (the kit's scope crumb is the one): it only dispatches
+    expect(view.all('[data-chart-crumbs] button')).toHaveLength(1);
+    view.key('Backspace');
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', sourceComponentId: 'c', context: {ds: 'files_tree', target: 'src'}});
+    view.setData('/ds/files_tree', {...scoped, data, drill: {target: 'src/ui', up: ''}});
+    view.key('Backspace');
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'files_tree', target: ''}});
+    // a tree the spec itself scoped to a directory has no scope row: its root crumb is the whole path
+    view.setData('/ds/files_tree', {...scoped, data});
+    expect(crumbs(view)).toBe('src/ui');
+  });
+
+  it('holds its height while the dataset is pending in a cell without a size (F016)', async () => {
+    const pending = await chart('Treemap()', {datasets: 'pending'});
+    expect(pending.root.querySelector<HTMLElement>('[data-chart-reserve]')?.style.height).toBe('328px');
+    pending.unmount();
+    const sized = await chart(`Treemap(size='l')`, {datasets: 'pending'});
+    expect(sized.all('[data-chart-reserve]')).toHaveLength(0);
   });
 });

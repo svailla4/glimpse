@@ -5,7 +5,7 @@ import {mkdirSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {expectSettled, openViewer, pageState} from './support/glimpse.ts';
 import {GALLERY_SHOTS, ROOT} from './support/paths.ts';
-import {expect, knownDefect, test} from './support/test.ts';
+import {expect, test} from './support/test.ts';
 
 const catalog = JSON.parse(readFileSync(join(ROOT, 'packages', 'catalog', 'generated', 'catalog.json'), 'utf8')) as {components: Record<string, unknown>};
 const COMPONENTS = Object.keys(catalog.components);
@@ -75,7 +75,8 @@ test('gallery: every component renders; a screenshot per section, theme and widt
   // the gallery's buttons are live
   await page.setViewportSize({width: 1320, height: 900});
   await page.locator('[data-gl="Button"] button', {hasText: 'Queue an event'}).click();
-  await expect.poll(async () => (await glimpse.call('events', {})).text, {timeout: 5000}).toBe('viewer: press gallery demo_pressed {"from":"gallery"}');
+  // (decision D3: a render report, `viewer: error ...`, may ride along with the press, so the line is looked for)
+  await expect.poll(async () => (await glimpse.call('events', {})).lines, {timeout: 5000}).toContain('viewer: press gallery demo_pressed {"from":"gallery"}');
   expect(watched.problems).toEqual([]);
   expect(await watched.csp()).toEqual([]);
 });
@@ -101,11 +102,24 @@ test('the theme and density toggles work from the keyboard and persist', async (
   expect(await look()).toMatchObject({theme: 'dark', density: 'comfortable'});
 });
 
-// The showcase is meant to show every component with content. Its SymbolOutline reads README.md, which has no
-// symbols, so that plate is always the empty state ("no symbols in README.md").
-knownDefect('E2E-03', 'no gallery component is in its empty state', async ({page, glimpse}) => {
-  await glimpse.call('show', {view: 'gallery'});
+// Finding F092 (was known defect E2E-03): the gallery's SymbolOutline read README.md, which had no symbols, so that
+// plate was always empty. The server now gives the Code section a source file of the repository with an outline
+// (the result's first line names it), and nothing in the showcase is an empty plate or a redline. The fixture's
+// working tree is dirty, so even the live DiffView has something to show.
+test('the gallery has no redline and no empty plate, and its Code section reads a real file', async ({page, glimpse, watched}) => {
+  const shown = await glimpse.call('show', {view: 'gallery'});
+  expect(shown.isError, shown.text).toBe(false);
+  expect(shown.lines[0]).toMatch(/^ok gallery /);
   await openViewer(page, glimpse);
   const state = await expectSettled(page);
-  expect(state.empty).toEqual([]);
+  expect(state.empty, 'empty plates').toEqual([]);
+  expect(state.redlines).toEqual([]);
+  // a source file of the fixture, not the README
+  const shownFile = await page.locator('[data-gl="CodeView"] [data-gl-path]').first().getAttribute('data-gl-path');
+  expect(shownFile).toMatch(/\.(?:ts|py|go)$/);
+  // the tab told the server what it drew: nothing reached the agent as a render problem
+  await page.waitForTimeout(500);
+  const events = await glimpse.call('events', {});
+  expect(events.lines.filter(line => line.startsWith('viewer: error')), events.text).toEqual([]);
+  expect(watched.problems).toEqual([]);
 });

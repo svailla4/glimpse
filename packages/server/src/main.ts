@@ -7,10 +7,12 @@ console.log = console.error;
 console.info = console.error;
 console.debug = console.error;
 
-const {serve} = await import('./mcp/server.ts');
+const [{serve}, {ownEnv}] = await Promise.all([import('./mcp/server.ts'), import('./session/env.ts')]);
+// Read once, before any spec has been seen: configuration never comes from an object a spec could reach.
+const env = ownEnv(process.env);
 
 serve({
-  env: process.env,
+  env,
   argv: process.argv.slice(2),
   // Loaded by the first tool call: a process that is only probed, or a session that never uses Glimpse, pays nothing.
   loadDeps: async () => {
@@ -29,7 +31,7 @@ serve({
   },
   // Bundled (plugin/dist/server.mjs): the viewer sits next to the bundle. From source: the viewer package's build.
   viewerDirs: [
-    ...(process.env.GLIMPSE_VIEWER_DIR ? [process.env.GLIMPSE_VIEWER_DIR] : []),
+    ...(env.GLIMPSE_VIEWER_DIR ? [env.GLIMPSE_VIEWER_DIR] : []),
     new URL('./viewer/', import.meta.url),
     new URL('../../viewer/dist/', import.meta.url),
   ],

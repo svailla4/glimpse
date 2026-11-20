@@ -26,6 +26,19 @@ describe('SymbolOutline', () => {
     expect(view.errors).toEqual([]);
   });
 
+  it('outlines a README by its headings, with a heading badge (F092)', async () => {
+    const symbols: OutlineResult['symbols'] = [
+      {name: 'Glimpse', kind: 'heading', line: 1, endLine: 40, depth: 0, exported: true},
+      {name: 'Install', kind: 'heading', line: 5, endLine: 20, depth: 1, exported: true},
+    ];
+    const view = renderExpress(`root=Page('T',[o])\no=SymbolOutline('README.md')`, {host: {outline: path => Promise.resolve({path, symbols})}});
+    const cell = view.cell('o');
+    await waitFor(() => expect(names(cell)).toEqual(['Glimpse', 'Install']));
+    expect(row(cell, 'Install').textContent).toBe('HInstall5');
+    expect(row(cell, 'Install').querySelector('[title="heading"]')).not.toBeNull();
+    expect(view.reports).toEqual([]);
+  });
+
   it('selecting a symbol writes the file location, so a CodeView beside it scrolls there', async () => {
     const view = renderExpress(`root=Page('T',[o,c])\no=SymbolOutline('src/auth/service.ts')\nc=CodeView()`);
     const cell = view.cell('o');

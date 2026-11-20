@@ -1,6 +1,6 @@
 // What a person does in the tab, and what the agent hears about it (design 2.7, 10 and 12.1).
 import {expectSettled, expectSurface, openViewer} from './support/glimpse.ts';
-import {expect, knownDefect, test} from './support/test.ts';
+import {expect, test} from './support/test.ts';
 
 const TREE_ROW = (path: string) => `[data-gl="FileTree"] [role="treeitem"][data-path="${path}"]`;
 
@@ -10,7 +10,9 @@ test('tree: clicking a file shows it in the code view and tells the agent', asyn
   expect(shown.lines).toContain('parts tree code outline map');
   await openViewer(page, glimpse);
   const code = page.locator('.gl-cell[data-id="code"]');
-  await expect(code.locator('[data-gl-state="empty"]')).toContainText('no file selected');
+  // finding F008: the code view opens on the scope's README instead of "no file selected"
+  await expect(code.locator('[data-gl-path="README.md"]')).toBeVisible();
+  await expect(code.locator('[data-gl-state="empty"]')).toHaveCount(0);
 
   await page.locator(TREE_ROW('src/auth/tokens.ts')).click();
   await expect(code.locator('[data-gl-path="src/auth/tokens.ts"]')).toBeVisible();
@@ -91,21 +93,29 @@ test('the feature view follows a replaced plan', async ({page, glimpse}) => {
   await expect(page.locator('.gl-cell[data-id="design"] svg [data-node]')).toHaveCount(3);
 });
 
-// Design 7 (the feature flow) patches one step with `$/plan/1/status='done'`. The server accepts it ("ok ...") and the
-// data model changes, but views bound to the container (Steps, List, Stats, tables on inline data) keep the old rows.
-knownDefect('E2E-01', 'a patch of one plan step updates the Steps view', async ({page, glimpse}) => {
+// Decision D4 (was known defect E2E-01): design 7 patches one step with `$/plan/1/status='done'`. The server
+// publishes the whole top-level slot, so views bound to the container (Steps here) re-render.
+test('a patch of one plan step updates the Steps view', async ({page, glimpse}) => {
   await glimpse.call('show', {view: 'feature', spec: PLAN('done', 'doing')});
   await openViewer(page, glimpse);
-  const count = page.locator('.gl-cell[data-id="plan"] [data-gl-steps-count]');
+  const plan = page.locator('.gl-cell[data-id="plan"]');
+  const count = plan.locator('[data-gl-steps-count]');
   await expect(count).toHaveText('1 / 3 done');
+  await page.evaluate(() => { (globalThis as unknown as {__glSameDocument: boolean}).__glSameDocument = true; });
   const nested = await glimpse.call('show', {id: 'feature', spec: "$/plan/1/status='done'"});
   expect(nested.isError, nested.text).toBe(false);
+  expect(nested.lines[0]).toMatch(/^ok feature \S+ tab=live \d+ms$/);
   await expect(count).toHaveText('2 / 3 done');
+  const titled = await glimpse.call('show', {id: 'feature', spec: "$/plan/2/title='Tests, then docs'"});
+  expect(titled.isError, titled.text).toBe(false);
+  await expect(plan).toContainText('Tests, then docs');
+  // patched in place: no reload, no new surface
+  expect(await page.evaluate(() => (globalThis as unknown as {__glSameDocument?: boolean}).__glSameDocument)).toBe(true);
 });
 
-// The page scroll offset of the previous surface is kept when the agent shows another view, so the new view opens
-// part-way down (or at its bottom when it is shorter).
-knownDefect('E2E-02', 'a new view opens at its top even when the previous one was scrolled', async ({page, glimpse}) => {
+// Was known defect E2E-02: the page scroll offset of the previous surface was kept when the agent showed another
+// view, so the new view opened part-way down.
+test('a new view opens at its top even when the previous one was scrolled', async ({page, glimpse}) => {
   await glimpse.call('show', {view: 'overview'});
   await openViewer(page, glimpse);
   await expectSettled(page);
@@ -115,6 +125,32 @@ knownDefect('E2E-02', 'a new view opens at its top even when the previous one wa
   await expectSurface(page, 'diff');
   await expect(page.locator('[data-gl="DiffView"]')).toBeVisible();
   expect(await page.evaluate(() => window.scrollY), 'the new view starts at the top').toBe(0);
+});
+
+// Finding F028: a show that redefines the root but keeps every part is sent in place, so what lives in the
+// components (tree expansion and scroll, the selection) survives the agent adding a plate.
+test('adding a plate to a page keeps the tree as the person left it', async ({page, glimpse}) => {
+  const spec = (extra: string) => `root=Page('Lab',[${extra}tree,code])\ntree=FileTree(size='xl')\ncode=CodeView(size='l')`;
+  expect((await glimpse.call('show', {id: 'lab', spec: spec('')})).isError).toBe(false);
+  await openViewer(page, glimpse);
+  await expectSettled(page);
+  await page.locator(TREE_ROW('src/auth/tokens.ts')).click();
+  await expect(page.locator('.gl-cell[data-id="code"] [data-gl-path="src/auth/tokens.ts"]')).toBeVisible();
+  // the person folds a directory away
+  await expect(page.locator(TREE_ROW('src/orders/service.ts'))).toBeVisible();
+  await page.locator(`${TREE_ROW('src/orders')} [data-twist]`).click();
+  await expect(page.locator(TREE_ROW('src/orders/service.ts'))).toHaveCount(0);
+  await page.evaluate(() => { (globalThis as unknown as {__glSameDocument: boolean}).__glSameDocument = true; });
+
+  const added = await glimpse.call('show', {id: 'lab', spec: `${spec('note,')}\nnote=Callout('Added by the agent','tip')`});
+  expect(added.isError, added.text).toBe(false);
+  await expect(page.locator('.gl-cell[data-id="note"]')).toContainText('Added by the agent');
+  // the directory is still folded, the file still selected and shown
+  await expect(page.locator(TREE_ROW('src/orders'))).toBeVisible();
+  await expect(page.locator(TREE_ROW('src/orders/service.ts'))).toHaveCount(0);
+  await expect(page.locator(TREE_ROW('src/auth/tokens.ts'))).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.gl-cell[data-id="code"] [data-gl-path="src/auth/tokens.ts"]')).toBeVisible();
+  expect(await page.evaluate(() => (globalThis as unknown as {__glSameDocument?: boolean}).__glSameDocument)).toBe(true);
 });
 
 test('closing a tab deletes the surface; refresh re-runs its data', async ({page, glimpse, watched}) => {

@@ -11,14 +11,17 @@ export interface ValueAxis {
 
 /**
  * A linear value axis with about `count` nice ticks. With `zero` the domain always includes the zero baseline.
- * A flat domain (one datum, all zeros) is widened so the scale never divides by zero.
+ * A flat domain (one datum, all zeros) is widened so the scale never divides by zero. With `whole`, an axis whose
+ * values are all whole numbers gets no fractional ticks.
  */
-export function linearAxis(values: Iterable<number>, range: [number, number], opts: {zero?: boolean; count?: number} = {}): ValueAxis {
+export function linearAxis(values: Iterable<number>, range: [number, number], opts: {zero?: boolean; count?: number; whole?: boolean} = {}): ValueAxis {
   let lo = Infinity;
   let hi = -Infinity;
+  let whole = opts.whole === true;
   for (const value of values) {
     if (value < lo) lo = value;
     if (value > hi) hi = value;
+    if (whole && !Number.isInteger(value)) whole = false;
   }
   if (lo > hi) {
     lo = 0;
@@ -35,7 +38,10 @@ export function linearAxis(values: Iterable<number>, range: [number, number], op
   }
   const count = opts.count ?? 5;
   const scale = scaleLinear().domain([lo, hi]).nice(count).range(range);
-  return {scale, ticks: scale.ticks(count), log: false};
+  let ticks = scale.ticks(count);
+  // counts have no halves: an axis over whole numbers is ticked at whole numbers only
+  if (whole) ticks = ticks.filter(Number.isInteger);
+  return {scale, ticks, log: false};
 }
 
 /** A log axis over the positive values; falls back to linear when there are none. */

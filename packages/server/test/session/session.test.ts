@@ -134,11 +134,13 @@ describe('show', () => {
 
 describe('all or nothing', () => {
   it.each([
-    ['a compile error', `notes=Markdown($/notes)\nbroken=Callout('x','danger')`],
+    ['a compile error', `notes=Markdown($/notes)\nnotes=Callout('x','purple')`],
     ['an unknown source', `table=DataTable('git.chrun')`],
     ['a reserved path', `$/notes='x'\n$/ds/fake_slow=1`],
     ['bad notation', `notes=Flowchart('A -> B')`],
-    ['an unreachable part', `$/notes='x'\nextra=Text('nobody shows me')`],
+    ['a part the new root leaves out', `$/notes='x'\nroot=Page('Demo',[notes])\nextra=Text('nobody shows me')`],
+    ['a reserved name in a path', `$/notes='x'\n$/__proto__/polluted=1`],
+    ['a reserved name as a key', `$/notes={constructor:{prototype:{polluted:1}}}`],
     ['a syntax error after valid statements', `$/notes='x'\nnotes=Text('y',,)`],
   ])('%s leaves every surface byte-identical and publishes nothing', async (_name, text) => {
     const t = start();

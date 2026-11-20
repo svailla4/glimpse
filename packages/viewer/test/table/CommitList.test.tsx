@@ -80,7 +80,8 @@ describe('CommitList', () => {
     expect(rowsOf(view)).toHaveLength(4);
     expect(rowAt(view, 0).textContent).toContain('+12 −0');
     expect(rowAt(view, 0).querySelector('[title="Mira Okafor"]')!.textContent).toContain('MO');
-    expect(rowAt(view, 0).querySelector('[title="d"]')!.textContent).toBe('+1');
+    // two ref chips at most; the rest are counted, and named in the tooltip
+    expect(rowAt(view, 0).querySelector('[title="c, d"]')!.textContent).toBe('+2');
     expect(rowAt(view, 1).textContent).toContain('No sha, bad date');
     expect(rowAt(view, 2).hasAttribute('data-malformed')).toBe(true);
     expect(rowAt(view, 3).textContent).toContain('77');

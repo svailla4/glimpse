@@ -1,39 +1,29 @@
-// KeyValue, Steps and List take `title` but not the whole frame group (no `size`), so implement() does not frame
-// them. With a title they draw the same numbered plate through the kit Frame; without one they render bare.
-// Either way the data goes through DataGate, and the marginal note of cut data lands in the plate header.
+// KeyValue, Steps and List: the data gate every content list shares. The numbered plate of a titled component is
+// drawn by implement() like any other (the kit frames every component that takes `title`); this adds what the view
+// owns around its data: header content (a count) through <PlateAside>, and the caption of an untitled component,
+// which has no plate footer to sit in. The marginal note of cut data and the drill crumb come from DataGate.
 import type {ComponentDef} from '@glimpse/catalog';
 import type {JSX, ReactNode} from 'react';
-import {DataGate, Frame, Marginal, marginalText, type DataState} from '../../../kit/index.ts';
+import {DataGate, PlateAside, type DataState} from '../../../kit/index.ts';
 import styles from './Plate.module.css';
 
 export function DataPlate<T>(p: {
   id: string;
   def: ComponentDef<string, any>;
+  /** The component's title: with one, the plate (and its caption) is the kit's. */
   title?: string;
   note?: string;
   state: DataState<T>;
-  /** Header content next to the marginal note (plate) or above the body (bare). */
+  /** Header content: in the plate header when there is a plate, above the body otherwise. */
   aside?: ReactNode;
   children: (data: T, state: DataState<T>) => ReactNode;
 }): JSX.Element {
   const {id, def, title, note, state, aside} = p;
-  const gateId = `${def.name}#${id}`;
-  if (!title) {
-    return (
-      <div className={styles.bare}>
-        {aside ? <div className={styles.aside}>{aside}</div> : null}
-        <DataGate state={state} id={gateId}>{p.children}</DataGate>
-        {note ? <p className={styles.note}>{note}</p> : null}
-      </div>
-    );
-  }
-  // The note is shown in the header here, so the gate must not repeat it in the body.
-  const cut = marginalText(state) !== undefined;
-  const gated: DataState<T> = cut ? {...state, truncated: undefined, total: undefined} : state;
-  const header = cut || aside ? <div className="gl-frame-aside">{aside}{cut ? <Marginal state={state} /> : null}</div> : undefined;
   return (
-    <Frame id={id} def={def} title={title} note={note} aside={header}>
-      <DataGate state={gated} id={gateId}>{data => p.children(data, state)}</DataGate>
-    </Frame>
+    <div className={styles.bare}>
+      {aside ? <PlateAside>{aside}</PlateAside> : null}
+      <DataGate state={state} id={`${def.name}#${id}`}>{p.children}</DataGate>
+      {note && !title ? <p className={styles.note}>{note}</p> : null}
+    </div>
   );
 }

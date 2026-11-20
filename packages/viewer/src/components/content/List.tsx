@@ -4,7 +4,7 @@
 import {List as ListDef, type EntityRef, type Field, type FieldKind, type Roles} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {useMemo, useState} from 'react';
-import {DASH, Empty, PathText, Redline, fmtCell, fmtNum, toNumber, useDataset, type GlView} from '../../kit/index.ts';
+import {DASH, Empty, PathText, Redline, fmtCell, fmtNum, toNumber, useDataset, useTooltip, type GlView} from '../../kit/index.ts';
 import {cellEntity, cellText, fileEntity, isRecord, looksLikePath, shapeMessage, toneMark} from './shared/data.ts';
 import {useEntityRows} from './shared/entityRow.ts';
 import {textOf} from './shared/inline.tsx';
@@ -125,6 +125,7 @@ export const ListView: GlView<typeof C.List> = ({id, props}) => {
   const shown = items.slice(0, expanded ? all : limit);
   const roving = useRoving<HTMLOListElement>(shown.length);
   const rows = useEntityRows(id);
+  const tooltip = useTooltip();
   const rankWidth = `${String(shown.length).length + 1}ch`;
 
   return (
@@ -157,7 +158,22 @@ export const ListView: GlView<typeof C.List> = ({id, props}) => {
                     </span>
                     {item.sub ? <span className={styles.sub} title={item.sub}>{item.sub}</span> : null}
                     {item.value ? (
-                      <span className={styles.value}>
+                      <span
+                        className={styles.value}
+                        data-gl-list-value=""
+                        onPointerMove={event =>
+                          tooltip.show(
+                            <span className={styles.tip}>
+                              <span className={styles.tipTitle}>{item.title}</span>
+                              <span className={styles.tipValue}>{item.value}</span>
+                              {share > 0 && largest > 0 ? <span className={styles.tipShare}>{fmtNum((Math.abs(item.amount ?? 0) / largest) * 100, 'pct')} of the largest</span> : null}
+                            </span>,
+                            event.clientX,
+                            event.clientY,
+                          )
+                        }
+                        onPointerLeave={() => tooltip.hide()}
+                      >
                         {item.value}
                         {share > 0 ? <span className={styles.bar} style={{width: `${share}%`}} aria-hidden="true" /> : null}
                       </span>

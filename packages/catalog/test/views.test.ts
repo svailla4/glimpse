@@ -89,11 +89,69 @@ describe('preset views', () => {
     const wt = compiled('diff');
     expect(wt.surface.components.find(c => c.id === 'diff')).toMatchObject({component: 'DiffView', range: 'wt'});
     expect(wt.surface.components.find(c => c.id === 'log')).toMatchObject({component: 'List'});
-    expect(wt.refs).toEqual(['code.todos top=8', 'diff.impact wt', 'diff.stats wt', 'diff.tree wt']);
+    expect(wt.refs).toEqual(['code.todos top=8', 'diff.impact wt', 'diff.stats wt']);
     expect(compiled('diff staged').surface.components.find(c => c.id === 'log')).toMatchObject({component: 'List'});
     const range = compiled('diff main..HEAD');
     expect(range.surface.components.find(c => c.id === 'log')).toMatchObject({component: 'CommitList'});
-    expect(range.refs).toEqual(['diff.impact main..HEAD', 'diff.stats main..HEAD', 'diff.tree main..HEAD', 'git.log main..HEAD']);
+    expect(range.refs).toEqual(['diff.impact main..HEAD', 'diff.stats main..HEAD', 'git.log main..HEAD']);
+  });
+
+  // F003: the preset drew two lists of the same files side by side (a FileTree and DiffView's own), each too narrow
+  // to show a file name.
+  it('diff shows one file list: the DiffView spans the page and there is no second tree of the same files', () => {
+    for (const call of ['diff', 'diff staged', 'diff main..HEAD']) {
+      const {surface} = compiled(call);
+      expect(surface.components.filter(c => c.component === 'FileTree'), call).toEqual([]);
+      expect(surface.components.filter(c => c.component === 'DiffView'), call).toHaveLength(1);
+      expect((surface.components[0] as {children?: unknown}).children, call).toEqual(['kpis', 'notes', 'diff', 'impact', 'log']);
+      expect(surface.components.find(c => c.id === 'diff'), call).not.toHaveProperty('span');
+    }
+  });
+
+  // F001: the file preset's graph opened unfocused. F038 (probe p_view_file): a target with a line anchor became the
+  // page title and the ref of every source.
+  it('file focuses its graph on the file, and a line anchor in the target only scrolls the code', () => {
+    const plain = compiled('file src/core/index.ts');
+    expect(plain.surface.components.find(c => c.id === 'near')).toMatchObject({component: 'Graph', focus: 'src/core/index.ts'});
+    const anchored = compiled('file src/core/index.ts#L10-60');
+    expect(anchored.surface.components[0]).toMatchObject({title: 'src/core/index.ts'});
+    expect(anchored.surface.components.find(c => c.id === 'code')).toMatchObject({file: 'src/core/index.ts#L10-60'});
+    expect(anchored.surface.components.find(c => c.id === 'outline')).toMatchObject({file: 'src/core/index.ts'});
+    expect(anchored.surface.components.find(c => c.id === 'near')).toMatchObject({focus: 'src/core/index.ts'});
+    expect(anchored.refs).toEqual(plain.refs);
+  });
+
+  // F016: the Cycles / External tabs were the only unframed block of the overview.
+  it('overview keeps its ten part names and frames the cycles and external tabs', () => {
+    const {source, surface} = compiled('overview');
+    expect(partsOf(source)).toEqual(['kpis', 'stack', 'notes', 'map', 'langs', 'deps', 'side', 'activity', 'hot', 'pkgs']);
+    // `side` is still the Tabs (a patch of it keeps the frame); the plate around it is an inline child of root
+    expect(surface.components.find(c => c.id === 'side')).toMatchObject({component: 'Tabs', labels: ['Cycles', 'External']});
+    const plate = surface.components.find(c => c.component === 'Plate' && (c as unknown as {children: string[]}).children.includes('side'));
+    expect(plate).toMatchObject({title: 'Cycles and external packages', span: 4});
+    expect((surface.components[0] as unknown as {children: string[]}).children).toContain(plate!.id);
+  });
+
+  // F069: "complexity" read as cyclomatic complexity, and test files topped the list unmarked.
+  it('the hotspot plates say what they measure and mark tests', () => {
+    const hot = compiled('overview').surface.components.find(c => c.id === 'hot') as unknown as {columns: string; note: string};
+    // the complexity column takes its header, Indentation, from the source's field label
+    expect(hot.columns).toBe('path commits:bar complexity:bar isTest:bool=Test owner');
+    expect(SOURCE_BY_NAME.get('git.hotspots')!.fields!.find(f => f.key === 'complexity')!.label).toBe('Indentation');
+    expect(hot.note).toMatch(/indentation depth/);
+    const {surface} = compiled('hotspots');
+    expect(surface.components.find(c => c.id === 'scatter')).toMatchObject({note: expect.stringMatching(/indentation depth/)});
+    expect(surface.components.find(c => c.id === 'coupling')).toMatchObject({note: expect.stringMatching(/over 30 files are ignored/)});
+  });
+
+  // F008: the placeholder told the person "Replace this part: design=Flowchart(...)".
+  it('feature shows the person a neutral design plate and tells the agent, in the catalog, what to put there', () => {
+    const {surface} = compiled('feature');
+    const design = surface.components.find(c => c.id === 'design') as unknown as {component: string; text: string; title: string};
+    expect(design).toMatchObject({component: 'Markdown', title: 'Design'});
+    expect(design.text).not.toMatch(/design=|Flowchart|Replace/);
+    expect(VIEW_BY_NAME.get('feature')!.replace).toHaveProperty('design');
+    expect(VIEW_BY_NAME.get('feature')!.replace!.design).toMatch(/design=Flowchart\(.*design=SequenceDiagram\(/);
   });
 
   it('parseViewRef uses the source-ref grammar', () => {
@@ -101,5 +159,10 @@ describe('preset views', () => {
     expect(parseViewRef('hotspots src since=90d')).toEqual({view: 'hotspots', target: 'src', args: {since: '90d'}});
     expect(parseViewRef('file  src/my file.ts ')).toEqual({view: 'file', target: 'src/my file.ts', args: {}});
     expect(refTexts([{source: 'git.churn', target: 'src', args: {top: '5', since: '90d'}}])).toEqual(['git.churn src since=90d top=5']);
+  });
+
+  // F038: the keyword spelling of a target stays visible to the caller (the show tool accepts it and says so).
+  it('parseViewRef leaves a target written as a keyword in args', () => {
+    expect(parseViewRef('hotspots path=packages/server')).toEqual({view: 'hotspots', target: undefined, args: {path: 'packages/server'}});
   });
 });

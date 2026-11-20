@@ -7,14 +7,17 @@ import {useEffect, useMemo, useRef, type JSX} from 'react';
 import {Empty, catVar, fmtNum, type DataState, type GlView} from '../../kit/index.ts';
 import css from './ScatterPlot.module.css';
 import {
-  CanvasLayer, DEFAULT_HEIGHT, Figure, Legend, Note, OTHER, RowsGate, ValueGrid, assignSlots, clip, clipPath, count, entityOf, fmtValue,
+  CanvasLayer, DEFAULT_HEIGHT, Figure, Legend, Note, OTHER, RowsGate, ValueGrid, clip, clipPath, count, entityOf, fmtValue,
   foldSeries, formatOf, inspect, kit, label, linearAxis, logAxis, notes, num, pick, prepareCanvas, roleY, say, slotKind, spatialStep,
-  textWidth, tickFormat, useChartBox, useDrawIn, useInks, useMarkNav, useSlots, widest, type FieldInfo, type Mark, type ValueAxis,
+  textWidth, tickFormat, useChartBox, useDrawIn, useInks, useMarkNav, useSlots, useSlotter, widest, type FieldInfo, type Mark, type Slotter, type ValueAxis,
 } from './chartkit/index.ts';
 
 const CANVAS_ABOVE = 3000;
 const LABELLED = 8;
 const CELL = 24;
+/** Above this many points the circles are drawn lighter, so a crowd reads as density and not as one solid shape. */
+const DENSE = 150;
+const fillAlpha = (count: number) => (count > 1000 ? 0.22 : count > DENSE ? 0.35 : 0.7);
 
 interface Point {
   x: number;
@@ -35,7 +38,7 @@ interface Model {
   skipped: number;
 }
 
-function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: {x?: string; y?: string; r?: string; color?: string; label?: string}, slots: SurfaceMeta['slots'] | undefined): Model | string {
+function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: {x?: string; y?: string; r?: string; color?: string; label?: string}, slots: SurfaceMeta['slots'] | undefined, assign: Slotter): Model | string {
   const fields = inspect(rows, fieldList);
   const isNum = (key: string | undefined) => (key && fields.get(key).cls === 'num' ? key : undefined);
   const xKey = pick(opts.x, isNum(roles?.x), fields.first('num', [opts.y])?.key);
@@ -66,7 +69,7 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
   const names = folded.size > 0 ? [...keep, OTHER] : keep;
   const colorInfo = colorKey ? fields.get(colorKey) : undefined;
   const kind = slotKind(colorInfo);
-  const slotOf = assignSlots(names, kind ? slots?.[kind] : undefined);
+  const slotOf = assign(names, kind ? slots?.[kind] : undefined);
   const groupOf = new Map(names.map((name, i) => [name, i]));
   const other = groupOf.get(OTHER) ?? 0;
   const points: Point[] = raw.map(({category, ...point}) => ({...point, group: groupOf.get(category) ?? other}));
@@ -87,6 +90,12 @@ interface Dot {
   r: number;
   point: Point;
 }
+interface Tag {
+  x: number;
+  y: number;
+  anchor: 'start' | 'middle' | 'end';
+  text: string;
+}
 interface Layout {
   width: number;
   height: number;
@@ -98,8 +107,10 @@ interface Layout {
   yAxis: ValueAxis;
   dots: Dot[];
   marks: Mark[];
-  labels: Array<{dot: number; x: number; y: number; anchor: 'start' | 'end'; dir: string; base: string}>;
-  medians?: {x: number; y: number; xValue: number; yValue: number};
+  labels: Array<{dot: number; x: number; y: number; anchor: 'start' | 'middle' | 'end'; dir: string; base: string}>;
+  medians?: {x: number; y: number; xTag: Tag; yTag: Tag};
+  /** Axes whose equal values were spread apart so the points can be told from each other. */
+  spread: string[];
   offScale: number;
 }
 
@@ -112,28 +123,102 @@ function measureAxis(values: number[], range: [number, number], log: boolean, co
     if (value < lo) lo = value;
     if (value > hi) hi = value;
   }
-  return linearAxis(values, range, {zero: lo >= 0 && lo <= hi * 0.5, count});
+  return linearAxis(values, range, {zero: lo >= 0 && lo <= hi * 0.5, count, whole: true});
 }
+
+/**
+ * How far to spread the points of an axis that only takes a few whole values (commit counts of a young repository):
+ * a share of the smallest gap between two values, or 0 for an axis that needs none. Without it every point of a
+ * value sits on one line and the plot is a column of overlapping circles.
+ */
+export function spreadOf(values: readonly number[]): number {
+  const distinct = new Set<number>();
+  for (const value of values) {
+    if (!Number.isInteger(value)) return 0;
+    distinct.add(value);
+    if (distinct.size > 12) return 0;
+  }
+  if (values.length < distinct.size * 4) return 0;
+  const sorted = [...distinct].sort((a, b) => a - b);
+  let gap = 1;
+  for (let i = 1; i < sorted.length; i++) gap = i === 1 ? sorted[i]! - sorted[i - 1]! : Math.min(gap, sorted[i]! - sorted[i - 1]!);
+  return gap * 0.3;
+}
+
+/** A repeatable offset in -1..1 for the i-th point: the same data always draws the same picture. */
+function jitter(i: number, salt: number): number {
+  const x = Math.sin((i + 1) * 12.9898 + salt * 78.233) * 43758.5453;
+  return (x - Math.floor(x)) * 2 - 1;
+}
+
+const TAG_PX = 10.5 * 0.6 + 0.42;
+type Box = [number, number, number, number];
+const overlaps = (a: Box, b: Box) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+const touches = (box: Box, dot: Dot) => {
+  const dx = dot.cx - Math.max(box[0], Math.min(dot.cx, box[2]));
+  const dy = dot.cy - Math.max(box[1], Math.min(dot.cy, box[3]));
+  return dx * dx + dy * dy < dot.r * dot.r;
+};
 
 function layoutPoints(model: Model, scale: string, quadrants: boolean, width: number, height: number): Layout {
   const logX = scale === 'logx' || scale === 'loglog';
   const logY = scale === 'logy' || scale === 'loglog';
   const usable = model.points.filter(point => !(logX && point.x <= 0) && !(logY && point.y <= 0));
   const offScale = model.points.length - usable.length;
+  const medX = median(usable, point => point.x) ?? 0;
+  const medY = median(usable, point => point.y) ?? 0;
+  // the median tags live in the margins, outside the plot: the right margin is as wide as the y tag
+  const yTagText = `${width < 420 ? 'med' : 'median'} ${fmtValue(medY, model.yInfo)}`;
+  const xTagText = `${width < 420 ? 'med' : 'median'} ${fmtValue(medX, model.xInfo)}`;
   const top = 24;
   const bottom = height - 40;
-  const right = width - 16;
+  const right = width - (quadrants && usable.length > 0 ? Math.min(width * 0.25, yTagText.length * TAG_PX + 12) : 16);
   const yCount = Math.max(2, Math.min(5, Math.floor((bottom - top) / 44)));
-  const yProbe = measureAxis(usable.map(point => point.y), [bottom, top], logY, yCount);
-  const yTick = tickFormat(yProbe.ticks, formatOf(model.yInfo));
-  const left = Math.min(width * 0.3, widest(yProbe.ticks.map(yTick)) + 14);
-  const xAxis = measureAxis(usable.map(point => point.x), [left, Math.max(left + 24, right)], logX, Math.max(2, Math.min(6, Math.floor((right - left) / 90))));
+  const xs = usable.map(point => point.x);
+  const ys = usable.map(point => point.y);
+  const yTicks = measureAxis(ys, [bottom, top], logY, yCount).ticks;
+  const left = Math.min(width * 0.3, widest(yTicks.map(tickFormat(yTicks, formatOf(model.yInfo)))) + 14);
   let maxR = 0;
   if (model.rInfo) for (const point of usable) maxR = Math.max(maxR, point.r ?? 0);
   const radius = (point: Point) => (model.rInfo ? 3 + 15 * Math.sqrt(maxR > 0 ? Math.max(0, point.r ?? 0) / maxR : 0) : 3.5);
+  const spreadX = logX ? 0 : spreadOf(xs);
+  const spreadY = logY ? 0 : spreadOf(ys);
+
+  // The scales are inset until no circle hangs over the edge of the plot: a circle on the baseline would cover the
+  // tick labels, one at the far end would be cut. Two rounds settle it, since insetting moves the circles.
+  const pad = {left: 0, right: 0, top: 0, bottom: 0};
+  let xAxis!: ValueAxis;
+  let yProbe!: ValueAxis;
+  let dots: Dot[] = [];
+  const xCount = Math.max(2, Math.min(6, Math.floor((right - left) / 90)));
+  for (let round = 0; round < 3; round++) {
+    const x0 = left + pad.left;
+    xAxis = measureAxis(xs, [x0, Math.max(x0 + 24, right - pad.right)], logX, xCount);
+    yProbe = measureAxis(ys, [bottom - pad.bottom, Math.min(bottom - pad.bottom - 24, top + pad.top)], logY, yCount);
+    dots = usable.map((point, i) => ({
+      cx: xAxis.scale(spreadX > 0 ? point.x + jitter(i, 1) * spreadX : point.x),
+      cy: yProbe.scale(spreadY > 0 ? point.y + jitter(i, 2) * spreadY : point.y),
+      r: radius(point),
+      point,
+    }));
+    const over = {left: 0, right: 0, top: 0, bottom: 0};
+    for (const dot of dots) {
+      over.left = Math.max(over.left, left - (dot.cx - dot.r));
+      over.right = Math.max(over.right, dot.cx + dot.r - right);
+      over.top = Math.max(over.top, top - (dot.cy - dot.r));
+      over.bottom = Math.max(over.bottom, dot.cy + dot.r - bottom);
+    }
+    if (round === 2 || Math.max(over.left, over.right, over.top, over.bottom) <= 0.5) break;
+    const limitX = (right - left) * 0.2;
+    const limitY = (bottom - top) * 0.2;
+    pad.left = Math.min(limitX, pad.left + Math.ceil(over.left));
+    pad.right = Math.min(limitX, pad.right + Math.ceil(over.right));
+    pad.top = Math.min(limitY, pad.top + Math.ceil(over.top));
+    pad.bottom = Math.min(limitY, pad.bottom + Math.ceil(over.bottom));
+  }
 
   // large circles first, so small ones stay on top and reachable
-  const dots: Dot[] = usable.map(point => ({cx: xAxis.scale(point.x), cy: yProbe.scale(point.y), r: radius(point), point})).sort((a, b) => b.r - a.r);
+  dots.sort((a, b) => b.r - a.r);
   const marks: Mark[] = dots.map(dot => {
     const {point} = dot;
     const x = fmtValue(point.x, model.xInfo);
@@ -153,34 +238,55 @@ function layoutPoints(model: Model, scale: string, quadrants: boolean, width: nu
     };
   });
 
-  const medX = median(usable, point => point.x) ?? 0;
-  const medY = median(usable, point => point.y) ?? 0;
   const mx = xAxis.scale(medX);
   const my = yProbe.scale(medY);
   const spanX = Math.max(1, right - left);
   const spanY = Math.max(1, bottom - top);
+  const withMedians = quadrants && usable.length > 0;
+
+  // Labels go to the most extreme points. Each is tried right, left, above and below its circle and takes the
+  // first place where it stays inside the plot and touches no other label, no circle and no median line; a label
+  // with no such place is left out (the tooltip still names the point).
   const ranked = dots
     .map((dot, i) => ({i, far: dot.point.text ? Math.hypot((dot.cx - mx) / spanX, (dot.cy - my) / spanY) : -1}))
     .filter(entry => entry.far >= 0)
     .sort((a, b) => b.far - a.far)
-    .slice(0, LABELLED);
+    .slice(0, LABELLED * 2);
   const labels: Layout['labels'] = [];
-  const boxes: Array<[number, number, number, number]> = [];
+  const taken: Box[] = withMedians ? [[mx - 1.5, top, mx + 1.5, bottom], [left, my - 1.5, right, my + 1.5]] : [];
+  const room = Math.min(180, spanX * 0.45);
   for (const {i} of ranked) {
+    if (labels.length >= LABELLED) break;
     const dot = dots[i]!;
-    const room = Math.min(180, spanX * 0.45);
     const parts = dot.point.path ? clipPath(dot.point.text!, room) : {dir: '', base: clip(dot.point.text!, room)};
     const w = textWidth(parts.dir + parts.base);
-    const flip = dot.cx + dot.r + 5 + w > right + 12;
-    const x0 = flip ? dot.cx - dot.r - 5 - w : dot.cx + dot.r + 5;
-    const box: [number, number, number, number] = [x0, dot.cy - 7, x0 + w, dot.cy + 7];
-    if (boxes.some(other => box[0] < other[2] && box[2] > other[0] && box[1] < other[3] && box[3] > other[1])) continue;
-    boxes.push(box);
-    labels.push({dot: i, x: flip ? dot.cx - dot.r - 5 : dot.cx + dot.r + 5, y: dot.cy, anchor: flip ? 'end' : 'start', ...parts});
+    if (w === 0) continue;
+    const gap = dot.r + 5;
+    const places: Array<{x: number; y: number; anchor: 'start' | 'middle' | 'end'; box: Box}> = [
+      {x: dot.cx + gap, y: dot.cy, anchor: 'start', box: [dot.cx + gap, dot.cy - 7, dot.cx + gap + w, dot.cy + 7]},
+      {x: dot.cx - gap, y: dot.cy, anchor: 'end', box: [dot.cx - gap - w, dot.cy - 7, dot.cx - gap, dot.cy + 7]},
+      {x: dot.cx, y: dot.cy - gap - 5, anchor: 'middle', box: [dot.cx - w / 2, dot.cy - gap - 12, dot.cx + w / 2, dot.cy - gap + 2]},
+      {x: dot.cx, y: dot.cy + gap + 5, anchor: 'middle', box: [dot.cx - w / 2, dot.cy + gap - 2, dot.cx + w / 2, dot.cy + gap + 12]},
+    ];
+    const place = places.find(({box}) =>
+      box[0] >= left + 2 && box[2] <= right - 2 && box[1] >= top - 2 && box[3] <= bottom - 2
+      && !taken.some(other => overlaps(box, other))
+      && !dots.some((other, at) => at !== i && touches(box, other)));
+    if (!place) continue;
+    taken.push(place.box);
+    labels.push({dot: i, x: place.x, y: place.y, anchor: place.anchor, ...parts});
   }
+
+  // Each tag sits at the end of its line, outside the plot: the y tag right of it, the x tag under the tick labels
+  // on the row of the x-axis title, which it steps aside for (the title is at the right end of that row).
+  const xTagW = xTagText.length * TAG_PX;
+  const titleStart = right - say(model.xInfo.label, 32).length * TAG_PX - 12;
+  const xTagAt = Math.max(left + xTagW / 2, Math.min(mx, titleStart - xTagW / 2));
+  const xTag: Tag = {x: xTagAt, y: bottom + 30, anchor: 'middle', text: xTagText};
   return {
     width, height, left, right, top, bottom, xAxis, yAxis: yProbe, dots, marks, labels,
-    medians: quadrants && usable.length > 0 ? {x: mx, y: my, xValue: medX, yValue: medY} : undefined,
+    medians: withMedians ? {x: mx, y: my, xTag, yTag: {x: right + 6, y: my, anchor: 'start', text: yTagText}} : undefined,
+    spread: [...(spreadX > 0 ? [model.xInfo.label] : []), ...(spreadY > 0 ? [model.yInfo.label] : [])],
     offScale,
   };
 }
@@ -190,9 +296,10 @@ const INKS = [...Array.from({length: 9}, (_, slot) => catVar(slot)), 'var(--gl-s
 function Plot(p: {id: string; rows: Rows; state: DataState<Rows>; skipped: number; props: C.ViewProps<typeof C.ScatterPlot>}): JSX.Element {
   const {id, rows, state, props} = p;
   const slots = useSlots();
+  const assign = useSlotter();
   const model = useMemo(
-    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, r: props.r, color: props.color, label: props.label}, slots),
-    [rows, state.fields, state.roles, props.x, props.y, props.r, props.color, props.label, slots],
+    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, r: props.r, color: props.color, label: props.label}, slots, assign),
+    [rows, state.fields, state.roles, props.x, props.y, props.r, props.color, props.label, slots, assign],
   );
   if (typeof model === 'string') return <Empty message={`${model}${state.ds ? ` (${state.ds.source})` : ''}`} />;
   return <Points id={id} model={model} skipped={p.skipped} props={props} />;
@@ -256,10 +363,10 @@ function Points(p: {id: string; model: Model; skipped: number; props: C.ViewProp
       const fade = picked && !picked[i] ? 0.35 : 1;
       context.beginPath();
       context.arc(dot.cx, dot.cy, dot.r, 0, Math.PI * 2);
-      context.globalAlpha = 0.7 * fade;
+      context.globalAlpha = fillAlpha(layout.dots.length) * fade;
       context.fillStyle = ink;
       context.fill();
-      context.globalAlpha = fade;
+      context.globalAlpha = (layout.dots.length > DENSE ? 0.6 : 1) * fade;
       context.strokeStyle = ink;
       context.stroke();
     });
@@ -286,7 +393,7 @@ function Points(p: {id: string; model: Model; skipped: number; props: C.ViewProp
 
   return (
     <>
-      <Note>{notes(p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.skipped > 0 && `${count(model.skipped, 'row')} without numbers`, layout && layout.offScale > 0 && `${fmtNum(layout.offScale)} off the log scale`)}</Note>
+      <Note>{notes(p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.skipped > 0 && `${count(model.skipped, 'row')} without numbers`, layout && layout.offScale > 0 && `${fmtNum(layout.offScale)} off the log scale`, layout && layout.spread.length > 0 && `equal ${layout.spread.map(name => say(name, 16)).join(', ')} spread apart`)}</Note>
       <Figure
         name="ScatterPlot"
         label={aria}
@@ -300,19 +407,19 @@ function Points(p: {id: string; model: Model; skipped: number; props: C.ViewProp
       >
         {layout ? (
           <>
-            <ValueGrid axis={layout.yAxis} dir="y" from={layout.left} to={layout.right} fmt={tickFormat(layout.yAxis.ticks, formatOf(model.yInfo))} title={say(model.yInfo.label, 32)} />
-            <ValueGrid axis={layout.xAxis} dir="x" from={layout.top} to={layout.bottom} fmt={tickFormat(layout.xAxis.ticks, formatOf(model.xInfo))} title={say(model.xInfo.label, 32)} />
+            <ValueGrid axis={layout.yAxis} dir="y" from={layout.left} to={layout.right} fmt={tickFormat(layout.yAxis.ticks, formatOf(model.yInfo))} title={say(model.yInfo.label, 32)} end={layout.top} />
+            <ValueGrid axis={layout.xAxis} dir="x" from={layout.top} to={layout.bottom} fmt={tickFormat(layout.xAxis.ticks, formatOf(model.xInfo))} title={say(model.xInfo.label, 32)} end={layout.right} />
             {layout.medians ? (
               <g data-quadrants="">
                 <line className={kit.guide} x1={Math.round(layout.medians.x) + 0.5} x2={Math.round(layout.medians.x) + 0.5} y1={layout.top} y2={layout.bottom} />
                 <line className={kit.guide} x1={layout.left} x2={layout.right} y1={Math.round(layout.medians.y) + 0.5} y2={Math.round(layout.medians.y) + 0.5} />
-                <text className={`${kit.tag} ${kit.halo}`} x={layout.medians.x + 4} y={layout.top + 8}>{`median ${fmtValue(layout.medians.xValue, model.xInfo)}`}</text>
-                <text className={`${kit.tag} ${kit.halo}`} x={layout.right} y={layout.medians.y - 5} textAnchor="end">{`median ${fmtValue(layout.medians.yValue, model.yInfo)}`}</text>
+                <text className={kit.tag} x={layout.medians.xTag.x} y={layout.medians.xTag.y} textAnchor={layout.medians.xTag.anchor} data-median="x">{layout.medians.xTag.text}</text>
+                <text className={kit.tag} x={layout.medians.yTag.x} y={layout.medians.yTag.y} dy="0.32em" textAnchor={layout.medians.yTag.anchor} data-median="y">{layout.medians.yTag.text}</text>
               </g>
             ) : null}
-            {onCanvas ? <CanvasLayer canvasRef={canvas} width={layout.width} height={layout.height} /> : circles}
+            {onCanvas ? <CanvasLayer canvasRef={canvas} width={layout.width} height={layout.height} /> : <g className={css.dots} data-dense={layout.dots.length > 1000 ? 'very' : layout.dots.length > DENSE ? '' : undefined}>{circles}</g>}
             {layout.labels.map(lab => (
-              <text key={lab.dot} className={`${kit.halo} ${kit.fade}`} x={lab.x} y={lab.y} dy="0.32em" textAnchor={lab.anchor} data-i={lab.dot} data-entity={layout.dots[lab.dot]!.point.entity ? '' : undefined} data-dim={picked && !picked[lab.dot] ? '' : undefined} data-point-label="">
+              <text key={lab.dot} className={`${kit.halo} ${kit.fade}`} x={lab.x} y={lab.y} dy="0.32em" textAnchor={lab.anchor} data-place={lab.anchor} data-i={lab.dot} data-entity={layout.dots[lab.dot]!.point.entity ? '' : undefined} data-dim={picked && !picked[lab.dot] ? '' : undefined} data-point-label="">
                 {lab.dir ? <tspan className={kit.labelDim}>{lab.dir}</tspan> : null}
                 <tspan className={kit.label}>{lab.base}</tspan>
               </text>
@@ -325,7 +432,7 @@ function Points(p: {id: string; model: Model; skipped: number; props: C.ViewProp
 }
 
 export const ScatterPlotView: GlView<typeof C.ScatterPlot> = ({id, props}) => (
-  <RowsGate name="ScatterPlot" id={id} input={props.data}>
+  <RowsGate name="ScatterPlot" id={id} input={props.data} size={props.size}>
     {(rows, state, skipped) => <Plot id={id} rows={rows} state={state} skipped={skipped} props={props} />}
   </RowsGate>
 );

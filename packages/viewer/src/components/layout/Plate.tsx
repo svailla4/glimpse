@@ -5,13 +5,11 @@ import {COMPONENT_BY_NAME} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {useCallback, useState} from 'react';
 import {PlateFrame} from '../../kit/Frame.tsx';
+import {FLUSH_FAMILIES} from '../../kit/implement.tsx';
 import {ArrangeContext, useChildIds, type GlView} from '../../kit/index.ts';
 import {useChildInfo} from '../../kit/surface.ts';
 import css from './Plate.module.css';
 import {asText} from './shared.ts';
-
-/** One bare table, code view or diagram takes the whole box (design 8.3: plate padding 0). */
-const FLUSH_FAMILIES: ReadonlySet<string> = new Set(['data', 'diagram', 'code']);
 
 export const PlateView: GlView<typeof C.Plate> = ({id, props, child}) => {
   const start = props.collapsed === true;
@@ -31,6 +29,7 @@ export const PlateView: GlView<typeof C.Plate> = ({id, props, child}) => {
 
   const children = Array.isArray(props.children) ? props.children : [];
   const [only, ...more] = useChildInfo(useChildIds(id));
+  // One bare table, code view or diagram takes the whole box (design 8.3: plate padding 0).
   const flush = only !== undefined && more.length === 0 && !only.titled && FLUSH_FAMILIES.has(COMPONENT_BY_NAME.get(only.type)?.family ?? '');
   return (
     <PlateFrame id={id} name="Plate" title={asText(props.title)} note={asText(props.note)} flush={flush} collapse={{collapsed, toggle}}>

@@ -15,7 +15,7 @@ describe('Chips', () => {
     view.setData('/ds/repo_stack', datasetFixture('repo.stack'));
     await waitFor(() => expect(chips(cell)).toEqual(['TypeScript', 'CSS', 'Go', 'SQL', 'React', 'Vite', 'vitest', 'PostgreSQL', 'Redis', 'Docker', 'GitHub Actions']));
     const items = [...cell.querySelectorAll('li')];
-    // a language takes the ink the server assigned to it; an unslotted key falls back to the "other" ink
+    // a language takes the ink the server assigned to it (an unslotted key takes a free ink: see review.test.tsx)
     expect((items[0]!.querySelector('[aria-hidden]') as HTMLElement).style.background).toBe('var(--gl-cat-1)');
     expect((items[2]!.querySelector('[aria-hidden]') as HTMLElement).style.background).toBe('var(--gl-cat-3)');
     // a tone is a labelled dot; a plain string has no dot at all

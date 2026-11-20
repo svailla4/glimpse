@@ -1,6 +1,7 @@
 // The `query` tool (design 6.3): a source's result as text, without rendering, so the model can ground what it says.
 import type {DirNode, GraphData} from '@glimpse/catalog';
 import {problem, sourceCode, SpecError} from '../spec/errors.ts';
+import {boundWarnings} from '../session/datasets.ts';
 import type {Session} from '../session/session.ts';
 import {failure, text, type ToolResult} from './result.ts';
 
@@ -24,13 +25,34 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 200;
 const MAX_CELL = 200;
 
-function cell(value: unknown): string {
+const isControl = (text: string): boolean => {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f || code === 0x85 || code === 0x2028 || code === 0x2029) return true;
+  }
+  return false;
+};
+
+/**
+ * What the lines of a tool result start with (decision D10): a row whose first cell reads like one of these could
+ * pass for the result's own framing, e.g. a file named `warn the source failed` or `total=0 returned=0`.
+ */
+const FRAMING = /^\s*(?:viewer\s*:|(?:ok|warn|fixed|repo|ds|parts|slots|sig)\s|total=|edges$|E_[A-Z_]+\s|Nothing was rendered)/i;
+
+/**
+ * One value as a cell. Rows are repository content: a cell that holds a line break or a tab, or that could be read
+ * as a `viewer:` line, is printed JSON-quoted, so a row can neither forge another line nor show a path that does
+ * not exist (a newline in a file name stays visible as \n). The first cell of a row is also quoted when it reads like
+ * the result's own framing. A `delta` cell reads `+12 -4`.
+ */
+export function cell(value: unknown, first = false): string {
+  if (isRecord(value) && typeof value.add === 'number' && typeof value.del === 'number' && Object.keys(value).length === 2) return `+${value.add} -${value.del}`;
   const raw = value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
-  const flat = raw.replace(/[\t\r\n]+/g, ' ');
-  return flat.length > MAX_CELL ? flat.slice(0, MAX_CELL - 1) + '…' : flat;
+  const clipped = raw.length > MAX_CELL ? raw.slice(0, MAX_CELL - 1) + '…' : raw;
+  return isControl(clipped) || /^\s*viewer\s*:/i.test(clipped) || (first && FRAMING.test(clipped)) ? JSON.stringify(clipped) : clipped;
 }
 
-const tsv = (header: string[], rows: unknown[][]): string => [header.join('\t'), ...rows.map(row => row.map(cell).join('\t'))].join('\n');
+const tsv = (header: string[], rows: unknown[][]): string => [header.join('\t'), ...rows.map(row => row.map((value, i) => cell(value, i === 0)).join('\t'))].join('\n');
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 function rowsText(rows: unknown[], fieldKeys: string[] | undefined, wanted: string[] | undefined, limit: number, total: number | undefined): string {
@@ -83,10 +105,12 @@ export async function queryTool(session: Session, args: QueryArgs): Promise<Tool
     if (!refText) throw new SpecError([problem('E_ARGS', `ref is required, e.g. "git.hotspots src top=10".`)]);
     const limit = Number.isInteger(args.limit) ? Math.min(MAX_LIMIT, Math.max(1, args.limit!)) : DEFAULT_LIMIT;
     const wanted = typeof args.fields === 'string' ? args.fields.split(/[\s,]+/).filter(Boolean) : undefined;
+    // Decision D8: HEAD, the revision and the file index are looked at before anything is computed.
+    await session.revalidate();
     const {ref, outcome} = await session.runRef(refText);
     if (!outcome.ok) throw new SpecError([problem(sourceCode(outcome.error.code), `${refText}: ${outcome.error.message}`)]);
     const {meta, result} = outcome;
-    const warnings = (result.warnings ?? []).map(warning => `warn ${warning}`);
+    const warnings = boundWarnings(result.warnings ?? []).map(warning => `warn ${warning}`);
     let body: string;
     if (meta.kind === 'tree' && isRecord(result.data)) body = treeText(result.data as unknown as DirNode, limit);
     else if (meta.kind === 'graph' && isRecord(result.data)) body = graphText(result.data as unknown as GraphData, limit);
@@ -97,8 +121,8 @@ export async function queryTool(session: Session, args: QueryArgs): Promise<Tool
       const total = Math.max(result.total ?? 0, result.truncated?.total ?? 0, result.allRows?.length ?? 0, rows.length);
       body = rowsText(rows, (result.fields ?? meta.fields)?.map(field => field.key), wanted, limit, total);
     } else if (isRecord(result.data)) body = `${tsv(['key', 'value'], Object.entries(result.data))}\ntotal=${Object.keys(result.data).length} returned=${Object.keys(result.data).length}`;
-    else body = `${cell(result.data)}\ntotal=1 returned=1`;
-    return text([body, ...warnings, ...session.events.drain()].join('\n'));
+    else body = `${cell(result.data, true)}\ntotal=1 returned=1`;
+    return text([body, ...warnings].join('\n'), session.events.drain());
   } catch (error) {
     return failure(error);
   }

@@ -20,6 +20,8 @@ export interface TokenRun {
 
 let core: Promise<HighlighterCore> | undefined;
 const loaded = new Map<string, Promise<boolean>>();
+/** Grammars that have tokenised something: their patterns are compiled. */
+const warmed = new Set<string>();
 
 // Shiki is imported on first use: a session that never shows code never loads it.
 function highlighter(): Promise<HighlighterCore> {
@@ -94,13 +96,15 @@ export async function tokenizeLines(lines: readonly string[], grammar: string, s
     if (from > 0) await nextTurn();
     const chunk = lines.slice(from, from + CHUNK_LINES);
     try {
-      const tokens = shiki.codeToTokensBase(chunk.join('\n'), {
-        lang: grammar,
-        theme: THEME_NAME,
-        grammarState: current,
-        tokenizeMaxLineLength: MAX_TOKENIZED_LINE,
-        tokenizeTimeLimit: LINE_TIME_LIMIT_MS,
-      });
+      const options = {lang: grammar, theme: THEME_NAME, grammarState: current, tokenizeMaxLineLength: MAX_TOKENIZED_LINE, tokenizeTimeLimit: LINE_TIME_LIMIT_MS};
+      // A grammar compiles its patterns the first time a line reaches them. On a busy machine that one-off cost can
+      // exceed the time limit of a line, which would leave the rest of that line unclassified (and cached that way).
+      // The first text a grammar sees is therefore tokenised twice: once to compile, once to answer.
+      if (!warmed.has(grammar)) {
+        warmed.add(grammar);
+        shiki.codeToTokensBase(chunk.join('\n'), options);
+      }
+      const tokens = shiki.codeToTokensBase(chunk.join('\n'), options);
       current = shiki.getLastGrammarState(tokens) ?? current;
       // The tokenizer splits on the same line breaks, so the counts agree; the fallback keeps the result aligned if not.
       for (let i = 0; i < chunk.length; i++) out.push(tokens[i] ? toTokenLine(tokens[i]!) : plainLines([chunk[i]!])[0]!);

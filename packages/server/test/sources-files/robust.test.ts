@@ -6,8 +6,9 @@ import {dirname, join} from 'node:path';
 import type {DirNode, GraphData} from '@glimpse/catalog';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
 import type {RepoContext} from '../../src/contracts.ts';
+import {parseLog} from '../../src/git/log.ts';
 import {wordMatches} from '../../src/sources/files/code.ts';
-import {parseLog} from '../../src/sources/files/history.ts';
+import {historyOf} from '../../src/sources/files/history.ts';
 import {git} from '../fixtures/repo.ts';
 import {checkResult, makeContext, MINE, run} from './helpers.ts';
 
@@ -69,7 +70,12 @@ describe('a repository in a language without patterns', () => {
     expect(elixir).toMatchObject({data: [], total: 0, warnings: ['no symbol patterns for Elixir: the outline is empty'], summary: '0 rows; fields name kind line'});
     expect((await run(ctx, 'code.symbols priv/logo.png')).warnings).toEqual(['binary file: no outline']);
     expect((await run(ctx, 'code.symbols assets/app.min.js')).warnings).toEqual(['generated file: not scanned']);
-    expect((await run(ctx, 'code.symbols README.md')).warnings).toEqual(['no symbol patterns for Markdown: the outline is empty']);
+  });
+
+  it('outlines a Markdown file by its headings, with no "outline is empty" warning (F092)', async () => {
+    const readme = await run(ctx, 'code.symbols README.md');
+    expect(readme.data).toEqual([{name: 'Shop', kind: 'heading', line: 1, depth: 0, exported: true}]);
+    expect(readme.warnings).toBeUndefined();
   });
 
   it('keeps binary and generated files in the tree by size, out of the line counts', async () => {
@@ -154,12 +160,53 @@ describe('a monorepo', () => {
     expect(graph.level).toBe('file');
     expect(graph.nodes.filter(node => node.kind === 'cluster').map(node => node.id)).toEqual(['packages/core', 'apps/web']);
     expect(graph.edges.filter(edge => edge.from === 'packages/ui/src/index.tsx').map(edge => edge.to)).toEqual(['packages/core', 'ext:react']);
-    expect(result.summary).toBe('13 nodes 3 edges, 0 cycles; level file; 2 imports out of packages/ui');
+    expect(result.summary).toBe('13 nodes 3 edges, 0 file cycles; level file; 2 imports out of packages/ui');
   });
 });
 
-describe('history parsing', () => {
-  const record = (time: number, author: string, ...entries: string[]) => `\x01${time}\x1f${author}\0${entries.map(entry => `\n${entry}`).join('')}`;
+describe('names that are also properties of every object', () => {
+  // File names and dependency names come from the repository. Looked up in a plain object, `constructor` finds
+  // Object.prototype.constructor: a language called "Object", a framework chip without a label, a source that throws.
+  let root: string;
+  let ctx: RepoContext;
+  beforeAll(async () => {
+    root = await makeTree({
+      'package.json': JSON.stringify({name: 'odd', version: '1.0.0', dependencies: {constructor: '1.0.0', toString: '1.0.0', hasOwnProperty: '1.0.0', valueOf: '1.0.0', react: '19.0.0'}}),
+      constructor: 'plain text\n',
+      toString: 'plain text\n',
+      hasOwnProperty: 'plain text\n',
+      'src/a.constructor': 'plain text\n',
+      'src/b.__proto__': 'plain text\n',
+      'src/index.ts': "import React from 'react';\nimport ctor from 'constructor';\nexport const app = [React, ctor];\n",
+    });
+    ctx = makeContext(root, {git: false});
+  });
+  afterAll(async () => { await rm(root, {recursive: true, force: true}); });
+
+  it('every source answers, and nothing inherited is taken for a language or a framework', async () => {
+    const refs: Record<string, string> = {'deps.files': 'deps.files src/index.ts', 'code.symbols': 'code.symbols src/index.ts', 'code.refs': 'code.refs app'};
+    for (const name of MINE) checkResult(name, await run(ctx, refs[name] ?? name));
+    expect(((await run(ctx, 'files.langs')).data as Array<{lang: string}>).map(row => row.lang).sort()).toEqual(['JSON', 'Other', 'TypeScript']);
+    const files = (await run(ctx, 'files.list')).data as Array<{path: string; lang?: string}>;
+    for (const path of ['constructor', 'toString', 'hasOwnProperty', 'src/a.constructor', 'src/b.__proto__']) expect(files.find(file => file.path === path), path).toMatchObject({path, loc: 1});
+    for (const path of ['constructor', 'toString', 'hasOwnProperty', 'src/a.constructor', 'src/b.__proto__']) expect(files.find(file => file.path === path)?.lang, path).toBeUndefined();
+    expect((await run(ctx, 'repo.stack')).data).toEqual([{label: 'TypeScript', slotKey: 'TypeScript'}, 'React']);
+    expect((await run(ctx, 'deps.external')).data).toEqual([
+      {package: 'constructor', importers: 1, ecosystem: 'npm'},
+      {package: 'react', importers: 1, ecosystem: 'npm'},
+    ]);
+  });
+});
+
+describe('history counts', () => {
+  // The files sources have no parser of their own: they count over the commits the shared parser (git/log.ts) read.
+  let serial = 0;
+  const record = (time: number, author: string, ...entries: string[]) =>
+    `\x01${(++serial).toString(16).padStart(40, '0')}\x1f${author}\x1f${time}\x1fsubject\0${entries.map(entry => `\n${entry}`).join('')}`;
+  const counts = (raw: string) => {
+    const commits = parseLog(raw);
+    return historyOf({commits}, commits);
+  };
 
   it('counts commits per current path and per directory, following renames back in time', () => {
     const raw = [
@@ -169,7 +216,7 @@ describe('history parsing', () => {
       record(100, 'Ana', 'R100\0lib/engine.ts\0src/engine.ts\0', 'D\0old.ts\0'),
       record(50, 'Cy', 'A\0lib/engine.ts\0'),
     ].join('');
-    const history = parseLog(raw);
+    const history = counts(raw);
     expect(history.commits).toBe(5);
     expect(history.times).toEqual([400, 300, 200, 100, 50]);
     expect([...history.authors].sort()).toEqual(['Ana', 'Ben', 'Cy']);
@@ -186,11 +233,23 @@ describe('history parsing', () => {
   });
 
   it('survives empty and malformed output', () => {
-    expect(parseLog('').commits).toBe(0);
-    expect(parseLog('\x01\x01garbage\0\0\0\x01 12 \x1fAna\0\nM\0').commits).toBe(1);
+    expect(counts('').commits).toBe(0);
+    expect(counts(`\x01\x01garbage\0\0\0${record(12, 'Ana', 'M\0')}`).commits).toBe(1);
     // a rename cycle in the history does not loop forever
     const loop = [record(3, 'A', 'R100\0a\0b\0'), record(2, 'A', 'R100\0b\0a\0'), record(1, 'A', 'M\0a\0')].join('');
-    expect(parseLog(loop).commits).toBe(3);
+    expect(counts(loop).commits).toBe(3);
+  });
+
+  it('keeps totals for the whole history when the files are known for the latest commits only', () => {
+    const all = parseLog([record(30, 'Ana', 'M\0src/a.ts\0'), record(20, 'Ben', 'M\0src/a.ts\0'), record(10, 'Cy', 'A\0old/b.ts\0')].join(''));
+    // the parsed window holds the two newest commits; author and time of the third are still known
+    const history = historyOf({commits: all.slice(0, 2)}, all);
+    expect(history.commits).toBe(3);
+    expect([...history.authors].sort()).toEqual(['Ana', 'Ben', 'Cy']);
+    expect(history.times).toEqual([30, 20, 10]);
+    expect(history.dirCommits.get('')).toBe(3);
+    expect(history.fileCommits.get('src/a.ts')).toBe(2);
+    expect(history.fileCommits.has('old/b.ts')).toBe(false);
   });
 
   it('reads real history with odd file names', async () => {

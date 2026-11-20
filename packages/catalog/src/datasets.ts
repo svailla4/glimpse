@@ -107,12 +107,16 @@ export function formatFileLoc(l: ParsedFileLoc): FileLoc {
   if (l.line == null) return l.path;
   return l.endLine != null && l.endLine !== l.line ? `${l.path}#L${l.line}-${l.endLine}` : `${l.path}#L${l.line}`;
 }
-/** "3,7-9" -> [[3,3],[7,9]] */
+const LINE_RANGE = /^\s*#?L?(\d+)(?:\s*-\s*L?(\d+))?\s*$/i;
+/**
+ * "3,7-9" -> [[3,3],[7,9]]. A part may also be written the way file anchors are: "L3", "L7-9", "L7-L9", "#L7-9".
+ * Parts that are not line numbers are dropped.
+ */
 export function parseLineRanges(spec: string | undefined): Array<[number, number]> {
   if (!spec) return [];
   const out: Array<[number, number]> = [];
   for (const part of spec.split(',')) {
-    const m = /^\s*(\d+)(?:\s*-\s*(\d+))?\s*$/.exec(part);
+    const m = LINE_RANGE.exec(part);
     if (m) out.push([Number(m[1]), Number(m[2] ?? m[1])]);
   }
   return out;
@@ -187,16 +191,25 @@ export interface StepItem { title: string; note?: string; status?: StepStatus; f
 export interface ListItem { title: string; sub?: string; value?: number | string; file?: FileLoc; tone?: Tone }
 export type KeyValueData = Record<string, unknown> | Array<{k: string; v: unknown}>;
 export type ChipItem = string | {label: string; tone?: Tone; slotKey?: string};
+/** `name` is canonical; Layers also reads the layer's name from `label` or `title`. */
 export interface LayerItem { name: string; note?: string; items: Array<string | {label: string; file?: FileLoc; note?: string}> }
-export interface ErColumn { name: string; type?: string; pk?: boolean; fk?: boolean; nullable?: boolean }
+/**
+ * `fk` is true, or names the column it points at ('users.id', or just 'users'); `ref` is a synonym for the string
+ * form. The string form also draws the relation, so `relations` can be left out.
+ */
+export interface ErColumn { name: string; type?: string; pk?: boolean; fk?: boolean | string; ref?: string; nullable?: boolean }
 export interface ErTable { name: string; file?: FileLoc; columns: ErColumn[] }
-export interface ErData { tables: ErTable[]; relations?: Array<{from: string; to: string; label?: string; card?: '1-1' | '1-n' | 'n-1' | 'n-n'}> }
+/** `from` and `to` are 'table.column' (or a bare table name). */
+export interface ErRelation { from: string; to: string; label?: string; card?: '1-1' | '1-n' | 'n-1' | 'n-n' }
+/** ERDiagram also accepts the bare table list (ErTable[]); relations then come from the columns' `fk`. */
+export interface ErData { tables: ErTable[]; relations?: ErRelation[] }
 export interface TourStop { file: FileLoc; title?: string; note: string }
 export interface CodeNote { line: number; endLine?: number; text: string; kind?: 'note' | 'warn' | 'risk' }
 
 // rows produced by specific sources (documented field sets)
 export interface CommitRow { sha: string; subject: string; author: string; date: string; add?: number; del?: number; files?: number; refs?: string[] }
-export interface SymbolRow { name: string; kind: 'fn' | 'class' | 'method' | 'type' | 'iface' | 'const' | 'var' | 'enum' | 'mod'; line: number; endLine?: number; depth: number; exported: boolean }
+/** `heading` is a Markdown heading: a README has an outline too. */
+export interface SymbolRow { name: string; kind: 'fn' | 'class' | 'method' | 'type' | 'iface' | 'const' | 'var' | 'enum' | 'mod' | 'heading'; line: number; endLine?: number; depth: number; exported: boolean }
 export interface HotspotRow { path: string; commits: number; complexity: number; sloc: number; score: number; owner: string; isTest: boolean }
 export interface ChurnRow { path: string; commits: number; authors: number; owner: string; ownership: number; first: string; last: string }
 export interface LangRow { lang: string; files: number; loc: number; pct: number }

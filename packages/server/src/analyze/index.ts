@@ -1,9 +1,10 @@
 // The repository index: inventory, facts, import edges and the module cut, memoized until invalidate().
 // Frozen signature (contracts.ts): createRepoIndex(root, runGit, log): RepoIndex.
 import {basename} from 'node:path';
-import type {FileFacts, ImportEdge, RepoContext, RepoIndex, RunGit} from '../contracts.ts';
+import type {FileEntry, FileFacts, ImportEdge, RepoContext, RepoIndex, RunGit} from '../contracts.ts';
 import type {ScannedFacts} from './facts.ts';
-import {listFiles, scanFiles, type Scan, type ScanRecord} from './inventory.ts';
+import {isListed, listFiles, scanFiles, type Scan, type ScanRecord} from './inventory.ts';
+import {isTestPath, languageOf} from './languages.ts';
 import {buildModel, expandLinks, manifestsOf, type RepoModel} from './model.ts';
 import {resolveImports} from './resolve.ts';
 
@@ -11,12 +12,19 @@ export type {RepoModel} from './model.ts';
 
 interface Revision {
   scan: Promise<Scan>;
+  paths?: Promise<ReadonlySet<string>>;
   model?: Promise<RepoModel>;
   edges?: Promise<ImportEdge[]>;
 }
 
+interface Own {
+  model(): Promise<RepoModel>;
+  /** Imports that would resolve to paths which are no longer files of the repository (see importersOfGone). */
+  towards(gone: readonly string[]): Promise<ImportEdge[]>;
+}
+
 /** Models of indexes built here, so the sources reuse them instead of deriving their own. */
-const OWN = new WeakMap<RepoIndex, () => Promise<RepoModel>>();
+const OWN = new WeakMap<RepoIndex, Own>();
 /** Models derived for an index built elsewhere (a test fake), keyed by the identity of its file list. */
 const DERIVED = new WeakMap<RepoIndex, {files: unknown; model: Promise<RepoModel>}>();
 
@@ -70,12 +78,45 @@ export function createRepoIndex(root: string, runGit: RunGit, log: (message: str
       return mine.edges;
     },
     moduleOf: async path => (await model()).cut.moduleOf(normalize(path)),
+    has: async path => {
+      const clean = normalize(path);
+      const mine = current();
+      mine.paths ??= mine.scan.then(scan => new Set(scan.entries.map(entry => entry.path)));
+      if ((await mine.paths).has(clean)) return true;
+      // Not in the scan: either not a file of the project, or one created since. Git (or the walk's rules) decides.
+      return isListed(root, runGit, (await mine.scan).source, clean);
+    },
     invalidate: () => {
       revision = undefined;
     },
   };
-  OWN.set(index, model);
+  OWN.set(index, {
+    model,
+    towards: async gone => {
+      const [scan, built] = await Promise.all([current().scan, model()]);
+      const wanted = new Set(gone.filter(path => !built.byPath.has(path)));
+      if (wanted.size === 0) return [];
+      // The scan's import statements are resolved again as if the vanished files were still there: whatever now
+      // lands on one of them is an import that the change broke (or one that silently moved to another file).
+      const ghosts: FileEntry[] = [...wanted].map(path => {
+        const language = languageOf(path);
+        return {path, ...(language ? {lang: language.name} : {}), loc: 0, sloc: 0, bytes: 0, binary: false, tracked: false, isTest: isTestPath(path), generated: false};
+      });
+      const files = [...scan.entries, ...ghosts].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      return resolveImports(files, scan.facts, built.manifests).edges.filter(edge => wanted.has(edge.to));
+    },
+  });
   return index;
+}
+
+/**
+ * Imports that point at files which no longer exist: for each path in `gone` (deleted, or the old name of a renamed
+ * file), the files of the working tree whose import statements would resolve to it. The current index has no such
+ * edges (an import of a missing file resolves to nothing), yet these are the importers a deletion breaks. Empty for
+ * an index that was not built by createRepoIndex.
+ */
+export async function importersOfGone(ctx: Pick<RepoContext, 'index'>, gone: readonly string[]): Promise<ImportEdge[]> {
+  return gone.length === 0 ? [] : ((await OWN.get(ctx.index)?.towards(gone)) ?? []);
 }
 
 /**
@@ -84,7 +125,7 @@ export function createRepoIndex(root: string, runGit: RunGit, log: (message: str
  */
 export async function repoModel(ctx: Pick<RepoContext, 'index' | 'root' | 'name'>): Promise<RepoModel> {
   const own = OWN.get(ctx.index);
-  if (own) return own();
+  if (own) return own.model();
   const files = await ctx.index.files();
   const cached = DERIVED.get(ctx.index);
   if (cached && cached.files === files) return cached.model;

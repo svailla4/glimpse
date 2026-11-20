@@ -1,4 +1,8 @@
 @layer gl.components {
   .shell { display: flex; flex-direction: column; min-width: 0; }
   .shell[data-sized] { height: 100%; }
+  /* A flush plate has no padding of its own. A state that stands in for the view (drafting, empty, redline) is this
+     wrapper's child, not the plate body's, so the kit's inset for flush plates is repeated here. */
+  :global(.gl-frame[data-flush]) .shell > :global(.gl-state) { margin: 14px; }
+  :global(.gl-frame[data-flush]) .shell > :global(:is(.gl-drafting, .gl-empty)) { flex: 1 1 auto; height: auto; }
 }

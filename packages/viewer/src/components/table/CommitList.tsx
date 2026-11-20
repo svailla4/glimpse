@@ -2,12 +2,12 @@ import type * as C from '@glimpse/catalog';
 import type {CommitRow, DataRow, Dataset, EntityRef} from '@glimpse/catalog';
 import {memo, useEffect, useMemo, useRef, type JSX, type KeyboardEvent, type MouseEvent} from 'react';
 import {
-  DataGate, PlateAside, Redline, catVar, fmtNum, useDataset, useMeta, useSelection,
+  DataGate, PlateAside, Redline, catVar, fmtNum, useCatSlots, useDataset, useSelection,
   type DataState, type GlView, type GlViewProps,
 } from '../../kit/index.ts';
 import {DateCell} from './cells.tsx';
 import s from './CommitList.module.css';
-import {useListNav, useRowHeight, visibleRange} from './nav.ts';
+import {useListNav, useRowHeight, useScrollFade, visibleRange} from './nav.ts';
 import {useRemoteRows} from './remote.ts';
 import {Shell} from './shell.tsx';
 import {copyText, describeType, normalizeRows, num, selectionMark, type SelectionMark} from './rows.ts';
@@ -15,7 +15,8 @@ import {copyText, describeType, normalizeRows, num, selectionMark, type Selectio
 type Props = GlViewProps<typeof C.CommitList>['props'];
 
 const MINUS = '−';
-const MAX_REFS = 3;
+/** Ref chips drawn per commit; the rest are counted in a `+n` chip whose tooltip names them. */
+const MAX_REFS = 2;
 
 interface Commit {
   sha: string;
@@ -101,9 +102,11 @@ interface RowProps {
   mark: SelectionMark;
   active: boolean;
   count: number;
+  /** False when no commit of the list carries line counts: the bar and count tracks are then not reserved. */
+  showChanges: boolean;
 }
 
-const CommitItem = memo(function CommitItem({index, top, commit, loading, slot, peak, mark, active, count}: RowProps): JSX.Element {
+const CommitItem = memo(function CommitItem({index, top, commit, loading, slot, peak, mark, active, count, showChanges}: RowProps): JSX.Element {
   const common = {
     'aria-posinset': index + 1,
     'aria-setsize': count,
@@ -131,8 +134,8 @@ const CommitItem = memo(function CommitItem({index, top, commit, loading, slot, 
       <span className={s.subject} title={commit.subject}>{commit.subject || <span className={s.dim}>no subject</span>}</span>
       {commit.refs.length > 0 ? (
         <span className={s.refs}>
-          {commit.refs.slice(0, MAX_REFS).map(ref => <span key={ref} className={s.ref}>{ref}</span>)}
-          {commit.refs.length > MAX_REFS ? <span className={s.ref} title={commit.refs.slice(MAX_REFS).join(', ')}>+{commit.refs.length - MAX_REFS}</span> : null}
+          {commit.refs.slice(0, MAX_REFS).map(ref => <span key={ref} className={s.ref} title={ref}>{ref}</span>)}
+          {commit.refs.length > MAX_REFS ? <span className={s.refMore} title={commit.refs.slice(MAX_REFS).join(', ')}>+{commit.refs.length - MAX_REFS}</span> : null}
         </span>
       ) : null}
       {commit.author ? (
@@ -142,19 +145,21 @@ const CommitItem = memo(function CommitItem({index, top, commit, loading, slot, 
         </span>
       ) : <span className={s.authorGap} />}
       <span className={s.date}>{commit.date ? <DateCell iso={commit.date} /> : null}</span>
-      <span className={s.changes}>
-        {changed ? (
-          <>
-            <span className={s.bars} aria-hidden="true">
-              <span className={s.barAdd} style={{width: total > 0 ? `${(share * add * 100) / total}%` : 0}} />
-              <span className={s.barDel} style={{width: total > 0 ? `${(share * del * 100) / total}%` : 0}} />
-            </span>
-            <span className={s.counts}>
-              <span className={s.add}>+{fmtNum(add, add >= 10_000 ? 'compact' : 'num')}</span> <span className={s.del}>{MINUS}{fmtNum(del, del >= 10_000 ? 'compact' : 'num')}</span>
-            </span>
-          </>
-        ) : null}
-      </span>
+      {showChanges ? (
+        <span className={s.changes}>
+          {changed ? (
+            <>
+              <span className={s.bars} aria-hidden="true">
+                <span className={s.barAdd} style={{width: total > 0 ? `${(share * add * 100) / total}%` : 0}} />
+                <span className={s.barDel} style={{width: total > 0 ? `${(share * del * 100) / total}%` : 0}} />
+              </span>
+              <span className={s.counts}>
+                <span className={add ? s.add : s.zero}>+{fmtNum(add, add >= 10_000 ? 'compact' : 'num')}</span> <span className={del ? s.del : s.zero}>{MINUS}{fmtNum(del, del >= 10_000 ? 'compact' : 'num')}</span>
+              </span>
+            </>
+          ) : null}
+        </span>
+      ) : null}
     </div>
   );
 });
@@ -171,13 +176,13 @@ interface ListProps {
 function List({id, props, rows, skipped, ds, remote}: ListProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowHeight = useRowHeight();
-  const authorSlots = useMeta()?.slots?.author;
   const {selected, select} = useSelection(id);
 
   const pager = useRemoteRows(remote ? ds : undefined, {}, rows);
   const count = remote ? pager.total : rows.length;
   const rowAt = (index: number): DataRow | undefined => (remote ? pager.rowAt(index) : rows[index]);
   const nav = useListNav({count, rowHeight, scrollRef});
+  useScrollFade(scrollRef, `${count}:${rowHeight}`);
 
   const [firstVisible, lastVisible] = visibleRange(nav.items, nav.active);
   const want = pager.want;
@@ -191,7 +196,27 @@ function List({id, props, rows, skipped, ds, remote}: ListProps): JSX.Element {
     for (const row of rows) max = Math.max(max, (num(row.add) ?? 0) + (num(row.del) ?? 0));
     return max;
   }, [rows]);
+  // A long log comes without line counts (one numstat per commit is too slow): then nothing is reserved for them
+  // and the subject takes the width.
+  const hasChanges = useMemo(() => rows.some(row => num(row.add) !== undefined || num(row.del) !== undefined), [rows]);
   const malformed = useMemo(() => skipped + rows.reduce((n, row) => n + (toCommit(row) ? 0 : 1), 0), [rows, skipped]);
+
+  // Authors are coloured by the kit (D6): a session ink where there is one, else the free inks in order of first
+  // appearance; the dataset's own rows first, then the rows paged in.
+  const authors: string[] = [];
+  {
+    const seen = new Set<string>();
+    const note = (row: DataRow | undefined) => {
+      const author = row ? toCommit(row)?.author : undefined;
+      if (author && !seen.has(author) && authors.length < 256) {
+        seen.add(author);
+        authors.push(author);
+      }
+    };
+    for (const row of rows) note(row);
+    if (remote) for (const item of nav.items) note(rowAt(item.index));
+  }
+  const cat = useCatSlots('author', authors);
 
   const commitAt = (index: number): Commit | undefined => {
     const row = rowAt(index);
@@ -236,7 +261,7 @@ function List({id, props, rows, skipped, ds, remote}: ListProps): JSX.Element {
       {notes.length > 0 || pager.error ? (
         <PlateAside>
           {pager.error ? <span className={s.failed} role="alert">commits failed to load: {pager.error}</span> : null}
-          {notes.length > 0 ? <span className={s.note} data-gl-commits-note="">{notes.join(' · ')}</span> : null}
+          {notes.length > 0 ? <span className={s.note} data-gl-commits-note="" title={notes.join(' · ')}>{notes.join(' · ')}</span> : null}
         </PlateAside>
       ) : null}
       <div
@@ -261,11 +286,12 @@ function List({id, props, rows, skipped, ds, remote}: ListProps): JSX.Element {
                 top={virtual.start}
                 commit={commit}
                 loading={row === undefined}
-                slot={(commit && authorSlots?.[commit.author]) || 0}
+                slot={commit ? cat.slot(commit.author) : 0}
                 peak={peak}
                 mark={commit ? selectionMark(selected, entityOf(commit)) : undefined}
                 active={virtual.index === nav.active}
                 count={count}
+                showChanges={hasChanges}
               />
             );
           })}

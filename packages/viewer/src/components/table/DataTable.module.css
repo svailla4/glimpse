@@ -13,6 +13,13 @@
 
   .scroll { flex: 0 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
   .root[data-sized] .scroll { flex: 1 1 0; }
+  /* More rows below or more columns to the right: that edge fades, so a cut row or column reads as "scroll". */
+  .scroll[data-more-y] { mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent); }
+  .scroll[data-more-x] { mask-image: linear-gradient(to right, black calc(100% - 24px), transparent); }
+  .scroll[data-more-x][data-more-y] {
+    mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent), linear-gradient(to right, black calc(100% - 24px), transparent);
+    mask-composite: intersect;
+  }
   .inner { position: relative; }
 
   .head, .row {
@@ -70,6 +77,11 @@
 
   .cell { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cell[data-align='end'] { text-align: right; }
+  /* In a narrow path column the file name is worth more than the badge that repeats its extension. */
+  .cell[data-kind='path'] { container-type: inline-size; }
+  @container (max-width: 259px) {
+    .cell :global(.gl-path-ext) { display: none; }
+  }
   .line { font: 12px/18px var(--gl-font-mono); color: var(--gl-ink-3); font-feature-settings: 'tnum' 1, 'zero' 1; }
   .skeleton { display: block; width: 60%; height: 1px; background: var(--gl-rule); }
 
@@ -82,16 +94,19 @@
     cursor: pointer;
   }
   .groupCell { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
-  .groupLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+  .groupLabel { display: flex; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .groupCount { flex: none; margin-left: auto; font: 11px/16px var(--gl-font-mono); color: var(--gl-ink-3); font-feature-settings: 'tnum' 1, 'zero' 1; }
   .chevron { flex: none; fill: none; stroke: var(--gl-ink-3); stroke-width: 1.25; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--gl-t-state) var(--gl-ease); }
   .chevron[data-open] { transform: rotate(90deg); }
 
   .none { padding: 20px 14px; text-align: center; font: 11px/16px var(--gl-font-mono); color: var(--gl-ink-3); }
 
-  .note, .failed { font: 11px/16px var(--gl-font-mono); color: var(--gl-ink-3); white-space: nowrap; }
+  /* Header notes give way before the title does: they shorten with an ellipsis, the full text is the tooltip. */
+  .note, .failed { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 11px/16px var(--gl-font-mono); color: var(--gl-ink-3); white-space: nowrap; }
   .failed { color: var(--gl-critical); }
   .search {
+    flex: 0 1 auto;
+    min-width: 0;
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -108,7 +123,9 @@
   .search:focus-within { outline: 2px solid var(--gl-accent); outline-offset: 2px; border-color: var(--gl-rule-strong); }
   .searchInput {
     all: unset;
+    flex: 0 1 132px;
     width: 132px;
+    min-width: 48px;
     font: 12px/18px var(--gl-font-mono);
     color: var(--gl-ink);
   }

@@ -81,6 +81,24 @@ function unquote(label: string): string {
 
 interface FlowBuilder { nodes: Map<string, FlowNode & {explicit: boolean}>; edges: FlowEdge[] }
 
+/**
+ * A node written as plain words instead of `id[label]`: "Enter credentials --> Valid?". The words up to the next
+ * arrow (or `&`, or the end) are the label, the id is the label with every other character run turned into `_`
+ * ("Enter_credentials", so the same words name the same node and "Valid?" is also reachable as `Valid`), and a
+ * trailing `?` makes it a diamond. Text that is a plain id, or that contains brackets, pipes or `>`, is not free
+ * text: the id[label] grammar reads it and reports what is wrong with it.
+ */
+function freeNode(rest: string): {id: string; label: string; length: number} | undefined {
+  const stop = rest.search(/--|-\.|==|&/);
+  const raw = stop < 0 ? rest : rest.slice(0, stop);
+  const text = raw.trim();
+  const label = /^"[^"]+"$/.test(text) ? text.slice(1, -1).trim() : text;
+  if (label === '' || /[[\]{}()|<>"]/.test(label) || /^[A-Za-z_][A-Za-z0-9_]*$/.test(label)) return undefined;
+  const slug = label.replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '');
+  if (slug === '') return undefined;
+  return {id: /^[\p{L}_]/u.test(slug) ? slug : `n_${slug}`, label, length: raw.length};
+}
+
 function parseFlowStatement(text: string, b: FlowBuilder): void {
   let pos = 0;
   const rest = () => text.slice(pos);
@@ -89,6 +107,12 @@ function parseFlowStatement(text: string, b: FlowBuilder): void {
 
   const node = (): string => {
     skip();
+    const free = freeNode(rest());
+    if (free) {
+      pos += free.length;
+      if (!b.nodes.has(free.id)) b.nodes.set(free.id, {id: free.id, label: free.label, shape: free.label.endsWith('?') ? 'diamond' : 'box', explicit: true});
+      return free.id;
+    }
     const m = ID.exec(rest());
     if (!m) throw new FlowSyntaxError(`expected a node id at column ${pos + 1}, found ${found()}`);
     const id = m[0];

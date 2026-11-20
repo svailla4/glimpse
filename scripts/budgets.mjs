@@ -5,13 +5,16 @@
 //   node scripts/budgets.mjs --repo <dir>    also measure the preset results on that repository (default: this one)
 //   node scripts/budgets.mjs --json          print the measurements as JSON instead of a table
 //
+// Each limit keeps headroom under the hard figure of design section 10 (decision D13), so the next component or
+// source still fits: the hard figure is in parentheses.
 // What the agent pays for, in characters (the bundled server is started over stdio and asked through the MCP client):
-//   instructions                 <= 4,000   sent once per session
+//   instructions                 <= 3,750   sent once per session (4,000; the catalog's INSTRUCTIONS_TARGET)
 //   show + catalog definitions   <= 1,500   the two always-loaded tools: name, description and input schema as JSON
 //   a preset result              <= 1,200   every preset, on the deterministic fixture repository and on --repo,
 //                                           first call and repeat call (when every dataset has settled)
 // What the browser pays for, gzip (default level, as Vite reports it; 1 kB = 1,000 bytes):
-//   eager viewer JS              <= 200 kB  the entry script and everything it imports statically
+//   eager viewer JS              <= 195 kB  the entry script and everything it imports statically (200 kB;
+//                                           the same figure as packages/viewer/test/build.test.ts)
 //   each lazy chunk              <= 120 kB  every other script
 // Exits 1 when a budget is exceeded or a measurement could not be taken.
 import {existsSync} from 'node:fs';
@@ -22,7 +25,10 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {gzipSync} from 'node:zlib';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const LIMITS = {instructions: 4000, definitions: 1500, preset: 1200, eager: 200_000, lazy: 120_000};
+// The catalog (and below, the fixture) is TypeScript; Node strips the types itself (22.18 or newer, as package.json
+// requires).
+const {INSTRUCTIONS_TARGET} = await import(pathToFileURL(join(root, 'packages', 'catalog', 'src', 'docs.ts')).href);
+const LIMITS = {instructions: INSTRUCTIONS_TARGET, definitions: 1500, preset: 1200, eager: 195_000, lazy: 120_000};
 
 const argv = process.argv.slice(2);
 const option = name => {
@@ -148,7 +154,6 @@ async function measureSession() {
 let fixture;
 try {
   await measureSession();
-  // The fixture is TypeScript; Node strips the types itself (22.18 or newer, as package.json requires).
   const {makeFixtureRepo} = await import(pathToFileURL(join(root, 'packages', 'server', 'test', 'fixtures', 'repo.ts')).href);
   fixture = await makeFixtureRepo();
   await measurePresets('the fixture repository', fixture.root);

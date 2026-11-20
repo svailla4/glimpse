@@ -1,10 +1,11 @@
-// packages/viewer/test/harness.tsx  (WP0, frozen)
+// packages/viewer/test/harness.tsx  (first version by WP0; owned by the viewer kit)
 // Renders real A2UI v1.0 messages through the real components, the real kit and a FixtureHost, under jsdom.
 // Component tests in test/<chunk>/ use nothing else:
 //
 //   const view = renderExpress(`root=Page('T',[t])\nt=DataTable('git.churn',title='Churn')`, {datasets: 'ready'});
 //   const table = await screen.findByRole('table');           // lazy chunks resolve asynchronously: use findBy*
 //   view.send(buildPatch(...)); view.setData('/ui/sel', ...); view.actions; view.host.calls; view.cell('t')
+//   view.reports                       what the viewer would tell the host it drew instead of content (W_EMPTY, redline codes)
 //
 //   renderSpec(messages, options)      messages as the server would send them (fixtures, hand-written wire JSON)
 //   renderExpress(spec, options)       Express source -> the server's snapshot (refs expanded, /ds /ui /meta filled)
@@ -23,13 +24,13 @@
 // between tests) unmounts; the fakes are removed with it.
 import {A2uiSurface, type ReactCatalogComponent} from '@a2ui/react';
 import {Catalog, MessageProcessor, type ActionPayload, type SurfaceModel} from '@a2ui/web_core/v1_0';
-import {CATALOG_ID, COMPONENTS, PROTOCOL_VERSION, type A2uiMessage, type Chunk, type DataClient} from '@glimpse/catalog';
+import {CATALOG_ID, COMPONENTS, PROTOCOL_VERSION, type A2uiMessage, type Chunk, type DataClient, type LinkStatus} from '@glimpse/catalog';
 import {createFixtureHost, type FixtureHost} from '@glimpse/catalog/fixtures';
 import {buildSurface, type BuildSurfaceOptions} from '@glimpse/catalog/testing';
 import {act, render} from '@testing-library/react';
 import {useSyncExternalStore, type ReactNode} from 'react';
 import {afterEach} from 'vitest';
-import {KitProvider, implement, kitSlots, type ChunkLoaders, type ViewModule} from '../src/kit/index.ts';
+import {KitProvider, implement, kitSlots, type ChunkLoaders, type RenderReport, type ViewModule} from '../src/kit/index.ts';
 
 export {buildPatch, buildSurface} from '@glimpse/catalog/testing';
 export {DATASET_FIXTURES, HOST_FIXTURES, createFixtureHost, datasetFixture, errorDataset, pendingDataset} from '@glimpse/catalog/fixtures';
@@ -85,6 +86,8 @@ export interface RenderSpecOptions {
   size?: {width: number; height: number} | false;
   /** Surface to render when the messages create several. Default: the first one created. */
   surfaceId?: string;
+  /** State of the link the views see through useLinkStatus(). Default 'live'. */
+  link?: LinkStatus;
   /** Wraps the surface inside KitProvider: extra providers, a sized container, a `.gl-page` grid. */
   wrapper?: (surface: ReactNode) => ReactNode;
 }
@@ -99,6 +102,11 @@ export interface RenderedSpec {
   actions: ActionPayload[];
   /** Everything reported on the processor's error channel ({code, message, ...}): messages rejected by send() and render-time errors. Usually asserted empty. */
   errors: unknown[];
+  /**
+   * Every state a component reported to the host instead of content, in order, as the shell would post it (design
+   * rule D3): {code: 'W_EMPTY' | a redline code, message: 'Name#id: ...', surfaceId}. Not deduplicated.
+   */
+  reports: RenderReport[];
   host: FixtureHost;
   /** Text written to the clipboard so far. */
   clipboard: string[];
@@ -121,7 +129,8 @@ let restoreLayout: (() => void) | undefined;
 
 /**
  * Makes jsdom answer layout questions: offsetWidth / offsetHeight / clientWidth / clientHeight and
- * getBoundingClientRect report `size`; ResizeObserver calls back once, synchronously, on observe(); scrollTo,
+ * getBoundingClientRect report `size`; ResizeObserver calls back once, synchronously, on observe(); scrollTo (on
+ * elements and on the window),
  * scrollIntoView, Element.animate, matchMedia, SVG getBBox / getComputedTextLength (6.5 px per character) exist.
  * renderSpec calls it for you; it is exported for tests that render without the harness.
  */
@@ -158,6 +167,8 @@ export function installLayout(size: {width: number; height: number} = DEFAULT_SI
 
   // Things jsdom does not implement at all: only added when missing.
   const noop = () => {};
+  // jsdom's window.scrollTo only logs "not implemented"; a test that spies on it keeps its spy.
+  if (!('mock' in window.scrollTo)) define(window, 'scrollTo', {value: noop, writable: true});
   define(Element.prototype, 'scrollTo', {value: noop, writable: true}, false);
   define(Element.prototype, 'scrollIntoView', {value: noop, writable: true}, false);
   define(Element.prototype, 'animate', {
@@ -225,6 +236,8 @@ export function renderSpec(messages: A2uiMessage | readonly A2uiMessage[], optio
 
   const actions: ActionPayload[] = [];
   const errors: unknown[] = [];
+  const reports: RenderReport[] = [];
+  const report = (state: RenderReport) => void reports.push(state);
   const clipboard: string[] = [];
   installClipboard(clipboard);
   const host = createFixtureHost(options.host);
@@ -250,7 +263,7 @@ export function renderSpec(messages: A2uiMessage | readonly A2uiMessage[], optio
     const tick = useSyncExternalStore(subscribe, () => version);
     const surface = current();
     const node = surface ? <A2uiSurface key={tick} surface={surface} /> : null;
-    return <KitProvider host={host}>{options.wrapper ? options.wrapper(node) : node}</KitProvider>;
+    return <KitProvider host={host} link={options.link} report={report}>{options.wrapper ? options.wrapper(node) : node}</KitProvider>;
   }
   const rendered = render(<Host />);
 
@@ -265,6 +278,7 @@ export function renderSpec(messages: A2uiMessage | readonly A2uiMessage[], optio
     container: rendered.container,
     actions,
     errors,
+    reports,
     host,
     clipboard,
     send(more) {

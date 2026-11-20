@@ -4,7 +4,7 @@ import {datasetKey, parseRef, SOURCE_BY_NAME, type A2uiMessage, type WireCompone
 import {beforeAll, describe, expect, it} from 'vitest';
 import {createRegistry} from '../../src/sources/registry.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
-import {boundKeys, checkRef, expandMessages, refSignature, unboundPaths} from '../../src/spec/expand.ts';
+import {boundKeys, checkRef, expandMessages, refSignature, splitRatio, unboundPaths} from '../../src/spec/expand.ts';
 import {fakeSources} from '../session/fakes.ts';
 
 let tools: Toolchain;
@@ -129,6 +129,51 @@ describe('expandMessages: notation, columns, paths', () => {
   it('collects every problem of a call', () => {
     const out = expand(`root=Page('x',[DataTable('nope.nope'),Flowchart('???'),DataTable('fake.rows','a:zzz'),DataTable('code.refs')])`);
     expect(out.codes).toEqual(['E_SOURCE', 'E_NOTATION', 'E_ENUM', 'E_ARGS']);
+  });
+
+  it('a reserved path segment in a compiled message is E_PATH (decision D10)', () => {
+    const out = expandMessages([{version: '1.0', updateDataModel: {surfaceId: 's', path: '/a/__proto__/b', value: 1}}], registry);
+    expect(out.problems.map(p => `${p.code} ${p.message}`)).toEqual(['E_PATH "__proto__" cannot be used as a data path segment: __proto__, constructor and prototype are reserved. Rename it.']);
+  });
+});
+
+// Findings F032 and F090: an `ok` whose view shows a redline. What the spec alone gives away is said at once.
+describe('expandMessages: what is certain to draw wrong', () => {
+  it('warns when a source returns a kind of data the component cannot draw', () => {
+    const out = expand(`root=Page('x',[DataTable('diff.impact',id='impact'),Treemap('files.list'),Graph('files.tree'),DataTable('fake.rows'),Treemap(),JsonView('deps.modules')])`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([
+      'DataTable#impact: diff.impact returns a graph, but DataTable draws rows (Rows). The plate will show an error.',
+      'Treemap#root_children_1: files.list returns rows, but Treemap draws a tree (DirNode). The plate will show an error.',
+      'Graph#root_children_2: files.tree returns a tree, but Graph draws a graph (GraphData). The plate will show an error.',
+    ]);
+  });
+
+  it('collects the literal files and ranges for the session to check', () => {
+    const out = expand(`root=Page('x',[CodeView('src/a.ts#L10-20'),CodeView(),CodeView($/ui/file),FileRef('src/b.ts'),SymbolOutline('src/c.ts'),DiffView('main..HEAD','gone.ts'),DiffView(),DiffView('wt'),CodeTour([{file:'src/d.ts#L1-9',note:'n'},{file:'src/e.ts',note:'m'}])])`);
+    expect(out.files.map(entry => entry.file)).toEqual(['src/a.ts#L10-20', 'src/b.ts', 'src/c.ts', 'src/d.ts#L1-9', 'src/e.ts']);
+    expect(out.files[0]!.where).toBe('CodeView#root_children_0');
+    expect(out.ranges).toEqual([{where: 'DiffView#root_children_5', range: 'main..HEAD'}]);
+  });
+
+  it('collects the field names a component asks of its dataset', () => {
+    const out = expand(`root=Page('x',[ScatterPlot('fake.rows',x='churn',y='n'),DataTable('fake.rows src','path:path=File n:num',sort='-owner',group='lang'),LineChart('fake.rows',y='n owner'),BarChart($/inline,x='a'),Treemap(value='loc')])`);
+    expect(out.fields).toEqual([
+      {where: 'ScatterPlot#root_children_0', key: key('fake.rows'), names: ['churn', 'n']},
+      {where: 'DataTable#root_children_1', key: key('fake.rows src'), names: ['path', 'n', 'owner', 'lang']},
+      {where: 'LineChart#root_children_2', key: key('fake.rows'), names: ['n', 'owner']},
+    ]);
+  });
+
+  it('writes a Split ratio given as a share the way Split reads it (finding F037)', () => {
+    expect(splitRatio('0.3')).toBe('3:7');
+    expect(splitRatio('.25')).toBe('1:3');
+    expect(splitRatio('30%')).toBe('3:7');
+    expect(splitRatio('2/1')).toBe('2:1');
+    expect(splitRatio('1:2')).toBe('1:2');
+    expect(splitRatio('wide')).toBe('wide');
+    const out = expand(`root=Page('x',[Split(Text('a'),Text('b'),0.3)])`);
+    expect(out.byComponent('Split').ratio).toBe('3:7');
   });
 });
 

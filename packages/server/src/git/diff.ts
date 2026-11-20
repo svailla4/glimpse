@@ -1,10 +1,14 @@
 // packages/server/src/git/diff.ts
 // What a change range touches (listChanges, shared by the diff.* sources) and the DiffService behind /api/diff:
 // hunks with line numbers, syntax tokens from the code service and word-level marks.
+// Every path in an answer comes from git's own change list (tracked files, and untracked files that are not ignored
+// and not inside a dependency directory): a ?path= only selects from that list, so the diff can never be used to
+// read .git, an ignored file or anything else outside the inventory.
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {DiffFile, DiffHunk, DiffLine, DiffPayload, TokenLine} from '@glimpse/catalog';
 import {diffWordsWithSpace, parsePatch} from 'diff';
+import {underSkipped} from '../analyze/skipped.ts';
 import {clipLine, isBinary, MAX_FILE_BYTES, readTextFile, regularFileSize, repoPath} from '../code/file.ts';
 import {splitLines} from '../code/highlight.ts';
 import {langOfPath} from '../code/langs.ts';
@@ -41,6 +45,11 @@ const DIFF_FLAGS = ['--no-color', '--no-ext-diff', '--no-textconv', '-M', '--rel
 // Payload budget of one /api/diff answer; files beyond it carry no hunks and are fetched one by one with ?path=.
 const MAX_FILES_WITH_HUNKS = 30;
 const MAX_CHANGED_LINES = 3_000;
+/**
+ * Diff lines of one file in an answer to an explicit ?path= request, which the budget above does not limit. A longer
+ * diff ends with a hunk that only says how much was left out; the file itself can be read through /api/file.
+ */
+export const MAX_FILE_DIFF_LINES = 5_000;
 /** Above this many diff lines in one answer the rest is sent without syntax tokens or word marks. */
 const MAX_TOKENIZED_LINES = 6_000;
 /** Word marks are skipped for longer lines and for pairs that have little in common. */
@@ -105,7 +114,7 @@ export async function listChanges(ctx: RepoContext, rangeText: string | undefine
   }
 
   const warnings: string[] = [];
-  const untracked = fields(others).filter(path => path !== '' && !path.endsWith('/') && !changes.has(path));
+  const untracked = fields(others).filter(path => path !== '' && !path.endsWith('/') && !changes.has(path) && !underSkipped(path));
   if (untracked.length > MAX_UNTRACKED) warnings.push(`${untracked.length - MAX_UNTRACKED} untracked files are not shown`);
   await inBatches(untracked.slice(0, MAX_UNTRACKED), READ_PARALLEL, async path => {
     const abs = join(ctx.root, path);
@@ -136,7 +145,7 @@ export async function listChanges(ctx: RepoContext, rangeText: string | undefine
 
 // ---------------------------------------------------------------- hunks
 
-interface RawHunk { oldStart: number; oldLines: number; newStart: number; newLines: number; header: string; lines: Array<{t: DiffLine['t']; text: string; o?: number; n?: number}> }
+export interface RawHunk { oldStart: number; oldLines: number; newStart: number; newLines: number; header: string; lines: Array<{t: DiffLine['t']; text: string; o?: number; n?: number}> }
 
 /** Splits `git diff` output into one text per file. Hunk lines never start at column 0 with "diff --git". */
 function splitSections(patch: string): string[] {
@@ -166,6 +175,32 @@ function hunksOf(section: string): RawHunk[] {
       lines,
     };
   });
+}
+
+/** Cuts the hunks of one file to `max` diff lines; what was left out is said by a last hunk without lines. */
+export function capHunks(raw: RawHunk[], max: number): RawHunk[] {
+  const total = raw.reduce((sum, hunk) => sum + hunk.lines.length, 0);
+  if (total <= max) return raw;
+  const kept: RawHunk[] = [];
+  let left = max;
+  for (const hunk of raw) {
+    if (left <= 0) break;
+    if (hunk.lines.length <= left) {
+      kept.push(hunk);
+      left -= hunk.lines.length;
+      continue;
+    }
+    const lines = hunk.lines.slice(0, left);
+    left = 0;
+    const oldLines = lines.filter(line => line.t !== '+').length;
+    const newLines = lines.filter(line => line.t !== '-').length;
+    kept.push({...hunk, oldLines, newLines, header: `@@ -${hunk.oldStart},${oldLines} +${hunk.newStart},${newLines} @@`, lines});
+  }
+  const last = kept.at(-1);
+  const oldStart = last ? last.oldStart + last.oldLines : 0;
+  const newStart = last ? last.newStart + last.newLines : 0;
+  kept.push({oldStart, oldLines: 0, newStart, newLines: 0, header: `@@ ${(total - max).toLocaleString('en-US')} more diff lines not shown: the change is too large for one view @@`, lines: []});
+  return kept;
 }
 
 type Marks = Array<[from: number, to: number]>;
@@ -318,6 +353,8 @@ export function createDiffService(ctx: RepoContext, code: CodeService): DiffServ
       // A chosen file git or the disk had nothing for (a mode change, a file that vanished) is complete with no hunks:
       // leaving them undefined would tell the viewer to fetch it again.
       for (const file of chosen) if (!raw.has(file)) raw.set(file, []);
+      // An explicit ?path= bypasses the payload budget, so one enormous file is cut here instead.
+      for (const [file, hunks] of raw) raw.set(file, capHunks(hunks, MAX_FILE_DIFF_LINES));
 
       const budget = {lines: MAX_TOKENIZED_LINES};
       const out: DiffFile[] = [];

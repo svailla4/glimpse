@@ -2,8 +2,7 @@
 import type * as C from '@glimpse/catalog';
 import {parseFileLoc, type EntityRef, type LayerItem} from '@glimpse/catalog';
 import {useEffect, useMemo, useRef, useState, type KeyboardEvent} from 'react';
-import {DataGate, EntityLink, PlateAside, Redline, fmtNum, useDataset, useSelection, type GlView} from '../../kit/index.ts';
-import {matchesSelection} from './edgekit/index.ts';
+import {DataGate, EntityLink, PlateAside, Redline, fmtNum, matchSelection, useDataset, useSelection, type GlView} from '../../kit/index.ts';
 import css from './Layers.module.css';
 
 /** Items drawn per band; the rest are counted in a last box. */
@@ -36,7 +35,8 @@ export function cleanLayers(data: readonly unknown[]): CleanLayers {
     }
     const all: Item[] = [];
     for (const entry of Array.isArray(raw.items) ? raw.items : []) {
-      const label = isRecord(entry) ? textOf(entry.label) : textOf(entry);
+      // An item is its label, or an object with one; `name` and `title` are what the other lists call it.
+      const label = isRecord(entry) ? (textOf(entry.label) ?? textOf(entry.name) ?? textOf(entry.title)) : textOf(entry);
       if (label === undefined) {
         dropped++;
         continue;
@@ -44,7 +44,9 @@ export function cleanLayers(data: readonly unknown[]): CleanLayers {
       const file = isRecord(entry) ? textOf(entry.file) : undefined;
       all.push({label, note: isRecord(entry) ? textOf(entry.note) : undefined, entity: file !== undefined ? entityOf(file, label) : undefined});
     }
-    bands.push({name: textOf(raw.name) ?? '—', note: textOf(raw.note), items: all.slice(0, MAX_ITEMS), more: Math.max(0, all.length - MAX_ITEMS)});
+    // `name` is canonical; Steps, List and CodeTour rows say `title` and items say `label`, so those are read too.
+    const name = textOf(raw.name) ?? textOf(raw.label) ?? textOf(raw.title);
+    bands.push({name: name ?? '—', note: textOf(raw.note), items: all.slice(0, MAX_ITEMS), more: Math.max(0, all.length - MAX_ITEMS)});
   }
   return {bands, dropped, hiddenBands: Math.max(0, data.length - MAX_BANDS)};
 }
@@ -102,7 +104,12 @@ function LayersBody(p: {id: string; data: unknown; sized: boolean}) {
     }
   };
 
-  const anySelected = clean.bands.some(band => band.items.some(item => item.entity && matchesSelection(selected, item.entity)));
+  // The red-pencil rule of the kit: the selected file itself, or a file inside the selected directory or module.
+  const isHit = (entity: EntityRef | undefined) => {
+    const how = entity ? matchSelection(selected, entity) : undefined;
+    return how === 'exact' || how === 'within';
+  };
+  const anySelected = clean.bands.some(band => band.items.some(item => isHit(item.entity)));
   const items = clean.bands.reduce((sum, band) => sum + band.items.length + band.more, 0);
   const notes = [
     clean.dropped > 0 ? `${fmtNum(clean.dropped)} unreadable ${clean.dropped === 1 ? 'entry' : 'entries'} dropped` : undefined,
@@ -118,7 +125,7 @@ function LayersBody(p: {id: string; data: unknown; sized: boolean}) {
           <h4 className={css.name} title={band.name}>{band.name}</h4>
           <ul className={css.items}>
             {band.items.map((item, i) => {
-              const isSelected = item.entity !== undefined && matchesSelection(selected, item.entity);
+              const isSelected = isHit(item.entity);
               const box = (
                 <span className={css.box}>
                   <span className={css.label}>{item.label}</span>

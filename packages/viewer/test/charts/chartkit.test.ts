@@ -1,8 +1,10 @@
 import {describe, expect, it} from 'vitest';
 import {
-  assignSlots, barPath, cleanRows, cleanTree, clip, clipPath, count, createSizer, entityOf, foldSeries, inspect, label, linearAxis, logAxis,
-  matches, num, pick, received, slotKind, spatialStep, textWidth, time, timeAxis, viewTree, words, type Mark,
+  OTHER_FILL, areaCuts, assignSlots, barPath, cleanRows, cleanTree, clip, clipName, clipPath, clipTail, count, createSizer, entityOf, fillVar,
+  foldSeries, inspect, label, langSlots, linearAxis, logAxis, matches, num, pick, received, slotKind, spatialStep, textWidth, time, timeAxis,
+  tintVar, viewTree, words, type Mark,
 } from '../../src/components/charts/chartkit/index.ts';
+import {elidePath, entityClipText, marksSelection, splitPath} from '../../src/kit/index.ts';
 
 describe('chartkit data', () => {
   it('coerces numbers and rejects everything that is not finite', () => {
@@ -75,6 +77,14 @@ describe('chartkit data', () => {
     expect(matches({type: 'module', id: 'x'}, undefined)).toBe(false);
   });
 
+  it('has no rules of its own for the selection, the copied text and path cuts: they are the kit\'s', async () => {
+    const chartkit = await import('../../src/components/charts/chartkit/index.ts');
+    expect(chartkit.matches).toBe(marksSelection);
+    expect(chartkit.clipText).toBe(entityClipText);
+    const table = await import('../../src/components/table/rows.ts');
+    expect(table.clipText).toBe(entityClipText);
+  });
+
   it('keeps server slots, fills the free ones in order and never cycles', () => {
     expect([...assignSlots(['ui', 'auth', 'new'], {auth: 1, ui: 3})]).toEqual([['ui', 3], ['auth', 1], ['new', 2]]);
     const many = assignSlots(Array.from({length: 10}, (_, i) => `s${i}`));
@@ -99,8 +109,44 @@ describe('chartkit data', () => {
     expect(clip('a-very-long-label', 66)).toBe('a-very-lo…');
     expect(clip('abc', 5)).toBe('');
     expect(clipPath('src/auth/service.ts', 200)).toEqual({dir: 'src/auth/', base: 'service.ts'});
-    expect(clipPath('packages/viewer/src/auth/service.ts', 132)).toEqual({dir: '…src/auth/', base: 'service.ts'});
-    expect(clipPath('dir/a-very-long-file-name.ts', 66)).toEqual({dir: '', base: 'a-very-lo…'});
+    // the kit's elidePath (D12): whole directories go, at a slash; a name too long for the box keeps its extension
+    expect(clipPath('packages/viewer/src/auth/service.ts', 132)).toEqual({dir: '…/auth/', base: 'service.ts'});
+    expect(clipPath('packages/viewer/src/auth/service.ts', 132)).toEqual(splitPath(elidePath('packages/viewer/src/auth/service.ts', 20)));
+    expect(clipPath('dir/a-very-long-file-name.ts', 66)).toEqual({dir: '', base: 'a-very….ts'});
+  });
+
+  it('cuts a path-like name in the middle and keeps its last segment (D12)', () => {
+    // 6.6 px per character
+    expect(clipName('typescript/renderers/lit', 200)).toEqual({dir: 'typescript/renderers/', base: 'lit'});
+    expect(clipName('typescript/renderers/lit', 120)).toEqual({dir: 'typescript/…/', base: 'lit'});
+    expect(clipName('typescript/renderers/angular', 140)).toEqual({dir: 'typescript/…/', base: 'angular'});
+    expect(clipName('typescript/renderers/angular', 120)).toEqual({dir: '…/', base: 'angular'});
+    expect(clipName('typescript/renderers/angular', 66)).toEqual({dir: '…/', base: 'angular'});
+    expect(clipName('swift/core/Tests/A2UICoreTests', 180)).toEqual({dir: 'swift/core/…/', base: 'A2UICoreTests'});
+    expect(clipName('swift/core/Tests/A2UICoreTests', 150)).toEqual({dir: 'swift/…/', base: 'A2UICoreTests'});
+    // a trailing wildcard is not a name: it stays with the segment before it
+    expect(clipName('swift/core/Tests/*', 110)).toEqual({dir: 'swift/…/', base: 'Tests/*'});
+    expect(clipName('swift/core/Tests/*', 80)).toEqual({dir: '…/', base: 'Tests/*'});
+    expect(clipName('.github/*', 200)).toEqual({dir: '', base: '.github/*'});
+    // names sharing a prefix stay apart at any width that holds the last segment
+    const names = ['typescript/renderers/angular', 'typescript/renderers/lit', 'typescript/renderers/react'];
+    for (const width of [60, 90, 120, 150]) expect(new Set(names.map(name => Object.values(clipName(name, width)).join(''))).size).toBe(3);
+    // no slash: cut at the end; a last segment that does not fit: cut at its end
+    expect(clipName('a-very-long-label', 66)).toEqual({dir: '', base: 'a-very-lo…'});
+    expect(clipName('dir/a-very-long-file-name.ts', 66)).toEqual({dir: '', base: 'a-very-lo…'});
+    expect(clipTail('dart/a2ui_core/test', 200)).toBe('dart/a2ui_core/test');
+    // never a piece of a directory ('…core/' of 'a2ui_core/'): the cut is the kit's elidePath, at a slash
+    expect(clipTail('dart/a2ui_core/test', 66)).toBe('…/test');
+    expect(clipTail('dart/a2ui_core/test', 110)).toBe('…/a2ui_core/test');
+    expect(clipTail('abc', 5)).toBe('');
+  });
+
+  it('paints the remainder light and tints an ink more strongly on the dark plate (F005, F012)', () => {
+    expect(fillVar(3)).toBe('var(--gl-cat-3)');
+    expect(fillVar(0)).toBe(OTHER_FILL);
+    expect(fillVar(9)).toBe(OTHER_FILL);
+    expect(OTHER_FILL).toContain('var(--gl-cat-other)');
+    expect(tintVar('var(--gl-cat-2)')).toBe('light-dark(color-mix(in oklab, var(--gl-cat-2) 32%, var(--gl-surface)), color-mix(in oklab, var(--gl-cat-2) 46%, var(--gl-surface)))');
   });
 });
 
@@ -115,6 +161,15 @@ describe('chartkit scales', () => {
     const single = linearAxis([42], [0, 100], {zero: false}).scale.domain() as [number, number];
     expect(single[0]).toBeLessThan(42);
     expect(single[1]).toBeGreaterThan(42);
+  });
+
+  it('ticks an axis over whole numbers at whole numbers only when asked (F007)', () => {
+    expect(linearAxis([1, 2], [0, 100]).ticks).toContain(0.5);
+    expect(linearAxis([1, 2], [0, 100], {whole: true}).ticks).toEqual([0, 1, 2]);
+    expect(linearAxis([0, 0], [0, 100], {whole: true}).ticks).toEqual([0, 1]);
+    expect(linearAxis([3, 84], [0, 100], {whole: true}).ticks).toEqual([0, 20, 40, 60, 80, 100]);
+    // one fractional value and the axis is a measure, not a count
+    expect(linearAxis([1, 1.5, 2], [0, 100], {whole: true}).ticks).toContain(0.5);
   });
 
   it('builds a log axis over the positive values and falls back to linear without any', () => {
@@ -185,6 +240,36 @@ describe('chartkit tree', () => {
     expect(createSizer('files')(rollup)).toBe(12);
     expect(createSizer('bytes')(rollup)).toBe(4000);
     expect(createSizer('commits')(rollup)).toBe(0);
+  });
+
+  it('cuts a metric by drawn area, not by cell count (F012)', () => {
+    // one hundred small cells and four large ones: by count the large ones would all be past the sixth cut
+    const small = Array.from({length: 100}, (_, i) => ({value: i + 1, weight: 1}));
+    const large = [200, 300, 400, 500].map(value => ({value, weight: 1000}));
+    const cuts = areaCuts([...small, ...large]);
+    expect(cuts).toHaveLength(6);
+    expect(cuts[0]).toBe(200);
+    expect(new Set(cuts)).toEqual(new Set([200, 300, 400, 500]));
+    // equal areas: plain quantiles
+    expect(areaCuts(Array.from({length: 7}, (_, i) => ({value: i, weight: 2})))).toEqual([0, 1, 2, 3, 4, 5]);
+    // nothing has an area: every cell counts once
+    expect(areaCuts(Array.from({length: 7}, (_, i) => ({value: i, weight: 0})))).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(areaCuts([])).toEqual([]);
+  });
+
+  it('keeps session language slots and gives the rest the free inks in order of first appearance (D6)', () => {
+    const tree = cleanTree({name: '', path: '', dir: true, children: [
+      {name: 'a.zig', path: 'a.zig', lang: 'Zig', loc: 1}, {name: 'b.ts', path: 'b.ts', lang: 'TypeScript', loc: 1},
+      {name: 'c.nim', path: 'c.nim', lang: 'Nim', loc: 1}, {name: 'd', path: 'd', lang: 'Other', loc: 1}, {name: 'e.zig', path: 'e.zig', lang: 'Zig', loc: 1},
+    ]})!;
+    expect(tree.langs).toEqual(['Zig', 'TypeScript', 'Nim', 'Other']);
+    const slots = langSlots(tree.langs, {TypeScript: 1, CSS: 2});
+    expect([slots.get('TypeScript'), slots.get('Zig'), slots.get('Nim')]).toEqual([1, 2, 3]);
+    // a language the server could not name is the remainder: never a hue
+    expect(slots.get('Other')).toBe(0);
+    // only a ninth language is `other`
+    const many = langSlots(Array.from({length: 10}, (_, i) => `L${i}`), undefined);
+    expect([...many.values()]).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 0, 0]);
   });
 
   it('collapses directories below the level cut and leaves out what has no size', () => {

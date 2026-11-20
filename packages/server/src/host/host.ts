@@ -3,6 +3,7 @@ import {randomBytes} from 'node:crypto';
 import {createServer, type IncomingMessage, type Server, type ServerResponse} from 'node:http';
 import type {Health} from '@glimpse/catalog';
 import {ActionRouter} from '../session/actions.ts';
+import {ownEnv} from '../session/env.ts';
 import type {HostHandle, Session, TabState} from '../session/session.ts';
 import {checkRequest} from './guard.ts';
 import {canOpen, detachedLauncher, osOpenCommand, type Launcher} from './open.ts';
@@ -13,6 +14,10 @@ import {serveStatic} from './static.ts';
 export const DEFAULT_PORT = 4517;
 const PORT_SPAN = 20;
 const REOPEN_AFTER_MS = 5000;
+export const HEADERS_TIMEOUT_MS = 5000;
+export const REQUEST_TIMEOUT_MS = 15_000;
+/** Sockets the listener accepts at once: five tabs with six connections each, and room to spare. */
+export const MAX_CONNECTIONS = 64;
 
 export interface HostOptions {
   session: Session;
@@ -63,7 +68,8 @@ const SECURITY_HEADERS: Record<string, string> = {
 };
 
 export async function startHost(options: HostOptions): Promise<Host> {
-  const {session, env, log} = options;
+  const {session, log} = options;
+  const env = ownEnv(options.env);
   const now = options.now ?? Date.now;
   const token = env.GLIMPSE_TOKEN && env.GLIMPSE_TOKEN.length >= 8 ? env.GLIMPSE_TOKEN : randomBytes(32).toString('base64url');
   const epoch = randomBytes(8).toString('hex');
@@ -103,8 +109,10 @@ export async function startHost(options: HostOptions): Promise<Host> {
     void serveStatic(res, url.pathname, options.viewerDir).catch(() => res.destroy());
   };
 
-  const server = createServer(onRequest);
-  server.headersTimeout = 5000;
+  // Node checks its timeouts only every connectionsCheckingInterval (30 s by default), so the interval is set too:
+  // headers within 5 s, a whole request within 15 s. Event streams are responses and are not affected.
+  const server = createServer({headersTimeout: HEADERS_TIMEOUT_MS, requestTimeout: REQUEST_TIMEOUT_MS, connectionsCheckingInterval: 2000}, onRequest);
+  server.maxConnections = MAX_CONNECTIONS;
   let bound = false;
   let lastError: unknown;
   for (const candidate of portCandidates(env)) {

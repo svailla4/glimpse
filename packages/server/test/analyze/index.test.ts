@@ -1,5 +1,5 @@
 import {existsSync} from 'node:fs';
-import {appendFile, cp, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
+import {appendFile, cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
@@ -48,9 +48,11 @@ describe('createRepoIndex on the fixture repository', () => {
     // two-space TypeScript: the deepest line of login() is two levels in
     expect(facts.get('src/auth/service.ts')).toMatchObject({maxIndent: 2, complexity: 28});
     expect(facts.get('services/gateway/limiter/limiter.go')?.maxIndent).toBe(3);
-    // data and prose have no facts; a stylesheet has an entry for its TODO scan only
+    // data has no facts; Markdown has its headings as an outline (F092) and nothing else; a stylesheet has an entry
+    // for its TODO scan only
     expect(facts.has('package.json')).toBe(false);
-    expect(facts.has('README.md')).toBe(false);
+    expect(facts.get('README.md')?.symbols.map(symbol => `${symbol.kind} ${symbol.name} ${symbol.depth}`).slice(0, 2)).toEqual(['heading shop 0', 'heading Layout 1']);
+    expect(facts.get('README.md')).toMatchObject({imports: [], complexity: 0, todos: []});
     expect(facts.get('src/ui/app.css')).toEqual({imports: [], symbols: [], complexity: 0, maxIndent: 0, todos: []});
   });
 
@@ -151,6 +153,34 @@ describe('createRepoIndex without git', () => {
     expect(await plain.edges()).toEqual(await withGit.edges());
     expect(await plain.moduleOf('src/auth/service.ts')).toBe('src/auth');
     expect((await repoModel({index: plain, root: copy, name: 'shop'})).cycles).toEqual([[...FIXTURE.cycle]]);
+  });
+
+  it('has(): the inventory rule for one path, without git: ignored files, dependency trees and links are not files of the project', async () => {
+    const plain = createRepoIndex(copy, noGit, () => {});
+    expect(await plain.has!('src/auth/service.ts')).toBe(true);
+    expect(await plain.has!('./src/auth/service.ts')).toBe(true);
+    for (const path of ['', 'src', 'src/nope.ts', '../outside.ts', '/etc/hosts', 'src/../package.json']) expect(await plain.has!(path), path).toBe(false);
+    // created after the scan: the walk's own rules decide, path by path
+    await mkdir(join(copy, 'node_modules/dep'), {recursive: true});
+    await mkdir(join(copy, 'dist'), {recursive: true});
+    await mkdir(join(copy, '.git'), {recursive: true});
+    await writeFile(join(copy, 'node_modules/dep/index.js'), 'module.exports = 1;\n');
+    await writeFile(join(copy, 'dist/out.js'), 'var a = 1;\n');
+    await writeFile(join(copy, 'trace.log'), 'noise\n');
+    await writeFile(join(copy, '.git/config'), '[core]\n');
+    await writeFile(join(copy, 'src/lib/later.ts'), 'export const later = 1;\n');
+    await symlink(join(copy, '.git/config'), join(copy, 'src/lib/link.ts'));
+    try {
+      expect(await plain.has!('src/lib/later.ts')).toBe(true);
+      for (const path of ['node_modules/dep/index.js', 'dist/out.js', 'trace.log', '.git/config', 'src/lib/link.ts']) expect(await plain.has!(path), path).toBe(false);
+      // and the next scan agrees with every answer
+      plain.invalidate();
+      const listed = new Set((await plain.files()).map(file => file.path));
+      expect(listed.has('src/lib/later.ts')).toBe(true);
+      for (const path of ['node_modules/dep/index.js', 'dist/out.js', 'trace.log', '.git/config', 'src/lib/link.ts']) expect(listed.has(path), path).toBe(false);
+    } finally {
+      for (const name of ['node_modules', 'dist', '.git', 'trace.log', 'src/lib/later.ts', 'src/lib/link.ts']) await rm(join(copy, name), {recursive: true, force: true});
+    }
   });
 
   it('derives the same model from any RepoIndex through its contract', async () => {

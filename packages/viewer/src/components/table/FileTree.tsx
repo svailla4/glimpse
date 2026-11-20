@@ -1,12 +1,12 @@
 import type * as C from '@glimpse/catalog';
 import type {DirNode, EntityRef} from '@glimpse/catalog';
-import {memo, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent} from 'react';
+import {memo, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type RefObject} from 'react';
 import {
-  DataGate, PathText, PlateAside, Redline, fmtNum, seqVar, useDataset, useHostActions, useSelection,
+  DataGate, Empty, PathText, PlateAside, Redline, fmtNum, seqVar, useDataset, useHostActions, useSelection,
   type GlView, type GlViewProps,
 } from '../../kit/index.ts';
 import s from './FileTree.module.css';
-import {useListNav} from './nav.ts';
+import {useListNav, useScrollFade} from './nav.ts';
 import {copyText, describeType, isRecord, num, selectionMark, type SelectionMark} from './rows.ts';
 import {Shell} from './shell.tsx';
 
@@ -136,70 +136,83 @@ function heatStep(node: TreeNode, heat: Heat, peak: Tree['peak']): number | unde
 
 interface Line {
   kind: 'node' | 'more';
-  /** The node itself, or the directory a rollup belongs to. */
+  /** The node itself (the innermost directory of a folded chain), or the directory a rollup belongs to. */
   node: TreeNode;
+  /**
+   * Directories folded into this row, outermost first: a directory whose only entry is another directory shares
+   * its row ('a2ui_agent/lib/src'), so a deep path does not spend a level of indentation per segment.
+   */
+  chain: TreeNode[];
   depth: number;
   open: boolean;
-  /** Largest metric value among the node's siblings: the bar is relative to it. */
-  siblingMax: number;
+  /** Largest metric value at the top level of the tree: every bar is relative to it, so bars compare across levels. */
+  scale: number;
 }
+
+/** A directory that holds nothing but one directory: its row is shared with that child. */
+const onlyDir = (node: TreeNode): TreeNode | undefined =>
+  node.dir && node.more === undefined && node.children.length === 1 && node.children[0]!.dir ? node.children[0] : undefined;
 
 /** The rows on screen order: every node whose ancestors are open, plus one rollup line per cut directory. */
 function flatten(tree: Tree, isOpen: (node: TreeNode, depth: number) => boolean, metric: Metric): Line[] {
   const lines: Line[] = [];
   const top = tree.root.children.length > 0 || tree.root.more ? tree.root : undefined;
-  if (!top) return tree.root.dir ? lines : [{kind: 'node', node: tree.root, depth: 0, open: false, siblingMax: metricValue(tree.root, metric) ?? 0}];
-  const stack: Array<{parent: TreeNode; depth: number; next: number; max: number}> = [];
-  const enter = (parent: TreeNode, depth: number) => {
-    let max = 0;
-    for (const child of parent.children) max = Math.max(max, metricValue(child, metric) ?? 0);
-    stack.push({parent, depth, next: 0, max});
-  };
-  enter(top, 0);
+  if (!top) return tree.root.dir ? lines : [{kind: 'node', node: tree.root, chain: [], depth: 0, open: false, scale: metricValue(tree.root, metric) ?? 0}];
+  let scale = 0;
+  for (const child of top.children) scale = Math.max(scale, metricValue(child, metric) ?? 0);
+  const stack: Array<{parent: TreeNode; depth: number; next: number}> = [{parent: top, depth: 0, next: 0}];
   while (stack.length > 0) {
     const frame = stack[stack.length - 1]!;
     if (frame.next >= frame.parent.children.length) {
-      if (frame.parent.more) lines.push({kind: 'more', node: frame.parent, depth: frame.depth, open: false, siblingMax: frame.max});
+      if (frame.parent.more) lines.push({kind: 'more', node: frame.parent, chain: [], depth: frame.depth, open: false, scale});
       stack.pop();
       continue;
     }
-    const node = frame.parent.children[frame.next++]!;
+    let node = frame.parent.children[frame.next++]!;
+    const chain: TreeNode[] = [];
+    for (let only = onlyDir(node); only; only = onlyDir(node)) {
+      chain.push(node);
+      node = only;
+    }
     const expandable = node.dir && (node.children.length > 0 || node.more !== undefined);
     const open = expandable && isOpen(node, frame.depth);
-    lines.push({kind: 'node', node, depth: frame.depth, open, siblingMax: frame.max});
-    if (open) enter(node, frame.depth + 1);
+    lines.push({kind: 'node', node, chain, depth: frame.depth, open, scale});
+    if (open) stack.push({parent: node, depth: frame.depth + 1, next: 0});
   }
   return lines;
 }
+
+/**
+ * Bar length for a value against the tree's scale. Square root: a repository's sizes span four orders of magnitude,
+ * and on a linear scale every row below the largest directories would be an empty track. The order is kept, so a
+ * directory's bar is never shorter than the bar of anything inside it.
+ */
+const barShare = (value: number | undefined, scale: number): number =>
+  value !== undefined && value > 0 && scale > 0 ? Math.sqrt(Math.min(1, value / scale)) : 0;
 
 // ---------------------------------------------------------------- view
 export const FileTreeView: GlView<typeof C.FileTree> = ({id, props}) => {
   const state = useDataset<DirNode>(props.data);
   const host = useHostActions(id);
-  // Kept here, above the gate: the tree unmounts while the drilled dataset is pending. A different dataset starts over.
+  // A drill only asks the server to re-scope the dataset. Where the dataset stands, and the way back up, is on its
+  // envelope (`dataset.drill`), which the kit shows as a scope crumb on every component bound to it: the tree keeps
+  // no drilled state of its own, so a reload or a drill made by another component cannot leave it without a way out.
   const key = state.ds?.$ds;
-  const [drilled, setDrilled] = useState<{key: string | undefined; target: string}>();
-  const target = drilled?.key === key ? drilled?.target : undefined;
+  // Kept above the gate: the tree unmounts while the drilled dataset is pending, and focus must find its way back.
+  const refocus = useRef(false);
   const drill = key
     ? (to: string) => {
-        setDrilled(to ? {key, target: to} : undefined);
+        refocus.current = true;
         host.drill(key, to);
       }
     : undefined;
   const tree = useMemo(() => (state.status === 'ready' ? buildTree(state.data) : undefined), [state]);
   return (
     <Shell sized={props.size !== undefined}>
-      {target !== undefined && drill ? (
-        <PlateAside>
-          <button type="button" className={s.back} onClick={() => drill('')} data-gl-tree-back="">
-            <span aria-hidden="true">↑</span> {target} · full tree
-          </button>
-        </PlateAside>
-      ) : null}
       <DataGate state={state} id={`FileTree#${id}`}>
         {data =>
           tree ? (
-            <TreeBody id={id} props={props} tree={tree} drill={drill} />
+            <TreeBody id={id} props={props} tree={tree} drill={drill} refocus={refocus} drilled={state.ds?.drill !== undefined} />
           ) : (
             <Redline code="E_SHAPE" id={`FileTree#${id}`} message={`expected a directory node {name, path, dir, children}, received ${describeType(data)}`} />
           )
@@ -226,8 +239,10 @@ const TreeRow = memo(function TreeRow({index, top, line, metric, heat, mark, act
   const guides = depth > 0 ? <span className={s.guides} style={{width: depth * 16}} aria-hidden="true" /> : null;
   if (line.kind === 'more') {
     const count = node.more?.files ?? 0;
+    // A rollup of the directory the tree is already scoped to has nowhere to drill: it only says what was left out.
+    const title = canDrill ? `Show all of ${node.path || 'the tree'}` : `${fmtNum(count)} more ${count === 1 ? 'entry is' : 'entries are'} not listed at this level`;
     return (
-      <div className={s.row} role="treeitem" aria-level={depth + 1} aria-selected={false} aria-disabled={!canDrill || undefined} data-index={index} data-more={node.path} tabIndex={active ? 0 : -1} style={style} title={canDrill ? `Show all of ${node.path || 'the tree'}` : undefined}>
+      <div className={s.row} role="treeitem" aria-level={depth + 1} aria-selected={false} aria-disabled={!canDrill || undefined} data-index={index} data-more={node.path} tabIndex={active ? 0 : -1} style={style} title={title}>
         {guides}
         <span className={s.twist} aria-hidden="true" />
         <span className={s.more}>({fmtNum(count)} more)</span>
@@ -237,7 +252,7 @@ const TreeRow = memo(function TreeRow({index, top, line, metric, heat, mark, act
   }
   const expandable = node.dir && (node.children.length > 0 || node.more !== undefined);
   const value = metricValue(node, metric);
-  const share = value !== undefined && line.siblingMax > 0 ? Math.min(1, Math.max(0, value / line.siblingMax)) : 0;
+  const share = barShare(value, line.scale);
   const changes = metric === 'changes';
   const total = (node.add ?? 0) + (node.del ?? 0);
   return (
@@ -263,8 +278,15 @@ const TreeRow = memo(function TreeRow({index, top, line, metric, heat, mark, act
           </svg>
         ) : null}
       </span>
-      <span className={s.label}>
-        {node.dir ? <span className={s.dir}>{node.name}</span> : <PathText file={node.path} label={node.name} />}
+      <span className={s.label} title={node.dir ? node.path : undefined}>
+        {node.dir ? (
+          <span className={s.dir}>
+            {line.chain.map(up => <span key={up.path} className={s.chain}>{up.name}/</span>)}
+            <span className={s.dirName}>{node.name}</span>
+          </span>
+        ) : (
+          <PathText file={node.path} label={node.name} />
+        )}
       </span>
       {node.status ? (
         <span className={s.status} data-status={node.status} title={STATUS_WORDS[node.status] ?? node.status}>
@@ -275,7 +297,7 @@ const TreeRow = memo(function TreeRow({index, top, line, metric, heat, mark, act
       ) : null}
       {metric !== 'none' && value !== undefined ? (
         <>
-          <span className={s.bar} aria-hidden="true">
+          <span className={s.bar} data-metric={metric} aria-hidden="true">
             {changes && total > 0 ? (
               <>
                 <span className={s.barAdd} style={{width: `${((share * (node.add ?? 0)) / total) * 100}%`}} />
@@ -288,7 +310,7 @@ const TreeRow = memo(function TreeRow({index, top, line, metric, heat, mark, act
           <span className={s.value}>
             {changes ? (
               <>
-                <span className={s.add}>+{fmtNum(node.add ?? 0)}</span> <span className={s.del}>{MINUS}{fmtNum(node.del ?? 0)}</span>
+                <span className={node.add ? s.add : s.zero}>+{fmtNum(node.add ?? 0)}</span> <span className={node.del ? s.del : s.zero}>{MINUS}{fmtNum(node.del ?? 0)}</span>
               </>
             ) : metricText(node, metric)}
           </span>
@@ -303,9 +325,13 @@ interface BodyProps {
   props: Props;
   tree: Tree;
   drill: ((target: string) => void) | undefined;
+  /** Set by a drill made from this tree: the next tree takes the keyboard focus the drilled row had. */
+  refocus: RefObject<boolean>;
+  /** The dataset is drilled: the kit's scope crumb already names the directory, so the tree does not repeat it. */
+  drilled: boolean;
 }
 
-function TreeBody({id, props, tree, drill}: BodyProps): JSX.Element {
+function TreeBody({id, props, tree, drill, refocus, drilled}: BodyProps): JSX.Element {
   const metric: Metric = props.metric ?? 'loc';
   const heat: Heat = props.heat ?? 'none';
   const initialDepth = props.depth ?? 2;
@@ -320,6 +346,16 @@ function TreeBody({id, props, tree, drill}: BodyProps): JSX.Element {
     [tree, toggled, initialDepth, metric],
   );
   const nav = useListNav({count: lines.length, rowHeight: ROW, scrollRef});
+  useScrollFade(scrollRef, lines.length);
+
+  // After a drill the tree is a different one and the row that was focused is gone: focus goes to its first row.
+  const setActive = nav.setActive;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per tree, which is what a drill replaces
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    setActive(0, true);
+  }, [tree]);
 
   const setOpen = (node: TreeNode, open: boolean) => setToggled(prev => new Map(prev).set(node.path, open));
   const entityOf = (node: TreeNode): EntityRef => ({type: node.dir ? 'dir' : 'file', id: node.path, path: node.path});
@@ -344,7 +380,7 @@ function TreeBody({id, props, tree, drill}: BodyProps): JSX.Element {
   const reveal = nav.reveal;
   useEffect(() => {
     if (pendingReveal === undefined) return;
-    const index = lines.findIndex(line => line.kind === 'node' && line.node.path === pendingReveal);
+    const index = lines.findIndex(line => line.kind === 'node' && (line.node.path === pendingReveal || line.chain.some(up => up.path === pendingReveal)));
     if (index < 0) return;
     reveal(index);
     setPendingReveal(undefined);
@@ -355,7 +391,7 @@ function TreeBody({id, props, tree, drill}: BodyProps): JSX.Element {
     if (!line) return;
     const {node} = line;
     if (line.kind === 'more') {
-      drill?.(node.path);
+      if (canDrillInto(node)) drill?.(node.path);
       return;
     }
     if (node.dir && (node.children.length > 0 || node.more)) setOpen(node, !line.open);
@@ -367,6 +403,9 @@ function TreeBody({id, props, tree, drill}: BodyProps): JSX.Element {
     ownSelection.current = node.path;
     select(entityOf(node));
   };
+
+  // Drilling into the directory the tree is already scoped to would ask for the same tree again.
+  const canDrillInto = (node: TreeNode) => drill !== undefined && node.path !== tree.root.path;
 
   const indexOf = (target: EventTarget): number | undefined => {
     const element = (target as HTMLElement).closest?.('[data-index]');
@@ -399,7 +438,7 @@ function TreeBody({id, props, tree, drill}: BodyProps): JSX.Element {
     for (let i = 0; i < lines.length; i++) {
       const index = (start + i) % lines.length;
       const line = lines[index]!;
-      if (line.kind === 'node' && line.node.name.toLowerCase().startsWith(prefix)) {
+      if (line.kind === 'node' && (line.node.name.toLowerCase().startsWith(prefix) || line.chain[0]?.name.toLowerCase().startsWith(prefix))) {
         nav.setActive(index, true);
         return;
       }
@@ -453,7 +492,7 @@ function TreeBody({id, props, tree, drill}: BodyProps): JSX.Element {
     event.preventDefault();
   };
 
-  if (lines.length === 0) return <div className={s.none}>empty directory</div>;
+  if (lines.length === 0) return <Empty message={tree.root.path ? `${tree.root.path} is an empty directory` : 'empty directory'} />;
   const scope = tree.root.path;
   return (
     <div className={s.root} data-sized={props.size ? '' : undefined} data-gl-tree="">
@@ -462,7 +501,7 @@ function TreeBody({id, props, tree, drill}: BodyProps): JSX.Element {
           <span className={s.note} data-gl-tree-note="">{fmtNum(tree.dropped)} malformed {tree.dropped === 1 ? 'entry' : 'entries'} dropped</span>
         </PlateAside>
       ) : null}
-      {scope ? <div className={s.scope} title={scope}><PathText file={scope} /></div> : null}
+      {scope && !drilled ? <div className={s.scope} title={scope}><PathText file={scope} /></div> : null}
       <div
         className={s.scroll}
         ref={scrollRef}
@@ -487,7 +526,7 @@ function TreeBody({id, props, tree, drill}: BodyProps): JSX.Element {
                 heat={line.kind === 'node' && heat !== 'none' ? heatStep(line.node, heat, tree.peak) : undefined}
                 mark={line.kind === 'node' ? selectionMark(selected, entityOf(line.node)) : undefined}
                 active={virtual.index === nav.active}
-                canDrill={drill !== undefined}
+                canDrill={line.kind === 'more' && canDrillInto(line.node)}
               />
             );
           })}

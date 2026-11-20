@@ -17,6 +17,12 @@ export const sourceCode = (code: string): ErrorCode => (SOURCE_CODES.has(code) ?
 export type RepairHint =
   | {kind: 'component'; name: string}
   | {kind: 'prop'; component: string; name: string}
+  /** An enum value that is not allowed: a synonym or a near miss is replaced by the value it meant. */
+  | {kind: 'enum'; component: string; prop: string; value: string}
+  /** A number where the prop takes a string (Grid cols=4): the number is quoted. */
+  | {kind: 'quote'; component: string; prop: string}
+  /** A named part no parent refers to: on a patch it is appended to root's children. */
+  | {kind: 'orphan'; id: string}
   | {kind: 'eof'};
 
 export interface Problem {
@@ -42,9 +48,25 @@ export class SpecError extends Error {
 
 export const problem = (code: ErrorCode, message: string, extra: Pick<Problem, 'component' | 'repair'> = {}): Problem => ({code, message, ...extra});
 
+/** Code points that end a line for some reader or cannot be seen: DEL, NEL, zero-width space, the two Unicode separators, BOM. */
+const BREAKS: ReadonlySet<number> = new Set([0x7f, 0x85, 0x200b, 0x2028, 0x2029, 0xfeff]);
+
+/**
+ * `text` with every control character, line separator and zero-width mark replaced by a space, so nothing in it can
+ * start a new line or hide the start of one. Tabs are kept (they separate cells); `\n` is kept on request.
+ */
+export function flatten(text: string, keepNewlines = false): string {
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    out += (code < 0x20 && code !== 0x09 && !(keepNewlines && code === 0x0a)) || BREAKS.has(code) ? ' ' : text[i];
+  }
+  return out;
+}
+
 /** One line, no control characters, at most `max` characters. */
 export function oneLine(text: string, max = 240): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
+  const flat = flatten(text).replace(/\s+/g, ' ').trim();
   return flat.length > max ? flat.slice(0, max - 1) + '…' : flat;
 }
 
@@ -132,6 +154,14 @@ export interface ClassifyContext {
   surfaces: readonly string[];
   /** Maps a 1-based line of the compiled text (header line removed) to the line the author wrote. */
   lineOf?: (line: number) => number;
+  /** The statement that would add an unreachable part to the root, for the E_REF message. */
+  rootLine?: string;
+}
+
+/** ` cols: Column count '3' or ratio '2:1'.`: what the prop accepts, in the catalog's own words. */
+function propHint(component: string, prop: string | undefined): string {
+  const doc = prop ? (COMPONENT_BY_NAME.get(component)?.props as Record<string, {doc?: string}> | undefined)?.[prop]?.doc : undefined;
+  return doc ? ` Expects: ${oneLine(doc, 120)}` : '';
 }
 
 /** Maps one thrown compiler error to a Problem. Unrecognised messages pass through as E_SPEC. */
@@ -164,7 +194,7 @@ export function classifyCompileError(error: unknown, ctx: ClassifyContext): Prob
     const component = badEnum[3]!;
     const values = (COMPONENT_BY_NAME.get(component)?.props as Record<string, {values?: readonly string[]}> | undefined)?.[prop]?.values;
     const allowed = values ? values.join(' ') : oneLine(text.replace(/^[\s\S]*Allowed values are:\s*/, '').replace(/[[\]',]/g, ' '));
-    return problem('E_ENUM', `${component}.${prop}: "${oneLine(badEnum[1]!, 60)}" is not allowed. Use: ${allowed}`, {component});
+    return problem('E_ENUM', `${component}.${prop}: "${oneLine(badEnum[1]!, 60)}" is not allowed. Use: ${allowed}`, {component, repair: {kind: 'enum', component, prop, value: badEnum[1]!}});
   }
 
   const missing = /^Component '([^']+)' is missing required property '([^']+)'/.exec(text);
@@ -172,8 +202,19 @@ export function classifyCompileError(error: unknown, ctx: ClassifyContext): Prob
 
   const invalid = /^Validation failed for component '([^']+)' \(([^)]*)\): ([\s\S]*)$/.exec(text);
   if (invalid) {
+    const component = invalid[1]!;
     const first = (invalid[3] ?? '').split(/;\s/)[0] ?? '';
-    return problem('E_TYPE', `${invalid[1]}#${invalid[2]} ${oneLine(first, 200)}`, {component: invalid[1]!});
+    const prop = /^([A-Za-z_]\w*): /.exec(first)?.[1];
+    const quotable = prop !== undefined && /Expected string, received number/.test(first);
+    return problem('E_TYPE', `${component}#${invalid[2]} ${oneLine(first, 200)}${prop ? '.' : ''}${propHint(component, prop)}`, {component, ...(quotable ? {repair: {kind: 'quote' as const, component, prop}} : {})});
+  }
+
+  const positional = /^Positional argument (\d+) for component '([^']+)' is an? ([\w ]+?), which is not valid for (?:optional |required )?property '([^']+)'/.exec(text);
+  if (positional) {
+    const component = positional[2]!;
+    const prop = positional[4]!;
+    return problem('E_TYPE', `${component}: argument ${positional[1]} (${prop}) cannot be a ${positional[3]}.${propHint(component, prop)}`,
+      {component, ...(positional[3] === 'number' ? {repair: {kind: 'quote' as const, component, prop}} : {})});
   }
 
   const code = (error as {code?: unknown; details?: Array<{code?: unknown}>})?.details?.[0]?.code ?? (error as {code?: unknown})?.code;
@@ -191,7 +232,9 @@ export function classifyCompileError(error: unknown, ctx: ClassifyContext): Prob
   }
 
   const orphan = /^Component '([^']+)' is not reachable from 'root'/.exec(text);
-  if (orphan) return problem('E_REF', `"${orphan[1]}" is not reachable from root: resend its parent with the new child.`);
+  if (orphan) {
+    return problem('E_REF', `"${orphan[1]}" is not reachable from root: resend its parent with the new child${ctx.rootLine ? `: ${ctx.rootLine}` : ''}.`, {repair: {kind: 'orphan', id: orphan[1]!}});
+  }
 
   if (/^Root target 'root' is not defined|^Surface not found for message|^Missing root component/.test(text)) {
     const others = ctx.surfaces.length > 0 ? ` Existing views: ${ctx.surfaces.join(' ')}.` : '';

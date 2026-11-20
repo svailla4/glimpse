@@ -21,6 +21,8 @@ export interface FileEntry {
 export interface FileFacts {
   imports: Array<{spec: string; kind: string; line: number}>;
   symbols: SymbolRow[];
+  /** Declarations found, when `symbols` holds only the first of them (the outline of one file stops at 2,000). */
+  symbolsFound?: number;
   /** Sum of indentation levels over code lines (the "complexity" used by hotspots). */
   complexity: number;
   maxIndent: number;
@@ -34,10 +36,27 @@ export interface RepoIndex {
   files(): Promise<FileEntry[]>;
   facts(): Promise<ReadonlyMap<string, FileFacts>>;
   edges(): Promise<ImportEdge[]>;
-  /** Module (cluster id) of a path after the adaptive tree cut (at most 40 modules). */
+  /** Module (cluster id) of a path after the adaptive tree cut (about 20 modules; never more than 40). */
   moduleOf(path: string): Promise<string>;
+  /**
+   * True when `path` (repo-relative, forward slashes) is a file of the inventory: tracked, or untracked and not
+   * ignored. Everything under .git, ignored files, dependency directories, directories and symbolic links are not.
+   * It is the one rule for "may this file be served or opened" (/api/file, /api/outline, gl_open, literal files in a
+   * spec). Cheap: a set lookup on the current scan, plus one git call for a path the scan has not seen (a file
+   * created since). Optional only so hand-written fakes stay small; the index from createRepoIndex always has it.
+   */
+  has?(path: string): Promise<boolean>;
   /** Drop memoized results (called when the working tree changes). */
   invalidate(): void;
+}
+
+/**
+ * The one rule for "is this path a file of the project that may be read, served or opened": it is in the inventory.
+ * `path` is repo-relative with forward slashes. An index without has() (a hand-written fake) answers from files().
+ */
+export async function inInventory(index: RepoIndex, path: string): Promise<boolean> {
+  if (index.has) return index.has(path);
+  return (await index.files()).some(file => file.path === path);
 }
 
 export interface RepoContext {
@@ -87,9 +106,21 @@ export interface CodeService {
 }
 export interface DiffService { diff(q: DiffQuery): Promise<DiffPayload> }
 export interface TreeWatcher {
-  /** Polls while started; calls onChange after HEAD, the index or any dirty/untracked file changes. */
+  /**
+   * Polls while started; calls onChange after HEAD, the index or any dirty/untracked file changes. The watcher
+   * remembers the last state it saw across stop() and start() (its first reference is taken when it is created),
+   * so a change made while nobody was watching is reported by the first poll after start().
+   */
   start(onChange: () => void): void;
   stop(): void;
+  /**
+   * Looks at HEAD and the working tree now, whether or not the watcher is started: true when they differ from the
+   * last state this watcher saw (through a poll or an earlier check), which then becomes the reference. The
+   * session calls it before serving a tool call and refreshes when it answers true, so results never depend on a
+   * tab being connected. Works without git (a walk of file sizes and times). Never rejects: a failed look is false.
+   * Optional only so hand-written fakes stay small; the watcher from createTreeWatcher always has it.
+   */
+  check?(): Promise<boolean>;
 }
 
 // Factories. WP0 ships inert stubs; the owning package replaces the file and keeps the signature.

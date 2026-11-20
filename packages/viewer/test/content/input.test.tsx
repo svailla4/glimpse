@@ -31,10 +31,14 @@ describe('Button', () => {
     const button = within(view.cell('go')).getByRole('button', {name: 'Queue'});
     expect(button.getAttribute('data-tone')).toBe('default');
     fireEvent.click(button);
+    // "queued" is said once the action has been handed over, not before
+    expect(queued(view.cell('go')).textContent).toBe('');
+    await act(async () => {});
     expect(queued(view.cell('go')).textContent).toBe('queued for the agent');
     act(() => void vi.advanceTimersByTime(1500));
     // a second press queues a second event and restarts the note
     fireEvent.click(button);
+    await act(async () => {});
     act(() => void vi.advanceTimersByTime(1500));
     expect(queued(view.cell('go')).textContent).toBe('queued for the agent');
     act(() => void vi.advanceTimersByTime(600));

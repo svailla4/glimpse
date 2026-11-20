@@ -352,7 +352,9 @@ p2=Plate('P two',[Text('x')])`;
     const arrangeable = (id: string) => header(view, id).hasAttribute('data-arrange');
     expect(['s1', 's2', 'g1', 'g2', 'g3', 'r1', 'r2'].map(arrangeable)).toEqual([true, true, true, true, true, true, true]);
     expect(['inner', 'c1', 't1', 'p1', 'p2'].map(arrangeable)).toEqual([false, false, false, false, false]);
-    expect(header(view, 'c1').hasAttribute('tabindex')).toBe(false);
+    // such a header is still a stop (Enter collapses the plate), but it is not announced as movable
+    expect(header(view, 'c1').getAttribute('aria-roledescription')).toBeNull();
+    expect(header(view, 'c1').hasAttribute('aria-keyshortcuts')).toBe(false);
     expect(view.cell('c1').querySelector('.gl-resize')).toBeNull();
 
     // each container keeps its own entry; a move never leaves the container

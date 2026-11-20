@@ -1,11 +1,16 @@
 @layer gl.components {
   .line { fill: none; stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round; }
   .line[data-focus] { stroke-width: 2.75; }
+  /* the segment into a period that is still open */
+  .tail { stroke-dasharray: 3 3; stroke-linecap: butt; }
   .hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; }
   .area { opacity: 0.16; }
   .layer { stroke: var(--gl-surface); stroke-width: 1; stroke-linejoin: round; }
+  /* stacked layers over a period that is still open: present, but not yet a figure to compare */
+  .open { opacity: 0.4; }
   .dot { stroke: none; }
   .end { stroke: var(--gl-surface); stroke-width: 2; }
   .leader { fill: none; stroke: var(--gl-rule-strong); stroke-width: 1; }
+  .key { shape-rendering: crispEdges; }
   .cross { pointer-events: none; }
 }

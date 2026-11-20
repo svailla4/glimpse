@@ -86,10 +86,49 @@ describe('HubTransport', () => {
     expect(source.closed).toBe(true);
   });
 
-  it('ends at once when the host refuses the stream', () => {
-    const {source, statuses} = connect();
-    source.fail(2);
-    expect(statuses).toEqual(['connecting', 'ended']);
+  it('asks the host why it refused the stream, and ends with the reason (F025)', async () => {
+    const refusedBy = async (answer: (call: Call) => Response) => {
+      const http = fakeFetch(answer);
+      const transport = createHubTransport({token: 'tok', EventSource: FakeSource as unknown as typeof EventSource, fetch: http.fetch});
+      const statuses: LinkStatus[] = [];
+      transport.connect(() => {}, status => void statuses.push(status));
+      const source = FakeSource.last!;
+      // the stream is closed before it ever opened: a 401 or a 503, EventSource does not say which
+      source.fail(2);
+      expect(transport.linkEnd()).toBeUndefined();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(statuses).toEqual(['connecting', 'ended']);
+      expect(source.closed).toBe(true);
+      expect(http.calls.map(call => call.url)).toEqual(['/api/health']);
+      expect(headers(http.calls[0]!).get('authorization')).toBe('Bearer tok');
+      return transport.linkEnd();
+    };
+    // the host is up and knows the token: it has all the tabs it serves
+    expect(await refusedBy(() => Response.json({app: 'glimpse', version: '0', epoch: 'e', tabs: 8}))).toEqual({reason: 'refused', tabs: 8});
+    expect(await refusedBy(() => Response.json({}))).toEqual({reason: 'refused'});
+    // another session lives at this address
+    expect(await refusedBy(() => new Response('bad token', {status: 401}))).toEqual({reason: 'unauthorized'});
+    // nothing answers
+    expect(await refusedBy(() => { throw new TypeError('Failed to fetch'); })).toEqual({reason: 'unreachable'});
+    expect(await refusedBy(() => new Response('', {status: 500}))).toEqual({reason: 'unreachable'});
+  });
+
+  it('a link that was live and is lost for good, or says goodbye, ended as "closed"', () => {
+    const lost = connect();
+    lost.source.open();
+    lost.source.fail(2);
+    expect(lost.statuses).toEqual(['connecting', 'live', 'ended']);
+    expect(lost.transport.linkEnd()).toEqual({reason: 'closed'});
+    expect(lost.calls).toEqual([]);
+    const bye = connect();
+    bye.source.open();
+    bye.source.push('glimpse', JSON.stringify({type: 'bye', reason: 'shutdown'}));
+    expect(bye.transport.linkEnd()).toEqual({reason: 'closed'});
+    // never reachable at all: the browser kept retrying and gave up
+    const never = connect();
+    for (let i = 0; i < 5; i++) never.source.fail();
+    expect(never.statuses.at(-1)).toBe('ended');
+    expect(never.transport.linkEnd()).toEqual({reason: 'unreachable'});
   });
 
   it('bye delivers the event, closes the stream and stops posting', async () => {

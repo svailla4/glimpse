@@ -13,7 +13,13 @@
   }
   @media (max-width: 719px) { .bar { padding-left: 16px; } }
 
-  .tabs { display: flex; flex: 1 1 auto; gap: 18px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .tabs { display: flex; flex: 1 1 auto; gap: 18px; min-width: 0; overflow-x: auto; scrollbar-width: none; --fade-start: 0px; --fade-end: 0px; }
+  /* A side with tabs out of sight fades out instead of ending in half a word. */
+  .tabs:is([data-clip-start], [data-clip-end]) {
+    mask-image: linear-gradient(to right, transparent, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent);
+  }
+  .tabs[data-clip-start] { --fade-start: 28px; }
+  .tabs[data-clip-end] { --fade-end: 28px; }
   .tab { display: flex; flex: none; align-items: center; gap: 2px; max-width: 280px; border-bottom: 2px solid transparent; }
   .tab[data-active] { border-bottom-color: var(--gl-ink); }
   .tabButton {
@@ -34,7 +40,9 @@
     transition: color var(--gl-t-hover) var(--gl-ease);
   }
   .tabButton:hover, .tab[data-active] > .tabButton { color: var(--gl-ink); }
-  .tabButton:focus-visible, .close:focus-visible, .icon:focus-visible, .text:focus-visible { outline-offset: -2px; }
+  /* The strip clips what is inside it, so its rings are drawn inside; the controls beside it get the usual 2 px offset. */
+  .tabButton:focus-visible, .close:focus-visible { outline-offset: -2px; }
+
   .close {
     display: inline-grid;
     flex: none;
@@ -79,6 +87,44 @@
     color: var(--gl-ink-2);
   }
   .icon:hover, .text:hover { background: var(--gl-sunken); }
+
+  /* `+N`: the views whose tabs are out of sight. */
+  .more { position: relative; display: flex; flex: none; align-items: center; margin-left: -8px; }
+  .more > .text { margin-right: 0; padding: 0 6px; }
+  .menu {
+    position: absolute;
+    top: 30px;
+    right: 0;
+    z-index: 60;
+    display: grid;
+    min-width: 180px;
+    max-width: min(360px, calc(100vw - 24px));
+    max-height: min(420px, calc(100vh - 48px));
+    padding: 4px;
+    overflow-y: auto;
+    border-radius: var(--gl-r-3);
+    background: var(--gl-raised);
+    box-shadow: 0 0 0 1px var(--gl-rule-strong), 0 12px 32px -12px rgb(0 0 0 / .28);
+  }
+  .item {
+    height: 26px;
+    margin: 0;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--gl-r-1);
+    background: none;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 500 11px/16px var(--gl-font-mono);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--gl-ink-2);
+    cursor: pointer;
+  }
+  .item:hover, .item:focus-visible { background: var(--gl-sunken); color: var(--gl-ink); }
+  .item:focus-visible { outline-offset: -2px; }
 
   /* Connection: the dot has a shape as well as a colour, and the state is always spelled out. */
   .link {

@@ -17,13 +17,19 @@ export interface ModuleCut {
 export interface CutOptions {
   /** Directory to cut beneath; '' (default) is the repository root. */
   root?: string;
-  /** Hard cap on the number of clusters. Default 40. */
+  /** Cap on the number of clusters. Default DEFAULT_MODULES; never more than MAX_MODULES. */
   max?: number;
   /** Directories holding a package manifest: preferred as cluster boundaries. */
   manifestDirs?: ReadonlySet<string>;
 }
 
+/** The most clusters any cut may have, however many are asked for. */
 export const MAX_MODULES = 40;
+/**
+ * Clusters of the repository cut, and of a module graph nobody asked to be larger: few enough that a graph of them
+ * is legible in its plate without zooming, with the smaller directories folded into their parent's rest cluster.
+ */
+export const DEFAULT_MODULES = 20;
 /** A directory with fewer source files than this is one module however it is laid out inside. */
 const MIN_SPLIT_FILES = 8;
 
@@ -54,7 +60,7 @@ interface DirStat {
  */
 export function cutModules(files: readonly CutFile[], options: CutOptions = {}): ModuleCut {
   const root = options.root ?? '';
-  const max = Math.max(1, options.max ?? MAX_MODULES);
+  const max = Math.min(MAX_MODULES, Math.max(1, options.max ?? DEFAULT_MODULES));
   const manifestDirs = options.manifestDirs ?? new Set<string>();
   const inScope = (path: string) => root === '' || path.startsWith(root + '/');
 

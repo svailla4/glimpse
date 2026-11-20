@@ -3,7 +3,7 @@
   .diff[data-multi] {
     display: grid;
     grid-template-rows: minmax(0, 1fr);
-    grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+    grid-template-columns: minmax(200px, 28%) minmax(0, 1fr);
   }
   .diff[data-multi][data-stack] {
     grid-template-rows: auto minmax(0, 1fr);
@@ -18,8 +18,15 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    /* The list keeps to its column: nothing in its header may run under the header of the file beside it. */
+    overflow: hidden;
     border-right: 1px solid var(--gl-rule);
   }
+  .listHead { justify-content: space-between; padding-right: 10px; }
+  /* The range gives way first, then the file count; the totals are never cut. */
+  .listMeta { display: flex; flex: 0 1 auto; min-width: 0; }
+  .listRange { flex: 0 1000000 auto; min-width: 2ch; overflow: hidden; text-overflow: ellipsis; }
+  .listCount { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
   .diff[data-stack] .files { max-height: 141px; border-right: 0; border-bottom: 1px solid var(--gl-rule); }
   .file {
     display: grid;
@@ -36,8 +43,12 @@
   .file:hover { background: var(--gl-sunken); }
   .file[data-current] { background: var(--gl-sunken); box-shadow: inset 2px 0 0 var(--gl-ink-2); }
   .file[data-selected] { background: var(--gl-accent-wash); box-shadow: inset 2px 0 0 var(--gl-accent); }
-  .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .from { color: var(--gl-ink-3); }
+  .name { display: flex; min-width: 0; overflow: hidden; white-space: nowrap; }
+  .name > * { min-width: 0; }
+  /* In the list the status chip and the name already say what the file is: the extension badge would only take
+     the room the name needs. */
+  .file :global(.gl-path-ext) { display: none; }
+  .from { flex: 0 1000000 auto; overflow: hidden; text-overflow: ellipsis; white-space: pre; color: var(--gl-ink-3); }
   .status {
     display: inline-flex;
     flex: none;
@@ -99,6 +110,18 @@
   .hunkText { position: sticky; left: 0; padding: 0 12px; }
   .hunkContext { color: var(--gl-ink-2); }
   .hunk[data-active] .hunkText { color: var(--gl-ink); }
+  /* Where the host stopped sending hunks: a caption in the plate's note voice, not a hunk header. */
+  .cut {
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    height: 24px;
+    border-top: 1px dashed var(--gl-rule-strong);
+    color: var(--gl-ink-2);
+    font: italic 400 13px/18px var(--gl-font-display);
+    white-space: nowrap;
+  }
+  .cutText { position: sticky; left: 0; padding: 0 12px; }
   .diff .old { padding-right: 6px; border-right-color: transparent; }
   .diff .new { left: var(--gl-gutter); }
   .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); overflow: hidden; }

@@ -134,8 +134,8 @@ describe('ERDiagram', () => {
   });
 
   it.each([
-    ['a list', [1], /expected \{tables, relations\}, received an array/],
-    ['a string', 'users', /received a string/],
+    ['a list of things that are not tables', [1, 'x'], /expected tables \[\{name, columns\}\], but none of the 2 entries have a name/],
+    ['a string', 'users', /expected tables \[\{name, columns\}\] or \{tables, relations\}, received a string/],
     ['tables that are not a list', {tables: {users: {}}}, /expected tables to be an array, received an object/],
   ])('shows an E_SHAPE redline for %s', async (_name, data, message) => {
     const view = renderExpress(SPEC, {data: {'/schema': data}});
@@ -203,5 +203,37 @@ describe('ERDiagram', () => {
     expect(positionOf(nodeOf(view, 'e', 'users'))).toEqual(before);
     expect(lineOf(edgeOf(view, 'e', 'sessions->users'))).toBe(edgeBefore);
     expect(JSON.parse(storage.items.get(POSITIONS_KEY)!)).toEqual({});
+  });
+
+  it('reads a bare list of tables and draws the relation a string fk or ref names (D5, F033)', async () => {
+    const tables = [
+      {name: 'users', columns: [{name: 'id', type: 'uuid', pk: true}, 'email']},
+      {name: 'orders', columns: [{name: 'id', pk: true}, {name: 'user_id', fk: 'users.id'}, {name: 'shop', ref: 'shops'}]},
+      {name: 'shops', columns: [{name: 'id', pk: true}]},
+    ];
+    const clean = cleanSchema(tables);
+    if (typeof clean === 'string') throw new Error(clean);
+    expect(clean.tables.map(table => table.name)).toEqual(['users', 'orders', 'shops']);
+    expect(clean.relations).toEqual([
+      {from: 'orders', fromColumn: 'user_id', to: 'users', toColumn: 'id', card: 'n-1'},
+      {from: 'orders', fromColumn: 'shop', to: 'shops', toColumn: undefined, card: 'n-1'},
+    ]);
+    // a column that points somewhere is marked as a foreign key
+    expect(clean.tables[1]!.columns.filter(column => column.fk).map(column => column.name)).toEqual(['user_id', 'shop']);
+    // written out in relations as well: drawn once
+    const both = cleanSchema({tables, relations: [{from: 'users.id', to: 'orders.user_id'}]});
+    if (typeof both === 'string') throw new Error(both);
+    expect(both.relations.filter(rel => [rel.from, rel.to].sort().join() === 'orders,users')).toHaveLength(1);
+    // a pointer at a table that is not there is counted, not drawn
+    const ghost = cleanSchema([{name: 'a', columns: [{name: 'b_id', fk: 'b.id'}]}]);
+    if (typeof ghost === 'string') throw new Error(ghost);
+    expect(ghost.relations).toEqual([]);
+    expect(ghost.dropped.relations).toBe(1);
+
+    const view = await ready(tables);
+    expect(nodeIds(view, 'e').sort()).toEqual(['orders', 'shops', 'users']);
+    expect(edgeOf(view, 'e', 'orders->users')).toBeTruthy();
+    expect(edgeOf(view, 'e', 'orders->shops')).toBeTruthy();
+    expect(view.cell('e').querySelector('[data-gl-state="redline"]')).toBeNull();
   });
 });

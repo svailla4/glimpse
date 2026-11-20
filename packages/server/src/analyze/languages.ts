@@ -11,6 +11,8 @@ export interface Language {
   kind: 'code' | 'markup' | 'data' | 'prose' | 'config';
   comments?: CommentStyle;
   scan?: ScanLang;
+  /** A language with an outline of its own that is not code: 'headings' lists Markdown headings as symbols. */
+  outline?: 'headings';
 }
 
 const lang = (name: string, kind: Language['kind'], comments?: CommentStyle, scan?: ScanLang): Language =>
@@ -27,7 +29,7 @@ const GROOVY = lang('Groovy', 'code', 'c');
 const SHELL = lang('Shell', 'code', 'hash');
 const YAML = lang('YAML', 'config', 'hash');
 const JSON_ = lang('JSON', 'data');
-const MD = lang('Markdown', 'prose');
+const MD: Language = {...lang('Markdown', 'prose'), outline: 'headings'};
 const INI = lang('INI', 'config', 'semi');
 const MAKE = lang('Makefile', 'config', 'hash');
 const DOCKER = lang('Dockerfile', 'config', 'hash');
@@ -133,12 +135,13 @@ export function extName(path: string): string {
 
 /** Language of a path from its file name, then its extension. Undefined when the table has no entry. */
 export function languageOf(path: string): Language | undefined {
+  // File names come from the repository: only the table's own entries count, so a file called `constructor` or
+  // `x.__proto__` is not answered with something inherited from Object.prototype.
   const base = baseName(path);
-  const named = BY_NAME[base];
-  if (named) return named;
+  if (Object.hasOwn(BY_NAME, base)) return BY_NAME[base];
   if (base.startsWith('Dockerfile.') || base.startsWith('.env.')) return base.startsWith('.env.') ? INI : DOCKER;
   const ext = extName(path);
-  return ext ? BY_EXT[ext] : undefined;
+  return ext && Object.hasOwn(BY_EXT, ext) ? BY_EXT[ext] : undefined;
 }
 
 /** True for extensions that are never worth reading (images, archives, fonts, object code). */

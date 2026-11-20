@@ -6,7 +6,7 @@ import {useEffect, useId, useMemo, useRef, type JSX} from 'react';
 import {Empty, fmtNum, seqVar, useSelection, type DataState, type GlView} from '../../kit/index.ts';
 import css from './Heatmap.module.css';
 import {
-  CanvasLayer, DEFAULT_HEIGHT, Figure, Legend, Note, Ramp, RowsGate, clip, count, entityOf, fmtValue, inspect, kit, label, matches, notes, num, pick,
+  CanvasLayer, DEFAULT_HEIGHT, Figure, Legend, Note, Ramp, RowsGate, clip, clipName, count, entityOf, fmtValue, inspect, kit, label, matches, notes, num, pick,
   roleY, say, textWidth, time, useChartBox, useDrawIn, prepareCanvas, useInks, useMarkNav, type ArrowKey, type FieldInfo, type Mark,
 } from './chartkit/index.ts';
 
@@ -121,14 +121,21 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
   };
 }
 
-/** Ramp index 0..6 of a value: seven equal steps from the low end (zero when nothing is negative), or around zero. */
+/**
+ * Ramp index 0..6 of a value. Diverging: around zero. Sequential over values that are never negative: zero is the
+ * first step and everything above it shares the other six, so a cell that has any value at all is never the
+ * faintest ink (a dependency matrix is first of all about which cells are there). With negative values: seven
+ * equal steps from the low end.
+ */
 function stepOf(value: number, model: Model, diverging: boolean): number {
   if (diverging) {
     const reach = Math.max(Math.abs(model.lo), Math.abs(model.hi));
     return reach === 0 ? 3 : 3 + Math.round((value / reach) * 3);
   }
   const lo = Math.min(0, model.lo);
-  return model.hi === lo ? 3 : Math.min(6, Math.floor(((value - lo) / (model.hi - lo)) * 7));
+  if (model.hi === lo) return 3;
+  if (lo === 0) return value <= 0 ? 0 : Math.min(6, 1 + Math.floor((value / model.hi) * 6));
+  return Math.min(6, Math.floor(((value - lo) / (model.hi - lo)) * 7));
 }
 
 interface Layout {
@@ -156,14 +163,16 @@ function layoutCells(model: Model, diverging: boolean, width: number, boxHeight:
   for (const name of model.rows) widestRow = Math.max(widestRow, textWidth(name));
   let widestCol = 0;
   for (const name of model.cols) widestCol = Math.max(widestCol, textWidth(name));
-  const rowLabelW = Math.min(widestRow, 150, width * 0.3);
+  // row names take up to 180 px, less when the columns would then not fit at their smallest
+  const rowLabelW = Math.min(widestRow, 180, width * 0.3, Math.max(96, width - nCols * 12 - 8));
   const left = Math.ceil(rowLabelW) + 8;
-  const cw = Math.max(12, Math.min(72, Math.floor((width - left) / nCols)));
+  // a small grid takes larger cells instead of leaving most of the plate blank
+  const cw = Math.max(12, Math.min(model.matrix ? 72 : 96, Math.floor((width - left) / nCols)));
   const upright = widestCol + 6 <= cw;
-  const colLabelW = upright ? cw - 4 : Math.min(widestCol, 96);
+  const colLabelW = upright ? cw - 4 : Math.min(widestCol, 120);
   const top = upright ? 18 : Math.ceil(colLabelW) + 8;
   const room = (fill ? Math.max(120, boxHeight) : DEFAULT_HEIGHT) - top - 2;
-  const ch = model.matrix ? Math.min(cw, 40) : Math.max(12, Math.min(28, Math.floor(room / nRows)));
+  const ch = model.matrix ? Math.min(cw, 40) : Math.max(12, Math.min(40, Math.floor(room / nRows)));
 
   const steps = new Uint8Array(nRows * nCols);
   const cellMark = new Int32Array(nRows * nCols).fill(-1);
@@ -273,7 +282,7 @@ function Cells(p: {id: string; model: Model; skipped: number; props: C.ViewProps
       const r = Math.floor(cell / nCols);
       const c = cell % nCols;
       if (model.matrix && r === c) continue;
-      blank += `M${left + c * cw},${top + r * ch}h${cw - 2}v${ch - 2}h${-(cw - 2)}z`;
+      blank += `M${left + c * cw + 0.5},${top + r * ch + 0.5}h${cw - 3}v${ch - 3}h${-(cw - 3)}z`;
     }
     const printed = cw >= 28 && ch >= 14;
     return (
@@ -285,10 +294,11 @@ function Cells(p: {id: string; model: Model; skipped: number; props: C.ViewProps
           const x = left + (cell % nCols) * cw;
           const y = top + Math.floor(cell / nCols) * ch;
           const strong = diverging ? Math.abs(step - 3) >= 2 : step >= 4;
+          const value = model.values[cell]!;
           return (
             <g key={cell} data-i={i} data-entity="" data-step={step + 1} data-dim={lit !== undefined && Math.floor(cell / nCols) !== lit.row && cell % nCols !== lit.col ? '' : undefined}>
               <rect x={x} y={y} width={cw - 2} height={ch - 2} style={{fill: ramp[step]}} />
-              {printed ? <text className={strong ? css.onStrong : css.onLight} x={x + (cw - 2) / 2} y={y + (ch - 2) / 2} dy="0.32em" textAnchor="middle">{clip(fmtNum(model.values[cell], 'compact'), cw - 4)}</text> : null}
+              {printed ? <text className={strong ? css.onStrong : css.onLight} x={x + (cw - 2) / 2} y={y + (ch - 2) / 2} dy="0.32em" textAnchor="middle">{clip(fmtNum(value, Math.abs(value) >= 10_000 ? 'compact' : 'num'), cw - 4)}</text> : null}
             </g>
           );
         })}
@@ -305,6 +315,21 @@ function Cells(p: {id: string; model: Model; skipped: number; props: C.ViewProps
   const reach = Math.max(Math.abs(model.lo), Math.abs(model.hi));
   // every label up to 400 per axis, then every nth: the tooltip names the rest
   const stride = (count: number) => Math.ceil(count / 400);
+  // the row and the column of the cell under the pointer or the keyboard: their labels step forward
+  const at = nav.active >= 0 && layout ? layout.markCell[nav.active] : undefined;
+  const hotRow = at === undefined ? -1 : Math.floor(at / nCols);
+  const hotCol = at === undefined ? -1 : at % nCols;
+  const gridWidth = layout ? layout.left + nCols * layout.cw : 0;
+  // names keep their last segment (D12): 'typescript/renderers/lit' gives way in the middle, not at the end
+  const axisLabel = (name: string, room: number, hot: boolean) => {
+    const parts = clipName(name, room);
+    return (
+      <>
+        {parts.dir ? <tspan className={hot ? kit.label : kit.labelDim}>{parts.dir}</tspan> : null}
+        <tspan className={hot || at === undefined ? kit.label : css.labelRest}>{parts.base}</tspan>
+      </>
+    );
+  };
 
   return (
     <>
@@ -320,10 +345,13 @@ function Cells(p: {id: string; model: Model; skipped: number; props: C.ViewProps
         drawing={drawing}
         rings={false}
         header={(
-          <Legend
-            items={[]}
-            end={<Ramp steps={ramp} low={fmtValue(diverging ? -reach : Math.min(0, model.lo), model.valueInfo)} high={fmtValue(diverging ? reach : model.hi, model.valueInfo)} />}
-          />
+          // the legend ends where the grid ends, not at the far side of a wide plate
+          <div style={gridWidth > 0 ? {maxWidth: Math.max(220, gridWidth)} : undefined} data-chart-key="">
+            <Legend
+              items={[]}
+              end={<Ramp steps={ramp} low={fmtValue(diverging ? -reach : Math.min(0, model.lo), model.valueInfo)} high={fmtValue(diverging ? reach : model.hi, model.valueInfo)} />}
+            />
+          </div>
         )}
       >
         {layout ? (
@@ -334,8 +362,8 @@ function Cells(p: {id: string; model: Model; skipped: number; props: C.ViewProps
               </pattern>
             </defs>
             {model.rows.map((name, r) => (r % stride(nRows) === 0 ? (
-              <text key={r} className={kit.label} x={layout.left - 8} y={layout.top + r * layout.ch + (layout.ch - 2) / 2} dy="0.32em" textAnchor="end" data-row-label={r} data-entity="" onClick={() => select(model.rowEntities[r] ?? null)}>
-                {clip(name, layout.rowLabelW)}
+              <text key={r} x={layout.left - 8} y={layout.top + r * layout.ch + (layout.ch - 2) / 2} dy="0.32em" textAnchor="end" data-row-label={r} data-hot={r === hotRow || undefined} data-entity="" onClick={() => select(model.rowEntities[r] ?? null)}>
+                {axisLabel(name, layout.rowLabelW, r === hotRow)}
               </text>
             ) : null))}
             {model.cols.map((name, c) => {
@@ -344,13 +372,13 @@ function Cells(p: {id: string; model: Model; skipped: number; props: C.ViewProps
               return (
                 <text
                   key={c}
-                  className={kit.label}
                   data-col-label={c}
+                  data-hot={c === hotCol || undefined}
                   data-entity=""
                   onClick={() => select(model.colEntities[c] ?? null)}
                   {...(layout.upright ? {x, y: layout.top - 8, textAnchor: 'middle'} : {transform: `translate(${x + 4},${layout.top - 6}) rotate(-90)`})}
                 >
-                  {clip(name, layout.colLabelW)}
+                  {axisLabel(name, layout.colLabelW, c === hotCol)}
                 </text>
               );
             })}
@@ -365,7 +393,7 @@ function Cells(p: {id: string; model: Model; skipped: number; props: C.ViewProps
 }
 
 export const HeatmapView: GlView<typeof C.Heatmap> = ({id, props}) => (
-  <RowsGate name="Heatmap" id={id} input={props.data}>
+  <RowsGate name="Heatmap" id={id} input={props.data} size={props.size}>
     {(rows, state, skipped) => <Plot id={id} rows={rows} state={state} skipped={skipped} props={props} />}
   </RowsGate>
 );

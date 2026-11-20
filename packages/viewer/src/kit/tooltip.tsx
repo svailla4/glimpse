@@ -1,15 +1,23 @@
 // packages/viewer/src/kit/tooltip.tsx  (owned by WP4; exported signatures are frozen)
 // One tooltip layer per KitProvider. Views call show() on pointer move and hide() on leave; x and y are viewport
 // (client) coordinates. Outside a provider both calls do nothing, so a view never has to check.
-import {createContext, useContext, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode} from 'react';
+// A tooltip belongs to the view that showed it: it goes away when that view unmounts (its data was replaced, its
+// surface closed), when the page scrolls under it and when the window loses focus, and one view's hide() never
+// takes down a tooltip another view has put up since.
+import {createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type ReactNode} from 'react';
 
 export interface TooltipApi {
   show(content: ReactNode, x: number, y: number): void;
   hide(): void;
 }
 
-const NOOP: TooltipApi = {show: () => {}, hide: () => {}};
-const TooltipContext = createContext<TooltipApi>(NOOP);
+/** The layer itself: every call names the view (`owner`) it is made for. */
+interface TooltipLayer {
+  show(owner: object, content: ReactNode, x: number, y: number): void;
+  hide(owner: object): void;
+}
+
+const TooltipContext = createContext<TooltipLayer | null>(null);
 
 /** Distance from the pointer, and the margin kept to the viewport edge. */
 const OFFSET = 12;
@@ -28,9 +36,12 @@ function place(pointer: number, size: number, viewport: number): number {
 
 /** Mounted once by KitProvider. */
 export function TooltipProvider(p: {children: ReactNode}): JSX.Element {
-  const [tip, setTip] = useState<{content: ReactNode; x: number; y: number} | null>(null);
+  const [tip, setTip] = useState<{owner: object; content: ReactNode; x: number; y: number} | null>(null);
   const element = useRef<HTMLDivElement>(null);
-  const api = useMemo<TooltipApi>(() => ({show: (content, x, y) => setTip({content, x, y}), hide: () => setTip(null)}), []);
+  const layer = useMemo<TooltipLayer>(() => ({
+    show: (owner, content, x, y) => setTip({owner, content, x, y}),
+    hide: owner => setTip(current => (current && current.owner === owner ? null : current)),
+  }), []);
 
   // The size is only known once the content is in the DOM, so the final position is written before paint.
   useLayoutEffect(() => {
@@ -41,8 +52,21 @@ export function TooltipProvider(p: {children: ReactNode}): JSX.Element {
     box.style.top = `${place(tip.y, height, document.documentElement.clientHeight)}px`;
   }, [tip]);
 
+  // What the pointer was over moves away under a scroll, and a window that lost focus gets no pointer-leave.
+  const shown = tip !== null;
+  useEffect(() => {
+    if (!shown) return;
+    const clear = () => setTip(null);
+    window.addEventListener('scroll', clear, {capture: true, passive: true});
+    window.addEventListener('blur', clear);
+    return () => {
+      window.removeEventListener('scroll', clear, {capture: true});
+      window.removeEventListener('blur', clear);
+    };
+  }, [shown]);
+
   return (
-    <TooltipContext.Provider value={api}>
+    <TooltipContext.Provider value={layer}>
       {p.children}
       {tip ? (
         <div ref={element} className="gl-tooltip" role="tooltip" style={{position: 'fixed', left: tip.x + OFFSET, top: tip.y + OFFSET, pointerEvents: 'none'}}>
@@ -53,6 +77,16 @@ export function TooltipProvider(p: {children: ReactNode}): JSX.Element {
   );
 }
 
+const NOOP: TooltipApi = {show: () => {}, hide: () => {}};
+
+/** The tooltip of the calling view. The object is stable for the life of the view; its tooltip is hidden when the view unmounts. */
 export function useTooltip(): TooltipApi {
-  return useContext(TooltipContext);
+  const layer = useContext(TooltipContext);
+  const api = useMemo<TooltipApi>(() => {
+    if (!layer) return NOOP;
+    const owner = {};
+    return {show: (content, x, y) => layer.show(owner, content, x, y), hide: () => layer.hide(owner)};
+  }, [layer]);
+  useEffect(() => () => api.hide(), [api]);
+  return api;
 }

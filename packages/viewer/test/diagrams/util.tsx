@@ -44,12 +44,60 @@ export const pointsOf = (d: string): Array<[number, number]> => {
   const out: Array<[number, number]> = [];
   for (let i = 0; i + 1 < numbers.length; i += 2) out.push([numbers[i]!, numbers[i + 1]!]);
   return out;
+}
+
+/**
+ * A module graph the way a repository gives one: `layers` ranks of `perLayer` modules, every module importing two
+ * of the next rank and one two ranks on. Acyclic, so its depth is `layers`.
+ */
+export function layeredGraph(layers: number, perLayer: number): {nodes: Array<{id: string; label: string; sub: string; kind: string}>; edges: Array<{from: string; to: string; weight: number}>} {
+  const id = (layer: number, i: number) => `pkg/l${layer}/m${i}`;
+  const nodes = Array.from({length: layers * perLayer}, (_, n) => ({id: id(Math.floor(n / perLayer), n % perLayer), label: `l${Math.floor(n / perLayer)}/m${n % perLayer}`, sub: `${n + 3} files`, kind: 'cluster'}));
+  const edges: Array<{from: string; to: string; weight: number}> = [];
+  for (let layer = 0; layer + 1 < layers; layer++) {
+    for (let i = 0; i < perLayer; i++) {
+      edges.push({from: id(layer, i), to: id(layer + 1, i), weight: 5}, {from: id(layer, i), to: id(layer + 1, (i + 1) % perLayer), weight: 2});
+      if (layer + 2 < layers) edges.push({from: id(layer, i), to: id(layer + 2, (i + 2) % perLayer), weight: 1});
+    }
+  }
+  return {nodes, edges};
+}
+
+/** A touch as the stage sees it. */
+export function touch(type: 'pointerDown' | 'pointerMove' | 'pointerUp', target: Element, pointerId: number, x: number, y: number): void {
+  fireEvent[type](target, {pointerType: 'touch', pointerId, button: 0, buttons: type === 'pointerUp' ? 0 : 1, clientX: x, clientY: y});
 };
 
 export function positionOf(node: Element): {x: number; y: number} {
   const m = /translate\((-?[\d.]+)[ ,]+(-?[\d.]+)\)/.exec(node.getAttribute('transform') ?? '');
   if (!m) throw new Error('the node has no translate()');
   return {x: Number(m[1]), y: Number(m[2])};
+}
+
+/** Width and height of a node: its outline is the first rect it draws. */
+export function sizeOf(node: Element): {w: number; h: number} {
+  const rect = node.querySelector('rect');
+  if (!rect) throw new Error('the node draws no rect');
+  return {w: Number(rect.getAttribute('width')), h: Number(rect.getAttribute('height'))};
+}
+
+/** Where a node is on the stage, in stage pixels: its box under the current pan and zoom. */
+export function onStage(svg: SVGSVGElement, node: Element): {left: number; top: number; right: number; bottom: number} {
+  const view = viewOf(svg);
+  const at = positionOf(node);
+  const {w, h} = sizeOf(node);
+  return {left: at.x * view.k + view.x, top: at.y * view.k + view.y, right: (at.x + w) * view.k + view.x, bottom: (at.y + h) * view.k + view.y};
+}
+
+/** True when the point lies on the outline of the node (within a pixel). */
+export function onOutline(point: readonly [number, number] | undefined, node: Element): boolean {
+  if (!point) return false;
+  const at = positionOf(node);
+  const {w, h} = sizeOf(node);
+  const [x, y] = point;
+  const inside = x >= at.x - 1 && x <= at.x + w + 1 && y >= at.y - 1 && y <= at.y + h + 1;
+  const edge = Math.min(Math.abs(x - at.x), Math.abs(x - at.x - w), Math.abs(y - at.y), Math.abs(y - at.y - h));
+  return inside && edge <= 1;
 }
 
 /** Pan and zoom of a stage, read from the viewport group's CSS transform. */
@@ -79,7 +127,7 @@ export function focus(element: Element): void {
 export const key = (element: Element, k: string, init: {shiftKey?: boolean; altKey?: boolean} = {}): boolean => fireEvent.keyDown(element, {key: k, ...init});
 
 /** A deterministic graph of `nodes` nodes and about `edges` distinct edges. */
-export function bigGraph(nodes: number, edges: number): {nodes: Array<{id: string; label: string; sub: string}>; edges: Array<{from: string; to: string; weight: number}>} {
+export function bigGraph(nodes: number, edges: number): {nodes: Array<{id: string; label: string; sub: string; kind?: string}>; edges: Array<{from: string; to: string; weight: number}>} {
   let seed = 7;
   const random = () => {
     seed = (seed * 1103515245 + 12345) % 2147483648;

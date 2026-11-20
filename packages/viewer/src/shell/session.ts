@@ -5,6 +5,8 @@
 //   - a snapshot for a surface that already exists replaces it, and `/ui` (selection, followed file) is carried over
 //     a delete + create unless the new snapshot sets it;
 //   - messages the processor rejects, and errors raised while rendering, go back to the host as v1.0 `error` messages;
+//   - so does every state a component shows instead of its content (a redline, an empty plate), once per surface
+//     instance, so the host can tell the agent what its view really looks like (design rule D3);
 //   - actions go back as v1.0 `action` messages, `gl_select` debounced so that dragging a selection does not flood;
 //   - the lazy chunks of the component types a message names start loading before React asks for them.
 import type {ReactCatalogComponent} from '@a2ui/react';
@@ -14,7 +16,8 @@ import {
   type SurfaceInfo, type Transport,
 } from '@glimpse/catalog';
 import {createGlimpseCatalog, preloadChunks} from '../catalog.ts';
-import {kitSlots} from '../kit/index.ts';
+import {kitSlots, type RenderReport} from '../kit/index.ts';
+import type {LinkEnd} from '../transport/hub.ts';
 
 export type Surface = SurfaceModel<ReactCatalogComponent>;
 
@@ -27,6 +30,8 @@ export interface SessionSnapshot {
   focus: string | undefined;
   /** Changes whenever a surface object is created or deleted, so a renderer reads surface() again. */
   generation: number;
+  /** Why the link ended, when the transport knows (status 'ended' only). */
+  end?: LinkEnd;
 }
 
 export interface ViewerSession {
@@ -48,6 +53,14 @@ export interface ViewerSession {
   refresh(id: string): void;
   /** Reports an error the renderer caught (an error boundary) to the host. */
   report(error: {code: string; message: string; surfaceId?: string}): void;
+  /**
+   * Reports a state a component shows instead of its content (KitProvider `report`). Each distinct report is sent
+   * once for as long as the surface object lives; a surface that is created again starts over, because the host
+   * drops what it knew about a surface it replaces.
+   */
+  reportState(report: RenderReport): void;
+  /** Clears the selection of a surface (Escape with the focus on the page). Does nothing when nothing is selected. */
+  clearSelection(id: string): void;
 }
 
 export interface SessionOptions {
@@ -63,6 +76,8 @@ const V = '1.0' as const;
 const SELECT_DELAY = 150;
 /** Distinct errors forwarded per epoch; a broken view must not turn into a stream of posts. */
 const MAX_REPORTED = 100;
+/** Distinct component states forwarded per surface instance. */
+const MAX_STATES = 200;
 const UI_PATH = '/ui';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -83,6 +98,8 @@ export function createViewerSession(transport: Transport, options: SessionOption
   const instances = new Map<string, number>();
   const pendingSelect = new Map<string, ActionPayload>();
   const reported = new Set<string>();
+  /** Component states already sent, per surface id; forgotten when the surface object is created again. */
+  const states = new Map<string, Set<string>>();
   const selectDelay = options.selectDelay ?? SELECT_DELAY;
   let snapshot: SessionSnapshot = {status: 'connecting', session: undefined, surfaces: [], focus: undefined, generation: 0};
   let processor: MessageProcessor<ReactCatalogComponent> | undefined;
@@ -104,7 +121,7 @@ export function createViewerSession(transport: Transport, options: SessionOption
     // Fall back to the most recently updated surface when the wanted one does not (or no longer) exist.
     next.focus = known ? wanted : [...next.surfaces].sort((a, b) => b.updatedAt - a.updatedAt)[0]?.id;
     const same =
-      next.status === snapshot.status && next.session === snapshot.session && next.focus === snapshot.focus && next.generation === snapshot.generation &&
+      next.status === snapshot.status && next.end === snapshot.end && next.session === snapshot.session && next.focus === snapshot.focus && next.generation === snapshot.generation &&
       next.surfaces.length === snapshot.surfaces.length &&
       next.surfaces.every((info, i) => {
         const before = snapshot.surfaces[i];
@@ -156,6 +173,16 @@ export function createViewerSession(transport: Transport, options: SessionOption
     }]);
   };
 
+  const reportState = (state: RenderReport) => {
+    if (!processor?.getSurface(state.surfaceId)) return;
+    const sent = states.get(state.surfaceId) ?? new Set<string>();
+    states.set(state.surfaceId, sent);
+    const key = `${state.code}\n${state.message}`;
+    if (sent.has(key) || sent.size >= MAX_STATES) return;
+    sent.add(key);
+    post([{version: V, error: {code: state.code, message: state.message, surfaceId: state.surfaceId}}]);
+  };
+
   const dispose = () => {
     for (const subscription of subscriptions) subscription.unsubscribe();
     subscriptions = [];
@@ -163,6 +190,7 @@ export function createViewerSession(transport: Transport, options: SessionOption
     selectTimer = undefined;
     pendingSelect.clear();
     reported.clear();
+    states.clear();
     instances.clear();
     processor?.model.dispose();
     processor?.dispose();
@@ -179,10 +207,12 @@ export function createViewerSession(transport: Transport, options: SessionOption
     subscriptions = [
       next.onSurfaceCreated(surface => {
         instances.set(surface.id, ++created);
+        states.delete(surface.id);
         shape++;
       }),
       next.onSurfaceDeleted(id => {
         instances.delete(id);
+        states.delete(id);
         shape++;
       }),
       // Processing errors come back from processMessagesWithErrors (with their path); this catches the rest:
@@ -282,7 +312,12 @@ export function createViewerSession(transport: Transport, options: SessionOption
   const onStatus = (status: LinkStatus) => {
     // Ended is final: a host that said goodbye does not come back under the same token.
     if (snapshot.status === 'ended' || snapshot.status === status) return;
-    if (status === 'ended') flushSelect();
+    if (status === 'ended') {
+      flushSelect();
+      const end = (transport as Partial<{linkEnd(): LinkEnd | undefined}>).linkEnd?.();
+      update(end ? {status, end} : {status});
+      return;
+    }
     update({status});
   };
 
@@ -318,6 +353,13 @@ export function createViewerSession(transport: Transport, options: SessionOption
     close: id => act('gl_close', id),
     refresh: id => act('gl_refresh', id),
     report,
+    reportState,
+    clearSelection(id) {
+      const surface = processor?.getSurface(id);
+      if (!surface || surface.dataModel.get(PATHS.uiSel) == null) return;
+      surface.dataModel.set(PATHS.uiSel, null);
+      void surface.dispatchAction({event: {name: 'gl_select', context: {ref: null}}} as never, 'root');
+    },
   };
 }
 

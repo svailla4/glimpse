@@ -4,7 +4,7 @@ import {appendFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {expectSettled, expectSurface, openViewer, recordTiming, TOKEN} from './support/glimpse.ts';
 import {EXTRA_REPO, ROOT} from './support/paths.ts';
-import {expect, FIXTURE, knownDefect, test} from './support/test.ts';
+import {expect, FIXTURE, test} from './support/test.ts';
 
 const HOT_ROWS = '.gl-cell[data-id="hot"] [role="row"][data-index]';
 const GRAPH_NODES = '.gl-cell[data-id="deps"] svg [data-node]';
@@ -89,9 +89,10 @@ test.describe('fixture repository', () => {
 
     await test.step('8. a bad spec is an error that names the valid kinds and changes nothing', async () => {
       const before = {cells: await page.locator('.gl-cell').count(), title: await page.locator('[data-gl="Page"] h1').first().textContent()};
-      const bad = await glimpse.call('show', {spec: "root=Page('x',[Callout('y','danger')])"});
+      // ('danger' is a guess decision D5 repairs to 'risk'; a word that means no allowed value stays an error)
+      const bad = await glimpse.call('show', {spec: "root=Page('x',[Callout('y','purple')])"});
       expect(bad.isError).toBe(true);
-      expect(bad.lines[0]).toBe('E_ENUM Callout.kind: "danger" is not allowed. Use: note tip warn risk decision question');
+      expect(bad.lines[0]).toBe('E_ENUM Callout.kind: "purple" is not allowed. Use: note tip warn risk decision question');
       expect(bad.lines.at(-1)).toBe('Nothing was rendered; the previous view is unchanged.');
       await page.waitForTimeout(300);
       await expectSurface(page, 'diff');
@@ -171,9 +172,9 @@ for (const [label, dir] of [['this repository', ROOT], ...(EXTRA_REPO ? [['GLIMP
 test.describe('legibility on this repository', () => {
   test.use({projectDir: ROOT});
 
-  // The path column cuts a long path at its end, so on a repository with deep directories every hotspot row reads
-  // "packages/viewer/src/compon" and the file name, the only part that tells the rows apart, is not on screen.
-  knownDefect('E2E-05', 'the hotspots table shows the file name of every row', async ({page, glimpse}) => {
+  // Finding F004 (was known defect E2E-05): path cells cut a long path at its end, so on a repository with deep
+  // directories every hotspot row read "packages/viewer/src/compon". The directory is elided now; the name stays.
+  test('the hotspots table shows the file name of every row', async ({page, glimpse}) => {
     await glimpse.call('show', {view: 'overview'});
     await openViewer(page, glimpse);
     await expectSettled(page);
@@ -188,14 +189,27 @@ test.describe('legibility on this repository', () => {
     expect(hidden, 'file names that are clipped away').toEqual([]);
   });
 
-  // The module graph is fitted into its 420 px plate whatever its size: with 48 modules it is drawn at about 20%, and
-  // the node labels are two or three pixels tall.
-  knownDefect('E2E-06', 'the module graph opens with readable node labels', async ({page, glimpse}) => {
+  // Decision D7 (was known defect E2E-06): the module graph was fitted into its plate whatever its size, about 20%
+  // zoom with labels two or three pixels tall. Its default view now draws every label it shows at 10 px or more.
+  test('the module graph opens with node labels of at least 10 px', async ({page, glimpse}) => {
     await glimpse.call('show', {view: 'overview'});
     await openViewer(page, glimpse);
     await expectSettled(page);
-    const heights = await page.locator(`${GRAPH_NODES} text`).evaluateAll(labels => labels.map(label => label.getBoundingClientRect().height).filter(height => height > 0));
-    expect(heights.length).toBeGreaterThan(0);
-    expect(Math.min(...heights), 'smallest node label on screen, in px').toBeGreaterThanOrEqual(8);
+    const plate = page.locator('.gl-cell[data-id="deps"]');
+    await expect(plate.locator('svg [data-node]').first()).toBeVisible();
+    // The size a label is drawn at: its font size times the zoom of the drawing, as the screen shows it.
+    const labels = await plate.locator('svg [data-node] text').evaluateAll((texts, frame) => {
+      const stage = (frame as Element).getBoundingClientRect();
+      return texts.map(text => {
+        const box = text.getBoundingClientRect();
+        const style = getComputedStyle(text);
+        const size = parseFloat(style.fontSize) * ((text as SVGTextElement).getScreenCTM()?.a ?? 1);
+        return {text: text.textContent ?? '', size, onStage: box.width > 0 && box.bottom > stage.top && box.top < stage.bottom && box.right > stage.left && box.left < stage.right && style.visibility !== 'hidden' && style.opacity !== '0'};
+      }).filter(label => label.onStage && label.text.trim() !== '');
+    }, await plate.elementHandle());
+    expect(labels.length, 'labels on screen').toBeGreaterThan(3);
+    const smallest = Math.min(...labels.map(label => label.size));
+    console.log(`overview module graph: ${labels.length} labels on screen, smallest drawn at ${smallest.toFixed(1)} px`);
+    expect(smallest, 'smallest node label on screen, in px').toBeGreaterThanOrEqual(10);
   });
 });

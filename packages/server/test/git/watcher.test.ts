@@ -1,4 +1,5 @@
-import {appendFile, writeFile} from 'node:fs/promises';
+import {appendFile, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
 import type {TreeWatcher} from '../../src/contracts.ts';
@@ -28,7 +29,7 @@ describe('createTreeWatcher', () => {
     ctx.gitCalls.length = 0;
     watcher = createTreeWatcher(ctx, {minIntervalMs: INTERVAL, backoffFactor: 1});
     watcher.start(() => { fired++; });
-    // four git calls per poll: the second poll starting means the first fingerprint is the baseline
+    // four git calls per look: the reference taken at creation, then the first poll
     await waitFor(() => ctx.gitCalls.length >= 8);
   };
   /** Long enough for several polls. */
@@ -132,14 +133,79 @@ describe('createTreeWatcher', () => {
     expect(ctx.logs.some(line => line.includes('handler bug'))).toBe(true);
   });
 
-  it('does nothing outside a git repository', async () => {
-    const outside = {...ctx, git: null, gitCalls: [] as string[][]};
-    const calls: string[][] = [];
-    const idle = createTreeWatcher({...outside, runGit: args => { calls.push(args); return ctx.runGit(args); }}, {minIntervalMs: INTERVAL});
-    idle.start(() => { fired++; });
-    await sleep(INTERVAL * 3);
-    idle.stop();
-    expect(calls).toEqual([]);
+  it('reports what changed while nobody was watching: before the first start, and between a stop and the next start', async () => {
+    fired = 0;
+    watcher = createTreeWatcher(ctx, {minIntervalMs: INTERVAL, backoffFactor: 1});
+    // the reference is the state at creation, not the state at the first poll
+    expect(await watcher.check!()).toBe(false);
+    await writeFile(join(repo.root, 'before-any-tab.txt'), 'written before anybody watched\n');
+    watcher.start(() => { fired++; });
+    await waitFor(() => fired === 1);
+    watcher.stop();
+    await writeFile(join(repo.root, 'while-stopped.txt'), 'written while stopped\n');
+    await sleep(INTERVAL * 4);
+    expect(fired).toBe(1);
+    watcher.start(() => { fired++; });
+    await waitFor(() => fired === 2);
+    await sleep(INTERVAL * 4);
+    expect(fired).toBe(2);
+  });
+
+  it('check() looks on demand, with no poll running, and reports each change once', async () => {
+    const quiet = createTreeWatcher(ctx, {minIntervalMs: INTERVAL});
+    expect(await quiet.check!()).toBe(false);
+    expect(await quiet.check!()).toBe(false);
+    await writeFile(join(repo.root, 'checked.txt'), 'one\n');
+    expect(await quiet.check!()).toBe(true);
+    expect(await quiet.check!()).toBe(false);
+    await appendFile(join(repo.root, 'checked.txt'), 'two\n');
+    expect(await quiet.check!()).toBe(true);
+    await git(repo.root, ['add', '-A']);
+    expect(await quiet.check!()).toBe(true);
+    await git(repo.root, ['commit', '-q', '-m', 'Commit what was checked']);
+    expect(await quiet.check!()).toBe(true);
+    expect(await quiet.check!()).toBe(false);
+    // a change a check has reported is not reported again by a poll
+    let polled = 0;
+    quiet.start(() => { polled++; });
+    await sleep(INTERVAL * 4);
+    quiet.stop();
+    expect(polled).toBe(0);
+  });
+
+  it('never rejects from check(): a look that fails is "no change seen"', async () => {
+    const broken = createTreeWatcher({...ctx, runGit: () => Promise.reject(new Error('git is gone'))}, {minIntervalMs: INTERVAL});
+    expect(await broken.check!()).toBe(false);
+  });
+
+  it('watches a directory that is not a repository by the files a walk lists, without running git', async () => {
+    const dir = await realpath(await mkdtemp(join(tmpdir(), 'glimpse-plain-')));
+    try {
+      await writeFile(join(dir, 'a.ts'), 'export const a = 1;\n');
+      await writeFile(join(dir, '.gitignore'), 'ignored.log\n');
+      const calls: string[][] = [];
+      const plain = createTreeWatcher({...ctx, root: dir, git: null, runGit: args => { calls.push(args); return Promise.reject(new Error('fatal: not a git repository')); }}, {minIntervalMs: INTERVAL, backoffFactor: 1});
+      expect(await plain.check!()).toBe(false);
+      await writeFile(join(dir, 'ignored.log'), 'noise\n');
+      expect(await plain.check!()).toBe(false);
+      await writeFile(join(dir, 'b.ts'), 'export const b = 1;\n');
+      expect(await plain.check!()).toBe(true);
+      await appendFile(join(dir, 'a.ts'), 'export const more = 2;\n');
+      expect(await plain.check!()).toBe(true);
+      await rm(join(dir, 'b.ts'));
+      expect(await plain.check!()).toBe(true);
+      expect(await plain.check!()).toBe(false);
+      let seen = 0;
+      plain.start(() => { seen++; });
+      await sleep(INTERVAL * 3);
+      expect(seen).toBe(0);
+      await writeFile(join(dir, 'c.ts'), 'export const c = 1;\n');
+      await waitFor(() => seen === 1);
+      plain.stop();
+      expect(calls).toEqual([]);
+    } finally {
+      await rm(dir, {recursive: true, force: true});
+    }
   });
 });
 

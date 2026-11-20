@@ -93,6 +93,11 @@
     background: var(--gl-cat-1);
   }
 
+  .tip { display: inline-flex; align-items: baseline; gap: 8px; max-width: 420px; font: 400 11px/16px var(--gl-font-mono); font-feature-settings: 'tnum' 1, 'zero' 1; }
+  .tipTitle { min-width: 0; overflow: hidden; color: var(--gl-ink-2); text-overflow: ellipsis; white-space: nowrap; }
+  .tipValue { flex: none; color: var(--gl-ink); font-weight: 500; }
+  .tipShare { flex: none; color: var(--gl-ink-3); }
+
   .more {
     align-self: flex-start;
     margin-top: 8px;

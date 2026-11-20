@@ -130,6 +130,36 @@ export function visibleRange(items: readonly VirtualItem[], active: number): rea
   return [Math.min(first, last), last];
 }
 
+// ---------------------------------------------------------------- scroll edges
+const mark = (element: HTMLElement, name: string, on: boolean) => {
+  if (on) element.setAttribute(name, '');
+  else element.removeAttribute(name);
+};
+
+/**
+ * Says where a scroller has more to show: `data-more-y` while it is not at its bottom end, `data-more-x` while it
+ * is not at its right end. The stylesheet fades that edge, so a row cut by the plate reads as "scroll", not as a
+ * layout fault. `key` is anything that changes when the content changes size (row count, column widths).
+ */
+export function useScrollFade(scrollRef: RefObject<HTMLElement | null>, key?: unknown): void {
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const update = () => {
+      mark(element, 'data-more-y', element.scrollHeight - element.clientHeight - element.scrollTop > 1);
+      mark(element, 'data-more-x', element.scrollWidth - element.clientWidth - element.scrollLeft > 1);
+    };
+    update();
+    element.addEventListener('scroll', update, {passive: true});
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : undefined;
+    observer?.observe(element);
+    return () => {
+      element.removeEventListener('scroll', update);
+      observer?.disconnect();
+    };
+  }, [scrollRef, key]);
+}
+
 // ---------------------------------------------------------------- density
 // Row height follows the shell's density toggle (`--gl-row` on <html>: 28 px, 34 px comfortable). The virtualizer
 // needs it as a number, so it is read from the computed style and re-read when the root's attributes change.

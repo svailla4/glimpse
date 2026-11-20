@@ -134,28 +134,38 @@ describe('git.* sources on the fixture repository', () => {
     expect((await at('git.churn')).data).toHaveLength(35);
   });
 
-  it('git.timeline: commits per week and module, zero-filled, with the smallest modules folded into "other"', async () => {
+  it('git.timeline: each commit is counted once, under its main module, so the series add up to the commits', async () => {
     const result = await run<Array<{week: string; module: string; commits: number}>>('git.timeline');
     const weeks = [...new Set(result.data.map(row => row.week))];
     expect(weeks).toEqual([
       '2026-08-03', '2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19',
       '2026-10-26', '2026-11-02',
     ]);
-    // ten modules touched: the seven busiest keep their name (ties by name), three fold into "other"
-    const series = ['.', 'src/auth', 'src', 'src/api', 'src/lib', 'src/orders', 'services', 'other'];
+    // eight series: every commit belongs to the module most of its files are in (ties by name). Files at the top of
+    // the repository are '(root)'; the index's own catch-all ('.') never names a series.
+    const series = ['src/auth', 'src/api', '(root)', 'services', 'src/lib', 'src/orders', 'src/ui', 'tools'];
     expect(result.data).toHaveLength(weeks.length * series.length);
     for (const week of weeks) expect(result.data.filter(row => row.week === week).map(row => row.module)).toEqual(series);
     const total = (module: string) => result.data.filter(row => row.module === module).reduce((sum, row) => sum + row.commits, 0);
-    expect(Object.fromEntries(series.map(module => [module, total(module)]))).toEqual({'.': 4, 'src/auth': 4, src: 3, 'src/api': 3, 'src/lib': 3, 'src/orders': 2, services: 1, other: 3});
+    expect(Object.fromEntries(series.map(module => [module, total(module)]))).toEqual({'src/auth': 4, 'src/api': 2, '(root)': 1, services: 1, 'src/lib': 1, 'src/orders': 1, 'src/ui': 1, tools: 1});
+    // The stack is the history: twelve commits in all, and in every week exactly the commits of that week. (Counting
+    // a commit once per module it touches made this sum 23, and a stacked chart of it about twice too tall.)
+    expect(result.data.reduce((sum, row) => sum + row.commits, 0)).toBe(FIXTURE.commits.main);
+    const perWeek = new Map<string, number>();
+    for (const row of (await run<Array<{date: string; commits: number}>>('git.activity')).data) {
+      const day = Date.parse(`${row.date}T00:00:00Z`) / 86_400_000;
+      const week = new Date((day - ((day + 3) % 7)) * 86_400_000).toISOString().slice(0, 10);
+      perWeek.set(week, (perWeek.get(week) ?? 0) + row.commits);
+    }
+    for (const week of weeks) expect(result.data.filter(row => row.week === week).reduce((sum, row) => sum + row.commits, 0), week).toBe(perWeek.get(week) ?? 0);
     const cell = (week: string, module: string) => result.data.find(row => row.week === week && row.module === module)!.commits;
-    // the first week holds the commits of Monday 3 and Wednesday 5 August, both in src/lib
-    expect([cell('2026-08-03', 'src/lib'), cell('2026-08-03', '.'), cell('2026-08-03', 'src'), cell('2026-08-03', 'src/auth')]).toEqual([2, 1, 1, 0]);
+    // the first week holds the commits of Monday 3 August (mostly files at the root) and Wednesday 5 August (src/lib)
+    expect([cell('2026-08-03', 'src/lib'), cell('2026-08-03', '(root)'), cell('2026-08-03', 'src/auth')]).toEqual([1, 1, 0]);
     expect(cell('2026-10-12', 'src/auth')).toBe(0);
     expect(cell('2026-11-02', 'src/auth')).toBe(1);
-    expect(cell('2026-11-02', 'other')).toBe(1);
     expect(result).toMatchObject({total: 112, roles: {x: 'week', y: ['commits'], series: 'module'}});
     expect(result.truncated).toBeUndefined();
-    expect(result.summary).toBe('112 rows; fields week module commits; 14 weeks x 8 modules; 12 commits since 2025-11-20; busiest . 4');
+    expect(result.summary).toBe('112 rows; fields week module commits; 14 weeks x 8 modules; 12 commits since 2025-11-20, each under its main module; busiest src/auth 4');
   });
 
   it('git.timeline: a scope counts only the modules inside it, and top= keeps whole weeks', async () => {
@@ -172,7 +182,8 @@ describe('git.* sources on the fixture repository', () => {
   it('git.timeline: falls back to top-level directories when the index cannot name modules', async () => {
     const broken = await makeContext(repo.root, {index: {moduleOf: () => Promise.reject(new Error('index down'))}});
     const result = await run<Array<{week: string; module: string; commits: number}>>('git.timeline', broken);
-    expect([...new Set(result.data.map(row => row.module))]).toEqual(['src', '(root)', 'services', 'test', 'tools']);
+    expect([...new Set(result.data.map(row => row.module))]).toEqual(['src', '(root)', 'services', 'tools']);
+    expect(result.data.reduce((sum, row) => sum + row.commits, 0)).toBe(FIXTURE.commits.main);
     expect(broken.index.calls.moduleOf).toBe(1);
     expect(broken.logs).toHaveLength(1);
   });
@@ -181,17 +192,17 @@ describe('git.* sources on the fixture repository', () => {
     const result = await run<ChurnRow[]>('git.churn');
     expect(result.data).toHaveLength(FIXTURE.tracked.length);
     expect(result.data.slice(0, 10)).toEqual([
-      {path: 'src/auth/service.ts', commits: 4, authors: 1, owner: JON, ownership: 100, first: '2026-08-11', last: '2026-11-04'},
-      {path: 'src/auth/session.ts', commits: 4, authors: 1, owner: JON, ownership: 100, first: '2026-08-11', last: '2026-11-04'},
-      {path: 'src/index.ts', commits: 3, authors: 2, owner: MIRA, ownership: 66.7, first: '2026-08-03', last: '2026-09-24'},
-      {path: 'package.json', commits: 2, authors: 1, owner: MIRA, ownership: 100, first: '2026-08-03', last: '2026-10-20'},
-      {path: 'src/api/middleware.ts', commits: 2, authors: 2, owner: JON, ownership: 50, first: '2026-08-18', last: '2026-09-24'},
-      {path: 'src/api/routes.ts', commits: 2, authors: 2, owner: JON, ownership: 50, first: '2026-08-18', last: '2026-08-25'},
-      {path: 'src/api/server.ts', commits: 2, authors: 2, owner: JON, ownership: 50, first: '2026-08-18', last: '2026-09-24'},
-      {path: 'src/auth/tokens.ts', commits: 2, authors: 1, owner: JON, ownership: 100, first: '2026-08-11', last: '2026-09-16'},
+      {path: 'src/auth/service.ts', commits: 4, authors: 1, owner: JON, ownership: 100, first: '2026-08-11T10:15:00Z', last: '2026-11-04T12:00:00Z'},
+      {path: 'src/auth/session.ts', commits: 4, authors: 1, owner: JON, ownership: 100, first: '2026-08-11T10:15:00Z', last: '2026-11-04T12:00:00Z'},
+      {path: 'src/index.ts', commits: 3, authors: 2, owner: MIRA, ownership: 66.7, first: '2026-08-03T09:00:00Z', last: '2026-09-24T10:10:00Z'},
+      {path: 'package.json', commits: 2, authors: 1, owner: MIRA, ownership: 100, first: '2026-08-03T09:00:00Z', last: '2026-10-20T17:25:00Z'},
+      {path: 'src/api/middleware.ts', commits: 2, authors: 2, owner: JON, ownership: 50, first: '2026-08-18T16:45:00Z', last: '2026-09-24T10:10:00Z'},
+      {path: 'src/api/routes.ts', commits: 2, authors: 2, owner: JON, ownership: 50, first: '2026-08-18T16:45:00Z', last: '2026-08-25T11:20:00Z'},
+      {path: 'src/api/server.ts', commits: 2, authors: 2, owner: JON, ownership: 50, first: '2026-08-18T16:45:00Z', last: '2026-09-24T10:10:00Z'},
+      {path: 'src/auth/tokens.ts', commits: 2, authors: 1, owner: JON, ownership: 100, first: '2026-08-11T10:15:00Z', last: '2026-09-16T15:50:00Z'},
       // the renamed file carries the history of its old name
-      {path: 'src/lib/logger.ts', commits: 2, authors: 1, owner: MIRA, ownership: 100, first: '2026-08-03', last: '2026-09-24'},
-      {path: 'src/orders/service.ts', commits: 2, authors: 2, owner: JON, ownership: 50, first: '2026-08-25', last: '2026-10-06'},
+      {path: 'src/lib/logger.ts', commits: 2, authors: 1, owner: MIRA, ownership: 100, first: '2026-08-03T09:00:00Z', last: '2026-09-24T10:10:00Z'},
+      {path: 'src/orders/service.ts', commits: 2, authors: 2, owner: JON, ownership: 50, first: '2026-08-25T11:20:00Z', last: '2026-10-06T08:55:00Z'},
     ]);
     expect(Object.fromEntries(result.data.filter(row => row.commits >= 3).map(row => [row.path, row.commits]))).toEqual(FIXTURE.churn);
     expect(result.data.slice(10).every(row => row.commits === 1 && row.authors === 1 && row.ownership === 100 && row.first === row.last)).toBe(true);
@@ -208,9 +219,9 @@ describe('git.* sources on the fixture repository', () => {
     expect((await run<ChurnRow[]>('git.churn src/auth/service.ts')).data.map(row => row.path)).toEqual(['src/auth/service.ts']);
     // since 2026-10-01: three commits; ownership is counted inside the window
     expect((await run<ChurnRow[]>('git.churn since=50d')).data.slice(0, 3)).toEqual([
-      {path: 'src/auth/service.ts', commits: 2, authors: 1, owner: JON, ownership: 100, first: '2026-10-06', last: '2026-11-04'},
-      {path: 'src/auth/session.ts', commits: 2, authors: 1, owner: JON, ownership: 100, first: '2026-10-06', last: '2026-11-04'},
-      {path: 'package.json', commits: 1, authors: 1, owner: MIRA, ownership: 100, first: '2026-10-20', last: '2026-10-20'},
+      {path: 'src/auth/service.ts', commits: 2, authors: 1, owner: JON, ownership: 100, first: '2026-10-06T08:55:00Z', last: '2026-11-04T12:00:00Z'},
+      {path: 'src/auth/session.ts', commits: 2, authors: 1, owner: JON, ownership: 100, first: '2026-10-06T08:55:00Z', last: '2026-11-04T12:00:00Z'},
+      {path: 'package.json', commits: 1, authors: 1, owner: MIRA, ownership: 100, first: '2026-10-20T17:25:00Z', last: '2026-10-20T17:25:00Z'},
     ]);
     const top = await run<ChurnRow[]>('git.churn top=5');
     expect(top.data.map(row => row.path)).toEqual(['src/auth/service.ts', 'src/auth/session.ts', 'src/index.ts', 'package.json', 'src/api/middleware.ts']);
@@ -241,6 +252,10 @@ describe('git.* sources on the fixture repository', () => {
     expect(result.data.every(row => row.score >= 0 && row.score <= 1)).toBe(true);
     expect(result).toMatchObject({total: 28, roles: {x: 'commits', y: ['complexity'], size: 'sloc'}});
     expect(result.summary).toBe('28 rows; fields path commits complexity sloc score owner; top src/auth/service.ts 4 commits');
+    // the columns, and with them the headers that say what `complexity` and `sloc` measure, are the catalog's
+    expect(result.fields).toBe(SOURCE_BY_NAME.get('git.hotspots')!.fields);
+    // a test file that leads the ranking is named as one
+    expect((await run<HotspotRow[]>('git.hotspots test')).summary).toMatch(/top test\/\w+\.test\.ts 1 commit \(a test\)$/);
 
     const top = await run<HotspotRow[]>('git.hotspots top=3');
     expect(top.data.map(row => row.path)).toEqual(['src/auth/service.ts', 'src/auth/session.ts', 'src/orders/service.ts']);
@@ -261,22 +276,26 @@ describe('git.* sources on the fixture repository', () => {
     await expect(run('git.hotspots', broken)).rejects.toThrow('index down');
   });
 
-  it('git.authors: names, commits, files touched and last date', async () => {
+  it('git.authors: names, commits, files touched and the time of the last commit', async () => {
     const result = await run('git.authors');
     expect(result.data).toEqual([
-      {author: JON, commits: 5, files: 10, last: '2026-11-04'},
-      {author: MIRA, commits: 5, files: 18, last: '2026-10-20'},
-      {author: ADE, commits: 2, files: 12, last: '2026-09-09'},
+      {author: JON, commits: 5, files: 10, last: '2026-11-04T12:00:00Z'},
+      {author: MIRA, commits: 5, files: 18, last: '2026-10-20T17:25:00Z'},
+      {author: ADE, commits: 2, files: 12, last: '2026-09-09T13:05:00Z'},
     ]);
     expect(Object.fromEntries(result.data.map(row => [row.author, row.commits]))).toEqual(FIXTURE.commits.byAuthorOnMain);
     expect(result.summary).toBe('3 rows; fields author commits files last; top Jon Castell 5 commits');
-    expect((await run('git.authors tools')).data).toEqual([{author: ADE, commits: 1, files: 6, last: '2026-09-02'}]);
+    expect((await run('git.authors tools')).data).toEqual([{author: ADE, commits: 1, files: 6, last: '2026-09-02T09:40:00Z'}]);
     expect((await run('git.authors src/api')).data).toEqual([
-      {author: MIRA, commits: 2, files: 3, last: '2026-09-24'},
-      {author: JON, commits: 1, files: 3, last: '2026-08-18'},
+      {author: MIRA, commits: 2, files: 3, last: '2026-09-24T10:10:00Z'},
+      {author: JON, commits: 1, files: 3, last: '2026-08-18T16:45:00Z'},
     ]);
-    expect((await run('git.authors top=1')).data).toEqual([{author: JON, commits: 5, files: 10, last: '2026-11-04'}]);
-    expect((await run('git.authors since=30d')).data).toEqual([{author: JON, commits: 1, files: 4, last: '2026-11-04'}]);
+    expect((await run('git.authors top=1')).data).toEqual([{author: JON, commits: 5, files: 10, last: '2026-11-04T12:00:00Z'}]);
+    expect((await run('git.authors since=30d')).data).toEqual([{author: JON, commits: 1, files: 4, last: '2026-11-04T12:00:00Z'}]);
+    // `last` is a full timestamp, like the `date` of git.log: the same commit must not read as minutes old in one
+    // table and hours old in the one beside it
+    const newest = (await run<CommitRow[]>('git.log top=1')).data[0]!;
+    expect(result.data.find(row => row.author === newest.author)?.last).toBe(newest.date);
     // names only: nothing that looks like an address leaves the server
     expect(JSON.stringify(result)).not.toMatch(/@|example/);
     expect(ctx.gitCalls.flat().some(arg => /%a[eE]|%c[eE]/.test(arg))).toBe(false);
@@ -363,7 +382,7 @@ describe('git.* sources in unusual repositories', () => {
     // ... and its line counts are not the size of the repository
     expect((await run<CommitRow[]>('git.log', shallow)).data.map(row => [row.files, row.add, row.del])).toEqual([[4, 30, 0], [0, 0, 0]]);
     // git shows the commit the clone was cut at as adding all 33 files of its tree; that is not counted as its author's work
-    expect((await run('git.authors', shallow)).data).toEqual([{author: JON, commits: 1, files: 4, last: '2026-11-04'}, {author: MIRA, commits: 1, files: 0, last: '2026-10-20'}]);
+    expect((await run('git.authors', shallow)).data).toEqual([{author: JON, commits: 1, files: 4, last: '2026-11-04T12:00:00Z'}, {author: MIRA, commits: 1, files: 0, last: '2026-10-20T17:25:00Z'}]);
     const churn = (await run<ChurnRow[]>('git.churn', shallow)).data;
     expect(churn.map(row => row.path).sort()).toEqual(['src/auth/service.ts', 'src/auth/session.ts', 'test/auth.test.ts', 'test/orders.test.ts']);
     expect(churn.every(row => row.commits === 1 && row.owner === JON)).toBe(true);

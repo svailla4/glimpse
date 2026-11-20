@@ -1,10 +1,12 @@
 // The guard matrix of the loopback host (design 2.5, 2.8), against a real listener: DNS rebinding, cross-site
 // requests, the token, JSON-only POSTs, traversal and range validation.
+import {mkdir, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
+import {join} from 'node:path';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
 import {tokenMatches} from '../../src/host/guard.ts';
 import {isSafeRange, resolveInside} from '../../src/session/paths.ts';
-import {tempRoot, TOKEN} from '../session/fakes.ts';
+import {tempRoot, TOKEN, until} from '../session/fakes.ts';
 import {fakeViewer, json, raw, startFixture, type HostFixture} from './support.ts';
 
 let dir: Awaited<ReturnType<typeof tempRoot>>;
@@ -170,6 +172,51 @@ describe('paths and ranges', () => {
     expect((await raw(port, '/api/file')).status).toBe(400);
   });
 
+  // Decision D10, findings F052 and F095: only files of the inventory are read for the viewer.
+  describe('files that exist but are not the project\'s', () => {
+    beforeAll(async () => {
+      await mkdir(join(dir.root, '.git', 'hooks'), {recursive: true});
+      await mkdir(join(dir.root, 'src'), {recursive: true});
+      await writeFile(join(dir.root, '.git', 'config'), '[remote "origin"]\n\ttoken = not-for-the-viewer\n');
+      await writeFile(join(dir.root, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+      await writeFile(join(dir.root, '.env'), 'API_KEY=not-for-the-viewer\n');
+      await writeFile(join(dir.root, 'src', 'real.ts'), 'export const real = 1;\n');
+      await symlink(join(dir.root, 'src', 'real.ts'), join(dir.root, 'inner-link.ts')).catch(() => {});
+    });
+
+    it.each([['.git/config'], ['.git/HEAD'], ['.git/hooks'], ['.GIT/config'], ['./.git/config'], ['src/../.git/config'], ['.env'], ['inner-link.ts']])('/api/file?path=%s is refused and nothing is read', async path => {
+      const before = fx.t.deps.calls.files.length;
+      const response = await raw(port, `/api/file?path=${encodeURIComponent(path)}`);
+      expect(response.status).toBe(200);
+      expect(json(response)).toMatchObject({skipped: 'outside-root', lines: [], total: 0});
+      expect(response.body).not.toContain('not-for-the-viewer');
+      expect(fx.t.deps.calls.files).toHaveLength(before);
+    });
+
+    it('/api/outline and /api/diff refuse them too; a real file and a file that is gone pass', async () => {
+      for (const path of ['.git/config', '.env', 'inner-link.ts']) {
+        const outline = await raw(port, `/api/outline?path=${encodeURIComponent(path)}`);
+        expect([outline.status, json(outline).error]).toEqual([400, {code: 'E_TARGET', message: 'path is not a file of the project'}]);
+        const diff = await raw(port, `/api/diff?range=wt&path=${encodeURIComponent(path)}`);
+        expect([diff.status, json(diff).error]).toEqual([400, {code: 'E_TARGET', message: 'path is not a file of the project'}]);
+      }
+      expect(fx.t.deps.calls.outlines).toEqual([]);
+      expect((await raw(port, '/api/file?path=src/real.ts')).status).toBe(200);
+      expect(fx.t.deps.calls.files.at(-1)).toBe('src/real.ts');
+      // the old side of a deletion: no file on disk, still a diff
+      const before = fx.t.deps.calls.diffs.length;
+      expect((await raw(port, '/api/diff?range=main..HEAD&path=src/deleted.ts')).status).toBe(200);
+      expect(fx.t.deps.calls.diffs).toHaveLength(before + 1);
+    });
+
+    it('gl_open posted by a tab opens none of them', async () => {
+      const post = (file: string) => raw(port, '/api/renderer', {body: JSON.stringify({messages: [{version: '1.0', action: {name: 'gl_open', surfaceId: 'demo', sourceComponentId: 'root', timestamp: '', context: {file}}}]})});
+      for (const file of ['.git/hooks', '.git/config', '.env', 'inner-link.ts', 'run.command']) expect((await post(file)).status).toBe(204);
+      await until(() => fx.logged.filter(line => line.includes('refused to open')).length === 5);
+      expect(fx.launched).toEqual([]);
+    });
+  });
+
   it('/api/outline and /api/diff refuse a path outside the root', async () => {
     expect((await raw(port, '/api/outline?path=../x.ts')).status).toBe(400);
     expect((await raw(port, '/api/diff?range=wt&path=../x.ts')).status).toBe(400);
@@ -206,6 +253,10 @@ describe('paths and ranges', () => {
     expect(await resolveInside(dir.root, 'does/not/exist.ts')).toBeDefined();
     expect(await resolveInside(dir.root, '../x')).toBeUndefined();
     expect(await resolveInside(dir.root, '')).toBeUndefined();
+    // the repository's own .git is never inside, whether or not the path exists
+    for (const path of ['.git', '.git/config', '.git/objects/nope', '.Git/HEAD', 'src/../.git/config']) expect(await resolveInside(dir.root, path), path).toBeUndefined();
+    expect(await resolveInside(dir.root, '.gitignore')).toBeDefined();
+    expect(await resolveInside(dir.root, 'docs/.git-notes.md')).toBeDefined();
   });
 });
 

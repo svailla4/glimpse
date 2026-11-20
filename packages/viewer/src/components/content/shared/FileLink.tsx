@@ -2,8 +2,7 @@
 // through when the host says the file does not exist. Text, Markdown and Callout render [[path#L10]] refs with it.
 import type {DataClient, FileLoc} from '@glimpse/catalog';
 import {useContext, useEffect, useMemo, useState, type JSX} from 'react';
-import {EntityLink, HostContext, PathText, useRev, useSelection} from '../../../kit/index.ts';
-import {fileEntity, matchesSelection} from './data.ts';
+import {EntityLink, HostContext, PathText, fileEntity, marksSelection, useRev, useSelection} from '../../../kit/index.ts';
 import styles from './FileLink.module.css';
 
 // One existence probe per host, path and working-tree revision, shared by every link to that path.
@@ -44,7 +43,7 @@ export function FileLink(p: {file: FileLoc; label?: string; componentId: string}
   const entity = useMemo(() => fileEntity(p.file), [p.file]);
   const {selected} = useSelection(p.componentId);
   const missing = useMissing(entity.path ?? entity.id, entity.type === 'file');
-  const within = selected?.type === 'dir' && matchesSelection(selected, entity);
+  const within = selected?.type === 'dir' && marksSelection(selected, entity);
   return (
     <EntityLink entity={entity} componentId={p.componentId}>
       <span className={styles.link} data-missing={missing || undefined} data-within={within || undefined} title={missing ? `${p.file} (not found)` : undefined}>

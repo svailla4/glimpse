@@ -14,12 +14,18 @@ import {VirtualRows, type VirtualRowsHandle} from './codekit/VirtualRows.tsx';
 type Status = 'A' | 'M' | 'D' | 'R';
 type Mode = 'unified' | 'split';
 interface Line { t: ' ' | '+' | '-'; o?: number; n?: number; tokens: TokenLine; marks?: CharMarks; cols: number }
-interface Hunk { header: string; lines: Line[] }
+/**
+ * `note` is set on a hunk that has no lines: what the host says in place of hunks it left out ('@@ 4,120 more diff
+ * lines not shown: the change is too large for one view @@'). It is drawn as a note row, not as a hunk to jump to.
+ */
+interface Hunk { header: string; lines: Line[]; note?: string }
 interface FileEntry { path: string; from?: string; status: Status; add: number; del: number; binary: boolean; hunks?: Hunk[] }
+/** `hunk` is the ordinal of the hunk among those that have lines (what j / k step through). */
 type Row =
   | {kind: 'hunk'; hunk: number; header: string}
   | {kind: 'line'; hunk: number; line: Line}
-  | {kind: 'pair'; hunk: number; left?: Line; right?: Line};
+  | {kind: 'pair'; hunk: number; left?: Line; right?: Line}
+  | {kind: 'note'; text: string};
 
 const STATUS: Record<Status, string> = {A: 'added', M: 'modified', D: 'deleted', R: 'renamed'};
 const LINE = 20;
@@ -34,25 +40,37 @@ const lineNumber = (value: unknown): number | undefined => {
   return n !== undefined && n >= 0 ? Math.floor(n) : undefined;
 };
 
+/** The text of a line-less hunk's header, without its `@@` fences; undefined when there is nothing to say. */
+function noteOf(header: string): string | undefined {
+  const text = header.replace(/^@@\s*/, '').replace(/\s*@@$/, '').trim();
+  return text === '' ? undefined : text;
+}
+
 function readHunks(input: unknown): Hunk[] | undefined {
   if (!Array.isArray(input)) return undefined;
-  return input.filter(hunk => hunk && typeof hunk === 'object').map(hunk => ({
-    header: typeof hunk.header === 'string' ? hunk.header : '@@',
-    lines: (Array.isArray(hunk.lines) ? hunk.lines : []).filter((line: unknown) => line && typeof line === 'object').map((line: any): Line => {
-      const tokens = coerceLine(line.tokens);
-      const marks = Array.isArray(line.marks)
-        ? (line.marks as unknown[]).filter((m): m is [number, number] => Array.isArray(m) && Number.isFinite(m[0]) && Number.isFinite(m[1]))
-        : undefined;
-      return {
-        t: line.t === '+' || line.t === '-' ? line.t : ' ',
-        o: lineNumber(line.o),
-        n: lineNumber(line.n),
-        tokens,
-        marks: marks && marks.length > 0 ? marks : undefined,
-        cols: tokens.reduce((sum, token) => sum + textCols(token[0]), 0),
-      };
-    }),
-  }));
+  return input.filter(hunk => hunk && typeof hunk === 'object').map((hunk): Hunk => {
+    const header = typeof hunk.header === 'string' ? hunk.header : '@@';
+    const lines = readLines(hunk.lines);
+    const note = lines.length === 0 ? noteOf(header) : undefined;
+    return note === undefined ? {header, lines} : {header, lines, note};
+  });
+}
+
+function readLines(input: unknown): Line[] {
+  return (Array.isArray(input) ? input : []).filter((line: unknown) => line && typeof line === 'object').map((line: any): Line => {
+    const tokens = coerceLine(line.tokens);
+    const marks = Array.isArray(line.marks)
+      ? (line.marks as unknown[]).filter((m): m is [number, number] => Array.isArray(m) && Number.isFinite(m[0]) && Number.isFinite(m[1]))
+      : undefined;
+    return {
+      t: line.t === '+' || line.t === '-' ? line.t : ' ',
+      o: lineNumber(line.o),
+      n: lineNumber(line.n),
+      tokens,
+      marks: marks && marks.length > 0 ? marks : undefined,
+      cols: tokens.reduce((sum, token) => sum + textCols(token[0]), 0),
+    };
+  });
 }
 
 /** The payload is JSON from the host: keep the files that name a path once, count the rest. */
@@ -84,17 +102,24 @@ function readDiff(payload: unknown): {files: FileEntry[]; dropped: number} | und
 
 function buildRows(hunks: Hunk[], mode: Mode): Row[] {
   const rows: Row[] = [];
-  hunks.forEach((hunk, index) => {
+  let index = -1;
+  for (const hunk of hunks) {
+    if (hunk.note !== undefined) {
+      rows.push({kind: 'note', text: hunk.note});
+      continue;
+    }
+    index++;
     rows.push({kind: 'hunk', hunk: index, header: hunk.header});
     if (mode === 'unified') {
       for (const line of hunk.lines) rows.push({kind: 'line', hunk: index, line});
-      return;
+      continue;
     }
     // Split: a run of removals is set beside the run of additions that follows it, line for line.
     let removed: Line[] = [];
     let added: Line[] = [];
+    const at = index;
     const flush = () => {
-      for (let i = 0; i < Math.max(removed.length, added.length); i++) rows.push({kind: 'pair', hunk: index, left: removed[i], right: added[i]});
+      for (let i = 0; i < Math.max(removed.length, added.length); i++) rows.push({kind: 'pair', hunk: at, left: removed[i], right: added[i]});
       removed = [];
       added = [];
     };
@@ -109,16 +134,24 @@ function buildRows(hunks: Hunk[], mode: Mode): Row[] {
       }
     }
     flush();
-  });
+  }
   return rows;
 }
 
+/** `+12 −3`. A zero is not a change: it is printed dim, never in green or red. */
 function Delta(p: {add: number; del: number}): ReactNode {
   return (
     <span className={s.delta}>
-      <span data-add="">+{fmtNum(p.add)}</span> <span data-del="">{MINUS}{fmtNum(p.del)}</span>
+      <span data-add={p.add > 0 ? '' : undefined}>+{fmtNum(p.add)}</span> <span data-del={p.del > 0 ? '' : undefined}>{MINUS}{fmtNum(p.del)}</span>
     </span>
   );
+}
+
+/** What an empty diff says, in the reader's words rather than the range keyword. */
+function emptyText(range: string, only: string | undefined): string {
+  const what = range === 'wt' ? 'no uncommitted changes' : range === 'staged' ? 'no staged changes' : 'no changes';
+  const where = range === 'wt' || range === 'staged' ? '' : ` in ${range}`;
+  return only ? `${what} to ${only}${where}` : `${what}${where}`;
 }
 
 function StatusChip(p: {status: Status}): ReactNode {
@@ -136,7 +169,7 @@ export const DiffViewView: GlView<typeof C.DiffView> = ({id, props}) => {
   if (fetched.error) return <Redline code="E_DIFF" id={`DiffView#${id}`} message={`${range}: ${fetched.error}`} />;
   if (fetched.data === undefined) return <Drafting label={`reading diff ${range}`} />;
   if (!diff) return <Redline code="E_SHAPE" id={`DiffView#${id}`} message={`expected a diff {files: [...]}, received ${fetched.data === null ? 'null' : typeof fetched.data}`} />;
-  if (diff.files.length === 0) return <Empty message={only ? `no changes to ${only} in ${range}` : `no changes in ${range}`} />;
+  if (diff.files.length === 0) return <Empty message={emptyText(range, only)} />;
   return (
     <DiffPanel
       id={id}
@@ -215,7 +248,8 @@ function DiffPanel({id, range, files, dropped, given, fill, boxed, busy}: DiffPa
   const rowHeight = (index: number) => {
     const row = rows[index];
     if (!row || row.kind === 'line') return LINE;
-    return row.kind === 'hunk' ? HUNK : LINE * Math.max(wraps(row.left), wraps(row.right));
+    if (row.kind === 'hunk' || row.kind === 'note') return HUNK;
+    return LINE * Math.max(wraps(row.left), wraps(row.right));
   };
 
   const view = useRef<VirtualRowsHandle>(null);
@@ -301,6 +335,14 @@ function DiffPanel({id, range, files, dropped, given, fill, boxed, busy}: DiffPa
   const renderRow = (index: number): ReactNode => {
     const row = rows[index];
     if (!row) return null;
+    if (row.kind === 'note') {
+      // What the host left out, said in words where the hunks stop: not a hunk, so j / k never land on it.
+      return (
+        <div className={s.cut} data-gl-diff-note="" role="note" title={row.text}>
+          <span className={s.cutText}>{row.text}</span>
+        </div>
+      );
+    }
     if (row.kind === 'hunk') {
       const at = /^(@@[^@]*@@)\s?(.*)$/.exec(row.header);
       return (
@@ -340,7 +382,7 @@ function DiffPanel({id, range, files, dropped, given, fill, boxed, busy}: DiffPa
     <VirtualRows
       handle={view}
       role="region"
-      aria-label={`Diff of ${file.path}, ${mode}, ${hunks.length} ${hunks.length === 1 ? 'hunk' : 'hunks'}`}
+      aria-label={`Diff of ${file.path}, ${mode}, ${hunkRows.length} ${hunkRows.length === 1 ? 'hunk' : 'hunks'}${rows.some(row => row.kind === 'note') ? ', cut' : ''}`}
       tabIndex={0}
       count={rows.length}
       rowHeight={rowHeight}
@@ -369,9 +411,11 @@ function DiffPanel({id, range, files, dropped, given, fill, boxed, busy}: DiffPa
       <span ref={probe} className={s.probe} aria-hidden="true">{'0'.repeat(20)}</span>
       {multi ? (
         <div className={s.files}>
-          <div className={k.head}>
-            <span className={k.meta}>{range} · {fmtNum(files.length)} files</span>
-            <span className={k.grow} />
+          <div className={cx(k.head, s.listHead)}>
+            <span className={cx(k.meta, s.listMeta)} title={`${range} · ${fmtNum(files.length)} files`}>
+              <span className={s.listRange}>{range}</span>
+              <span className={s.listCount}> · {fmtNum(files.length)} files</span>
+            </span>
             <Delta add={totals.add} del={totals.del} />
           </div>
           <VirtualRows

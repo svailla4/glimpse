@@ -2,7 +2,7 @@
 // preset-plus-patch on one twin, and line mapping for multi-line strings.
 import {VIEW_BY_NAME, type A2uiMessage, type WireComponent} from '@glimpse/catalog';
 import {beforeAll, describe, expect, it} from 'vitest';
-import {compileSpec, loadToolchain, originalLine, type Seed, type Toolchain} from '../../src/spec/compile.ts';
+import {compileSpec, loadToolchain, originalLine, rootLineOf, strayText, unclosedString, type Seed, type Toolchain} from '../../src/spec/compile.ts';
 import {normalizeSpec} from '../../src/spec/normalize.ts';
 
 let tools: Toolchain;
@@ -96,10 +96,74 @@ describe('compileSpec', () => {
     expect(compile(`$/n=3`, seed).messages.map(kind)).toEqual(['updateDataModel']);
   });
 
-  it('exposes the SDK grammar rules for the catalog tool', () => {
-    expect(tools.grammar).toMatch(/^## Grammar Rules/);
-    expect(tools.grammar).toContain('Data bindings');
-    expect(tools.grammar).not.toContain('Positional Component Signatures');
+});
+
+// Finding F036: both cold writers added a part to a preset and got E_REF with nothing they could resend.
+describe('a new part nobody refers to', () => {
+  const stored = () => seedOf(compile(`root=Page($/meta/repo/name,[kpis,notes],subtitle='Overview')\nkpis=Stats()\nnotes=Markdown('n')`).messages);
+
+  it('is appended to the stored root on a patch, and the fix says so', () => {
+    const {messages, fixes} = compile(`notes=Markdown('changed')\ntodos=DataTable('code.todos',title='TODO comments')`, stored());
+    expect(fixes).toEqual(['todos appended to root (resend root=... to place it elsewhere)']);
+    expect(messages.map(kind)).toEqual(['updateComponents', 'updateComponents']);
+    const [rootUpdate, patch] = messages as Array<Extract<A2uiMessage, {updateComponents: unknown}>>;
+    // the root keeps everything it had: the bound title, the subtitle, the children in order
+    expect(rootUpdate!.updateComponents.components).toEqual([{id: 'root', component: 'Page', title: {'@path': '/meta/repo/name'}, children: ['kpis', 'notes', 'todos'], subtitle: 'Overview'}]);
+    expect(patch!.updateComponents.components.map(c => [c.id, c.component])).toEqual([['notes', 'Markdown'], ['todos', 'DataTable']]);
+  });
+
+  it('works for several parts at once and for a preset patched in the same call', () => {
+    expect(compile(`a=Text('a')\nb=Text('b')\nc=Text('c')`, stored()).fixes).toHaveLength(3);
+    const overview = VIEW_BY_NAME.get('overview')!.build(undefined, {});
+    const {messages, fixes} = compile([overview, `todos=DataTable('code.todos',title='TODO comments')`]);
+    expect(fixes).toEqual(['todos appended to root (resend root=... to place it elsewhere)']);
+    const root = messages.flatMap(message => ('updateComponents' in message ? message.updateComponents.components : [])).find(c => c.id === 'root')!;
+    expect((root.children as string[]).at(-1)).toBe('todos');
+    expect(root.children).toEqual([...(created(messages).find(c => c.id === 'root')!.children as string[]), 'todos']);
+  });
+
+  it('stays an error when the text writes its own root, and on a new view', () => {
+    expect(() => compile(`root=Page('x',[a])\na=Text('a')\nb=Text('b')`, stored())).toThrow(/^E_REF "b" is not reachable from root: resend its parent with the new child\.$/);
+    expect(() => compile(`root=Page('x',[a])\na=Text('a')\nb=Text('b')`)).toThrow(/^E_REF "b" is not reachable from root/);
+  });
+
+  it('rootLineOf writes the exact statement to resend, or nothing when it cannot be exact', () => {
+    const root = stored().components.find(c => c.id === 'root')!;
+    const line = rootLineOf(root, 'todos')!;
+    expect(line).toBe(`root=Page(title=$/meta/repo/name,children=[kpis,notes,todos],subtitle='Overview')`);
+    // the line is real Express: it compiles against the stored view together with the part it adopts
+    expect(compile(`${line}\ntodos=Text('t')`, stored()).fixes).toEqual([]);
+    expect(rootLineOf({id: 'root', component: 'Page', title: `it's`, children: ['a']}, 'b')).toBe(`root=Page(title='it\\'s',children=[a,b])`);
+    expect(rootLineOf({id: 'root', component: 'Page', title: 'x', children: {componentId: 'row', path: '/items'}}, 'b')).toBeUndefined();
+    expect(rootLineOf(undefined, 'b')).toBeUndefined();
+  });
+});
+
+// Finding F054: the compiler accepts bare words and strings as statements and does nothing with them.
+describe('what the compiler lets through in silence', () => {
+  it('reports text that is not a statement', () => {
+    expect(compile(`root=Page('U',[Text('abc')]) trailing garbage here`).warnings).toEqual(['line 1: ignored text that is not a statement: "trailing garbage here"']);
+    expect(compile(`Here is the view\nroot=Page('U',[a])\na=Text('x'); $/n=5 extra`).warnings).toEqual([
+      'line 1: ignored text that is not a statement: "Here is the view"',
+      'line 3: ignored text that is not a statement: "extra"',
+    ]);
+    expect(strayText(`a=Text("x") b=Text("y"); $/k=[1,2] # note\n$/m={a:1}\nc=d`)).toEqual([]);
+    expect(strayText('"just a string"')).toEqual(['line 1: ignored text that is not a statement: "\\"just a string\\""']);
+  });
+
+  it('a clean spec has no warnings', () => {
+    expect(compile(`# heading\nroot=Page('x',[a, Grid([b],_,'m')]) // tail\na=Text('one')\nb=Steps($/plan)\n$/plan=[{title:'A',status:'done'}]`).warnings).toEqual([]);
+  });
+
+  it('refuses to close brackets after a string that swallowed code, and says where it began', () => {
+    expect(unclosedString(`root=Page('U',[Text('abc`)).toEqual({line: 1, col: 21, swallowed: 'abc'});
+    expect(unclosedString(`root=Page('U',[Text('it's fine')])`)).toBeUndefined();
+    expect(unclosedString(`a=Text("open\nb=Text('x')`)).toMatchObject({line: 1, col: 8});
+    expect(unclosedString(`# it's a comment\na=Text('x')`)).toBeUndefined();
+    // truncated mid-string: repaired, and the note says a string was cut
+    expect(compile(`root=Page('U',[Text('abc`).fixes).toEqual(['unterminated string at line 1 col 21, end of input -> )])']);
+    // a string that ran over the rest of the call: closing brackets would render the code as text
+    expect(() => compile(`root=Page('U',[Text('one), Text(two)])`)).toThrow(/^E_SYNTAX line 1 col 21: this string never ends/);
   });
 });
 

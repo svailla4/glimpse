@@ -3,7 +3,6 @@
 import {
   componentDoc, componentIndex, COMPONENT_BY_NAME, examplesDoc, parseViewRef, SOURCE_BY_NAME, sourceDoc, sourceIndex, VIEW_BY_NAME, VIEW_INDEX, viewDoc,
 } from '@glimpse/catalog';
-import {loadToolchain} from '../spec/compile.ts';
 import {closeMatch, nearest} from '../spec/errors.ts';
 import {refSignature} from '../spec/expand.ts';
 import type {SourceRegistry} from '../sources/registry.ts';
@@ -19,12 +18,21 @@ export const CATALOG_SCHEMA = {
 } as const;
 
 const MAX_NAMES = 12;
-const GLIMPSE_GRAMMAR_NOTES = [
-  'In a Glimpse spec:',
-  "- Write only the statements: no <a2ui> tags, no surface(...) line (the id argument of show selects the view).",
-  "- Strings may use 'single' or \"double\" quotes; an apostrophe inside a single-quoted string is fine ('doesn't').",
-  "- A data argument may be a source ref string ('git.churn src top=20'); it is bound locally and never sent to you.",
-  '- Glimpse declares no client functions and no checks: rules 7 and 9 below do not apply.',
+/**
+ * The `grammar` topic: A2UI Express as Glimpse accepts it, and nothing else. The upstream prompt's rules (3,900
+ * characters) describe surfaces, client functions, checks and templates that a Glimpse spec never uses, and say
+ * strings are double-quoted only. test/mcp/tools.test.ts compiles one example per rule below.
+ */
+export const GRAMMAR = [
+  '## Grammar Rules (A2UI Express, as Glimpse accepts it)',
+  "1. A spec is statements, one per line or separated by ';'. No <a2ui> tags and no surface(...) line: the id argument of show selects the view.",
+  "2. root=Page('Title',[...]) starts a view, or replaces the layout of an existing one and keeps its data.",
+  "3. name=Comp(...) defines a named part. Use the bare name as a child: root=Page('T',[intro,table]). Sending name=Comp(...) again later patches just that part; a new part nobody refers to is appended to root.",
+  "4. Arguments are positional in signature order, then name=value. _ skips an optional positional: Grid([a,b],_,'m'). Children are a list of names or nested calls: [intro, Text('x')].",
+  "5. Values: 'single' or \"double\" quoted strings (an apostrophe inside single quotes is fine: 'doesn't'; \\n is a line break), numbers, true, false, null, [lists] and {key: value} objects.",
+  "6. $/path=value sets data: $/plan=[{title:'A',status:'done'}], then $/plan/0/status='doing'. $/path as an argument binds to it: Steps($/plan). /ds and /meta belong to the server.",
+  "7. A data argument is a source ref string ('git.churn src top=20'), a $/path or inline data. Refs run locally and are never sent to you.",
+  '8. # or // starts a comment. Text that is not a statement is ignored and reported; a spec cut off mid-call has its brackets closed and says so.',
 ].join('\n');
 
 function index(): string {
@@ -39,8 +47,8 @@ function vocabulary(registry: SourceRegistry | undefined): string[] {
   return [...COMPONENT_BY_NAME.keys(), ...new Set([...SOURCE_BY_NAME.keys(), ...(registry?.keys() ?? [])]), ...viewNames().map(name => `view:${name}`), 'grammar', 'examples'];
 }
 
-async function lookup(name: string, registry: SourceRegistry | undefined): Promise<string | undefined> {
-  if (name === 'grammar') return `${GLIMPSE_GRAMMAR_NOTES}\n\n${(await loadToolchain()).grammar}`;
+function lookup(name: string, registry: SourceRegistry | undefined): string | undefined {
+  if (name === 'grammar') return GRAMMAR;
   if (name === 'examples') return examplesDoc();
   if (COMPONENT_BY_NAME.has(name)) return componentDoc(name);
   if (SOURCE_BY_NAME.has(name)) return sourceDoc(name);
@@ -62,12 +70,12 @@ export async function catalogTool(args: {names?: unknown}, registry: SourceRegis
   const blocks: string[] = [];
   let found = 0;
   for (const name of [...new Set(names)].slice(0, MAX_NAMES)) {
-    let doc = await lookup(name, registry);
+    let doc = lookup(name, registry);
     if (doc === undefined) {
       const words = vocabulary(registry);
       // A bare or misspelt name: try the closest catalog name, with and without the view: prefix.
       const guess = closeMatch(name, words) ?? closeMatch(`view:${name}`, words);
-      doc = guess ? await lookup(guess, registry) : undefined;
+      doc = guess ? lookup(guess, registry) : undefined;
       if (doc !== undefined) doc = `"${name}" -> ${guess}\n${doc}`;
     }
     if (doc === undefined) blocks.push(`unknown "${name.slice(0, 60)}". Nearest: ${nearest(name, vocabulary(registry)).join(' ')}`);

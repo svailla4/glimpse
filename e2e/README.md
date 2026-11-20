@@ -10,11 +10,12 @@ npm run e2e -- security             # one spec
 
 | Spec | What it covers |
 |---|---|
-| `overview.spec.ts` | The nine steps of the design's end-to-end test on the fixture repository: tool result, first plate, a live patch, a click reaching the agent, the live working-tree diff, a bad spec, shutdown. Then the overview on this repository. |
-| `views.spec.ts` | Every preset on the fixture repository and on this one: no redline, no console error, no CSP violation, result within 1,200 characters. `query` and `catalog`. |
-| `interaction.spec.ts` | File tree to code view, `Ask` and `Button` events (tool result, `events`, long-poll, the hook's `pending_context`), plan updates, closing and refreshing, arranging plates and dragging graph nodes with persistence. |
-| `gallery.spec.ts` | `show{view:"gallery"}`: all 44 components present, light and dark, 1320 px and 720 px, one screenshot per section. |
-| `security.spec.ts` | The guard matrix: Host, Origin, Sec-Fetch-Site, token, JSON-only POST, no CORS, security headers, loopback bind, tab cap, path and range containment, hostile Markdown and file names, event-line injection. |
+| `overview.spec.ts` | The nine steps of the design's end-to-end test on the fixture repository: tool result, first plate, a live patch, a click reaching the agent, the live working-tree diff, a bad spec, shutdown. Then the overview on this repository: hotspot file names stay visible, and the module graph's labels are drawn at 10 px or more (decision D7). |
+| `views.spec.ts` | Every preset on the fixture repository and on this one: no redline, no console error, no CSP violation, result within 1,200 characters. `query` and `catalog`. A missing file or an unknown revision in a spec is reported in the `show` result (D3). |
+| `interaction.spec.ts` | File tree to code view (the tree preset opens on the README), `Ask` and `Button` events (tool result, `events`, long-poll, the hook's `pending_context`), plan updates whole and by one nested field (D4), a new view opening at its top, adding a plate without losing the tree's state, closing and refreshing, arranging plates and dragging graph nodes with persistence. |
+| `decisions.spec.ts` | The review round's decisions: a drill and its way back across a reload, and a re-show that clears it (D1); a hyphenated id end to end (D2); an empty plate reported in the `show` result that drew it (D3); a file edited with no tab open seen by the next call (D8). |
+| `gallery.spec.ts` | `show{view:"gallery"}`: all 44 components present, light and dark, 1320 px and 720 px, one screenshot per section; no redline and no empty plate, the Code section on a real file. |
+| `security.spec.ts` | The guard matrix: Host, Origin, Sec-Fetch-Site, token, JSON-only POST, no CORS, security headers, loopback bind, the five-tab cap, path and range containment, surface ids, `$/__proto__` specs refused with the server still answering (D10), hostile Markdown and file names, event-line injection. |
 
 The repositories are `makeFixtureRepo()` (`packages/server/test/fixtures/repo.ts`: deterministic, built in a temp directory per test) and this checkout. Set `GLIMPSE_E2E_REPO` to add any other repository to the real-repository checks.
 
@@ -38,13 +39,6 @@ Under `test-results/` (ignored by git; uploaded by CI):
 
 ## Known defects
 
-A test that fails because of a product defect is declared with `knownDefect(ref, ...)` (a `test.fixme`), so the suite stays green and the report still lists it. When the defect is fixed, turn the call back into `test(...)` and remove the entry here.
+A test that fails because of a product defect is declared with `knownDefect(ref, ...)` (a `test.fixme`, in `support/test.ts`), so the suite stays green and the report still lists it; list it here with its ref. When the defect is fixed, turn the call back into `test(...)` and remove the entry.
 
-| Ref | Test | What is wrong |
-|---|---|---|
-| E2E-01 | `interaction.spec.ts`: a patch of one plan step updates the Steps view | `show{id, spec: "$/plan/1/status='done'"}` answers `ok` and changes the data model, but a view bound to the containing array (`Steps($/plan)`, and likewise `List`, `Stats`, tables on inline data) keeps its old rows. Replacing the whole array works. |
-| E2E-02 | `interaction.spec.ts`: a new view opens at its top | The window's scroll offset is kept when another view takes focus, so a view shown while the previous one was scrolled opens part-way down. |
-| E2E-03 | `gallery.spec.ts`: no gallery component is in its empty state | The gallery's `SymbolOutline('README.md')` always shows "no symbols in README.md". |
-| E2E-04 | `views.spec.ts`: show tells the agent when a code or diff target does not exist | `CodeView('missing.ts')` and `DiffView('nosuchbranch..HEAD')` answer a bare `ok`; the person sees an empty plate or a redline and the agent is never told. Dataset refs with a bad target do produce a `warn` line. |
-| E2E-05 | `overview.spec.ts`: the hotspots table shows the file name of every row | Path cells are cut at the end, so deep paths lose their file name ("packages/viewer/src/compon"). |
-| E2E-06 | `overview.spec.ts`: the module graph opens with readable node labels | A 48-module graph is fitted into its plate at about 20% zoom; labels are about 3 px tall. |
+None is open: the six found when the suite was written (E2E-01 to E2E-06) were fixed in the review round and are ordinary tests again.

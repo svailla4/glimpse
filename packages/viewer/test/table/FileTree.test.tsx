@@ -54,17 +54,20 @@ describe('FileTree: states', () => {
     expect(names(one)).toEqual(['src', 'src/auth', 'src/api', 'src/ui', 'README.md', 'package.json']);
   });
 
-  it('shows the chosen metric, relative to the largest sibling', async () => {
+  it('shows the chosen metric on one scale for the whole tree', async () => {
     const view = renderExpress(`root=Page('T',[t,u,v])\nt=FileTree(metric='bytes')\nu=FileTree(metric='commits')\nv=FileTree(metric='none')`, {datasets: 'ready'});
     await ready(view);
     const inCell = (id: string, path: string) => view.cell(id).querySelector<HTMLElement>(`[data-path="${path}"]`)!;
     expect(inCell('t', 'src/auth/service.ts').textContent).toContain('30 kB');
     expect(inCell('u', 'src/auth/service.ts').textContent).toContain('51');
     expect(inCell('v', 'src/auth/service.ts').textContent).toBe('service.tsTS');
-    // commits among the siblings of src/auth: service 51, cache 22, schema 7
-    const fill = (path: string) => inCell('u', path).querySelector<HTMLElement>('[aria-hidden="true"] > span[style*="width"]')!.style.width;
-    expect(fill('src/auth/service.ts')).toBe('100%');
-    expect(Number.parseFloat(fill('src/auth/cache.ts'))).toBeCloseTo((22 / 51) * 100, 1);
+    // Every bar is measured against the largest top-level entry (src, 140 commits), on a square-root scale, so a
+    // directory's bar is never shorter than the bar of a file inside it.
+    const fill = (path: string) => Number.parseFloat(inCell('u', path).querySelector<HTMLElement>('[aria-hidden="true"] > span[style*="width"]')!.style.width);
+    expect(fill('src')).toBe(100);
+    expect(fill('src/auth/service.ts')).toBeCloseTo(Math.sqrt(51 / 140) * 100, 1);
+    expect(fill('src/auth/cache.ts')).toBeCloseTo(Math.sqrt(22 / 140) * 100, 1);
+    expect(fill('src/auth')).toBeGreaterThan(fill('src/auth/service.ts'));
   });
 
   it('shows changes and status for a diff tree', async () => {
@@ -269,7 +272,7 @@ describe('FileTree: keyboard and selection', () => {
 });
 
 describe('FileTree: rollups', () => {
-  it('drills into a rollup and offers the way back', async () => {
+  it('drills into a rollup by dispatching gl_drill only; the way back is the scope crumb of the dataset', async () => {
     const view = renderExpress(page("FileTree(title='Files')"), {datasets: 'ready'});
     await ready(view);
     const more = view.cell('t').querySelector<HTMLElement>('[data-more="src/ui"]')!;
@@ -279,16 +282,68 @@ describe('FileTree: rollups', () => {
 
     // the server answers with the subtree under the same key
     const ui: DirNode = {name: 'ui', path: 'src/ui', dir: true, files: 14, loc: 1900, bytes: 50000, children: [file('src/ui/app.css', 700), file('src/ui/App.tsx', 400), file('src/ui/theme.css', 300)]};
-    view.setData('/ds/files_tree', {...datasetFixture('files.tree'), source: 'files.tree src/ui', data: ui, truncated: undefined});
+    view.setData('/ds/files_tree', {...datasetFixture('files.tree'), source: 'files.tree src/ui', data: ui, truncated: undefined, drill: {target: 'src/ui', up: ''}});
     await ready(view);
     expect(names(view)).toEqual(['src/ui/app.css', 'src/ui/App.tsx', 'src/ui/theme.css']);
     expect(view.cell('t').textContent).toContain('src/ui');
+    // the keyboard is not left on <body>: the first row of the new tree has the focus the rollup had
+    await waitFor(() => expect(document.activeElement).toBe(row(view, 'src/ui/app.css')));
 
-    const back = view.cell('t').querySelector<HTMLElement>('[data-gl-tree-back]')!;
-    expect(back.textContent).toContain('full tree');
-    fireEvent.click(back);
-    expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'files_tree', target: ''}});
+    // The tree draws no back control and holds no drilled state (D1): the kit shows the crumb from `dataset.drill`,
+    // so it is there after a reload and on every other component bound to the dataset.
     expect(view.cell('t').querySelector('[data-gl-tree-back]')).toBeNull();
+    const reset = view.cell('t').querySelector<HTMLElement>('[data-gl-scope-reset]')!;
+    fireEvent.click(reset);
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'files_tree', target: ''}});
+  });
+
+  it('shows the way back for a tree that arrives drilled (a reload, or a drill made by another component)', async () => {
+    const ui: DirNode = {name: 'ui', path: 'src/ui', dir: true, files: 3, loc: 1400, bytes: 42000, children: [file('src/ui/app.css', 700), file('src/ui/App.tsx', 400), file('src/ui/theme.css', 300)]};
+    const view = renderExpress(page("FileTree(title='Files')"), {data: {'/ds/files_tree': {...datasetFixture('files.tree'), source: 'files.tree src/ui', data: ui, truncated: undefined, drill: {target: 'src/ui', up: 'src'}}}});
+    await ready(view);
+    expect(names(view)).toEqual(['src/ui/app.css', 'src/ui/App.tsx', 'src/ui/theme.css']);
+    // the crumb names the directory once: the tree does not print its own scope line under it
+    expect(view.cell('t').querySelectorAll('[title="src/ui"]')).toHaveLength(1);
+    fireEvent.click(view.cell('t').querySelector<HTMLElement>('[data-gl-scope-up]')!);
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'files_tree', target: 'src'}});
+  });
+
+  it('leaves the rollup of the directory the tree is scoped to inert: drilling there would ask for the same tree', async () => {
+    const root: DirNode = {name: '', path: '', dir: true, files: 9, loc: 900, bytes: 27000, children: [file('a.ts', 500), file('b.ts', 300)], more: {files: 3, loc: 100}};
+    const view = renderExpress(page('FileTree()'), {data: {'/ds/files_tree': {...datasetFixture('files.tree'), data: root}}});
+    await ready(view);
+    const more = view.cell('t').querySelector<HTMLElement>('[data-more=""]')!;
+    expect(more.textContent).toContain('(3 more)');
+    expect(more.getAttribute('aria-disabled')).toBe('true');
+    expect(more.getAttribute('title')).toBe('3 more entries are not listed at this level');
+    fireEvent.click(more);
+    act(() => more.focus());
+    key('Enter');
+    expect(view.actions.filter(action => action.name === 'gl_drill')).toEqual([]);
+  });
+
+  it('folds a chain of single-entry directories into one row', async () => {
+    const dir = (path: string, children: DirNode[], loc: number): DirNode => ({name: path.slice(path.lastIndexOf('/') + 1), path, dir: true, files: 2, loc, bytes: loc * 30, children});
+    const root: DirNode = {
+      name: '', path: '', dir: true, files: 3, loc: 700, bytes: 21000,
+      children: [
+        dir('dart', [dir('dart/agent', [dir('dart/agent/lib', [dir('dart/agent/lib/src', [file('dart/agent/lib/src/a.dart', 300), file('dart/agent/lib/src/b.dart', 200)], 500)], 500)], 500)], 500),
+        file('README.md', 200),
+      ],
+    };
+    const view = renderExpress(page('FileTree(depth=4)'), {data: {'/ds/files_tree': {...datasetFixture('files.tree'), data: root, truncated: undefined}}});
+    await ready(view);
+    // four directories, one row: the row stands for the innermost and shows the whole chain
+    expect(names(view)).toEqual(['dart/agent/lib/src', 'dart/agent/lib/src/a.dart', 'dart/agent/lib/src/b.dart', 'README.md']);
+    const chain = row(view, 'dart/agent/lib/src');
+    expect(chain.textContent).toContain('dart/agent/lib/src');
+    expect(chain.getAttribute('aria-level')).toBe('1');
+    expect(row(view, 'dart/agent/lib/src/a.dart').getAttribute('aria-level')).toBe('2');
+    // a selection of a folded directory made elsewhere lands on the row that holds it
+    view.setData('/ui/sel', {type: 'dir', id: 'dart/agent', path: 'dart/agent'});
+    await waitFor(() => expect(chain.getAttribute('tabindex')).toBe('0'));
+    fireEvent.click(chain);
+    expect(view.getData('/ui/sel')).toMatchObject({type: 'dir', id: 'dart/agent/lib/src'});
   });
 
   it('drills from the keyboard, and leaves a rollup inert when the tree is not a server dataset', async () => {

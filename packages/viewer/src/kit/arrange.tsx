@@ -406,7 +406,13 @@ export function useArrangeHandle(componentId: string): ArrangeHandle | null {
     const onUp = () => finish(true);
     const onCancel = () => finish(false);
     const onKey = (key: KeyboardEvent) => {
-      if (key.key === 'Escape') finish(false);
+      if (key.key !== 'Escape') return;
+      // Escape cancels the drag and nothing else: the shell must not also take it as "clear the selection".
+      if (drag) {
+        key.preventDefault();
+        key.stopPropagation();
+      }
+      finish(false);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);

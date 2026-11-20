@@ -127,7 +127,8 @@ const SYMBOLS: Record<ScanLang, SymbolRule[]> = {
   ],
   py: [
     {re: /^([ \t]*)(?:async[ \t]+)?(def|class)[ \t]+(\w+)/gm, kind: 2, name: 3},
-    {re: /^()([A-Z][A-Z0-9_]+)[ \t]*(?::[^=\n]+)?=(?!=)/gm, kind: 'const', name: 2},
+    // Module constants, private ones included: `_DEFAULT_VERSION: Final[str] = "0.9"`.
+    {re: /^()(_{0,2}[A-Z][A-Z0-9_]+)[ \t]*(?::[^=\n]+)?=(?!=)/gm, kind: 'const', name: 2},
   ],
   go: [
     {re: /^()func[ \t]+(\([^)\n]*\)[ \t]*)?([A-Za-z_]\w*)/gm, kind: m => (m[2] ? 'method' : 'fn'), name: 3},
@@ -166,7 +167,9 @@ const SYMBOLS: Record<ScanLang, SymbolRule[]> = {
   ],
   dart: [
     {re: /^([ \t]*)((?:(?:abstract|final|sealed|base|interface|mixin)[ \t]+)*)(class|mixin|enum|extension|typedef)[ \t]+(?:type[ \t]+)?(\w+)/gm, kind: 3, name: 4},
-    {re: /^([ \t]*)((?:(?:static|external|override|@override)[ \t]+)*)(?!(?:return|await|throw|new|else|case|final|const|var|yield|if|for|while|switch)\b)[A-Za-z_][\w<>?,.[\]]*[ \t]+(?:get[ \t]+)?(\w+)[ \t]*(?:<[^>\n]+>)?\([^;{}]{0,400}?\)[ \t]*(?:async\*?[ \t]*)?(?:\{|=>)/gm, kind: 'fn', name: 3, guard: true},
+    // `Type name(...) {` or `=>`; the type may be generic with spaces (`Map<String, Object?>`), and a signature may
+    // break after its opening parenthesis (named parameters in braces follow on the next lines).
+    {re: /^([ \t]*)((?:(?:static|external|override|@override)[ \t]+)*)(?!(?:return|await|throw|new|else|case|final|const|var|yield|if|for|while|switch|assert|in|is|as)\b)[A-Za-z_][\w.]*(?:<[^\n;(){}=]{0,200}>)?\??(?:\[\])?[ \t]+(?:get[ \t]+)?(\w+)[ \t]*(?:<[^>\n]+>)?\((?:[^;{}]{0,400}?\)[ \t]*(?:async\*?[ \t]*)?(?:\{|=>)|[ \t]*$)/gm, kind: 'fn', name: 3, guard: true},
   ],
   c: [
     {re: /^([ \t]*)(?:typedef[ \t]+)?(struct|class|enum|union|namespace)[ \t]+(?:class[ \t]+)?(\w+)[ \t]*(?:final[ \t]*)?(?::[^\n{;]*)?\{/gm, kind: 2, name: 3},
@@ -555,18 +558,24 @@ function endLineOf(code: string, lines: Lines, line: number, scan: ScanLang): nu
   return end;
 }
 
-function scanSymbols(code: string, scan: ScanLang, lines: Lines, unit: number): SymbolRow[] {
+function scanSymbols(code: string, scan: ScanLang, lines: Lines, unit: number): {symbols: SymbolRow[]; found: number} {
   const raw: RawSymbol[] = [];
   const seen = new Set<string>();
+  // Declarations past the caps are counted, not kept: the outline says how much it left out.
+  let uncounted = 0;
   for (const rule of SYMBOLS[scan]) {
     rule.re.lastIndex = 0;
-    for (let m = rule.re.exec(code); m && raw.length < MAX_SYMBOLS * 2; m = rule.re.exec(code)) {
+    for (let m = rule.re.exec(code); m; m = rule.re.exec(code)) {
       const name = m[rule.name];
       if (!name || (rule.guard && NOT_A_NAME.has(name))) continue;
       const line = lineOf(lines.starts, m.index);
       const key = `${line}:${name}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      if (raw.length >= MAX_SYMBOLS * 2) {
+        uncounted++;
+        continue;
+      }
       const keyword = typeof rule.kind === 'number' ? (m[rule.kind] ?? '').trim() : '';
       const kind = typeof rule.kind === 'function' ? rule.kind(m) : typeof rule.kind === 'number' ? (KEYWORD_KIND[keyword] ?? 'fn') : rule.kind;
       const indent = (m[1] ?? '').replace(/\t/g, ' '.repeat(TAB_WIDTH)).length;
@@ -588,14 +597,83 @@ function scanSymbols(code: string, scan: ScanLang, lines: Lines, unit: number): 
     symbol.endLine = endLineOf(code, lines, symbol.line, scan);
     const depth = stack.filter(entry => entry.kind !== 'impl').length;
     if (symbol.endLine > symbol.line) stack.push(symbol);
-    if (symbol.kind === 'impl' || depth > MAX_DEPTH || out.length >= MAX_SYMBOLS) continue;
+    if (symbol.kind === 'impl' || depth > MAX_DEPTH) continue;
+    if (out.length >= MAX_SYMBOLS) {
+      uncounted++;
+      continue;
+    }
     const kind: Kind = symbol.kind === 'fn' && inClass ? 'method' : symbol.kind;
     out.push({
       name: symbol.name, kind, line: symbol.line, ...(symbol.endLine > symbol.line ? {endLine: symbol.endLine} : {}), depth,
       exported: isExported(scan, symbol, parent),
     });
   }
-  return out;
+  return {symbols: out, found: out.length + uncounted};
+}
+
+// ---------------------------------------------------------------- Markdown outline
+/** An ATX heading: up to three spaces, 1-6 `#`, a space, the text, an optional closing run of `#`. */
+const ATX = /^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+const MAX_HEADING = 120;
+
+/** Heading text as a reader sees it: code spans and link targets dropped, emphasis marks kept out. */
+function headingText(raw: string): string {
+  const text = raw
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/`+([^`]*)`+/g, '$1')
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text.length > MAX_HEADING ? `${text.slice(0, MAX_HEADING - 1)}…` : text;
+}
+
+/**
+ * The outline of a Markdown file: its ATX headings ('# Title', '## Usage'), nested by level, each running to the line
+ * before the next heading of the same or a higher level. Headings in fenced code blocks and in a leading YAML front
+ * matter (where '# ' starts a comment) are not headings. So a README has an outline like any source file.
+ */
+function scanHeadings(text: string): {symbols: SymbolRow[]; found: number} {
+  const lines = text.split('\n');
+  let last = lines.length;
+  while (last > 0 && lines[last - 1]!.trim() === '') last--;
+  const raw: Array<{name: string; level: number; line: number}> = [];
+  let found = 0;
+  let fence: {char: string; length: number} | undefined;
+  let start = 0;
+  if (lines[0]?.trim() === '---') {
+    const end = lines.findIndex((line, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(line));
+    if (end > 0) start = end + 1;
+  }
+  for (let i = start; i < last; i++) {
+    const line = lines[i]!.replace(/\r$/, '');
+    const marker = FENCE.exec(line)?.[1];
+    if (fence) {
+      if (marker && marker[0] === fence.char && marker.length >= fence.length && line.trim() === marker) fence = undefined;
+      continue;
+    }
+    if (marker) {
+      fence = {char: marker[0]!, length: marker.length};
+      continue;
+    }
+    const m = ATX.exec(line);
+    if (!m) continue;
+    const name = headingText(m[2] ?? '');
+    if (name === '') continue;
+    found++;
+    if (raw.length < MAX_SYMBOLS) raw.push({name, level: m[1]!.length, line: i + 1});
+  }
+  const symbols: SymbolRow[] = [];
+  const open: Array<{level: number}> = [];
+  raw.forEach((heading, index) => {
+    while (open.length > 0 && open.at(-1)!.level >= heading.level) open.pop();
+    const depth = Math.min(open.length, MAX_DEPTH);
+    open.push(heading);
+    const next = raw.slice(index + 1).find(other => other.level <= heading.level);
+    const endLine = next ? next.line - 1 : last;
+    symbols.push({name: heading.name, kind: 'heading', line: heading.line, ...(endLine > heading.line ? {endLine} : {}), depth, exported: true});
+  });
+  return {symbols, found};
 }
 
 // ---------------------------------------------------------------- entry point
@@ -610,6 +688,11 @@ function cutLongLines(code: string): string {
 export function scanFile(text: string, language: Language): ScannedFacts {
   const facts: ScannedFacts = {imports: [], symbols: [], complexity: 0, maxIndent: 0, todos: []};
   if (language.comments) facts.todos = scanTodos(text, language.comments);
+  if (language.outline === 'headings') {
+    const outline = scanHeadings(text);
+    facts.symbols = outline.symbols;
+    if (outline.found > outline.symbols.length) facts.symbolsFound = outline.found;
+  }
   if (language.kind !== 'code') return facts;
 
   let code = blankBlockComments(text, language);
@@ -629,7 +712,9 @@ export function scanFile(text: string, language: Language): ScannedFacts {
   if (!scan) return facts;
   facts.scan = scan;
   facts.imports = scanImports(code, scan, lines.starts);
-  facts.symbols = scanSymbols(code, scan, lines, unit);
+  const outline = scanSymbols(code, scan, lines, unit);
+  facts.symbols = outline.symbols;
+  if (outline.found > outline.symbols.length) facts.symbolsFound = outline.found;
   const pkg = PACKAGE_DECL[scan]?.exec(code)?.[1];
   if (pkg) facts.pkg = pkg.replace(/`/g, '');
   return facts;

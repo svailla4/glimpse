@@ -27,6 +27,29 @@
     fill: var(--gl-ink);
     pointer-events: none;
   }
+  /* The one label of a zoomed-out node; its size is set inline, for the zoom. */
+  .far {
+    font: 500 12px var(--gl-font-ui);
+    fill: var(--gl-ink);
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .farSub {
+    font: 11px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    fill: var(--gl-ink-2);
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .cycleMark {
+    fill: var(--gl-critical);
+    pointer-events: none;
+  }
+  /* Zoomed out, outlines keep their weight on screen. */
+  .body[data-lod='name'] .box,
+  .body[data-lod='box'] .box {
+    vector-effect: non-scaling-stroke;
+  }
   .sub {
     font: 11px var(--gl-font-mono);
     font-feature-settings: 'tnum' 1, 'zero' 1;

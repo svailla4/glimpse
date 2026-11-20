@@ -10,6 +10,11 @@
 //   , ) ] } : = ; or the end of the line or input. Any other ' is an apostrophe and stays ('doesn't').
 // - `\'` is an apostrophe that could be mistaken for the closing quote; other escapes are copied as written.
 // - A " inside a single-quoted string is escaped; a raw newline becomes \n.
+// - A single-quoted string that never closes is closed at the end of the input (output cut short: the compiler or
+//   the bracket repair deals with the rest), UNLESS a ' inside it is followed by code rather than a word: when the
+//   next character is not a letter or a digit and the text after it contains ) or ], that ' was the closing quote
+//   ('abc'.repeat(3), 'a' + x) and the string ends there, so the compiler reports the text after it instead of
+//   rendering it as prose.
 export function normalizeSpec(src: string): string {
   let out = '';
   let i = 0;
@@ -28,6 +33,8 @@ export function normalizeSpec(src: string): string {
     } else if (c === "'") {
       let j = i + 1;
       let body = '';
+      /** The last ' read as an apostrophe although code, not a word, follows it: where it is, and the body before it. */
+      let apostrophe: {at: number; body: string} | undefined;
       for (; j < src.length; j++) {
         const d = src[j]!;
         if (d === '\\' && j + 1 < src.length) { body += src[j + 1] === "'" ? "'" : d + src[j + 1]; j++; continue; }
@@ -36,12 +43,17 @@ export function normalizeSpec(src: string): string {
           while (k < src.length && (src[k] === ' ' || src[k] === '\t')) k++;
           const next = src[k];
           if (next === undefined || ',)]}:=;\n\r'.includes(next)) break;
+          if (!/[\p{L}\p{N}]/u.test(next)) apostrophe = {at: j, body};
           body += "'";
           continue;
         }
         if (d === '"') { body += '\\"'; continue; }
         if (d === '\n') { body += '\\n'; continue; }
         body += d;
+      }
+      if (j >= src.length && apostrophe && /[)\]]/.test(src.slice(apostrophe.at + 1))) {
+        body = apostrophe.body;
+        j = apostrophe.at;
       }
       out += '"' + body + '"';
       i = j + 1;
@@ -52,4 +64,3 @@ export function normalizeSpec(src: string): string {
   }
   return out;
 }
-

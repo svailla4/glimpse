@@ -2,7 +2,7 @@ import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
 import type {RepoContext, RunGit} from '../../src/contracts.ts';
-import {commitStats, getLog, LOG_LIMIT, parseLog, rangeLog, refNames} from '../../src/git/log.ts';
+import {commitStats, getHeaders, getLog, LOG_LIMIT, parseLog, rangeLog, refNames} from '../../src/git/log.ts';
 import {resolveRange} from '../../src/git/range.ts';
 import {FIXTURE, git, makeFixtureRepo, type FixtureRepo} from '../fixtures/repo.ts';
 import {fakeIndex, makeContext, type TestContext} from './context.ts';
@@ -81,6 +81,30 @@ describe('getLog on the fixture repository', () => {
     const touching = (path: string) => commits.filter(commit => commit.files.includes(path)).map(commit => commit.subject);
     expect(touching(FIXTURE.rename.to)).toEqual(['Rename log to logger and add warn', 'Scaffold the shop service']);
     expect(touching(FIXTURE.rename.from)).toEqual([]);
+  });
+
+  it('answers who and when for every commit from the same parse, without another git run', async () => {
+    const log = await getLog(ctx);
+    const before = ctx.gitCalls.length;
+    const all = await getHeaders(ctx);
+    expect(all.truncated).toBe(false);
+    // not a copy and not a second stream: the commits themselves
+    expect(all.headers).toBe(log.commits);
+    expect(ctx.gitCalls.slice(before).some(args => args.includes('log'))).toBe(false);
+  });
+
+  it('asks git for history with a pathspec only with history simplification switched off', async () => {
+    // at the top of the repository there is no pathspec at all: `-- .` there silently drops commits
+    const top = ctx.gitCalls.filter(args => args.includes('--name-status'));
+    expect(top.length).toBeGreaterThan(0);
+    for (const args of top) expect(args.includes('--')).toBe(false);
+    // inside a directory the pathspec is needed, and --full-history keeps every commit that touched the directory
+    const sub = await makeContext(join(repo.root, 'src'));
+    await getLog(sub);
+    const logs = sub.gitCalls.filter(args => args.includes('--name-status'));
+    expect(logs).toHaveLength(1);
+    expect(logs[0]!.slice(-2)).toEqual(['--', '.']);
+    expect(logs[0]).toContain('--full-history');
   });
 
   it('narrows by path and by time without asking git again', async () => {

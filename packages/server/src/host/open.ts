@@ -20,11 +20,16 @@ export function canOpen(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = proc
   return true;
 }
 
-/** The OS opener for a URL or a file. On Windows this avoids `cmd /c start`, which would parse the argument. */
-export function osOpenCommand(target: string, platform: NodeJS.Platform = process.platform): [string, string[]] {
-  if (platform === 'darwin') return ['open', [target]];
-  if (platform === 'win32') return ['rundll32', ['url.dll,FileProtocolHandler', target]];
-  return ['xdg-open', [target]];
+/**
+ * The OS opener, for the viewer's own http://127.0.0.1 URL and nothing else. A file of the repository is never
+ * handed to it: the desktop would run whatever the file says it is (a .command script, an .app bundle, a .jar).
+ * On Windows this avoids `cmd /c start`, which would parse the argument.
+ */
+export function osOpenCommand(url: string, platform: NodeJS.Platform = process.platform): [string, string[]] {
+  if (!/^http:\/\/127\.0\.0\.1:\d{1,5}\//.test(url)) throw new Error('the OS opener is only used for the viewer URL');
+  if (platform === 'darwin') return ['open', [url]];
+  if (platform === 'win32') return ['rundll32', ['url.dll,FileProtocolHandler', url]];
+  return ['xdg-open', [url]];
 }
 
 export function onPath(name: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): boolean {
@@ -42,24 +47,39 @@ export function onPath(name: string, env: NodeJS.ProcessEnv, platform: NodeJS.Pl
   return false;
 }
 
-/** Editors Glimpse knows how to point at a line, in order of preference. */
+const goto = (file: string, line: number) => ['-g', `${file}:${line}`];
+const colon = (file: string, line: number) => [`${file}:${line}`];
+const lineFlag = (file: string, line: number) => ['--line', String(line), file];
+
+/** Editors Glimpse knows how to point at a line, in order of preference. Each opens a file as text and runs nothing. */
 const EDITORS: Array<{bin: string; args(file: string, line: number): string[]}> = [
-  {bin: 'code', args: (file, line) => ['-g', `${file}:${line}`]},
-  {bin: 'cursor', args: (file, line) => ['-g', `${file}:${line}`]},
-  {bin: 'zed', args: (file, line) => [`${file}:${line}`]},
+  {bin: 'code', args: goto},
+  {bin: 'cursor', args: goto},
+  {bin: 'windsurf', args: goto},
+  {bin: 'codium', args: goto},
+  {bin: 'code-insiders', args: goto},
+  {bin: 'zed', args: colon},
+  {bin: 'subl', args: colon},
+  {bin: 'idea', args: lineFlag},
+  {bin: 'webstorm', args: lineFlag},
+  {bin: 'pycharm', args: lineFlag},
+  {bin: 'goland', args: lineFlag},
 ];
+
+export const NO_EDITOR = 'no editor to open files with: set GLIMPSE_EDITOR (for example "code -g {file}:{line}") or put code, cursor, zed, subl or a JetBrains launcher on PATH';
 
 /**
  * The command that opens `file` (absolute) at `line`: the GLIMPSE_EDITOR template (`code -g {file}:{line}`), else the
- * first known editor on PATH, else the OS opener. The template is split on whitespace; {file} and {line} are
- * substituted inside single arguments, so a path with spaces stays one argument.
+ * first known editor on PATH, else undefined. There is no further fallback: the OS opener would execute what it is
+ * given. The template is split on whitespace; {file} and {line} are substituted inside single arguments, so a path
+ * with spaces stays one argument. `env` must be the start-up copy (session/env.ts), never a live object.
  */
 export function editorCommand(
   file: string, line: number | undefined, env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform = process.platform, has: (name: string) => boolean = name => onPath(name, env, platform),
-): [string, string[]] {
+): [string, string[]] | undefined {
   const at = line !== undefined && Number.isInteger(line) && line > 0 ? line : 1;
-  const template = env.GLIMPSE_EDITOR?.trim();
+  const template = Object.hasOwn(env, 'GLIMPSE_EDITOR') ? env.GLIMPSE_EDITOR?.trim() : undefined;
   if (template) {
     const [command, ...rest] = template.split(/\s+/);
     const args = rest.map(arg => arg.replaceAll('{file}', file).replaceAll('{line}', String(at)));
@@ -67,5 +87,5 @@ export function editorCommand(
     return [command!, args];
   }
   const editor = EDITORS.find(candidate => has(candidate.bin));
-  return editor ? [editor.bin, editor.args(file, at)] : osOpenCommand(file, platform);
+  return editor ? [editor.bin, editor.args(file, at)] : undefined;
 }

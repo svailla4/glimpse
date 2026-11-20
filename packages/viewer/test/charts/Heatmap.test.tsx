@@ -27,9 +27,44 @@ describe('Heatmap', () => {
     const view = await chart(`Heatmap($/d,'hour','day','n')`, {rows: LOAD});
     expect(view.svg.getAttribute('aria-label')).toBe('Heatmap, 3 rows by 2 columns, n 1 to 16, highest Wed and pm');
     expect(view.all('[data-diagonal]')).toHaveLength(0);
-    expect(steps(view)).toEqual([2, 4, 1, 7]);
+    // zero is the first step; values above it share the other six, so 1 of 16 is already the second ink
+    expect(steps(view)).toEqual([3, 5, 2, 7]);
     expect(view.all('g[data-i] text').map(el => el.textContent)).toEqual(['4', '9', '1', '16']);
-    expect(view.all('g[data-i] rect').map(el => (el as SVGElement).style.fill)).toEqual(['var(--gl-seq-2)', 'var(--gl-seq-4)', 'var(--gl-seq-1)', 'var(--gl-seq-7)']);
+    expect(view.all('g[data-i] rect').map(el => (el as SVGElement).style.fill)).toEqual(['var(--gl-seq-3)', 'var(--gl-seq-5)', 'var(--gl-seq-2)', 'var(--gl-seq-7)']);
+  });
+
+  it('never draws a cell that has a value in the faintest ink, and outlines the cells that have none (F010)', async () => {
+    // a skewed matrix: one heavy edge and many light ones, as on a real repository
+    const rows = [{from: 'a', to: 'b', weight: 251}, {from: 'b', to: 'c', weight: 1}, {from: 'c', to: 'a', weight: 3}, {from: 'a', to: 'c', weight: 0}];
+    const view = await chart(`Heatmap($/d,'to','from','weight')`, {rows});
+    expect(steps(view)).toEqual([7, 1, 2, 2]);
+    // the one zero is the first step; 1 and 3 of 251 are the second, which holds against the plate in both themes
+    const blank = view.root.querySelector('svg path[d^="M"]')!;
+    expect(blank.getAttribute('class')).toMatch(/blank/);
+    // two off-diagonal cells have no row in the data
+    expect(blank.getAttribute('d')!.match(/M/g)).toHaveLength(2);
+  });
+
+  it('cuts long names in the middle so the last segment stays, and brings the hovered row and column forward (F010, D12)', async () => {
+    const names = ['typescript/renderers/angular', 'typescript/renderers/lit', 'typescript/renderers/react', 'swift/core/Tests/A2UICoreTests', 'swift/core/Tests/*'];
+    const rows = names.flatMap((from, i) => names.filter((_, j) => j !== i).map(to => ({from, to, weight: i + 1})));
+    const view = await chart(`Heatmap($/d,'to','from','weight')`, {rows, size: {width: 420, height: 600}});
+    const labels = view.all('[data-row-label]').map(el => el.textContent);
+    expect(labels).toEqual(['…/angular', 'typescript/…/lit', 'typescript/…/react', '…/A2UICoreTests', 'swift/core/Tests/*']);
+    expect(new Set(labels).size).toBe(5);
+    expect(view.all('[data-hot]')).toHaveLength(0);
+    view.key('ArrowRight');
+    expect(view.all('[data-row-label][data-hot]').map(el => el.getAttribute('data-row-label'))).toEqual(['0']);
+    expect(view.all('[data-col-label][data-hot]').map(el => el.getAttribute('data-col-label'))).toEqual(['1']);
+  });
+
+  it('gives a small grid larger cells and keeps the legend with the grid (F009)', async () => {
+    const view = await chart(`Heatmap($/d,'hour','day','n')`, {rows: LOAD});
+    const rect = view.root.querySelector('g[data-i] rect')!;
+    expect(Number(rect.getAttribute('width'))).toBe(94);
+    expect(Number(rect.getAttribute('height'))).toBe(38);
+    const key = view.root.querySelector<HTMLElement>('[data-chart-key]')!;
+    expect(Number.parseFloat(key.style.maxWidth)).toBeLessThan(300);
   });
 
   it('centres a diverging ramp on zero', async () => {

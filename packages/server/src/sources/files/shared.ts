@@ -69,7 +69,8 @@ export const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocal
 
 /** Clamps a summary to the 160 characters the tool result allows, on a word boundary where possible. */
 export function clampSummary(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
+  // One line of printable text: paths and names from the repository cannot bring line breaks or control characters.
+  const flat = text.replace(/[\s\p{Cc}]+/gu, ' ').trim();
   if (flat.length <= MAX_SUMMARY) return flat;
   const cut = flat.slice(0, MAX_SUMMARY - 1);
   const space = cut.lastIndexOf(' ');

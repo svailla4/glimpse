@@ -54,18 +54,20 @@ function afterPaint(task: () => void): () => void {
   };
 }
 
-export function useLayout(spec: LayoutSpec): LayoutState {
-  const signature = useMemo(() => signatureOf(spec), [spec]);
-  const immediate = (spec.nodes.length <= SYNC_NODE_LIMIT && spec.edges.length <= SYNC_EDGE_LIMIT) || cache.has(signature);
+/** The layout of `spec`; pending while a large one is computed, and while there is no spec yet (the stage is not measured). */
+export function useLayout(spec: LayoutSpec | undefined): LayoutState {
+  const signature = useMemo(() => (spec ? signatureOf(spec) : undefined), [spec]);
+  const immediate = spec !== undefined && signature !== undefined
+    && ((spec.nodes.length <= SYNC_NODE_LIMIT && spec.edges.length <= SYNC_EDGE_LIMIT) || cache.has(signature));
   // A new spec object with an old signature is a cache hit, so the result keeps its identity.
-  const sync = useMemo(() => (immediate ? compute(spec, signature) : undefined), [immediate, spec, signature]);
+  const sync = useMemo(() => (immediate && spec && signature !== undefined ? compute(spec, signature) : undefined), [immediate, spec, signature]);
   const [deferred, setDeferred] = useState<{signature: string; result: Result}>();
 
   useEffect(() => {
-    if (immediate) return;
+    if (immediate || !spec || signature === undefined) return;
     return afterPaint(() => setDeferred({signature, result: compute(spec, signature)}));
   }, [immediate, spec, signature]);
 
   if (sync) return sync;
-  return deferred?.signature === signature ? deferred.result : {status: 'pending'};
+  return signature !== undefined && deferred?.signature === signature ? deferred.result : {status: 'pending'};
 }

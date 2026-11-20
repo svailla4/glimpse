@@ -1,5 +1,6 @@
-// CalendarHeatmap: daily activity as week columns of day cells, five steps with zero in the grid ink. When the
-// range does not fit, the oldest weeks are dropped rather than shrinking the cells below 9 px.
+// CalendarHeatmap: daily activity as week columns of day cells, five steps with zero in the grid ink. Cells grow
+// from 9 to 18 px with the width; when the range does not fit, the oldest weeks are dropped rather than shrinking
+// the cells further. A short history is drawn on at least a quarter of calendar, the days before it as outlines.
 import type {Field, Roles, Rows} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {quantileSorted} from 'd3-array';
@@ -93,25 +94,38 @@ interface Layout {
   size: number;
   left: number;
   top: number;
+  /** Right edge of the last week column: the legend ends there. */
+  gridRight: number;
   cells: Cell[];
+  /** Outline of the days before the data starts, when the calendar is padded to its minimum width. */
+  before: string;
   months: Array<{x: number; label: string}>;
   dropped: number;
   marks: Mark[];
 }
 
+/** A history shorter than this is still drawn as a calendar of this many weeks, not as a lone square. */
+const MIN_WEEKS = 13;
+
 function layoutDays(model: Model, width: number): Layout {
   const left = 22;
   const top = 18;
-  const start = model.first - weekday(model.first);
   const end = model.last + (6 - weekday(model.last));
-  const weeks = (end - start + 1) / 7;
+  const dataWeeks = (end - (model.first - weekday(model.first)) + 1) / 7;
+  const weeks = Math.max(dataWeeks, MIN_WEEKS);
+  const start = end - weeks * 7 + 1;
   const room = Math.max(11, width - left);
-  const pitch = Math.max(11, Math.min(13, Math.floor(room / weeks)));
+  // cells grow with the plate, up to 18 px, so a year fills a wide plate instead of its left half
+  const pitch = Math.max(11, Math.min(20, Math.floor(room / weeks)));
   const shown = Math.max(1, Math.min(weeks, Math.floor(room / pitch)));
-  const dropped = weeks - shown;
-  const from = Math.max(model.first, start + dropped * 7);
-  const origin = start + dropped * 7;
+  const dropped = Math.max(0, dataWeeks - shown);
+  const origin = start + (weeks - shown) * 7;
+  const from = Math.max(model.first, origin);
   const unit = model.info?.label ?? 'rows';
+  let before = '';
+  for (let day = origin; day < from; day++) {
+    before += `M${left + Math.floor((day - origin) / 7) * pitch + 0.5},${top + weekday(day) * pitch + 0.5}h${pitch - 3}v${pitch - 3}h${-(pitch - 3)}z`;
+  }
 
   const cells: Cell[] = [];
   const marks: Mark[] = [];
@@ -133,7 +147,7 @@ function layoutDays(model: Model, width: number): Layout {
   let lastMonth = -1;
   let lastX = -Infinity;
   for (let week = 0; week < shown; week++) {
-    const date = new Date(Math.max(from, origin + week * 7) * DAY);
+    const date = new Date(Math.max(before ? origin : from, origin + week * 7) * DAY);
     const month = date.getUTCMonth();
     if (month === lastMonth) continue;
     lastMonth = month;
@@ -145,7 +159,7 @@ function layoutDays(model: Model, width: number): Layout {
     lastX = x + textWidth(text);
     months.push({x, label: text});
   }
-  return {width, height: top + 7 * pitch, size: pitch - 2, left, top, cells, months, dropped, marks};
+  return {width, height: top + 7 * pitch, size: pitch - 2, left, top, gridRight: left + shown * pitch - 2, cells, before, months, dropped, marks};
 }
 
 function Plot(p: {id: string; rows: Rows; state: DataState<Rows>; skipped: number; props: C.ViewProps<typeof C.CalendarHeatmap>}): JSX.Element {
@@ -192,16 +206,21 @@ function Days(p: {id: string; model: Model; skipped: number; props: C.ViewProps<
         drawing={drawing}
         compact
         footer={(
-          <Legend
-            items={[]}
-            end={<Ramp steps={STEPS} low="0" high={fmtValue(model.max, model.info)} />}
-          />
+          // the key stays with the grid: it ends under the last week, with the totals at its left
+          <div style={layout ? {maxWidth: Math.max(340, layout.gridRight)} : undefined} data-chart-key="">
+            <Legend
+              items={[]}
+              start={`${fmtValue(model.total, model.info)} ${say(unit, 24)} · ${fmtNum(model.active)} active ${model.active === 1 ? 'day' : 'days'}`}
+              end={<Ramp steps={STEPS} low="0" high={fmtValue(model.max, model.info)} />}
+            />
+          </div>
         )}
       >
         {layout ? (
           <>
             {layout.months.map(month => <text key={month.x} className={kit.tag} x={month.x} y={layout.top - 7}>{month.label}</text>)}
             {[1, 3, 5].map(day => <text key={day} className={kit.tag} x={0} y={layout.top + day * (layout.size + 2) + layout.size / 2} dy="0.32em">{WEEKDAYS[day]!.charAt(0)}</text>)}
+            {layout.before ? <path className={css.before} d={layout.before} data-before="" /> : null}
             <g className={kit.fade}>{cells}</g>
           </>
         ) : null}
@@ -211,7 +230,7 @@ function Days(p: {id: string; model: Model; skipped: number; props: C.ViewProps<
 }
 
 export const CalendarHeatmapView: GlView<typeof C.CalendarHeatmap> = ({id, props}) => (
-  <RowsGate name="CalendarHeatmap" id={id} input={props.data}>
+  <RowsGate name="CalendarHeatmap" id={id} input={props.data} size={props.size} height={182}>
     {(rows, state, skipped) => <Plot id={id} rows={rows} state={state} skipped={skipped} props={props} />}
   </RowsGate>
 );

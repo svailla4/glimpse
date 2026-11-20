@@ -3,9 +3,9 @@
 // The options are one tab stop: arrows, Home and End move between them, Enter or Space picks.
 import type * as C from '@glimpse/catalog';
 import {useId, useState} from 'react';
-import {Icon, useHostActions, type GlView} from '../../kit/index.ts';
+import {Icon, useHostActions, useLinkStatus, type GlView} from '../../kit/index.ts';
 import {Inline, textOf} from './shared/inline.tsx';
-import {Queued} from './shared/Queued.tsx';
+import {ENDED_TITLE, Queued} from './shared/Queued.tsx';
 import {useRoving} from './shared/roving.ts';
 import styles from './Ask.module.css';
 
@@ -16,12 +16,21 @@ export const AskView: GlView<typeof C.Ask> = ({id, props}) => {
   const promptId = useId();
   const options = Array.isArray(props.options) ? [...new Set(props.options.filter(option => typeof option === 'string' && option.trim() !== ''))] : [];
   const [choice, setChoice] = useState<string>();
+  // A pick was tried after the session ended.
+  const [refused, setRefused] = useState(false);
+  // Once the session is over the shell drops whatever a view sends: nothing picked here can reach the agent.
+  const ended = useLinkStatus() === 'ended';
   const chosen = choice !== undefined && options.includes(choice) ? choice : undefined;
   const roving = useRoving<HTMLDivElement>(options.length, 'horizontal');
   const name = typeof props.name === 'string' && EVENT_NAME.test(props.name) ? props.name : 'answer';
   const prompt = textOf(props.prompt);
 
   const pick = (option: string) => {
+    // A pick made after the session ended goes nowhere: it is not marked as chosen and the card says why.
+    if (ended) {
+      setRefused(true);
+      return;
+    }
     setChoice(option);
     host.emit(name, {choice: option});
   };
@@ -41,6 +50,8 @@ export const AskView: GlView<typeof C.Ask> = ({id, props}) => {
               type="button"
               className={styles.option}
               aria-pressed={option === chosen}
+              aria-disabled={ended || undefined}
+              title={ended ? ENDED_TITLE : undefined}
               data-chosen={option === chosen || undefined}
               {...roving.item(i)}
               onClick={() => pick(option)}
@@ -53,7 +64,7 @@ export const AskView: GlView<typeof C.Ask> = ({id, props}) => {
       ) : (
         <p className={styles.none}>no options to choose from</p>
       )}
-      <Queued state={chosen !== undefined ? 'queued' : 'idle'} detail={chosen} />
+      <Queued state={ended && refused ? 'ended' : chosen !== undefined ? 'queued' : 'idle'} detail={chosen} />
     </section>
   );
 };

@@ -4,7 +4,7 @@
 import {SOURCE_BY_NAME, type ChurnRow, type CommitRow, type HotspotRow, type SourceMeta, type SourceRef} from '@glimpse/catalog';
 import {locate, repoPath} from '../../code/file.ts';
 import {SourceError, type RepoContext, type Source} from '../../contracts.ts';
-import {commitStats, getLog, inScope, LOG_LIMIT, rangeLog, refNames, type GitLog, type LogCommit} from '../../git/log.ts';
+import {commitStats, getHeaders, getLog, inScope, LIMIT_WARNING, LOG_LIMIT, rangeLog, refNames, type GitLog, type LogCommit, type LogHeader} from '../../git/log.ts';
 import {RANGE_PATTERN, resolveCommit, resolveRange} from '../../git/range.ts';
 import {cutRows, dayOf, isoOf, pathOf, plural, requireGit, round, SHALLOW_WARNING, sinceOf, topOf, type Since} from './args.ts';
 
@@ -15,7 +15,6 @@ export interface GitSourceOptions {
 
 const DAY = 86_400;
 const DEFAULT_WINDOW_DAYS = 365;
-const LIMIT_WARNING = `history limited to the latest ${LOG_LIMIT.toLocaleString('en-US')} commits`;
 /** Commit lists up to this length also carry lines added and removed per commit. */
 const STATS_LIMIT = 300;
 const SHA_CHARS = 10;
@@ -27,6 +26,9 @@ const MIN_SHARED = 3;
 const MAX_BUCKETS = 200;
 const MAX_SERIES = 8;
 const OTHER = 'other';
+/** Series for files at the top of the repository, and for paths whose top-level directory no longer exists. */
+const ROOT_FILES = '(root)';
+const REMOVED = '(removed)';
 
 const meta = (name: string): SourceMeta => {
   const found = SOURCE_BY_NAME.get(name);
@@ -68,6 +70,18 @@ async function history(ctx: RepoContext, ref: SourceRef, signal: AbortSignal, no
   }
   const warnings = [...(git.shallow ? [SHALLOW_WARNING] : []), ...(log.truncated ? [LIMIT_WARNING] : [])];
   return {log, scope, top, warnings, ...(since ? {since} : {})};
+}
+
+/**
+ * Author and time of every commit the ref covers. For the whole repository this is every commit of HEAD, also when
+ * the parsed history is limited to the latest LOG_LIMIT commits, so counts of commits and authors are the ones
+ * repo.kpis gives; for a path it is the commits of the (scoped) log.
+ */
+async function headersOf(ctx: RepoContext, h: History, signal: AbortSignal): Promise<{headers: readonly LogHeader[]; exact: boolean}> {
+  if (h.scope || !h.log.truncated) return {headers: h.log.commits, exact: !h.log.truncated};
+  const all = await getHeaders(ctx, signal);
+  const cutoff = h.since?.cutoff;
+  return {headers: cutoff === undefined ? all.headers : all.headers.filter(header => header.time >= cutoff), exact: !all.truncated};
 }
 
 const windowNote = (h: Pick<History, 'scope' | 'since'>): string =>
@@ -146,8 +160,10 @@ function gitActivity(nowMs: () => number): Source {
     meta: source,
     async run(ctx, ref, signal) {
       const h = await history(ctx, ref, signal, nowMs(), {defaultDays: DEFAULT_WINDOW_DAYS});
+      // Counting commits needs no file lists: a window with more commits than the parsed history holds is still exact.
+      const {headers, exact} = await headersOf(ctx, h, signal);
       const perDay = new Map<string, number>();
-      for (const commit of h.log.commits) {
+      for (const commit of headers) {
         const day = dayOf(commit.time);
         perDay.set(day, (perDay.get(day) ?? 0) + 1);
       }
@@ -156,10 +172,10 @@ function gitActivity(nowMs: () => number): Source {
         top: h.top,
         strategy: 'window',
         by: 'date',
-        warnings: h.warnings,
+        warnings: exact ? h.warnings.filter(warning => warning !== LIMIT_WARNING) : h.warnings,
         detail: shown => {
           const busiest = shown.reduce<(typeof shown)[number] | undefined>((best, row) => (!best || row.commits > best.commits ? row : best), undefined);
-          return [`${plural(h.log.commits.length, 'commit')} ${windowNote(h)}`.trim(), busiest ? `busiest ${busiest.date} ${busiest.commits}` : ''].filter(Boolean).join('; ');
+          return [`${plural(headers.length, 'commit')} ${windowNote(h)}`.trim(), busiest ? `busiest ${busiest.date} ${busiest.commits}` : ''].filter(Boolean).join('; ');
         },
       });
     },
@@ -188,8 +204,12 @@ function gitTimeline(nowMs: () => number): Source {
       const h = await history(ctx, ref, signal, nowMs(), {defaultDays: DEFAULT_WINDOW_DAYS});
       const commits = h.log.commits;
 
-      // Module of every touched file. The index is asked once per path; if it cannot answer, the top-level directory stands in.
+      // Series of every touched file: its module. The index is asked once per path; if it cannot answer, the top-level
+      // directory stands in. The cut's catch-all for the root is not a place, so what it would swallow is named for
+      // what it is: a top-level directory that still exists, files at the root, or a path that is gone.
       let indexFailed = false;
+      const liveTops = new Set<string>();
+      for (const path of h.log.alive) liveTops.add(path.includes('/') ? path.slice(0, path.indexOf('/')) : '');
       const modules = new Map<string, string>();
       const moduleOf = async (path: string): Promise<string> => {
         let name = modules.get(path);
@@ -202,19 +222,38 @@ function gitTimeline(nowMs: () => number): Source {
               ctx.log(`glimpse: git.timeline groups by top-level directory: ${error instanceof Error ? error.message : String(error)}`);
             }
           }
-          name ||= path.includes('/') ? path.slice(0, path.indexOf('/')) : '(root)';
+          if (!name || name === '(root)' || name === '.') {
+            const top = path.includes('/') ? path.slice(0, path.indexOf('/')) : '';
+            name = top === '' ? ROOT_FILES : h.log.alive.has(path) || liveTops.has(top) ? top : REMOVED;
+          }
           modules.set(path, name);
         }
         return name;
       };
-      const touched: Array<{time: number; modules: Set<string>}> = [];
+      // A commit is counted once, under the module most of its files are in, so the series of a week add up to the
+      // commits of that week. (Counted once per module touched, a stacked chart showed about twice the real number.)
+      const touched: Array<{time: number; module: string | undefined}> = [];
       const totals = new Map<string, number>();
       for (const commit of commits) {
-        const set = new Set<string>();
-        for (const file of commit.files) if (inScope(file, h.scope)) set.add(await moduleOf(file));
+        const perModule = new Map<string, number>();
+        for (const file of commit.files) {
+          if (!inScope(file, h.scope)) continue;
+          const name = await moduleOf(file);
+          perModule.set(name, (perModule.get(name) ?? 0) + 1);
+        }
         signal.throwIfAborted();
-        for (const name of set) totals.set(name, (totals.get(name) ?? 0) + 1);
-        touched.push({time: commit.time, modules: set});
+        let main: string | undefined;
+        let most = 0;
+        for (const [name, files] of perModule) {
+          // Ties go to a real module before a catch-all, then by name, so the choice never depends on file order.
+          const better = files > most || (files === most && main !== undefined && (Number(name.startsWith('(')) - Number(main.startsWith('(')) || (name < main ? -1 : 1)) < 0);
+          if (better) {
+            main = name;
+            most = files;
+          }
+        }
+        if (main !== undefined) totals.set(main, (totals.get(main) ?? 0) + 1);
+        touched.push({time: commit.time, module: main});
       }
 
       const ranked = [...totals].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([name]) => name);
@@ -223,7 +262,7 @@ function gitTimeline(nowMs: () => number): Source {
       const rest = kept.has(OTHER) ? `(${OTHER})` : OTHER;
       const series = ranked.length > MAX_SERIES ? [...kept, rest] : ranked;
 
-      const times = touched.filter(entry => entry.modules.size > 0).map(entry => entry.time);
+      const times = touched.filter(entry => entry.module !== undefined).map(entry => entry.time);
       const first = Math.min(...times);
       const last = Math.max(...times);
       const warnings = [...h.warnings];
@@ -238,15 +277,15 @@ function gitTimeline(nowMs: () => number): Source {
       }
       const counts = new Map<number, Map<string, number>>();
       for (const entry of touched) {
-        const names = new Set([...entry.modules].map(name => (kept.has(name) ? name : rest)));
-        if (names.size === 0) continue;
+        if (entry.module === undefined) continue;
+        const name = kept.has(entry.module) ? entry.module : rest;
         const bucket = bucketOf(entry.time);
         let row = counts.get(bucket);
         if (!row) {
           row = new Map();
           counts.set(bucket, row);
         }
-        for (const name of names) row.set(name, (row.get(name) ?? 0) + 1);
+        row.set(name, (row.get(name) ?? 0) + 1);
       }
       const rows: Array<{week: string; module: string; commits: number}> = [];
       let buckets = 0;
@@ -268,7 +307,7 @@ function gitTimeline(nowMs: () => number): Source {
         by: 'week',
         warnings,
         detail: () =>
-          [`${Math.min(buckets, keepBuckets)} ${unit} x ${series.length} modules`, `${plural(commits.length, 'commit')} ${windowNote(h)}`.trim(), ranked[0] ? `busiest ${ranked[0]} ${totals.get(ranked[0])}` : '']
+          [`${Math.min(buckets, keepBuckets)} ${unit} x ${series.length} modules`, `${`${plural(times.length, 'commit')} ${windowNote(h)}`.trim()}, each under its main module`, ranked[0] ? `busiest ${ranked[0]} ${totals.get(ranked[0])}` : '']
             .filter(Boolean).join('; '),
       });
     },
@@ -321,7 +360,8 @@ function gitChurn(nowMs: () => number): Source {
     async run(ctx, ref, signal) {
       const h = await history(ctx, ref, signal, nowMs());
       const rows = fileStats(h.log, h.scope).sort(byCommitsThenPath).map((stat): ChurnRow => ({
-        path: stat.path, commits: stat.commits, authors: stat.authors.size, ...ownerOf(stat), first: dayOf(stat.first), last: dayOf(stat.last),
+        // Full timestamps, like git.log's `date`: a bare day reads as midnight UTC and shows a commit of minutes ago as hours old.
+        path: stat.path, commits: stat.commits, authors: stat.authors.size, ...ownerOf(stat), first: isoOf(stat.first), last: isoOf(stat.last),
       }));
       return cutRows(source, rows, {
         top: h.top,
@@ -366,7 +406,11 @@ function gitHotspots(nowMs: () => number): Source {
         top: h.top,
         by: 'score',
         warnings: h.warnings,
-        detail: shown => [windowNote(h), shown[0] ? `top ${shown[0].path} ${plural(shown[0].commits, 'commit')}` : 'no analysed files with commits'].filter(Boolean).join('; '),
+        // What `complexity` and `sloc` measure is said once, by the catalog (column headers and the source's doc).
+        detail: shown => [
+          windowNote(h),
+          shown[0] ? `top ${shown[0].path} ${plural(shown[0].commits, 'commit')}${shown[0].isTest ? ' (a test)' : ''}` : 'no analysed files with commits',
+        ].filter(Boolean).join('; '),
       });
     },
   };
@@ -378,24 +422,38 @@ function gitAuthors(nowMs: () => number): Source {
     meta: source,
     async run(ctx, ref, signal) {
       const h = await history(ctx, ref, signal, nowMs());
+      // Commits and dates come from every commit of the scope, so the rows are the contributors repo.kpis counts;
+      // the files an author touched can only be read from the parsed history.
+      const {headers, exact} = await headersOf(ctx, h, signal);
       const authors = new Map<string, {commits: number; files: Set<string>; last: number}>();
-      for (const commit of h.log.commits) {
-        let author = authors.get(commit.author);
+      const entry = (name: string, time: number) => {
+        let author = authors.get(name);
         if (!author) {
-          author = {commits: 0, files: new Set(), last: commit.time};
-          authors.set(commit.author, author);
+          author = {commits: 0, files: new Set(), last: time};
+          authors.set(name, author);
         }
+        return author;
+      };
+      for (const commit of headers) {
+        const author = entry(commit.author, commit.time);
         author.commits++;
         author.last = Math.max(author.last, commit.time);
+      }
+      for (const commit of h.log.commits) {
+        const author = authors.get(commit.author);
+        if (!author) continue;
         for (const file of commit.files) if (inScope(file, h.scope)) author.files.add(file);
       }
       const rows = [...authors]
-        .map(([author, stat]) => ({author, commits: stat.commits, files: stat.files.size, last: dayOf(stat.last)}))
+        .map(([author, stat]) => ({author, commits: stat.commits, files: stat.files.size, last: isoOf(stat.last)}))
         .sort((a, b) => b.commits - a.commits || (a.author < b.author ? -1 : 1));
+      const warnings = exact && h.log.truncated
+        ? h.warnings.map(warning => (warning === LIMIT_WARNING ? `files counted over the latest ${LOG_LIMIT.toLocaleString('en-US')} commits` : warning))
+        : h.warnings;
       return cutRows(source, rows, {
         top: h.top,
         by: 'commits',
-        warnings: h.warnings,
+        warnings,
         detail: shown => [windowNote(h), shown[0] ? `top ${shown[0].author} ${plural(shown[0].commits, 'commit')}` : 'no commits'].filter(Boolean).join('; '),
       });
     },
@@ -412,9 +470,16 @@ function gitCoupling(nowMs: () => number): Source {
       const {log, scope} = h;
       const perFile = new Map<string, number>();
       const shared = new Map<string, number>();
+      let sweeping = 0;
       for (const commit of log.commits) {
+        // A commit that touches dozens of files (a rename, a reformat, a release) couples nothing in particular. It is
+        // left out of both sides of the ratio: the pairs it would add and the per-file counts the degree divides by.
+        if (commit.files.length > MAX_FILES_PER_COMMIT) {
+          sweeping++;
+          continue;
+        }
         for (const file of commit.files) perFile.set(file, (perFile.get(file) ?? 0) + 1);
-        if (commit.files.length < 2 || commit.files.length > MAX_FILES_PER_COMMIT) continue;
+        if (commit.files.length < 2) continue;
         const files = commit.files.filter(file => log.alive.has(file)).sort();
         for (let i = 0; i < files.length; i++) {
           for (let j = i + 1; j < files.length; j++) {
@@ -438,7 +503,12 @@ function gitCoupling(nowMs: () => number): Source {
         top: h.top,
         by: 'shared',
         warnings: h.warnings,
-        detail: shown => [windowNote(h), shown[0] ? `strongest ${shown[0].a} + ${shown[0].b} ${shown[0].shared} commits` : `no pair shares ${MIN_SHARED} commits`].filter(Boolean).join('; '),
+        // How many commits were left out comes first: the pair that follows can be long enough to fill the summary.
+        detail: shown => [
+          windowNote(h),
+          sweeping > 0 ? `${plural(sweeping, 'commit')} over ${MAX_FILES_PER_COMMIT} files ignored` : '',
+          shown[0] ? `strongest ${shown[0].a} + ${shown[0].b} ${shown[0].shared} commits` : `no pair shares ${MIN_SHARED} commits`,
+        ].filter(Boolean).join('; '),
       });
     },
   };

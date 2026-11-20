@@ -62,11 +62,27 @@ describe('source refs', () => {
     expect(acceptsArg(meta('deps.modules'), 'focus')).toBe(true);
     // top is not listed for these rows sources and still works
     for (const name of ['repo.packages', 'deps.cycles', 'git.coupling', 'diff.files', 'code.refs']) expect(acceptsArg(meta(name), 'top'), name).toBe(true);
-    // top means nothing on a tree or a graph, and since only where it is listed
+    // top means nothing on a tree or a graph unless the source lists it, and since only where it is listed
     expect(acceptsArg(meta('files.tree'), 'top')).toBe(false);
-    expect(acceptsArg(meta('deps.modules'), 'top')).toBe(false);
+    expect(acceptsArg(meta('deps.files'), 'top')).toBe(false);
+    // D7: the module graph is cut to about 24 nodes by default, and top= raises it
+    expect(acceptsArg(meta('deps.modules'), 'top')).toBe(true);
+    expect(sourceDoc('deps.modules')).toContain("'deps.modules [path] [top=] [focus=] [depth=]'");
     expect(acceptsArg(meta('code.todos'), 'since')).toBe(false);
     expect(acceptsArg(meta('git.churn'), 'toString')).toBe(false);
+  });
+
+  // D8 / F060: deps.* and repo.* read the working tree but were cached per HEAD, so an agent that had just edited
+  // imports saw the pre-edit graph until someone committed.
+  it('every source computed from the working tree says so: files.*, repo.*, deps.*, code.*, diff.* and the git.* sources that join history with it', () => {
+    // git.hotspots takes complexity, sloc and generated flags from the working-tree index; git.timeline names its
+    // series after the working-tree module cut. Both go stale on an edit like any working-tree source.
+    const joined = new Set(['git.hotspots', 'git.timeline']);
+    for (const source of SOURCES) {
+      const group = source.name.split('.')[0]!;
+      expect(source.wt === true, source.name).toBe(['files', 'repo', 'deps', 'code', 'diff'].includes(group) || joined.has(source.name));
+    }
+    expect(SOURCES.filter(s => s.wt).map(s => s.name)).toEqual(expect.arrayContaining(['repo.stack', 'repo.packages', 'repo.scripts', 'deps.modules', 'deps.files', 'deps.cycles', 'deps.external', 'deps.matrix']));
   });
 
   it('git.log documents that its target is a path or a range', () => {

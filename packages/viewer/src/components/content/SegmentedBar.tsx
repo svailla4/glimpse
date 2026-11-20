@@ -1,10 +1,12 @@
 // SegmentedBar (design 5.3): part-to-whole in one 16 px bar, segments separated by 2 px surface gaps, with a legend
 // beneath (swatch, label, percentage). Segments under 2% and those past the eighth ink merge into "other".
+// Colours come from the kit (D6): a category keeps its session ink, the others take the free inks in order, and
+// only the merged remainder is grey, so two different categories are never the same colour side by side.
 // Clicking a segment or a legend entry selects it; the legend is one tab stop with roving focus.
-import {PATHS, type EntityRef, type Field, type FieldKind, type Roles, type Rows, type SurfaceMeta} from '@glimpse/catalog';
+import type {EntityRef, Field, FieldKind, Roles, Rows} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {useMemo} from 'react';
-import {DataGate, Empty, Redline, catVar, fmtCell, fmtNum, toNumber, useDataset, usePath, useTooltip, type GlView} from '../../kit/index.ts';
+import {DataGate, Empty, Redline, catVar, fmtCell, fmtNum, isOtherKey, toNumber, useCatSlots, useDataset, useTooltip, type GlView} from '../../kit/index.ts';
 import {cellEntity, cellText, fileEntity, isRecord, shapeMessage} from './shared/data.ts';
 import {useEntityRows} from './shared/entityRow.ts';
 import {useRoving} from './shared/roving.ts';
@@ -21,8 +23,6 @@ interface Segment {
   label: string;
   value: number;
   share: number;
-  /** Categorical slot 1..8, or 0 for the "other" ink. */
-  slot: number;
   /** What a click selects; the merged "other" segment selects nothing. */
   entity?: EntityRef;
   /** Number of categories merged into this segment. */
@@ -35,6 +35,8 @@ interface Model {
   /** Rows left out: no label, or a value that is not a positive number. */
   dropped: number;
   valueField?: Field;
+  /** The session's slot table the labels belong to, when they are languages, modules or authors. */
+  slotKind?: SlotKind;
   error?: string;
 }
 
@@ -44,7 +46,7 @@ function sniff(row: Record<string, unknown>): Field[] {
   );
 }
 
-function build(rows: Rows, given: Field[] | undefined, roles: Roles | undefined, labelProp: string | undefined, valueProp: string | undefined, slots: SurfaceMeta['slots'] | undefined): Model {
+function build(rows: Rows, given: Field[] | undefined, roles: Roles | undefined, labelProp: string | undefined, valueProp: string | undefined): Model {
   const first = rows.find(isRecord);
   if (!first) return {segments: [], total: 0, dropped: rows.length, error: shapeMessage('rows (a list of objects)', rows[0])};
   const fields = given && given.length > 0 ? given : sniff(first);
@@ -68,8 +70,6 @@ function build(rows: Rows, given: Field[] | undefined, roles: Roles | undefined,
 
   const labelKind = byKey.get(labelKey)?.kind;
   const slotKind: SlotKind | undefined = isSlotKind(labelKind) ? labelKind : isSlotKind(labelKey) ? labelKey : undefined;
-  const assigned = slotKind ? slots?.[slotKind] : undefined;
-  const useAssigned = assigned !== undefined && [...sums.keys()].some(label => (assigned[label] ?? 0) > 0);
   const entityOf = (label: string): EntityRef =>
     labelKind === 'path' ? fileEntity(label) : (cellEntity(labelKind ?? (slotKind === 'lang' ? undefined : slotKind), label) ?? {type: 'row', id: label, label});
 
@@ -77,31 +77,31 @@ function build(rows: Rows, given: Field[] | undefined, roles: Roles | undefined,
   const rest: Segment[] = [];
   for (const [label, value] of sums) {
     const share = value / total;
-    const segment: Segment = {label, value, share, slot: 0, entity: entityOf(label)};
-    if (share < MIN_SHARE || kept.length >= MAX_INKS) rest.push(segment);
+    const segment: Segment = {label, value, share, entity: entityOf(label)};
+    // A category that is itself a remainder ("Other") belongs with the rest, so there is one grey segment at most.
+    if (share < MIN_SHARE || kept.length >= MAX_INKS || isOtherKey(label)) rest.push(segment);
     else kept.push(segment);
   }
-  kept.forEach((segment, i) => {
-    segment.slot = useAssigned ? (assigned?.[segment.label] ?? 0) : i + 1;
-  });
   if (rest.length === 1) kept.push(rest[0]!);
   else if (rest.length > 1) {
     const value = rest.reduce((sum, segment) => sum + segment.value, 0);
-    kept.push({label: `other (${rest.length})`, value, share: value / total, slot: 0, merged: rest.length});
+    kept.push({label: `other (${rest.length})`, value, share: value / total, merged: rest.length});
   }
-  return {segments: kept, total, dropped, valueField: valueKey ? (byKey.get(valueKey) ?? {key: valueKey, kind: 'num'}) : undefined};
+  return {segments: kept, total, dropped, slotKind, valueField: valueKey ? (byKey.get(valueKey) ?? {key: valueKey, kind: 'num'}) : undefined};
 }
 
 const pct = (share: number) => (share > 0 && share < 0.001 ? '<0.1%' : fmtNum(share * 100, 'pct'));
 
 export const SegmentedBarView: GlView<typeof C.SegmentedBar> = ({id, props}) => {
   const state = useDataset<Rows>(props.data);
-  const slots = usePath<SurfaceMeta['slots']>(PATHS.metaSlots);
   const model = useMemo(
-    () => (Array.isArray(state.data) ? build(state.data, state.fields, state.roles, props.label, props.value, slots) : undefined),
-    [state.data, state.fields, state.roles, props.label, props.value, slots],
+    () => (Array.isArray(state.data) ? build(state.data, state.fields, state.roles, props.label, props.value) : undefined),
+    [state.data, state.fields, state.roles, props.label, props.value],
   );
   const segments = model?.segments ?? [];
+  const named = useMemo(() => (model?.segments ?? []).filter(segment => !segment.merged).map(segment => segment.label), [model]);
+  const cat = useCatSlots(model?.slotKind, named);
+  const slotOf = (segment: Segment) => (segment.merged ? 0 : cat.slot(segment.label));
   const roving = useRoving<HTMLUListElement>(segments.length, 'horizontal');
   const rows = useEntityRows(id);
   const tooltip = useTooltip();
@@ -125,11 +125,12 @@ export const SegmentedBarView: GlView<typeof C.SegmentedBar> = ({id, props}) => 
                     key={segment.label}
                     className={styles.segment}
                     data-segment={segment.label}
-                    data-other={segment.slot === 0 || undefined}
+                    data-other={slotOf(segment) === 0 || undefined}
+                    data-slot={slotOf(segment)}
                     data-selected={marked || undefined}
                     data-dimmed={(anyMarked && !marked) || undefined}
                     data-entity={segment.entity ? '' : undefined}
-                    style={{flexGrow: segment.value, background: catVar(segment.slot)}}
+                    style={{flexGrow: segment.value, background: catVar(slotOf(segment))}}
                     onClick={event => rows.onClick(segment.entity, event)}
                     onPointerMove={event =>
                       tooltip.show(
@@ -163,7 +164,7 @@ export const SegmentedBarView: GlView<typeof C.SegmentedBar> = ({id, props}) => 
                         if (rows.onKeyDown(segment.entity, event)) event.stopPropagation();
                       }}
                     >
-                      <span className={styles.swatch} data-other={segment.slot === 0 || undefined} style={{background: catVar(segment.slot)}} aria-hidden="true" />
+                      <span className={styles.swatch} data-other={slotOf(segment) === 0 || undefined} style={{background: catVar(slotOf(segment))}} aria-hidden="true" />
                       <span className={styles.label}>{segment.label}</span>
                       <span className={styles.share}>{pct(segment.share)}</span>
                     </button>

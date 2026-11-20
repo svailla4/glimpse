@@ -3,9 +3,10 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {TOKEN_CLASSES, type FileSlice, type TokenLine} from '@glimpse/catalog';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
+import {createRepoIndex} from '../../src/analyze/index.ts';
 import {locate, MAX_FILE_BYTES, MAX_LINE_CHARS, repoPath} from '../../src/code/file.ts';
 import {createCodeService} from '../../src/code/index.ts';
-import type {CodeService} from '../../src/contracts.ts';
+import type {CodeService, RepoIndex} from '../../src/contracts.ts';
 import {makeFixtureRepo, type FixtureRepo} from '../fixtures/repo.ts';
 import {makeContext, type TestContext} from '../git/context.ts';
 
@@ -18,12 +19,15 @@ describe('code service: file', () => {
   let outside: string;
   let ctx: TestContext;
   let code: CodeService;
+  let index: RepoIndex;
   beforeAll(async () => {
     repo = await makeFixtureRepo({dirty: false});
     outside = await realpath(await mkdtemp(join(tmpdir(), 'glimpse-outside-')));
     await writeFile(join(outside, 'secret.txt'), 'outside the project\n');
     ctx = await makeContext(repo.root);
-    code = createCodeService(ctx);
+    // The real inventory decides what may be served, so these tests run on the real index.
+    index = createRepoIndex(repo.root, ctx.runGit, () => {});
+    code = createCodeService({...ctx, index, rev: () => ctx.rev()});
   });
   afterAll(async () => {
     await repo.cleanup();
@@ -161,6 +165,45 @@ describe('code service: file', () => {
     for (const name of ['link.txt', 'linked-dir', 'readme-link.md']) await rm(join(repo.root, name));
   });
 
+  it('serves only files of the inventory: nothing under .git, nothing ignored, no dependency trees, by any name', async () => {
+    const refused = async (path: string, secret: string): Promise<void> => {
+      const slice = await code.file({path});
+      expect(slice, path).toMatchObject({skipped: 'outside-root', ...SKIPPED});
+      expect(JSON.stringify(slice), path).not.toContain(secret);
+    };
+    // git's own files: the configuration can hold credentials in a remote URL (a marker stands in for them here)
+    await appendFile(join(repo.root, '.git/config'), '[remote "origin"]\n\turl = marker-only-in-git-config\n');
+    await refused('.git/config', 'marker-only-in-git-config');
+    await refused('.git/HEAD', 'refs/heads');
+    await refused('./.git/config', 'marker-only-in-git-config');
+    await refused(join(repo.root, '.git/config'), 'marker-only-in-git-config');
+    // ignored by .gitignore (*.log, dist/), and an untracked dependency tree nothing ignores
+    await writeFile(join(repo.root, 'debug.log'), 'marker-only-in-ignored-files\n');
+    await mkdir(join(repo.root, 'dist'));
+    await writeFile(join(repo.root, 'dist/bundle.js'), 'const built = "marker-only-in-ignored-files";\n');
+    await mkdir(join(repo.root, 'vendor/node_modules/dep'), {recursive: true});
+    await writeFile(join(repo.root, 'vendor/node_modules/dep/index.js'), 'module.exports = "dependency-code";\n');
+    await refused('debug.log', 'marker-only-in-ignored-files');
+    await refused('dist/bundle.js', 'marker-only-in-ignored-files');
+    await refused('vendor/node_modules/dep/index.js', 'dependency-code');
+    // a link inside the root is judged by the file it leads to
+    await symlink(join(repo.root, '.git/config'), join(repo.root, 'innocent.txt'));
+    await symlink(join(repo.root, 'debug.log'), join(repo.root, 'notes.txt'));
+    await refused('innocent.txt', 'marker-only-in-git-config');
+    await refused('notes.txt', 'marker-only-in-ignored-files');
+    // the index agrees, path by path
+    for (const path of ['.git/config', '.git/HEAD', 'debug.log', 'dist/bundle.js', 'vendor/node_modules/dep/index.js', 'innocent.txt', 'src', '', '../secret.txt', 'src/nope.ts']) {
+      expect(await index.has!(path), path).toBe(false);
+    }
+    // a tracked file, and an untracked file created after the index was built, are files of the project
+    expect(await index.has!('src/auth/tokens.ts')).toBe(true);
+    expect(await index.has!('./src/auth/tokens.ts')).toBe(true);
+    await writeFile(join(repo.root, 'src/lib/just-written.ts'), 'export const fresh = 1;\n');
+    expect(await index.has!('src/lib/just-written.ts')).toBe(true);
+    expect(await code.file({path: 'src/lib/just-written.ts'})).toMatchObject({total: 1, lang: 'typescript'});
+    for (const name of ['debug.log', 'dist', 'vendor', 'innocent.txt', 'notes.txt', 'src/lib/just-written.ts']) await rm(join(repo.root, name), {recursive: true});
+  });
+
   it('shows files without a grammar as plain text, cuts very long lines and handles odd endings', async () => {
     expect(await code.file({path: '.gitignore'})).toMatchObject({lang: 'text', total: 4, lines: [[['node_modules/', 0]], [['dist/', 0]], [['__pycache__/', 0]], [['*.log', 0]]]});
     await writeFile(join(repo.root, 'empty.ts'), '');
@@ -208,7 +251,9 @@ describe('path helpers', () => {
     try {
       await mkdir(join(root, 'sub'));
       await writeFile(join(root, 'sub', 'a.txt'), 'a');
-      expect(await locate(root, 'sub/a.txt')).toEqual({ok: true, abs: join(root, 'sub', 'a.txt'), rel: 'sub/a.txt'});
+      expect(await locate(root, 'sub/a.txt')).toEqual({ok: true, abs: join(root, 'sub', 'a.txt'), rel: 'sub/a.txt', real: 'sub/a.txt'});
+      await symlink(join(root, 'sub', 'a.txt'), join(root, 'link.txt'));
+      expect(await locate(root, 'link.txt')).toMatchObject({ok: true, rel: 'link.txt', real: 'sub/a.txt'});
       expect(await locate(root, './sub/../sub/a.txt')).toMatchObject({ok: true, rel: 'sub/a.txt'});
       expect(await locate(root, 'sub')).toMatchObject({ok: true, rel: 'sub'});
       expect(await locate(root, 'sub/missing.txt')).toEqual({ok: false, reason: 'missing'});

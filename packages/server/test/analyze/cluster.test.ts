@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {cutModules, findCycles, MAX_MODULES, parseModuleId, restId, type CutFile} from '../../src/analyze/cluster.ts';
+import {cutModules, DEFAULT_MODULES, findCycles, MAX_MODULES, parseModuleId, restId, type CutFile} from '../../src/analyze/cluster.ts';
 
 const files = (spec: Record<string, number>): CutFile[] => Object.entries(spec).map(([path, weight]) => ({path, weight}));
 /** `count` files of `weight` lines each under `dir`. */
@@ -40,7 +40,7 @@ describe('cutModules', () => {
   it('never exceeds the cap: the smallest siblings fold into the rest cluster', () => {
     const spec: Record<string, number> = {};
     for (let i = 0; i < 85; i++) Object.assign(spec, many(`packages/p${String(i).padStart(2, '0')}`, 2, 100 - i));
-    const cut = cutModules(files(spec));
+    const cut = cutModules(files(spec), {max: MAX_MODULES});
     expect(cut.ids).toHaveLength(MAX_MODULES);
     expect(cut.ids[0]).toBe('packages/*');
     expect(cut.ids.slice(1, 4)).toEqual(['packages/p00', 'packages/p01', 'packages/p02']);
@@ -48,6 +48,20 @@ describe('cutModules', () => {
     expect(cut.moduleOf('packages/p39/f0.ts')).toBe('packages/*');
     expect(cut.moduleOf('packages/p84/f1.ts')).toBe('packages/*');
     expect(new Set(Object.keys(spec).map(path => cut.moduleOf(path))).size).toBe(MAX_MODULES);
+  });
+
+  it('cuts to a legible number of modules unless more are asked for, and never to more than the hard cap', () => {
+    const spec: Record<string, number> = {};
+    for (let i = 0; i < 85; i++) Object.assign(spec, many(`packages/p${String(i).padStart(2, '0')}`, 2, 100 - i));
+    const byDefault = cutModules(files(spec));
+    expect(DEFAULT_MODULES).toBeLessThan(MAX_MODULES);
+    expect(byDefault.ids).toHaveLength(DEFAULT_MODULES);
+    // nothing is dropped: what is not a cluster of its own is in the rest cluster
+    expect(byDefault.ids[0]).toBe('packages/*');
+    expect(byDefault.moduleOf('packages/p00/f0.ts')).toBe('packages/p00');
+    expect(byDefault.moduleOf('packages/p84/f1.ts')).toBe('packages/*');
+    expect(new Set(Object.keys(spec).map(path => byDefault.moduleOf(path))).size).toBe(DEFAULT_MODULES);
+    expect(cutModules(files(spec), {max: 1000}).ids).toHaveLength(MAX_MODULES);
   });
 
   it.each([1, 2, 5, 12, 40])('honours a cap of %i on a deep, wide tree', max => {

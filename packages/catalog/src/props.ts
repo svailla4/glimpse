@@ -31,8 +31,20 @@ export interface Prop<W = unknown, V = unknown, Req extends boolean = boolean> {
   readonly required: Req;
   readonly bindable: boolean;
   readonly values?: readonly string[];   // enum values
+  /**
+   * enum props: other words an author may write for a value ({warning: 'warn'}). Keys are lower case. The schema
+   * accepts canonical values only; the spec pipeline rewrites an alias before validation and reports
+   * `fixed warning -> warn` (see enumValue()).
+   */
+  readonly aliases?: Readonly<Record<string, string>>;
   readonly shape?: string;               // data props: name of the expected shape in datasets.ts (docs/tests)
   readonly source?: string;              // data props: default source ref used when the prop is omitted
+  /**
+   * A tuning knob: left out of the one-line index in the server instructions (componentIndex) to keep that text
+   * short. It is a normal prop everywhere else (schema, catalog{names}, error signatures). Only trailing optional
+   * props may be minor, so the positions of the listed ones do not change.
+   */
+  readonly minor?: boolean;
   readonly schema: z.ZodTypeAny;
   /** phantom types, never set at runtime */
   readonly _wire?: W;
@@ -49,6 +61,11 @@ function mk<W, V>(kind: PropKind, schema: z.ZodTypeAny, doc: string, extra: Part
 /** Marks a prop optional. Always call as opt(p.xxx(...)). */
 export function opt<W, V>(prop: Prop<W, V, true>): Prop<W, V, false> {
   return {...prop, required: false, schema: prop.schema.optional()} as Prop<W, V, false>;
+}
+
+/** Marks an optional prop as a tuning knob (see Prop.minor). Always call as minor(opt(p.xxx(...))). */
+export function minor<W, V>(prop: Prop<W, V, false>): Prop<W, V, false> {
+  return {...prop, minor: true};
 }
 
 export const p = {
@@ -74,9 +91,12 @@ export const p = {
     mk<ChildListWire, ChildToken[]>('children', ref(CommonSchemas.ChildList, 'ChildList', doc), doc),
   /** A2UI Action ({event: {name, context}}). */
   action: (doc: string) => mk<ActionWire, () => Promise<void>>('action', ref(CommonSchemas.Action, 'Action', doc), doc),
-  /** Static enum. Values are appended to the description so they show up in every generated prompt. */
-  enum: <const T extends readonly [string, ...string[]]>(values: T, doc: string) =>
-    mk<T[number], T[number]>('enum', z.enum(values).describe(`${doc} One of: ${values.join('|')}.`), doc, {values}),
+  /**
+   * Static enum. Values are appended to the description so they show up in every generated prompt.
+   * `aliases` maps other words to one of the values (lower-case keys).
+   */
+  enum: <const T extends readonly [string, ...string[]]>(values: T, doc: string, aliases?: Readonly<Record<string, T[number]>>) =>
+    mk<T[number], T[number]>('enum', z.enum(values).describe(`${doc} One of: ${values.join('|')}.`), doc, {values, ...(aliases ? {aliases} : {})}),
   /** Static string. */
   str: (doc: string) => mk<string, string>('str', z.string().describe(doc), doc),
   /** Static integer. */
@@ -87,6 +107,19 @@ export const p = {
   /** Static string list. */
   strings: (doc: string) => mk<string[], string[]>('strings', z.array(z.string()).describe(doc), doc),
 };
+
+/**
+ * The canonical value of an enum prop for what the author wrote: the value itself, the same word in another case
+ * ('Warn', 'lr'), or the target of an alias ('warning' -> 'warn'). undefined when it is none of those, or when the
+ * prop is not an enum.
+ */
+export function enumValue(prop: Prop, written: unknown): string | undefined {
+  if (prop.kind !== 'enum' || !prop.values || typeof written !== 'string') return undefined;
+  if (prop.values.includes(written)) return written;
+  const key = written.trim().toLowerCase();
+  const alias = prop.aliases && Object.hasOwn(prop.aliases, key) ? prop.aliases[key] : undefined;
+  return alias ?? prop.values.find(value => value.toLowerCase() === key);
+}
 
 export type Family = 'layout' | 'content' | 'data' | 'chart' | 'diagram' | 'code' | 'input';
 /**

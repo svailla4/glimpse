@@ -13,7 +13,7 @@ export type Mark = 'arrow' | 'one' | 'many' | 'none';
 /** Room two facing sides need before an edge can leave one and enter the other with a dogleg between them. */
 const CLEARANCE = 24;
 /** Sideways shift of an edge that runs against the flow, so `a -> b` and `b -> a` stay two lines. */
-const LANE = 8;
+export const LANE = 8;
 export const ELBOW = 6;
 export const HEAD = 7;
 
@@ -24,7 +24,7 @@ const near = (a: number, b: number) => Math.abs(a - b) < 0.5;
 export const centerOf = (b: Box): Point => ({x: b.x + b.w / 2, y: b.y + b.h / 2});
 
 /** How far the outline of a shape sits inside its bounding box, on a main-axis side, at `offset` from the centre line. */
-function inset(box: Box, shape: Shape | undefined, offset: number): number {
+export function inset(box: Box, shape: Shape | undefined, offset: number): number {
   const d = Math.abs(offset);
   if (d === 0) return 0;
   if (shape === 'diamond') return box.h > 0 ? (box.w / 2) * Math.min(1, d / (box.h / 2)) : 0;
@@ -35,7 +35,7 @@ function inset(box: Box, shape: Shape | undefined, offset: number): number {
   return 0;
 }
 
-const straightSided = (shape: Shape | undefined) => shape === undefined || shape === 'rect' || shape === 'store';
+export const straightSided = (shape: Shape | undefined) => shape === undefined || shape === 'rect' || shape === 'store';
 
 /** Drops repeated points and the middle of three points on one line. */
 export function simplify(points: readonly Point[]): Point[] {
@@ -139,6 +139,75 @@ export function routeEdge(a: Box, b: Box, options: RouteOptions): Point[] {
   if (options.dir === 'LR') return routeLR(a, b, options);
   const flipped = routeLR(flipBox(a), flipBox(b), {...options, via: options.via?.map(flipPoint)});
   return flipped.map(flipPoint);
+}
+
+/** How many of the boxes a line of horizontal and vertical segments runs through. */
+function crossed(points: readonly Point[], obstacles: readonly Box[]): Box[] {
+  const out: Box[] = [];
+  for (const box of obstacles) {
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i - 1]!;
+      const q = points[i]!;
+      if (Math.max(p.x, q.x) > box.x + 1 && Math.min(p.x, q.x) < box.x + box.w - 1 && Math.max(p.y, q.y) > box.y + 1 && Math.min(p.y, q.y) < box.y + box.h - 1) {
+        out.push(box);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+function lengthOf(points: readonly Point[]): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) total += Math.abs(points[i]!.x - points[i - 1]!.x) + Math.abs(points[i]!.y - points[i - 1]!.y);
+  return total;
+}
+
+/**
+ * routeEdge for a node the person has moved, where no layout kept the way free: of a handful of routes (the plain
+ * one, the turn nearer either end, leaving through the other pair of sides, a lane round whatever is in the way) it
+ * returns the one that runs through the fewest of `obstacles`, then the shortest with the fewest corners.
+ */
+export function routeAround(a: Box, b: Box, options: RouteOptions, obstacles: readonly Box[]): Point[] {
+  const plain = routeEdge(a, b, options);
+  const blocking = crossed(plain, obstacles);
+  if (blocking.length === 0 || plain.length < 2) return plain;
+  const candidates: Point[][] = [plain];
+  for (const t of [0.2, 0.8]) candidates.push(routeEdge(a, b, {...options, via: undefined, channel: (from, to) => from + (to - from) * t}));
+  if (options.fromPort === undefined && options.toPort === undefined) {
+    candidates.push(routeEdge(a, b, {...options, via: undefined, channel: undefined, dir: options.dir === 'LR' ? 'TB' : 'LR'}));
+  }
+  // A lane just outside everything in the way, entered and left a short step from the two nodes.
+  const start = plain[0]!;
+  const end = plain.at(-1)!;
+  const first = plain[1]!;
+  const last = plain.at(-2)!;
+  const reach = 16;
+  const around = [a, b, ...blocking];
+  if (near(start.y, first.y) && near(end.y, last.y)) {
+    const out = {x: start.x + Math.sign(first.x - start.x || 1) * reach, y: start.y};
+    const back = {x: end.x - Math.sign(end.x - last.x || 1) * reach, y: end.y};
+    for (const lane of [Math.min(...around.map(box => box.y)) - reach, Math.max(...around.map(box => box.y + box.h)) + reach]) {
+      candidates.push(simplify([start, out, {x: out.x, y: lane}, {x: back.x, y: lane}, back, end]));
+    }
+  } else if (near(start.x, first.x) && near(end.x, last.x)) {
+    const out = {x: start.x, y: start.y + Math.sign(first.y - start.y || 1) * reach};
+    const back = {x: end.x, y: end.y - Math.sign(end.y - last.y || 1) * reach};
+    for (const lane of [Math.min(...around.map(box => box.x)) - reach, Math.max(...around.map(box => box.x + box.w)) + reach]) {
+      candidates.push(simplify([start, out, {x: lane, y: out.y}, {x: lane, y: back.y}, back, end]));
+    }
+  }
+  let best = plain;
+  let bestScore = Infinity;
+  for (const points of candidates) {
+    if (points.length < 2) continue;
+    const score = crossed(points, obstacles).length * 10000 + lengthOf(points) + points.length * 24;
+    if (score < bestScore) {
+      best = points;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 /** An edge from a node to itself: a small loop off the far corner. */

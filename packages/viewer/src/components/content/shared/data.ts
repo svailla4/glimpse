@@ -1,5 +1,9 @@
 // Coercion and entity helpers shared by the content views. Data is agent- or analyzer-written: nothing here trusts it.
-import {parseFileLoc, type EntityRef, type EntityType, type FieldKind, type FileLoc, type Tone} from '@glimpse/catalog';
+import type {EntityRef, EntityType, FieldKind, Tone} from '@glimpse/catalog';
+
+// The entity a FileLoc names (a file, or a directory when the path ends with a slash) is the kit's definition, and
+// so is the rule that marks an entity as selected (marksSelection, design 5.1).
+export {fileEntity} from '../../../kit/index.ts';
 
 /** 'array', 'null', 'string' ...: the word a redline uses for what it received. */
 export function typeName(value: unknown): string {
@@ -31,37 +35,11 @@ export function cellText(value: unknown, max = 160): string {
   return json.length > max ? `${json.slice(0, max - 1)}…` : json;
 }
 
-/** The entity a FileLoc names: a file, or a directory when the path ends with a slash. */
-export function fileEntity(file: FileLoc): EntityRef {
-  const {path, line, endLine} = parseFileLoc(file);
-  const dir = path.length > 1 && path.endsWith('/');
-  const clean = dir ? path.replace(/\/+$/, '') : path;
-  const entity: EntityRef = {type: dir ? 'dir' : 'file', id: clean, path: clean};
-  if (line != null) entity.line = line;
-  if (endLine != null) entity.endLine = endLine;
-  return entity;
-}
-
 const ENTITY_KINDS: Partial<Record<FieldKind, EntityType>> = {module: 'module', symbol: 'symbol', author: 'author', commit: 'commit'};
 /** The entity a non-file cell names (module, symbol, author, commit), by its field kind. */
 export function cellEntity(kind: FieldKind | undefined, value: string): EntityRef | undefined {
   const type = kind ? ENTITY_KINDS[kind] : undefined;
   return type && value ? {type, id: value, label: value} : undefined;
-}
-
-/**
- * Design 5.1: a mark is highlighted when it is the selection (same type and id), when it is a file inside the
- * selected directory, or when its path is the selected file.
- */
-export function matchesSelection(selected: EntityRef | null, entity: Pick<EntityRef, 'type' | 'id' | 'path'> | undefined): boolean {
-  if (!selected || !entity) return false;
-  if (selected.type === entity.type && selected.id === entity.id) return true;
-  if (!entity.path) return false;
-  if (selected.type === 'dir') {
-    const dir = (selected.path ?? selected.id).replace(/\/+$/, '');
-    return dir === '' || entity.path === dir || entity.path.startsWith(`${dir}/`);
-  }
-  return selected.type === 'file' && (selected.path ?? selected.id) === entity.path;
 }
 
 const CODE_EXT = /\.(?:[cm]?[jt]sx?|json[c5]?|md|mdx|py|go|rs|java|kt|kts|rb|cs|php|swift|dart|c|h|cc|cpp|hpp|css|scss|less|html?|ya?ml|toml|sql|sh|bash|zsh|lock|txt|xml|vue|svelte|proto|gradle|tf|ini|cfg|conf|env)$/i;

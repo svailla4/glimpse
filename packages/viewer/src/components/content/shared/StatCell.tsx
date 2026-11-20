@@ -15,6 +15,8 @@ export interface StatCellProps {
   spark?: unknown;
   format?: Format;
   tone?: unknown;
+  /** Keeps the height of the sparkline / delta line although this cell has neither: its row-mates do. */
+  reserveFoot?: boolean;
 }
 
 const FORMATS: ReadonlySet<string> = new Set(['num', 'compact', 'bytes', 'pct', 'duration']);
@@ -28,12 +30,18 @@ function split(text: string): Shown {
   return match ? {main: match[1]!, suffix: match[2] ?? '', numeral: true} : {main: text, suffix: '', numeral: false};
 }
 
+/** Below this a number is printed in full ('1,866'); from here on it is compact ('12.8k'). The server's own summaries use the same threshold. */
+const EXACT_BELOW = 10_000;
+/** The format of a number nobody chose a format for: exact while it is short enough to read at a glance. */
+export const autoFormat = (value: number): Format => (Math.abs(value) < EXACT_BELOW ? 'num' : 'compact');
+
 /**
- * Numbers are formatted (compact unless told otherwise). A numeric string is reformatted only when a format is given:
- * '8080' or '2026' written as text is an identifier, not a quantity. Missing values are a dash.
+ * Numbers are formatted: in full below 10,000 ('1,866', never '1.9k': a supplied figure is not rounded away), compact
+ * from there on, unless `format` says otherwise. A numeric string is reformatted only when a format is given: '8080'
+ * or '2026' written as text is an identifier, not a quantity. Missing values are a dash.
  */
 export function showValue(value: unknown, format: Format | undefined): Shown {
-  if (typeof value === 'number') return Number.isFinite(value) ? split(fmtNum(value, format ?? 'compact')) : {main: DASH, suffix: '', numeral: true};
+  if (typeof value === 'number') return Number.isFinite(value) ? split(fmtNum(value, format ?? autoFormat(value))) : {main: DASH, suffix: '', numeral: true};
   if (typeof value === 'string') {
     const text = value.trim();
     if (text === '') return {main: DASH, suffix: '', numeral: true};
@@ -47,7 +55,7 @@ export function showValue(value: unknown, format: Format | undefined): Shown {
 
 function Delta(p: {value: number; format: Format | undefined}): JSX.Element {
   const {value} = p;
-  const format: Format = p.format === 'bytes' || p.format === 'pct' || p.format === 'duration' ? p.format : 'compact';
+  const format: Format = p.format === 'bytes' || p.format === 'pct' || p.format === 'duration' ? p.format : p.format === 'compact' || p.format === 'num' ? p.format : autoFormat(value);
   const size = fmtNum(Math.abs(value), format);
   const direction = value > 0 ? 'up' : value < 0 ? 'down' : 'flat';
   const sign = value > 0 ? '+' : value < 0 ? '−' : '±';
@@ -83,9 +91,11 @@ export function StatCell(p: StatCellProps): JSX.Element {
       </div>
       {hasSpark || delta !== undefined ? (
         <div className={styles.foot}>
-          {hasSpark ? <Spark values={series} label={`Trend${p.label ? ` of ${p.label}` : ''}`} /> : null}
+          {hasSpark ? <Spark values={series} label={`Trend${p.label ? ` of ${p.label}` : ''}`} name={p.label} unit={p.unit} /> : null}
           {delta !== undefined ? <Delta value={delta} format={p.format} /> : null}
         </div>
+      ) : p.reserveFoot ? (
+        <div className={styles.foot} aria-hidden="true" />
       ) : null}
     </div>
   );

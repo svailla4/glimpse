@@ -29,6 +29,7 @@
     }
   ],
   "total": 1,
+  "wt": true,
   "cache": "miss",
   "elapsedMs": 12
 }

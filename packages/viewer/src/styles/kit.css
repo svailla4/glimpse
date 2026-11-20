@@ -37,26 +37,25 @@
   @keyframes gl-arrive {
     from { opacity: 0; transform: translateY(4px); }
   }
+  /* The header (design rule D11). One row while the title and the aside fit side by side; otherwise the aside
+     moves to a second row. The title is only ever cut when it alone is longer than the plate, and nothing in the
+     header can be wider than the frame. */
   .gl-frame-head {
+    position: relative;
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 10px;
+    gap: 4px 10px;
     flex: none;
     min-height: 40px;
     padding: 9px 14px 8px;
     border-bottom: 1px solid var(--gl-rule);
   }
-  .gl-frame-head::before {
-    counter-increment: plate;
-    content: 'PL. ' counter(plate, decimal-leading-zero);
-    flex: none;
-    font: 500 11px/16px var(--gl-font-mono);
-    letter-spacing: .06em;
-    white-space: nowrap;
-    color: var(--gl-accent-ink);
-  }
-  .gl-frame-head:focus-visible { outline-offset: -2px; }
+  /* The plate is what the header moves: the focus ring goes around the whole plate. */
+  .gl-frame-head:focus-visible { outline: none; }
+  .gl-frame:has(> .gl-frame-head:focus-visible) { outline: 2px solid var(--gl-accent); outline-offset: 2px; }
   .gl-frame-title {
+    flex: 1 1 auto;
     margin: 0;
     min-width: 0;
     overflow: hidden;
@@ -65,17 +64,79 @@
     font: 500 17px/22px var(--gl-font-display);
     color: var(--gl-ink);
   }
+  /* The numeral belongs to the title, so the two never end up on different rows. */
+  .gl-frame-title::before {
+    counter-increment: plate;
+    content: 'PL. ' counter(plate, decimal-leading-zero);
+    margin-right: 10px;
+    font: 500 11px/16px var(--gl-font-mono);
+    letter-spacing: .06em;
+    white-space: nowrap;
+    color: var(--gl-accent-ink);
+  }
   .gl-frame-aside, .gl-aside {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 4px 8px;
     min-width: 0;
+    max-width: 100%;
     font: 400 11px/16px var(--gl-font-mono);
     color: var(--gl-ink-3);
   }
-  .gl-frame-aside { align-self: center; margin-left: auto; }
+  .gl-frame-aside { flex: 0 1 auto; align-self: center; justify-content: flex-end; margin-left: auto; }
   .gl-frame-aside:empty { display: none; }
-  .gl-aside { min-height: 24px; }
+  /* A view that frames itself hands its header content over in a wrapper of its own. */
+  .gl-frame-aside > .gl-frame-aside { display: contents; }
+  .gl-aside { flex: none; min-height: 24px; }
+  /* What a view puts in the header gives way before it leaves the plate: plain text is cut with an ellipsis
+     (Frame.tsx adds the tooltip), fields shrink. */
+  :is(.gl-frame-aside, .gl-aside) > * { min-width: 0; max-width: 100%; }
+  :is(.gl-frame-aside, .gl-aside) > :is(span, .gl-marginal):not(:has(button, input, select, a)) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :is(.gl-frame-aside, .gl-aside) input { min-width: 0; }
+
+  /* The scope row: what a drilled dataset is looking at, and the way back (design rule D1). */
+  .gl-frame-scope, .gl-scope {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    min-height: 28px;
+    font: 400 11px/16px var(--gl-font-mono);
+    color: var(--gl-ink-3);
+  }
+  /* In a plate it is the last row of the header, from edge to edge of the plate. */
+  .gl-frame-scope { flex: 1 0 100%; order: 9; align-self: stretch; margin: 4px -14px -8px; padding: 3px 8px 3px 14px; border-top: 1px solid var(--gl-rule); background: var(--gl-sunken); }
+  .gl-frame-scope:empty { display: none; }
+  .gl-scope { margin-bottom: 4px; padding: 3px 0; border-bottom: 1px solid var(--gl-rule); }
+  .gl-frame[data-collapsed] .gl-frame-scope { display: none; }
+  .gl-scope-label { flex: none; letter-spacing: .06em; text-transform: uppercase; }
+  /* The end of a scope says the most: cut at the start (an rtl box around ltr text). */
+  .gl-scope-target { flex: 0 1 auto; margin-right: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; color: var(--gl-ink); }
+  .gl-scope-target > bdi { direction: ltr; }
+  .gl-scope-button {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    margin: 0;
+    padding: 0 7px 0 5px;
+    border: 0;
+    border-radius: var(--gl-r-1);
+    background: var(--gl-surface);
+    box-shadow: inset 0 0 0 1px var(--gl-rule-strong);
+    font: 500 11px/16px var(--gl-font-mono);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--gl-ink-2);
+    cursor: pointer;
+    transition: background var(--gl-t-hover) var(--gl-ease), color var(--gl-t-hover) var(--gl-ease);
+  }
+  .gl-scope-button:hover { background: var(--gl-raised); color: var(--gl-ink); }
+
   .gl-frame-body { flex: 1 1 auto; min-width: 0; min-height: 0; padding: 14px; overflow: auto; }
   /* A plate that holds one table, code view or diagram gives it the whole box. */
   .gl-frame[data-flush] > .gl-frame-body { padding: 0; }
@@ -88,25 +149,31 @@
     border-top: 1px solid var(--gl-rule);
     font: italic 400 14px/20px var(--gl-font-display);
     color: var(--gl-ink-2);
+    overflow-wrap: anywhere;
   }
+  /* The disclosure sits in the header's right margin, out of the flow: it never takes room from the title or
+     pushes the aside around. */
   .gl-frame-toggle {
-    display: inline-grid;
-    flex: none;
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: grid;
     place-items: center;
-    align-self: center;
-    margin-left: auto;
-    width: 20px;
-    height: 20px;
+    width: 14px;
+    height: 100%;
+    max-height: 40px;
+    margin: 0;
     padding: 0;
     border: 0;
-    border-radius: var(--gl-r-1);
     background: none;
     cursor: pointer;
+    transition: opacity var(--gl-t-hover) var(--gl-ease);
   }
-  .gl-frame-aside:not(:empty) + .gl-frame-toggle { margin-left: 0; }
   .gl-frame-toggle:hover { background: var(--gl-sunken); }
   .gl-frame-toggle > .gl-icon { transition: transform var(--gl-t-state) var(--gl-ease); }
   .gl-frame[data-collapsed] .gl-frame-toggle > .gl-icon { transform: rotate(-90deg); }
+  /* A collapsed plate is as tall as its header, whatever its size step or its row says. */
+  .gl-cell > .gl-frame[data-collapsed] { flex: 0 0 auto; height: auto; }
 
   /* ---- states: drafting (pending), empty, redline (error) --------------------------------------------------- */
   .gl-state {
@@ -120,7 +187,11 @@
   .gl-drafting-lines { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--gl-rule); stroke-width: 1; }
   .gl-state-line { overflow-wrap: anywhere; }
   .gl-drafting > .gl-state-line { position: relative; padding: 0 4px; background: var(--gl-here, var(--gl-bg)); }
-  .gl-empty { display: grid; place-items: center; padding: 12px; border: 1px solid var(--gl-rule); text-align: center; }
+  .gl-empty { display: grid; place-content: center; justify-items: center; gap: 2px; padding: 12px; border: 1px solid var(--gl-rule); text-align: center; }
+  .gl-empty > .gl-state-line { color: var(--gl-ink-2); }
+  .gl-state-detail { color: var(--gl-ink-3); overflow-wrap: anywhere; }
+  /* Inside a plate the plate is the frame: an empty state is just its line. */
+  .gl-frame .gl-empty { border-color: transparent; }
   .gl-redline {
     height: auto;
     min-height: 0;
@@ -130,9 +201,23 @@
     color: var(--gl-ink);
     overflow-wrap: anywhere;
   }
-  /* A flush plate has no padding of its own: a state that stands in for its content brings the plate margin. */
-  .gl-frame[data-flush] > .gl-frame-body > .gl-state { margin: 14px; }
-  .gl-frame[data-flush] > .gl-frame-body > :is(.gl-drafting, .gl-empty) { height: calc(100% - 28px); }
+  /* A flush plate has no padding of its own: a state that stands in for its content brings the plate margin,
+     however many wrappers the view puts around it. */
+  .gl-frame[data-flush] > .gl-frame-body .gl-state { margin: 14px; }
+  .gl-frame[data-flush] > .gl-frame-body :is(.gl-drafting, .gl-empty) { height: calc(100% - 28px); }
+  /* While its chunk loads, a chart without a size step holds the height it will draw at (the height its own
+     pending state reserves, charts/chartkit), so the page does not jump when it arrives. The two inline charts are a
+     line high and keep the default. The body is the cell's child without a plate and the plate's body with one. */
+  .gl-cell[data-family='chart']:not([data-size], [data-gl='Sparkline'], [data-gl='SegmentedBar']) {
+    --gl-chart-draft: 280px;
+  }
+  .gl-cell[data-family='chart'][data-gl='CalendarHeatmap'] { --gl-chart-draft: 182px; }
+  .gl-cell[data-family='chart'][data-gl='Icicle'] { --gl-chart-draft: 150px; }
+  .gl-cell[data-family='chart'][data-gl='Treemap'] { --gl-chart-draft: 328px; }
+  .gl-cell[data-family='chart']:not([data-size], [data-gl='Sparkline'], [data-gl='SegmentedBar']) > .gl-body > .gl-drafting,
+  .gl-cell[data-family='chart']:not([data-size], [data-gl='Sparkline'], [data-gl='SegmentedBar']) > .gl-frame > .gl-frame-body > .gl-drafting {
+    min-height: var(--gl-chart-draft);
+  }
   .gl-redline-code { font-weight: 500; color: var(--gl-critical); }
   .gl-redline-id { color: var(--gl-ink); }
   .gl-redline-message { color: var(--gl-ink-2); }
@@ -141,11 +226,21 @@
   .gl-marginal { font: 400 11px/16px var(--gl-font-mono); color: var(--gl-ink-3); white-space: nowrap; }
 
   /* ---- entity text ----------------------------------------------------------------------------------------- */
-  .gl-path { font-family: var(--gl-font-mono); font-size: 12px; white-space: nowrap; }
+  /* A path keeps its file name (D12): the row is capped at its container, the directory gives way first and is
+     elided at its start (an rtl box around ltr text puts the ellipsis on the left), then the name itself.
+     The directory takes ALL of the squeeze before the name loses anything: a flex item that loses even a fraction
+     of a pixel shows its ellipsis ("model.t…" beside a directory that still has room), so the directory's shrink
+     weight is large enough that the name's share of the deficit rounds to nothing. It stops at "…/" (2.5ch): a
+     narrower box draws a cut ellipsis, and the mark says the name is not the whole path. */
+  .gl-path { display: inline-flex; align-items: baseline; max-width: 100%; min-width: 0; vertical-align: bottom; font-family: var(--gl-font-mono); font-size: 12px; white-space: nowrap; }
   .gl-path-dir, .gl-path-line { color: var(--gl-ink-3); }
-  .gl-path-base { color: var(--gl-ink); }
+  .gl-path-dir { flex: 0 1000000 auto; min-width: 2.5ch; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+  .gl-path-dir > bdi { direction: ltr; }
+  .gl-path-base { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--gl-ink); }
+  .gl-path-line { flex: none; }
   .gl-path-ext {
     display: inline-block;
+    flex: none;
     margin-left: 6px;
     padding: 0 3px;
     border: 1px solid var(--gl-rule);

@@ -189,4 +189,16 @@ describe('Flowchart', () => {
     expect(positionOf(b)).toEqual({x: 300 - Number(size.getAttribute('width')) / 2, y: 300 - Number(size.getAttribute('height')) / 2});
     expect(within(view.cell('f')).getByRole('button', {name: /Re-layout/})).toBeTruthy();
   });
+
+  it('draws nodes written as plain words: the words are the label, and a question is a diamond (F044)', async () => {
+    const view = await ready('Start --> Enter credentials --> Valid?; Valid? -- yes --> Session');
+    const cell = view.cell('f');
+    expect(nodeIds(view, 'f')).toHaveLength(4);
+    expect(cell.querySelector('[data-gl-state="redline"]')).toBeNull();
+    const labels = [...cell.querySelectorAll('[data-node]')].map(node => node.textContent);
+    expect(labels).toEqual(expect.arrayContaining(['Start', 'Enter credentials', 'Valid?', 'Session']));
+    const question = [...cell.querySelectorAll('[data-node]')].find(node => node.textContent === 'Valid?')!;
+    expect(question.querySelector('polygon')).not.toBeNull();
+    expect(cell.querySelectorAll('[data-edge]')).toHaveLength(3);
+  });
 });

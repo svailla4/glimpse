@@ -3,9 +3,10 @@
 // therefore leaves every surface exactly as it was.
 import {
   CATALOG_ID, COMPONENT_BY_NAME, PROTOCOL_VERSION,
-  type A2uiMessage, type Dataset, type Prop, type SourceRef, type SurfaceInfo, type SurfaceMeta, type WireComponent,
+  type A2uiMessage, type Dataset, type EntityRef, type Prop, type SourceRef, type SurfaceInfo, type SurfaceMeta, type WireComponent,
 } from '@glimpse/catalog';
 import {boundKeys} from '../spec/expand.ts';
+import {UNSAFE_KEYS} from '../spec/guard.ts';
 
 export const MAX_SURFACES = 12;
 export const ROOT_ID = 'root';
@@ -28,13 +29,31 @@ export interface SurfaceRecord {
   ds: Record<string, Dataset>;
   /** Named components, in the order they were first defined. */
   parts: string[];
+  /**
+   * What the user last selected in a tab (gl_select), so a reload or a second tab starts on the same selection.
+   * undefined: nothing selected through the viewer since the spec last wrote /ui.
+   */
+  sel?: EntityRef | null;
+  /** The file that selection last pointed at (the value of /ui/file). */
+  file?: string;
+  /** What the viewer reported it drew instead of the component (a redline, an empty state), by `Name#id`. */
+  reports: Map<string, ViewerReport>;
   createdAt: number;
   updatedAt: number;
 }
 
+export interface ViewerReport { code: string; message: string }
+
 export interface Draft {
   record: SurfaceRecord;
   mode: CommitMode;
+  /**
+   * Replace mode only (finding F028): every component of the previous version is still in this one, so the tab can
+   * be brought up to date with updateComponents and updateDataModel instead of deleteSurface + createSurface, and
+   * keeps what lives in its components (tree expansion, scroll, filters). The server still treats the call as a
+   * replace: drills are cleared and every dataset is listed.
+   */
+  inPlace?: {previous: SurfaceRecord; changed: ReadonlySet<string>};
   /** Patch mode: the compiled messages, to publish as they are. */
   delta: A2uiMessage[];
   /** Dataset keys this call binds for the first time; they need an envelope before publishing. */
@@ -88,22 +107,62 @@ function prune(components: Map<string, WireComponent>): number {
 }
 
 const decode = (segment: string) => segment.replace(/~1/g, '/').replace(/~0/g, '~');
-/** Keys that would reach Object.prototype through a plain assignment. */
-const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const INDEX = /^(?:0|[1-9]\d*)$/;
+const MAX_INDEX = 10_000;
 
-/** JSON-pointer assignment into plain data: missing containers are created, array indices are honoured. */
+/**
+ * JSON-pointer assignment into plain data, the way the viewer's data model does it: missing containers are created
+ * (an array when the next segment is an index), array indices are honoured. A path with a reserved segment
+ * (__proto__, constructor, prototype) or an index out of range is ignored; own properties only are followed, so
+ * nothing here can reach a prototype.
+ */
 export function setPath(data: Record<string, unknown>, path: string, value: unknown): void {
   const segments = path.split('/').filter(Boolean).map(decode);
   if (segments.length === 0 || segments.some(segment => UNSAFE_KEYS.has(segment))) return;
   let node: Record<string, unknown> | unknown[] = data;
-  segments.forEach((segment, i) => {
-    const key = Array.isArray(node) && /^\d+$/.test(segment) ? Number(segment) : segment;
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i]!;
+    let key: string | number = segment;
+    if (Array.isArray(node)) {
+      if (!INDEX.test(segment) || Number(segment) > MAX_INDEX) return;
+      key = Number(segment);
+      while (node.length < key) node.push(null);
+    }
     const holder = node as Record<string | number, unknown>;
     if (i === segments.length - 1) { holder[key] = value; return; }
-    const next = holder[key];
-    if (typeof next !== 'object' || next === null) holder[key] = {};
+    const next = Object.hasOwn(holder, key) ? holder[key] : undefined;
+    if (typeof next !== 'object' || next === null) holder[key] = INDEX.test(segments[i + 1]!) ? [] : {};
     node = holder[key] as Record<string, unknown> | unknown[];
-  });
+  }
+}
+
+const segmentsOf = (path: string | undefined): string[] => (path ?? '/').split('/').filter(Boolean).map(decode);
+
+/**
+ * Decision D4: a patch below a top-level slot (`$/plan/1/status='done'`) is published as the whole slot. The
+ * viewer's data model changes a container in place, so a component bound to `/plan` would otherwise never see that
+ * its value changed. /ui is the viewer's own and keeps its fine-grained writes.
+ */
+function wholeSlots(messages: readonly A2uiMessage[], data: Record<string, unknown>): A2uiMessage[] {
+  const topOf = (message: A2uiMessage): string | undefined => {
+    const top = 'updateDataModel' in message ? segmentsOf(message.updateDataModel.path)[0] : undefined;
+    return top === 'ui' ? undefined : top;
+  };
+  // Slots with at least one write below the top level: every write to such a slot collapses into one final value.
+  const nested = new Set(messages.filter(message => 'updateDataModel' in message && segmentsOf(message.updateDataModel.path).length >= 2).map(topOf).filter(top => top !== undefined));
+  const out: A2uiMessage[] = [];
+  const sent = new Set<string>();
+  for (const message of messages) {
+    const top = topOf(message);
+    if ('updateDataModel' in message && top !== undefined && nested.has(top)) {
+      if (sent.has(top)) continue;
+      sent.add(top);
+      out.push({version: PROTOCOL_VERSION, updateDataModel: {surfaceId: message.updateDataModel.surfaceId, path: `/${top.replace(/~/g, '~0').replace(/\//g, '~1')}`, value: structuredClone(data[top])}});
+    } else {
+      out.push(structuredClone(message) as A2uiMessage);
+    }
+  }
+  return out;
 }
 
 function titleOf(components: Map<string, WireComponent>, id: string): string {
@@ -114,6 +173,39 @@ function titleOf(components: Map<string, WireComponent>, id: string): string {
 
 function losesProp(before: WireComponent, after: WireComponent): boolean {
   return before.component !== after.component || Object.keys(before).some(key => !(key in after));
+}
+
+/** Two JSON values with the same content (key order matters: the compiler writes keys in a fixed order). */
+const sameJson = (a: unknown, b: unknown): boolean => a === b || (a !== undefined && b !== undefined && JSON.stringify(a) === JSON.stringify(b));
+
+const pointer = (key: string) => `/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`;
+
+/**
+ * Finding F028: the frame that brings a tab from `previous` to `record` without recreating the surface. Data slots,
+ * envelopes and components that changed are sent; a slot or an envelope that is gone is removed (an updateDataModel
+ * without a value). /ui stays the tab's own unless the spec wrote it. /meta always goes, so the frame is never
+ * empty and carries the focus.
+ */
+export function inPlaceMessages(previous: SurfaceRecord, record: SurfaceRecord, meta: SurfaceMeta, changed: ReadonlySet<string>): A2uiMessage[] {
+  const surfaceId = record.id;
+  // An undefined value is dropped by JSON on the way to the tab, and an updateDataModel without a value removes the key.
+  const set = (path: string, value: unknown): A2uiMessage =>
+    ({version: PROTOCOL_VERSION, updateDataModel: {surfaceId, path, value: value === undefined ? undefined : structuredClone(value)}});
+  const out: A2uiMessage[] = [];
+  const keys = new Set([...Object.keys(previous.data), ...Object.keys(record.data)]);
+  for (const key of keys) {
+    if (key === 'ds' || key === 'meta' || UNSAFE_KEYS.has(key) || sameJson(previous.data[key], record.data[key])) continue;
+    // /ui is written only when the spec wrote it: the selection and the file are the tab's (and are kept in the record).
+    if (key === 'ui') { if (record.data.ui !== undefined) out.push(set('/ui', dataModelOf(record, meta).ui)); continue; }
+    out.push(set(pointer(key), record.data[key]));
+  }
+  for (const key of new Set([...Object.keys(previous.ds), ...Object.keys(record.ds)])) {
+    if (previous.ds[key] !== record.ds[key] && !UNSAFE_KEYS.has(key)) out.push(set(`/ds/${pointer(key).slice(1)}`, record.ds[key]));
+  }
+  out.push(set('/meta', meta));
+  const components = [...changed].map(compId => record.components.get(compId)).filter((comp): comp is WireComponent => comp !== undefined);
+  if (components.length > 0) out.push({version: PROTOCOL_VERSION, updateComponents: {surfaceId, components: structuredClone(components)}});
+  return out;
 }
 
 export class SurfaceStore {
@@ -146,12 +238,18 @@ export class SurfaceStore {
     const data: Record<string, unknown> = current ? structuredClone(current.data) : {};
     let rootRedefined = false;
     let lostProp = false;
+    let wroteUi = false;
 
     for (const message of messages) {
       if ('createSurface' in message) {
         components.clear();
         for (const comp of message.createSurface.components) components.set(comp.id, structuredClone(comp));
-        Object.assign(data, structuredClone(message.createSurface.dataModel ?? {}));
+        // Own keys only, one by one: Object.assign would run the __proto__ setter for a key of that name.
+        for (const [key, value] of Object.entries(structuredClone(message.createSurface.dataModel ?? {}))) {
+          if (UNSAFE_KEYS.has(key)) continue;
+          data[key] = value;
+          if (key === 'ui') wroteUi = true;
+        }
       } else if ('updateComponents' in message) {
         for (const comp of message.updateComponents.components) {
           const before = components.get(comp.id);
@@ -161,6 +259,7 @@ export class SurfaceStore {
         }
       } else if ('updateDataModel' in message) {
         setPath(data, message.updateDataModel.path ?? '/', structuredClone(message.updateDataModel.value));
+        if (segmentsOf(message.updateDataModel.path)[0] === 'ui') wroteUi = true;
       }
     }
     const pruned = prune(components);
@@ -174,28 +273,42 @@ export class SurfaceStore {
       if (ref) bindings.set(key, ref);
       else unknownKeys.push(key);
     }
+    const mode: CommitMode = !previous ? 'create' : !current || rootRedefined || lostProp || pruned > 0 ? 'replace' : 'patch';
+    // The viewer replaces a component's props wholesale and recreates one whose type changed, so a replace only needs
+    // a new surface when a component of the previous version would be left behind.
+    const inPlace = mode === 'replace' && previous !== undefined && [...previous.components.keys()].every(compId => components.has(compId))
+      ? {previous, changed: new Set([...components].filter(([compId, comp]) => !sameJson(previous.components.get(compId), comp)).map(([compId]) => compId))}
+      : undefined;
+    // Decision D1: a show that creates or replaces the surface starts every dataset at the spec's own scope again;
+    // a patch keeps the scopes the user drilled to. A dataset that loses its drill needs a fresh run.
+    const keep = mode === 'patch' ? current : undefined;
     const ds: Record<string, Dataset> = {};
     const drills = new Map<string, string>();
     const newKeys: string[] = [];
     for (const key of bindings.keys()) {
-      const envelope = current?.ds[key];
-      if (envelope) ds[key] = envelope;
-      else newKeys.push(key);
-      const drill = current?.drills.get(key);
+      const drill = keep?.drills.get(key);
       if (drill !== undefined) drills.set(key, drill);
+      const envelope = current?.ds[key];
+      if (envelope && (drill !== undefined || !current?.drills.has(key))) ds[key] = envelope;
+      else newKeys.push(key);
     }
 
     const parts = [...(current?.parts ?? []), ...options.parts].filter((part, i, all) => components.has(part) && all.indexOf(part) === i);
-    const mode: CommitMode = !previous ? 'create' : !current || rootRedefined || lostProp || pruned > 0 ? 'replace' : 'patch';
     const record: SurfaceRecord = {
       id,
       title: titleOf(components, id),
       ...(options.view ?? current?.view ? {view: options.view ?? current?.view} : {}),
       components, data, bindings, drills, ds, parts,
+      // The user's selection survives unless this call wrote /ui itself; viewer reports belong to one layout.
+      ...(current && !wroteUi && current.sel !== undefined ? {sel: current.sel} : {}),
+      ...(current && !wroteUi && current.file !== undefined ? {file: current.file} : {}),
+      // Decision D3: what a tab reported belongs to the components it drew. A tab updated in place reports a state
+      // once and does not repeat it, so the reports of components it keeps unchanged are kept with them.
+      reports: new Map(keep?.reports ?? (inPlace ? [...inPlace.previous.reports].filter(([key]) => !inPlace.changed.has(key.slice(key.indexOf('#') + 1))) : [])),
       createdAt: previous?.createdAt ?? options.now,
       updatedAt: options.now,
     };
-    return {record, mode, delta: mode === 'patch' ? structuredClone(messages) as A2uiMessage[] : [], newKeys, unknownKeys};
+    return {record, mode, ...(inPlace ? {inPlace} : {}), delta: mode === 'patch' ? wholeSlots(messages, data) : [], newKeys, unknownKeys};
   }
 
   /** Stores the draft. Returns the ids evicted to keep at most MAX_SURFACES (least recently updated first). */
@@ -219,7 +332,8 @@ export class SurfaceStore {
 /** The data model a viewer receives for a record: the agent's data plus /ds, /ui and /meta. */
 export function dataModelOf(record: SurfaceRecord, meta: SurfaceMeta): Record<string, unknown> {
   const ui = typeof record.data.ui === 'object' && record.data.ui !== null ? record.data.ui as Record<string, unknown> : {};
-  return {...record.data, ds: record.ds, ui: {sel: null, file: null, ...ui}, meta};
+  const selected = {...(record.sel !== undefined ? {sel: record.sel} : {}), ...(record.file !== undefined ? {file: record.file} : {})};
+  return {...record.data, ds: record.ds, ui: {sel: null, file: null, ...ui, ...selected}, meta};
 }
 
 /** A snapshot: the single createSurface that rebuilds the surface in a viewer (design 2.2). */

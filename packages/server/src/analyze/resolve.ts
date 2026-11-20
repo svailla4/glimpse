@@ -78,6 +78,9 @@ function closest(candidates: readonly string[], from: string): string {
 
 const under = (path: string, dir: string) => dir === '' || path === dir || path.startsWith(dir + '/');
 
+/** How binding an import is: erased types, then lazy `import()`, then everything that runs when the file loads. */
+const strength = (kind: string): number => (kind === 'type' ? 0 : kind === 'dynamic' ? 1 : 2);
+
 export function resolveImports(files: readonly FileEntry[], facts: ReadonlyMap<string, ScannedFacts>, manifests: Manifests): Resolution {
   const fileSet = new Set<string>();
   const dirSet = new Set<string>(['']);
@@ -469,9 +472,9 @@ export function resolveImports(files: readonly FileEntry[], facts: ReadonlyMap<s
       if (to === from) continue;
       const kind = 'dir' in target ? (target.recursive ? 'module' : 'package') : imp.kind;
       const existing = mine.get(to);
-      // An edge stays type-only only while every import behind it is.
+      // An edge stays type-only only while every import behind it is, and lazy only while none of them loads eagerly.
       if (!existing) mine.set(to, {from, to, kind});
-      else if (existing.kind === 'type' && kind !== 'type') existing.kind = kind;
+      else if (strength(kind) > strength(existing.kind)) existing.kind = kind;
     }
     for (const edge of mine.values()) edges.push(edge);
   }
@@ -486,5 +489,5 @@ const ECOSYSTEM_BY_LANGUAGE: Readonly<Record<string, string>> = {
 
 /** Package ecosystem an external import belongs to, from the language of the importing file. */
 export function ecosystemOf(language: string | undefined): string {
-  return (language && ECOSYSTEM_BY_LANGUAGE[language]) || 'other';
+  return (language && Object.hasOwn(ECOSYSTEM_BY_LANGUAGE, language) && ECOSYSTEM_BY_LANGUAGE[language]) || 'other';
 }

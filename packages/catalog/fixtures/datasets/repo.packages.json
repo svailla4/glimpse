@@ -44,6 +44,7 @@
     }
   ],
   "total": 2,
+  "wt": true,
   "cache": "miss",
   "elapsedMs": 12
 }

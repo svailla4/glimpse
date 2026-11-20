@@ -4,8 +4,8 @@ import type {IncomingMessage, ServerResponse} from 'node:http';
 import type {FileSlice, Health} from '@glimpse/catalog';
 import {SourceError} from '../contracts.ts';
 import type {ActionRouter} from '../session/actions.ts';
-import {isSafeRange, resolveInside} from '../session/paths.ts';
-import type {Session} from '../session/session.ts';
+import {isSafeRange} from '../session/paths.ts';
+import type {Servable, Session} from '../session/session.ts';
 import type {SseHub} from './sse.ts';
 
 const MAX_BODY = 1024 * 1024;
@@ -71,9 +71,14 @@ function need(method: string, req: IncomingMessage): void {
   if (req.method !== method) throw new HttpError(405, 'E_ARGS', `${method} only`);
 }
 
-async function repoPath(session: Session, path: string | null): Promise<string | undefined> {
+/**
+ * Decision D10: only files of the inventory are read for the viewer. `refused` covers everything else that exists
+ * (.git, ignored files, symbolic links, paths outside the root); `missing` is a path with no file, which the
+ * services answer themselves ("does not exist", or the old side of a diff).
+ */
+function servable(session: Session, path: string | null): Promise<Servable> {
   if (path === null || path === '') throw new HttpError(400, 'E_ARGS', 'path is required');
-  return (await resolveInside(session.root, path)) ? path : undefined;
+  return session.servable(path);
 }
 
 async function route(req: IncomingMessage, res: ServerResponse, url: URL, api: ApiContext): Promise<void> {
@@ -118,28 +123,28 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, api: A
   const services = await session.services();
   if (pathname === '/api/file') {
     need('GET', req);
-    const given = query.get('path');
-    const path = await repoPath(session, given);
-    if (!path) {
-      const refused: FileSlice = {path: String(given).slice(0, 400), lang: '', total: 0, start: 0, end: 0, lines: [], size: 0, skipped: 'outside-root', rev: session.meta().rev};
+    const path = query.get('path');
+    if ((await servable(session, path)) === 'refused') {
+      const refused: FileSlice = {path: String(path).slice(0, 400), lang: '', total: 0, start: 0, end: 0, lines: [], size: 0, skipped: 'outside-root', rev: session.meta().rev};
       return json(res, 200, refused);
     }
     const start = integer(query.get('start'));
     const end = integer(query.get('end'));
-    return json(res, 200, await services.code.file({path, ...(start !== undefined ? {start} : {}), ...(end !== undefined ? {end} : {})}));
+    return json(res, 200, await services.code.file({path: path!, ...(start !== undefined ? {start} : {}), ...(end !== undefined ? {end} : {})}));
   }
   if (pathname === '/api/outline') {
     need('GET', req);
-    const path = await repoPath(session, query.get('path'));
-    if (!path) throw new HttpError(400, 'E_TARGET', 'path is outside the project');
-    return json(res, 200, await services.code.outline(path));
+    const path = query.get('path');
+    if ((await servable(session, path)) === 'refused') throw new HttpError(400, 'E_TARGET', 'path is not a file of the project');
+    return json(res, 200, await services.code.outline(path!));
   }
   if (pathname === '/api/diff') {
     need('GET', req);
     const range = query.get('range') || 'wt';
     if (!isSafeRange(range)) throw new HttpError(400, 'E_TARGET', 'invalid range');
     const given = query.get('path');
-    if (given !== null && given !== '' && !(await repoPath(session, given))) throw new HttpError(400, 'E_TARGET', 'path is outside the project');
+    // A file the change deleted is `missing` here and still has a diff; a file that exists must be in the inventory.
+    if (given !== null && given !== '' && (await servable(session, given)) === 'refused') throw new HttpError(400, 'E_TARGET', 'path is not a file of the project');
     return json(res, 200, await services.diff.diff({range, ...(given ? {path: given} : {})}));
   }
   if (pathname === '/api/highlight') {

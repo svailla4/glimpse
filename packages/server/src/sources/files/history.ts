@@ -1,9 +1,11 @@
-// Commit counts and last-touched times per file and directory, for the tree, the file list and the KPIs. One git log
-// stream (the same command the git sources use, so the counts agree), parsed once per HEAD.
-import type {RepoContext, RepoIndex} from '../../contracts.ts';
+// Commit counts and last-touched times per file and directory, for the tree, the file list and the KPIs. This is a
+// view of the one shared history (git/log.ts): it runs no git log of its own and parses nothing, so a commit count
+// here is the count the git.* sources give for the same file, and the contributors are the rows of git.authors.
+import type {RepoContext} from '../../contracts.ts';
+import {getHeaders, getLog, HEADER_LIMIT, LIMIT_WARNING, SHALLOW_WARNING, type GitLog, type LogHeaders} from '../../git/log.ts';
 
-export interface History {
-  /** Commits parsed (at most MAX_COMMITS, newest first, merges excluded). */
+export interface HistoryCounts {
+  /** Commits of HEAD, merges excluded: the whole history, also when the per-file numbers are limited. */
   commits: number;
   /** Author timestamps (seconds), newest first. */
   times: number[];
@@ -15,77 +17,71 @@ export interface History {
   dirLast: Map<string, number>;
 }
 
-const MAX_COMMITS = 5000;
-const CACHE = new WeakMap<RepoIndex, {head: string; history: Promise<History>}>();
+export interface History extends HistoryCounts {
+  /** What a reader of the per-file numbers must know: a shallow clone, or a history longer than the parsed window. */
+  warnings: string[];
+  /** What a reader of the totals (commits, contributors) must know. */
+  totalWarnings: string[];
+}
 
-export function parseLog(raw: string): History {
-  const history: History = {commits: 0, times: [], authors: new Set(), fileCommits: new Map(), fileLast: new Map(), dirCommits: new Map(), dirLast: new Map()};
-  // Newest first: a rename maps the old name to the name the file has now.
-  const renamed = new Map<string, string>();
-  const currentName = (path: string) => {
-    let name = path;
-    for (let hops = 0; hops < 50 && renamed.has(name); hops++) name = renamed.get(name)!;
-    return name;
-  };
-  for (const record of raw.split('\x01')) {
-    if (!record) continue;
-    const tokens = record.split('\0');
-    const [stamp = '', author = ''] = tokens[0]!.split('\x1f');
-    const time = Number(stamp);
-    if (!Number.isFinite(time)) continue;
-    history.commits++;
-    history.times.push(time);
-    history.authors.add(author);
-    const dirs = new Set<string>(['']);
-    for (let i = 1; i < tokens.length; i++) {
-      const status = tokens[i]!.replace(/^\n/, '');
-      if (!status) continue;
-      let path = tokens[++i];
-      if (status[0] === 'R' || status[0] === 'C') {
-        const to = tokens[++i];
-        if (status[0] === 'R' && path !== undefined && to !== undefined) renamed.set(path, currentName(to));
-        path = to;
-      }
-      if (path === undefined) continue;
-      const name = currentName(path);
+/** One set of counts per parsed log, so the tree, the list and the KPIs of one HEAD share it. */
+const COUNTS = new WeakMap<GitLog, WeakMap<LogHeaders['headers'], HistoryCounts>>();
+
+/**
+ * Counts from the shared history. `log` holds the commits with their files (the latest LOG_LIMIT of them);
+ * `headers` holds author and time of every commit, so totals stay exact where the per-file numbers are limited.
+ */
+export function historyOf(log: Pick<GitLog, 'commits'>, headers: LogHeaders['headers']): HistoryCounts {
+  const history: HistoryCounts = {commits: headers.length, times: [], authors: new Set(), fileCommits: new Map(), fileLast: new Map(), dirCommits: new Map(), dirLast: new Map()};
+  for (const header of headers) {
+    history.times.push(header.time);
+    history.authors.add(header.author);
+  }
+  // Newest first, so the first commit seen for a path is its latest.
+  for (const commit of log.commits) {
+    const dirs = new Set<string>();
+    for (const name of commit.files) {
       history.fileCommits.set(name, (history.fileCommits.get(name) ?? 0) + 1);
-      if (!history.fileLast.has(name)) history.fileLast.set(name, time);
+      if (!history.fileLast.has(name)) history.fileLast.set(name, commit.time);
       for (let cut = name.lastIndexOf('/'); cut !== -1; cut = name.lastIndexOf('/', cut - 1)) dirs.add(name.slice(0, cut));
     }
     for (const dir of dirs) {
       history.dirCommits.set(dir, (history.dirCommits.get(dir) ?? 0) + 1);
-      if (!history.dirLast.has(dir)) history.dirLast.set(dir, time);
+      if (!history.dirLast.has(dir)) history.dirLast.set(dir, commit.time);
     }
   }
+  // The root is touched by every commit, including the ones older than the parsed window and the empty ones.
+  history.dirCommits.set('', history.commits);
+  const newest = headers[0]?.time;
+  if (newest !== undefined) history.dirLast.set('', newest);
   return history;
 }
 
 /** History of the repository, or undefined when there is none to read (not a git repository, or no commits yet). */
 export async function readHistory(ctx: RepoContext, signal: AbortSignal): Promise<History | undefined> {
   if (!ctx.git) return undefined;
-  let head: string;
   try {
-    head = (await ctx.runGit(['rev-parse', 'HEAD'], {signal})).toString('utf8').trim();
-  } catch {
+    const [log, all] = await Promise.all([getLog(ctx, {}, signal), getHeaders(ctx, signal)]);
     signal.throwIfAborted();
-    return undefined;
-  }
-  const cached = CACHE.get(ctx.index);
-  let history = cached?.head === head ? cached.history : undefined;
-  if (!history) {
-    // The shared run must not die with the first caller, so it is not tied to that caller's signal. --relative and
-    // the pathspec keep paths and commits to the project root when it is a subdirectory of the repository.
-    const started = ctx.runGit(['log', '--no-merges', '-M', '--name-status', '--relative', '-z', '--format=%x01%at%x1f%aN', '-n', String(MAX_COMMITS), '--', '.'])
-      .then(out => parseLog(out.toString('utf8')));
-    CACHE.set(ctx.index, {head, history: started});
-    started.catch(() => {
-      if (CACHE.get(ctx.index)?.history === started) CACHE.delete(ctx.index);
-    });
-    history = started;
-  }
-  try {
-    return await history;
+    if (all.headers.length === 0) return undefined;
+    let perHeaders = COUNTS.get(log);
+    if (!perHeaders) {
+      perHeaders = new WeakMap();
+      COUNTS.set(log, perHeaders);
+    }
+    let counts = perHeaders.get(all.headers);
+    if (!counts) {
+      counts = historyOf(log, all.headers);
+      perHeaders.set(all.headers, counts);
+    }
+    const shallow = ctx.git.shallow ? [SHALLOW_WARNING] : [];
+    return {
+      ...counts,
+      warnings: [...shallow, ...(log.truncated ? [LIMIT_WARNING] : [])],
+      totalWarnings: [...shallow, ...(all.truncated ? [`history limited to the latest ${HEADER_LIMIT.toLocaleString('en-US')} commits`] : [])],
+    };
   } catch (error) {
+    signal.throwIfAborted();
     ctx.log(`glimpse: git log failed, history metrics omitted (${error instanceof Error ? (error.message.split('\n')[0] ?? '').slice(0, 120) : 'unknown error'})`);
     return undefined;
   }

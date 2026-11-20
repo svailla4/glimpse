@@ -1,8 +1,8 @@
 import type * as C from '@glimpse/catalog';
-import {formatFileLoc, parseFileLoc, type EntityRef, type StepItem, type TourStop} from '@glimpse/catalog';
+import {formatFileLoc, parseFileLoc, type StepItem, type TourStop} from '@glimpse/catalog';
 import {useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode} from 'react';
 import {
-  DataGate, Empty, Icon, PathText, Redline, borrowView, fmtNum, useDataset, useFollowedFile, useSelection, useSize, type GlView,
+  DataGate, Empty, Icon, PathText, Redline, borrowView, fileEntity, fmtNum, useDataset, useFollowedFile, useSelection, useSize, type GlView,
 } from '../../kit/index.ts';
 import s from './CodeTour.module.css';
 import {CodeFile} from './CodeView.tsx';
@@ -10,10 +10,6 @@ import {cx} from './codekit/lines.tsx';
 import k from './codekit/lines.module.css';
 
 const STACK_BELOW = 720;
-const fileEntity = (file: string): EntityRef => {
-  const loc = parseFileLoc(file);
-  return {type: 'file', id: loc.path, path: loc.path, ...(loc.line ? {line: loc.line} : {}), ...(loc.endLine ? {endLine: loc.endLine} : {})};
-};
 const sameLoc = (file: string) => formatFileLoc(parseFileLoc(file));
 
 /** The stop list when the content chunk has no Steps view to lend: same data, same selection behaviour. */
@@ -23,8 +19,8 @@ const LocalSteps: GlView<typeof C.Steps> = ({id, props}) => {
   return (
     <ol className={s.steps} data-gl-steps="local">
       {items.map((item, index) => (
-        <li key={index} className={s.step} data-current={index === props.current ? '' : undefined}>
-          <button type="button" className={s.stepButton} aria-current={index === props.current ? 'step' : undefined} onClick={() => item.file && select(fileEntity(item.file))}>
+        <li key={index} className={s.step} data-current={index + 1 === props.current ? '' : undefined}>
+          <button type="button" className={s.stepButton} aria-current={index + 1 === props.current ? 'step' : undefined} onClick={() => item.file && select(fileEntity(item.file))}>
             <span className={s.numeral}>{index + 1}</span>
             <span className={s.stepBody}>
               <span className={s.stepTitle}>{item.title}</span>
@@ -88,7 +84,8 @@ function Tour({id, data, fill, framed}: {id: string; data: unknown[]; fill: bool
   }, [followed]);
 
   const items = useMemo<StepItem[]>(() => stops.map(({file, title, note}) => ({title, file, ...(note ? {note} : {})})), [stops]);
-  if (!stop) return <Empty message={`no stop names a file (${fmtNum(dropped)} dropped)`} />;
+  // The measured element is mounted in both branches, so the tour knows its width when stops arrive later.
+  if (!stop) return <div ref={root}><Empty message={`no stop names a file (${fmtNum(dropped)} dropped)`} /></div>;
 
   const go = (to: number) => {
     const index = Math.min(stops.length - 1, Math.max(0, to));
@@ -132,7 +129,7 @@ function Tour({id, data, fill, framed}: {id: string; data: unknown[]; fill: bool
           {step('Next stop', active + 1, false)}
         </div>
         <div className={s.list}>
-          <Steps id={id} props={{data: items, current: active}} child={() => null} />
+          <Steps id={id} props={{data: items, current: active + 1}} child={() => null} />
         </div>
       </div>
       <div className={s.code}>

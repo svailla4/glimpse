@@ -7,7 +7,7 @@ const value = (cell: HTMLElement) => cell.querySelector('[data-gl-stat-value]')?
 const state = (cell: HTMLElement) => cell.querySelector('[data-gl-state]')?.getAttribute('data-gl-state');
 
 describe('Stat', () => {
-  it('formats the numeral (compact by default), splits the unit, and shows label, delta and sparkline', async () => {
+  it('formats the numeral (exact below 10,000, compact above), splits the unit, and shows label, delta and sparkline', async () => {
     const view = renderExpress(
       `root=Page('T',[a,b,c,d,e,f])
 a=Stat(1284,'files',delta=38)
@@ -18,8 +18,9 @@ e=Stat('TS','main language')
 f=Stat(12840,'exact',format='num')`,
     );
     const a = view.cell('a');
-    expect(value(a)).toBe('1.3');
-    expect(a.textContent).toContain('k');
+    // a supplied figure is not rounded away: 1284 is not "1.3 k"
+    expect(value(a)).toBe('1,284');
+    expect(a.textContent).not.toContain('k');
     expect(a.textContent).toContain('files');
     expect(a.textContent).toContain('+38');
     expect(within(a).getByText('up 38')).toBeTruthy();
@@ -57,7 +58,7 @@ f=Stat(12840,'exact',format='num')`,
     expect(view.cell('b').textContent).toContain('unbound');
 
     view.setData('/v', 4210);
-    await waitFor(() => expect(value(view.cell('a'))).toBe('4.2'));
+    await waitFor(() => expect(value(view.cell('a'))).toBe('4,210'));
     // numeric text is an identifier unless a format says otherwise
     view.setData('/v', '8080');
     await waitFor(() => expect(value(view.cell('a'))).toBe('8080'));
@@ -102,7 +103,7 @@ describe('Stats', () => {
     // tone is a labelled mark, never colour alone
     expect(within(cell).getByRole('img', {name: 'warning'})).toBeTruthy();
     expect(within(cell).getByText('up 6')).toBeTruthy();
-    expect(cell.querySelector('ul')?.children).toHaveLength(7);
+    expect(cell.querySelectorAll('ul > li:not([data-blank])')).toHaveLength(7);
   });
 
   it('shows the error, empty and wrong-shape states', async () => {

@@ -4,7 +4,12 @@
 import type {ServerResponse} from 'node:http';
 import type {A2uiMessage, ServerEvent, SessionInfo, SurfaceInfo} from '@glimpse/catalog';
 
-export const MAX_CLIENTS = 8;
+/**
+ * Tabs that may hold an event stream at once. A browser gives one origin six HTTP/1.1 connections and every tab
+ * keeps one for its stream, so a sixth stream would starve the data requests of all of them: five streams leave one
+ * connection for fetches.
+ */
+export const MAX_CLIENTS = 5;
 const KEEPALIVE_MS = 15_000;
 const RETRY_MS = 1000;
 const MAX_BACKLOG = 32 * 1024 * 1024;
@@ -41,11 +46,11 @@ export class SseHub {
     client.write(`event: glimpse\ndata: ${JSON.stringify(event)}\n\n`);
   }
 
-  /** Takes over a response as an event stream. Returns false (and answers 503) when eight tabs are connected. */
+  /** Takes over a response as an event stream. Returns false (and answers 503) when five tabs are connected. */
   connect(res: ServerResponse): boolean {
     if (this.clients.size >= MAX_CLIENTS) {
-      res.writeHead(503, {'content-type': 'text/plain; charset=utf-8', 'retry-after': '5'});
-      res.end('too many viewer tabs');
+      res.writeHead(503, {'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'retry-after': '5'});
+      res.end(`too many Glimpse tabs: ${MAX_CLIENTS} are open for this session. Close one and this tab connects by itself.`);
       return false;
     }
     res.writeHead(200, {'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no'});

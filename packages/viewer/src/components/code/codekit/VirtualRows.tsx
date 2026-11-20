@@ -106,6 +106,26 @@ export function VirtualRows(p: VirtualRowsProps): ReactNode {
 
   useEffect(() => () => cancel.current(), []);
 
+  // `data-more-y` while there are rows below the viewport: the stylesheet fades the bottom edge, so a line cut by
+  // the plate reads as "scroll", not as a layout fault.
+  const totalSize = virtual.getTotalSize();
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const update = () => {
+      if (element.scrollHeight - element.clientHeight - element.scrollTop > 1) element.setAttribute('data-more-y', '');
+      else element.removeAttribute('data-more-y');
+    };
+    update();
+    element.addEventListener('scroll', update, {passive: true});
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : undefined;
+    observer?.observe(element);
+    return () => {
+      element.removeEventListener('scroll', update);
+      observer?.disconnect();
+    };
+  }, [totalSize]);
+
   useImperativeHandle(handle, () => {
     const bounds = () => {
       const element = scroller.current;
@@ -141,7 +161,7 @@ export function VirtualRows(p: VirtualRowsProps): ReactNode {
       <div
         className={s.sizer}
         role="presentation"
-        style={{height: virtual.getTotalSize(), minWidth: cols ? `calc(${cols}ch + ${colsPad ?? '0px'})` : undefined}}
+        style={{height: totalSize, minWidth: cols ? `calc(${cols}ch + ${colsPad ?? '0px'})` : undefined}}
       >
         {items.map(item => (
           <div

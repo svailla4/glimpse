@@ -5,11 +5,9 @@
     gap: 8px;
     min-width: 0;
   }
-  .aside {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 16px;
+  /* A size step without a plate: the list scrolls inside the step instead of running over the next row. */
+  :global(.gl-cell[data-size]) > :global(.gl-body) > .bare {
+    overflow: auto;
   }
   .note {
     margin: 0;

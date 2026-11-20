@@ -2,7 +2,7 @@
 // actors, rows are steps.
 import type * as C from '@glimpse/catalog';
 import {parseSequence, type SeqArrow, type SeqAst} from '@glimpse/catalog';
-import {useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode} from 'react';
 import {Empty, Redline, useSize, useTooltip, type GlView} from '../../kit/index.ts';
 import {MONO_11, UI_12, fitText, markPath, roundedPath, textWidth, wrapText} from './edgekit/index.ts';
 import css from './SequenceDiagram.module.css';
@@ -15,6 +15,10 @@ const HEAD_H = 44;
 const ACTOR_H = 28;
 const MIN_COL = 140;
 const MAX_COL = 280;
+/** In a cell too narrow for the diagram the gaps between lifelines give way first, down to this share (95 px)... */
+const TIGHT = 0.68;
+/** ...then the whole drawing is scaled down, to this at most (12 px labels are still 9.6 px); after that it scrolls. */
+const MIN_SCALE = 0.8;
 const ROW = 36;
 const SELF_ROW = 46;
 const SELF_REACH = 30;
@@ -27,12 +31,22 @@ interface ActorDraw { id: string; label: string; text: string; x: number; w: num
 type RowDraw =
   | {kind: 'message'; index: number; y: number; h: number; n: number; from: number; to: number; arrow: SeqArrow; text: string; full: string; said: string}
   | {kind: 'note'; index: number; y: number; h: number; x: number; w: number; lines: string[]; full: string; said: string};
-interface Plan { width: number; height: number; actors: ActorDraw[]; rows: RowDraw[]; hidden: number }
+interface Plan {
+  width: number;
+  height: number;
+  /** What the drawing is scaled by to fit the container: 1, or down to MIN_SCALE in a narrow cell. */
+  scale: number;
+  actors: ActorDraw[];
+  rows: RowDraw[];
+  hidden: number;
+}
 
 /**
  * Lifeline positions and rows for the parsed diagram at a given container width. Every gap between two lifelines is
  * as wide as the labels that cross it need (at least MIN_COL, at most MAX_COL per lifeline crossed; longer labels
- * are cut), and a diagram narrower than its container is stretched to fill it.
+ * are cut), and a diagram narrower than its container is stretched to fill it. A diagram wider than its container
+ * first closes its gaps up (to 95 px between lifelines, labels cut to what is left), then is scaled down (to 80%),
+ * and only then is wider than the container, which scrolls. A width of 0 plans the diagram at its natural size.
  */
 export function planSequence(ast: SeqAst, containerWidth: number): Plan {
   const actors = ast.actors.slice(0, MAX_ACTORS);
@@ -64,9 +78,12 @@ export function planSequence(ast: SeqAst, containerWidth: number): Plan {
   });
   const right = Math.max(SIDE, overhang);
   const span = at[last] ?? 0;
-  const stretch = span > 0 ? Math.max(1, Math.min(2, (containerWidth - SIDE - right) / span)) : 1;
+  const room = containerWidth > 0 && span > 0 ? (containerWidth - SIDE - right) / span : 1;
+  // Wider than needed: spread out. Narrower: close up, and scale down what closing up cannot gain.
+  const stretch = Math.max(TIGHT, Math.min(2, room));
   const content = span * stretch + SIDE + right;
-  const width = Math.max(containerWidth, Math.ceil(content));
+  const scale = containerWidth > 0 && content > containerWidth ? Math.max(MIN_SCALE, containerWidth / content) : 1;
+  const width = Math.max(Math.ceil(containerWidth / scale), Math.ceil(content));
   const left = SIDE + (width - content) / 2;
   const x = (i: number) => Math.round(left + (at[i] ?? 0) * stretch);
 
@@ -103,7 +120,7 @@ export function planSequence(ast: SeqAst, containerWidth: number): Plan {
       y += h + 14;
     }
   });
-  return {width, height: y + 16, actors: actorDraws, rows, hidden: ast.steps.length - steps.length};
+  return {width, height: y + 16, scale, actors: actorDraws, rows, hidden: ast.steps.length - steps.length};
 }
 
 function messageRow(row: Extract<RowDraw, {kind: 'message'}>): ReactNode {
@@ -146,16 +163,29 @@ function SequenceBody(p: {ast: SeqAst; sized: boolean}) {
   const plan = useMemo(() => planSequence(ast, Math.floor(width)), [ast, width]);
   const [active, setActive] = useState<number>();
   const activeRow = active !== undefined ? plan.rows[active] : undefined;
+  const {scale} = plan;
 
   // Keep the step the keyboard is on inside the scrolled window, below the sticky actors.
   useEffect(() => {
     const scroll = scrollRef.current;
     if (!scroll || !activeRow) return;
-    const top = activeRow.y;
-    const bottom = activeRow.y + activeRow.h + HEAD_H;
+    const top = activeRow.y * scale;
+    const bottom = (activeRow.y + activeRow.h + HEAD_H) * scale;
     if (top < scroll.scrollTop) scroll.scrollTop = top;
     else if (bottom > scroll.scrollTop + scroll.clientHeight) scroll.scrollTop = bottom - scroll.clientHeight;
-  }, [activeRow]);
+  }, [activeRow, scale]);
+
+  // A diagram that is still wider than its cell scrolls sideways: say so at the edge that has more.
+  const [more, setMore] = useState({left: false, right: false});
+  const measure = useCallback(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const left = scroll.scrollLeft > 1;
+    const right = scroll.scrollLeft + scroll.clientWidth < scroll.scrollWidth - 1;
+    setMore(prev => (prev.left === left && prev.right === right ? prev : {left, right}));
+  }, []);
+  // Measured again whenever the drawing or the cell changes size.
+  useEffect(measure, [measure, plan.width, scale, width]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -188,10 +218,10 @@ function SequenceBody(p: {ast: SeqAst; sized: boolean}) {
 
   return (
     <div ref={boxRef} className={css.root} data-sized={p.sized || undefined}>
-      <div ref={scrollRef} className={css.scroll} role="img" aria-label={ariaLabel} tabIndex={0} onKeyDown={onKeyDown}>
+      <div ref={scrollRef} className={css.scroll} role="img" aria-label={ariaLabel} tabIndex={0} onKeyDown={onKeyDown} onScroll={measure}>
         {width > 0 ? (
           <>
-            <svg className={css.head} width={plan.width} height={HEAD_H} aria-hidden="true">
+            <svg className={css.head} width={plan.width * scale} height={HEAD_H * scale} viewBox={`0 0 ${plan.width} ${HEAD_H}`} aria-hidden="true">
               {plan.actors.map(actor => (
                 <g key={actor.id} data-actor={actor.id}>
                   <line className={css.lifeline} x1={actor.x} x2={actor.x} y1={8 + ACTOR_H} y2={HEAD_H} />
@@ -200,7 +230,7 @@ function SequenceBody(p: {ast: SeqAst; sized: boolean}) {
                 </g>
               ))}
             </svg>
-            <svg className={css.steps} width={plan.width} height={plan.height} aria-hidden="true" onPointerMove={onPointerMove} onPointerLeave={() => tooltip.hide()}>
+            <svg className={css.steps} width={plan.width * scale} height={plan.height * scale} viewBox={`0 0 ${plan.width} ${plan.height}`} data-scale={scale < 1 ? scale.toFixed(2) : undefined} aria-hidden="true" onPointerMove={onPointerMove} onPointerLeave={() => tooltip.hide()}>
               {plan.actors.map(actor => <line key={actor.id} className={css.lifeline} x1={actor.x} x2={actor.x} y1={0} y2={plan.height} />)}
               {plan.rows.map((row, i) => (
                 <g key={row.index} className={css.step} data-step={i} data-kind={row.kind} data-arrow={row.kind === 'message' ? row.arrow : undefined} data-active={i === active || undefined}>
@@ -220,6 +250,8 @@ function SequenceBody(p: {ast: SeqAst; sized: boolean}) {
           </>
         ) : null}
       </div>
+      {more.left ? <div className={css.more} data-more="left" aria-hidden="true" /> : null}
+      {more.right ? <div className={css.more} data-more="right" aria-hidden="true"><span className={css.moreHint}>scroll →</span></div> : null}
       <div className={css.live} aria-live="polite">{activeRow?.said ?? ''}</div>
     </div>
   );

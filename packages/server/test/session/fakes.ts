@@ -1,10 +1,10 @@
 // Test doubles for the server core: two fake sources in an injectable registry, stub services, and helpers to build
 // a Session on a recording host. Nothing here loads analyzer, git or code-service code.
-import {mkdtemp, realpath, rm} from 'node:fs/promises';
+import {lstat, mkdtemp, realpath, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {SOURCE_BY_NAME, type A2uiMessage, type FileSlice, type Rows, type SourceMeta} from '@glimpse/catalog';
-import {SourceError, type GitInfo, type RepoIndex, type Source} from '../../src/contracts.ts';
+import {SourceError, type FileEntry, type GitInfo, type RepoIndex, type Source} from '../../src/contracts.ts';
 import {Session, type HostHandle, type ServerDeps, type SessionOptions, type TabState} from '../../src/session/session.ts';
 import {createRegistry} from '../../src/sources/registry.ts';
 
@@ -72,30 +72,60 @@ export function fixedSource(name: string, data: unknown, summary = 'fixed'): Sou
   return {meta: SOURCE_BY_NAME.get(name)!, run: async () => ({data, summary})};
 }
 
-const stubIndex = (calls: {invalidated: number}): RepoIndex => ({
-  files: () => Promise.resolve([]), facts: () => Promise.resolve(new Map()), edges: () => Promise.resolve([]), moduleOf: () => Promise.resolve(''),
+/** A file of a fake inventory: a path (ten lines of TypeScript), or a path with its line count. */
+export type FakeFile = string | {path: string; loc: number};
+
+const entry = (file: FakeFile): FileEntry => {
+  const {path, loc} = typeof file === 'string' ? {path: file, loc: 10} : file;
+  return {path, lang: 'TypeScript', loc, sloc: Math.round(loc * 0.8), bytes: loc * 10, binary: false, tracked: true, isTest: /\.(test|spec)\./.test(path), generated: false};
+};
+
+/**
+ * The inventory of a fake repository. 'disk' (the default) answers `has` from the files really under the root, the
+ * way the production index does for a path its scan has not seen: a regular file, not under .git. A list of paths is
+ * a fixed inventory without `has`, which exercises the session's own lookup.
+ */
+const stubIndex = (root: string, calls: {invalidated: number}, inventory: 'disk' | FakeFile[]): RepoIndex => ({
+  files: () => Promise.resolve(inventory === 'disk' ? [] : inventory.map(entry)),
+  facts: () => Promise.resolve(new Map()), edges: () => Promise.resolve([]), moduleOf: () => Promise.resolve(''),
+  ...(inventory === 'disk'
+    ? {has: async (path: string) => !path.split('/').includes('.git') && !path.split('/').some(part => part.startsWith('.env')) && (await lstat(join(root, path)).then(info => info.isFile(), () => false))}
+    : {}),
   invalidate: () => { calls.invalidated++; },
 });
 
 export interface FakeDeps extends ServerDeps {
   sources: FakeSources;
-  calls: {invalidated: number; files: string[]; diffs: string[]; outlines: string[]; highlights: number};
+  calls: {invalidated: number; files: string[]; diffs: string[]; outlines: string[]; highlights: number; checks: number};
   /** What readGitInfo answers next; null means "not a repository". */
   git: {info: GitInfo | null};
   /** Fires the tree watcher, if it is running. */
   touchTree(): void;
+  /** Makes the next look at the working tree (TreeWatcher.check) report a change, whether or not anybody watches. */
+  moveTree(): void;
   watching(): boolean;
 }
 
-export function fakeDeps(options: {slowMs?: number; extra?: Source[]; git?: GitInfo | null} = {}): FakeDeps {
+export interface FakeDepsOptions {
+  slowMs?: number;
+  extra?: Source[];
+  git?: GitInfo | null;
+  /** See stubIndex. Default 'disk'. */
+  inventory?: 'disk' | FakeFile[];
+  /** false: the watcher has no check(), so the session looks at the tree itself (session/freshness.ts). */
+  check?: boolean;
+}
+
+export function fakeDeps(options: FakeDepsOptions = {}): FakeDeps {
   const sources = fakeSources(options.slowMs);
-  const calls = {invalidated: 0, files: [] as string[], diffs: [] as string[], outlines: [] as string[], highlights: 0};
+  const calls = {invalidated: 0, files: [] as string[], diffs: [] as string[], outlines: [] as string[], highlights: 0, checks: 0};
   const git = {info: options.git === undefined ? {branch: 'main', head: '4f2a91c0ffee4f2a91c0ffee4f2a91c0ffee4f2a', shallow: false} as GitInfo | null : options.git};
   let onChange: (() => void) | undefined;
+  let moved = false;
   return {
     sources, calls, git,
     registry: createRegistry([sources.rows, sources.slow, ...(options.extra ?? [])]),
-    createRepoIndex: () => stubIndex(calls),
+    createRepoIndex: root => stubIndex(root, calls, options.inventory ?? 'disk'),
     createCodeService: ctx => ({
       file: async q => {
         calls.files.push(q.path);
@@ -121,9 +151,18 @@ export function fakeDeps(options: {slowMs?: number; extra?: Source[]; git?: GitI
     createTreeWatcher: () => ({
       start: fire => { onChange = fire; },
       stop: () => { onChange = undefined; },
+      ...(options.check === false ? {} : {
+        check: async () => {
+          calls.checks++;
+          const was = moved;
+          moved = false;
+          return was;
+        },
+      }),
     }),
     readGitInfo: () => Promise.resolve(git.info),
     touchTree: () => onChange?.(),
+    moveTree: () => { moved = true; },
     watching: () => onChange !== undefined,
   };
 }

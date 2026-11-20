@@ -5,7 +5,7 @@
   "title": "Glimpse",
   "description": "Generative UI for codebases.",
   "catalogId": "urn:glimpse:catalog:v1",
-  "instructions": "Root is Page(title, children). Children flow on a 12-column grid; every component takes span=1..12.\nData props take a /ds binding (server dataset), any other binding, or an inline value. Datasets are self-describing: tables and charts need no column or axis props.\nData, chart, diagram and code components draw their own plate frame when given title=.\nCode and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.\nThe current selection is at /ui/sel ({type,id,path?,line?}); the selected file is at /ui/file (\"path#L10-20\").",
+  "instructions": "Root is Page(title, children). Children flow on a 12-column grid; every component takes span=1..12.\nData props take a /ds binding (server dataset), any other binding, or an inline value. Datasets are self-describing: tables and charts need no column or axis props.\nData, chart, diagram and code components, and Text, Markdown, Chips and Stats, draw their own plate frame when given title=.\nCode and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.\nThe current selection is at /ui/sel ({type,id,path?,line?}); the selected file is at /ui/file (\"path#L10-20\").",
   "components": {
     "Page": {
       "type": "object",
@@ -345,6 +345,25 @@
           ],
           "description": "Style. One of: body|lead|dim|caption|mono."
         },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
         "span": {
           "type": "integer",
           "minimum": 1,
@@ -367,6 +386,25 @@
         "text": {
           "$ref": "common_types.json#/$defs/DynamicString",
           "description": "Markdown source."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -432,7 +470,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "Object or [{k,v}]."
+          "description": "Object {Label:value} or [{k,v}]."
         },
         "cols": {
           "type": "integer",
@@ -442,7 +480,22 @@
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
-          "description": "Plate title."
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -466,6 +519,25 @@
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
           "description": "Strings or [{label,tone?}]."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -518,11 +590,26 @@
         },
         "current": {
           "$ref": "common_types.json#/$defs/DynamicNumber",
-          "description": "Index of the active step."
+          "description": "Number of the active step, counting from 1 as drawn. Usually omitted: give that step status doing."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
-          "description": "Plate title."
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -595,7 +682,26 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "[{label,value,unit?,delta?,spark?,format?}]."
+          "description": "[{label,value,unit?,delta?,spark?,format?,tone?}]."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -627,11 +733,22 @@
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
-          "description": "Plate title."
+          "description": "Plate title; draws the numbered frame."
         },
         "note": {
           "$ref": "common_types.json#/$defs/DynamicString",
-          "description": "Caption."
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1475,7 +1592,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "{nodes,edges,groups?}."
+          "description": "{nodes:[{id,label}],edges:[{from,to}],groups?}."
         },
         "dir": {
           "type": "string",
@@ -1626,7 +1743,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "[{name,items:[label|{label,file?,note?}],note?}]."
+          "description": "[{name,items:['label'|{label,file?,note?}],note?}], top tier first."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -1668,7 +1785,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "{tables:[{name,columns:[{name,type?,pk?,fk?}]}],relations?:[{from,to,label?}]}."
+          "description": "Tables [{name,columns:[{name,type?,pk?,fk?}]}], or {tables,relations}. fk:'users.id' draws the relation."
         },
         "dir": {
           "type": "string",
@@ -1726,7 +1843,7 @@
         },
         "mark": {
           "type": "string",
-          "description": "Lines to highlight: '3,7-9'."
+          "description": "Lines to highlight: '3,7-9' (or 'L3,L7-9')."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -1757,7 +1874,7 @@
         },
         "mark": {
           "type": "string",
-          "description": "Lines to highlight: '12-18,30'."
+          "description": "Lines of the file to highlight: '12-18,30' (or 'L12-18')."
         },
         "notes": {
           "$ref": "common_types.json#/$defs/DynamicValue",

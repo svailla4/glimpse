@@ -69,17 +69,22 @@ describe('tools/list', () => {
     expect(byName.get('query')!._meta).toBeUndefined();
     expect(byName.get('events')!._meta).toBeUndefined();
     expect(byName.get('pending_context')!._meta).toEqual({ui: {visibility: ['app']}});
+    // Finding F057: nothing writes to the project or reaches the network, but `show` opens and updates the tab and
+    // `events` / `pending_context` hand each queued line over once, so a retried call is not the same call.
+    const once = new Set(['show', 'events', 'pending_context']);
     for (const tool of tools) {
-      expect(tool.annotations).toEqual({readOnlyHint: true, idempotentHint: true, openWorldHint: false});
+      expect(tool.annotations, tool.name).toEqual({readOnlyHint: true, destructiveHint: false, idempotentHint: !once.has(tool.name), openWorldHint: false});
       expect(tool.outputSchema).toBeUndefined();
       expect(tool.description!.length).toBeGreaterThan(20);
     }
+    // Finding F038: a preset target given as its own argument is accepted instead of failing schema validation.
     expect(byName.get('show')!.inputSchema).toEqual({
       type: 'object', additionalProperties: false,
       properties: {
         view: {type: 'string', description: "Preset and target, e.g. 'overview', 'tree src', 'diff main..HEAD'."},
         spec: {type: 'string', description: 'Express statements: root=Page(...) for a new view, or name=Comp(...) / $/path=value to patch.'},
         id: {type: 'string', description: "Surface slug. Default: the preset name, or 'main'."},
+        path: {type: 'string', description: 'Preset target, if not in view.'},
       },
     });
     expect(byName.get('query')!.inputSchema).toMatchObject({required: ['ref'], properties: {limit: {type: 'integer', minimum: 1, maximum: 200}}});
@@ -124,8 +129,9 @@ describe('show', () => {
     const component = await call(client, 'show', {id: 'rows', spec: "t=DataTabel('fake.rows lib',colums='path n',title='Top files')"});
     expect(component.lines.slice(1)).toEqual(['fixed DataTabel -> DataTable', 'fixed colums -> columns', 'ds fake.rows lib | 0/0 rows; fields path n owner; top - 0']);
 
+    // Finding F043: a dataset line the model was given for this view is not repeated, only counted.
     const replaced = await call(client, 'show', {id: 'rows', spec: "root=Page('Rows',[t])"});
-    expect(replaced.lines.slice(1)).toEqual(['ds fake.rows lib | 0/0 rows; fields path n owner; top - 0', 'parts t | slots $/notes']);
+    expect(replaced.lines.slice(1)).toEqual(['ds (+1 unchanged)', 'parts t | slots $/notes']);
   });
 
   it('view plus spec patches the preset in the same call', async () => {
@@ -142,10 +148,11 @@ describe('show', () => {
   it('errors are isError with the problem, the signature and the fixed last line; nothing changes', async () => {
     const {client} = await connect();
     await call(client, 'show', {id: 'main', spec: "root=Page('Kept',[Text('x')])"});
-    const bad = await call(client, 'show', {spec: "root=Page('x',[Callout('y','danger')])"});
+    // ('danger' would be repaired to risk under decision D5; a word that means no allowed value stays an error)
+    const bad = await call(client, 'show', {spec: "root=Page('x',[Callout('y','purple')])"});
     expect(bad.isError).toBe(true);
     expect(bad.lines).toEqual([
-      'E_ENUM Callout.kind: "danger" is not allowed. Use: note tip warn risk decision question',
+      'E_ENUM Callout.kind: "purple" is not allowed. Use: note tip warn risk decision question',
       'sig Callout(text, kind=note|tip|warn|risk|decision|question?, title?, file?)',
       'Nothing was rendered; the previous view is unchanged.',
     ]);
@@ -162,7 +169,8 @@ describe('show', () => {
       [{view: 'overveiw'}, /^E_VIEW unknown view "overveiw"\. Nearest: overview /],
       [{view: 'file'}, /^E_VIEW view "file" needs a path: show\{view:"file <path>"\}/],
       [{view: 'diff --output=x'}, /^E_VIEW "--output=x" is not a range/],
-      [{id: 'my-view', spec: "root=Page('x',[])"}, /^E_ID id "my-view" is not a slug/],
+      [{id: '__proto__', spec: "root=Page('x',[])"}, /^E_ID id "__proto__" is reserved/],
+      [{id: '¿?', spec: "root=Page('x',[])"}, /^E_ID id "¿\?" is not a slug/],
       [{id: 'nope', spec: "$/x=1"}, /^E_REF there is no view "nope" to patch/],
       [{spec: "root=Page('x',[DataTable('git.chrun')])"}, /^E_SOURCE DataTable#root_children_0\.data: unknown source "git\.chrun"\. Nearest: git\.churn /],
       [{spec: "root=Page('x',[Markdown('a'),,])"}, /^E_SYNTAX line 1 col \d+: /],
@@ -199,7 +207,10 @@ describe('catalog and query', () => {
 
     const grammar = await call(client, 'catalog', {names: ['grammar']});
     expect(grammar.text).toContain('## Grammar Rules');
-    expect(grammar.text).toContain("no <a2ui> tags");
+    // Finding F043: Glimpse's own rules, not the upstream prompt's 3,900 characters.
+    expect(grammar.text).toContain('No <a2ui> tags');
+    expect(grammar.text).not.toContain('deleteSurface');
+    expect(grammar.text.length).toBeLessThan(1600);
     expect((await call(client, 'catalog', {names: ['examples']})).text).toContain('# Explain a module');
 
     const unknown = await call(client, 'catalog', {names: ['zzzzzz']});

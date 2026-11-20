@@ -2,7 +2,7 @@ import type * as C from '@glimpse/catalog';
 import {memo, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode} from 'react';
 import {DataGate, PlateAside, fmtNum, useDataset, type GlView, type GlViewProps} from '../../kit/index.ts';
 import s from './JsonView.module.css';
-import {useListNav} from './nav.ts';
+import {useListNav, useScrollFade} from './nav.ts';
 import {copyText, isRecord} from './rows.ts';
 import {Shell} from './shell.tsx';
 
@@ -166,6 +166,7 @@ function Tree({props, data}: {props: Props; data: unknown}): JSX.Element {
     [data, toggled, autoDepth],
   );
   const nav = useListNav({count: lines.length, rowHeight: ROW, scrollRef});
+  useScrollFade(scrollRef, lines.length);
 
   const setOpen = (line: Line, open: boolean) => {
     if (expandable(line)) setToggled(prev => new Map(prev).set(line.id, open));

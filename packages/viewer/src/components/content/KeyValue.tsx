@@ -66,7 +66,7 @@ export const KeyValueView: GlView<typeof C.KeyValue> = ({id, props}) => {
   const pairs = useMemo(() => pairsOf(state.data), [state.data]);
   const cols = Math.min(3, Math.max(1, Math.round(Number(props.cols) || 1)));
   return (
-    <DataPlate id={id} def={KeyValueDef} title={textOf(props.title).trim() || undefined} state={state}>
+    <DataPlate id={id} def={KeyValueDef} title={textOf(props.title).trim() || undefined} note={textOf(props.note).trim() || undefined} state={state}>
       {data => {
         if (!pairs) return <Redline code="E_SHAPE" id={`KeyValue#${id}`} message={shapeMessage('an object or [{k, v}]', data)} />;
         if (pairs.length === 0) return <Empty message="no pairs to show" />;

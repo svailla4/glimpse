@@ -26,9 +26,19 @@ async function existingRealpath(target: string): Promise<string | undefined> {
 export async function resolveInside(root: string, path: string): Promise<string | undefined> {
   if (typeof path !== 'string' || path === '' || path.includes('\u0000') || isAbsolute(path) || /^[A-Za-z]:/.test(path)) return undefined;
   const target = resolve(root, path);
-  if (!inside(root, target)) return undefined;
+  if (!inside(root, target) || inGitDir(root, target)) return undefined;
   const real = await existingRealpath(target);
-  return real !== undefined && inside(root, real) ? target : undefined;
+  return real !== undefined && inside(root, real) && !inGitDir(root, real) ? target : undefined;
+}
+
+/** True for the repository's own `.git` (a directory, or the file a worktree has) and everything under it. */
+function inGitDir(root: string, target: string): boolean {
+  return relative(root, target).split(sep)[0]?.toLowerCase() === '.git';
+}
+
+/** A repo-relative path as the inventory writes it: forward slashes, no `./`, no `#L10` anchor. */
+export function repoRelative(root: string, absolute: string): string {
+  return relative(root, absolute).split(sep).join('/');
 }
 
 /** A change range git accepts and that cannot be read as an option (design 2.8). */

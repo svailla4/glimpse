@@ -1,6 +1,8 @@
 // Treemap: squarified nested rectangles sized by a metric. Click selects, double-click or Enter zooms into a
 // directory, Backspace zooms out; rollup cells ("(N more)") drill the dataset. A small toolbar switches the size
-// metric and the fill locally.
+// metric and the fill locally. Zoom is local and has its breadcrumb here; a drill re-scopes the dataset on the
+// server, and its way back is the scope crumb the kit shows for every bound component (design D1): this view only
+// dispatches gl_drill (a rollup, or Backspace at the top of a drilled tree).
 import type {DirNode} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {treemap, treemapSquarify, type HierarchyNode} from 'd3-hierarchy';
@@ -9,7 +11,7 @@ import {Empty, PlateAside, fmtNum, useHostActions, useMeta, type DataState, type
 import css from './Treemap.module.css';
 import {
   COLOR_MODES, Crumbs, DEFAULT_HEIGHT, Figure, METRIC_FORMAT, METRICS, Note, TreeGate, clip, count, createPainter, cycle, kit,
-  nodeEntity, nodeMatches, notes, say, spatialStep, useChartBox, useDrawIn, useMarkNav, useSlots, viewTree, type CleanTree,
+  nodeEntity, nodeMatches, notes, rootLabel, say, spatialStep, useChartBox, useDrawIn, useMarkNav, useSlots, useSlotter, viewTree, type CleanTree,
   type ColorMode, type Mark, type Metric, type TreeNode,
 } from './chartkit/index.ts';
 
@@ -121,6 +123,7 @@ function Cells(p: {
 }): JSX.Element {
   const {id, tree, root, view, metric, color, state} = p;
   const slots = useSlots();
+  const assign = useSlotter();
   const meta = useMeta();
   const host = useHostActions(id);
   const total = view.value ?? 0;
@@ -128,8 +131,8 @@ function Cells(p: {
   const height = fill ? Math.max(120, boxHeight) : DEFAULT_HEIGHT;
   const layout = useMemo(() => (width <= 0 ? undefined : layoutTree(view, metric, width, height)), [view, metric, width, height]);
   const painter = useMemo(
-    () => createPainter(color, (layout?.cells ?? []).filter(cell => !cell.open).map(cell => ({node: cell.node, weight: cell.value})), slots),
-    [color, layout, slots],
+    () => createPainter(color, (layout?.cells ?? []).filter(cell => !cell.open).map(cell => ({node: cell.node, weight: cell.value})), slots, tree.langs, assign),
+    [color, layout, slots, tree.langs, assign],
   );
 
   const zoom = (path: string) => {
@@ -156,8 +159,11 @@ function Cells(p: {
       return true;
     },
     key: event => {
-      if (event.key === 'Backspace') p.onZoom(root.parent?.path ?? '');
-      else if (event.key === 'v') p.onMetric();
+      if (event.key === 'Backspace') {
+        // at the top of the tree Backspace steps out of a drill, else it zooms out one level
+        if (!root.parent && state.ds?.drill) host.drill(state.ds.$ds, state.ds.drill.up);
+        else p.onZoom(root.parent?.path ?? '');
+      } else if (event.key === 'v') p.onMetric();
       else if (event.key === 'f') p.onColor();
       else return false;
       return true;
@@ -237,7 +243,7 @@ function Cells(p: {
         height={layout?.height ?? (fill ? 0 : DEFAULT_HEIGHT)}
         drawing={drawing}
         rings={false}
-        header={<Crumbs root={meta?.repo.name ?? (tree.root.name || 'root')} node={root} onZoom={zoom} />}
+        header={<Crumbs root={rootLabel(tree, meta?.repo.name, state.ds?.drill !== undefined)} node={root} onZoom={zoom} />}
         footer={painter.legend()}
       >
         {layout ? (
@@ -259,7 +265,7 @@ function Cells(p: {
 }
 
 export const TreemapView: GlView<typeof C.Treemap> = ({id, props}) => (
-  <TreeGate name="Treemap" id={id} input={props.data}>
+  <TreeGate name="Treemap" id={id} input={props.data} size={props.size} height={DEFAULT_HEIGHT + 48}>
     {(tree, state) => <Plot id={id} tree={tree} state={state} props={props} />}
   </TreeGate>
 );

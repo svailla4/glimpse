@@ -4,6 +4,7 @@ import {delimiter, join} from 'node:path';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
 import {portCandidates} from '../../src/host/host.ts';
 import {canOpen, editorCommand, onPath, osOpenCommand} from '../../src/host/open.ts';
+import {ownEnv} from '../../src/session/env.ts';
 import {tempRoot} from '../session/fakes.ts';
 
 describe('canOpen', () => {
@@ -27,6 +28,12 @@ describe('osOpenCommand', () => {
     expect(osOpenCommand(url, 'linux')).toEqual(['xdg-open', [url]]);
     expect(osOpenCommand(url, 'win32')).toEqual(['rundll32', ['url.dll,FileProtocolHandler', url]]);
   });
+
+  it('is for the viewer URL only: a file, a file URL or another host is refused', () => {
+    for (const target of ['/repo/run.command', 'file:///repo/run.command', 'http://example.invalid/', 'http://127.0.0.1.evil.invalid:80/', 'https://127.0.0.1:4517/']) {
+      expect(() => osOpenCommand(target, 'darwin')).toThrow('the OS opener is only used for the viewer URL');
+    }
+  });
 });
 
 describe('editorCommand', () => {
@@ -43,11 +50,49 @@ describe('editorCommand', () => {
     expect(editorCommand(file, 1, {GLIMPSE_EDITOR: 'code -g {file}:{line}'}, 'darwin', none)).toEqual(['code', ['-g', `${file}:1`]]);
   });
 
-  it('otherwise picks the first known editor on PATH, else the OS opener', () => {
+  it('otherwise picks the first known editor on PATH', () => {
     expect(editorCommand('/repo/a.ts', 7, {}, 'darwin', name => name === 'cursor' || name === 'zed')).toEqual(['cursor', ['-g', '/repo/a.ts:7']]);
     expect(editorCommand('/repo/a.ts', 7, {}, 'darwin', name => name === 'zed')).toEqual(['zed', ['/repo/a.ts:7']]);
     expect(editorCommand('/repo/a.ts', -4, {}, 'darwin', name => name === 'code')).toEqual(['code', ['-g', '/repo/a.ts:1']]);
-    expect(editorCommand('/repo/a.ts', 7, {}, 'linux', none)).toEqual(['xdg-open', ['/repo/a.ts']]);
+    expect(editorCommand('/repo/a.ts', 7, {}, 'linux', name => name === 'subl')).toEqual(['subl', ['/repo/a.ts:7']]);
+    expect(editorCommand('/repo/a.ts', 7, {}, 'linux', name => name === 'idea')).toEqual(['idea', ['--line', '7', '/repo/a.ts']]);
+  });
+
+  // Finding F050: `open run.command` runs the script; the same goes for .app, .jar, .html and their kin elsewhere.
+  it.each(['darwin', 'linux', 'win32'] as const)('with no editor on %s there is no command at all: never the OS opener', platform => {
+    for (const file of ['/repo/a.ts', '/repo/run.command', '/repo/Evil.app', '/repo/setup.pkg', '/repo/page.html']) {
+      expect(editorCommand(file, 7, {}, platform, none)).toBeUndefined();
+    }
+  });
+
+  it('GLIMPSE_EDITOR counts only as an own property of the environment (decision D10)', () => {
+    const inherited = Object.create({GLIMPSE_EDITOR: '/bin/sh -c id'}) as NodeJS.ProcessEnv;
+    expect(editorCommand('/repo/a.ts', 1, inherited, 'darwin', none)).toBeUndefined();
+    expect(editorCommand('/repo/a.ts', 1, ownEnv({GLIMPSE_EDITOR: 'code -g {file}:{line}'}), 'darwin', none)).toEqual(['code', ['-g', '/repo/a.ts:1']]);
+  });
+});
+
+describe('ownEnv', () => {
+  it('copies own string entries to a frozen object without a prototype', () => {
+    const proto = Object.prototype as Record<string, unknown>;
+    const env = ownEnv({A: '1', B: undefined});
+    try {
+      proto.GLIMPSE_EDITOR = 'evil';
+      expect(Object.getPrototypeOf(env)).toBeNull();
+      expect(Object.isFrozen(env)).toBe(true);
+      expect(env.A).toBe('1');
+      expect('B' in env).toBe(false);
+      expect(env.GLIMPSE_EDITOR).toBeUndefined();
+      expect({...env}).toEqual({A: '1'});
+      expect(ownEnv(env)).toBe(env);
+      if (!Object.hasOwn(process.env, 'GLIMPSE_EDITOR')) {
+        // the live process environment, by contrast, answers from the prototype: this was the gadget of F047
+        expect(process.env.GLIMPSE_EDITOR).toBe('evil');
+        expect(ownEnv(process.env).GLIMPSE_EDITOR).toBeUndefined();
+      }
+    } finally {
+      delete proto.GLIMPSE_EDITOR;
+    }
   });
 });
 

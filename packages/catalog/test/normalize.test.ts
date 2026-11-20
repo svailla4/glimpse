@@ -37,6 +37,27 @@ describe('normalizeSpec', () => {
     expect(normalizeSpec(source)).toBe(expected);
   });
 
+  // F054: Text('abc'.repeat(10)) rendered the text  abc'.repeat(10))])  with only a "fixed end of input" note,
+  // because the quote after abc was read as an apostrophe and the string ran to the end of the input.
+  it.each([
+    // a ' followed by code, in a string that never closes, was the closing quote: the code after it stays code
+    [`root=Page('U',[Text('abc'.repeat(10))])`, `root=Page("U",[Text("abc".repeat(10))])`],
+    [`a=Text('abc' + name)`, `a=Text("abc" + name)`],
+    [`a=Text('it's 'quoted'.trim())`, `a=Text("it's 'quoted".trim())`],
+    // output cut short is still one string, apostrophes and all: nothing after them looks like code
+    [`a=Text('don't stop`, `a=Text("don't stop"`],
+    [`a=Markdown('It's a call to foo(bar) and`, `a=Markdown("It's a call to foo(bar) and"`],
+    [`a=Text('the users' data (all of it`, `a=Text("the users' data (all of it"`],
+    // a string that does close is never second-guessed
+    [`a=Text('5' 6" boards (pine)')`, `a=Text("5' 6\\" boards (pine)")`],
+  ])('an unterminated string: %j', (source, expected) => {
+    expect(normalizeSpec(source)).toBe(expected);
+  });
+
+  it('after the fix the compiler reports the stray code instead of rendering it', () => {
+    expect(() => compileExpress('s', `root=Page('U',[Text('abc'.repeat(10))])`)).toThrow();
+  });
+
   it('leaves text without single quotes untouched and is idempotent', () => {
     const source = `root=Page("T",[a])\na=Stat(12,"files",delta=3)`;
     expect(normalizeSpec(source)).toBe(source);

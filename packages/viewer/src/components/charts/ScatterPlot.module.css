@@ -1,3 +1,6 @@
 @layer gl.components {
   .dot { fill-opacity: 0.7; stroke-width: 1; }
+  /* a crowd reads as density, not as one solid shape */
+  .dots[data-dense] .dot { fill-opacity: 0.35; stroke-opacity: 0.6; }
+  .dots[data-dense='very'] .dot { fill-opacity: 0.22; }
 }

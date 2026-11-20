@@ -3,12 +3,12 @@
 import type {EntityRef, Field, Roles, Rows, SurfaceMeta} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {useMemo, type JSX} from 'react';
-import {Empty, catVar, fmtNum, type DataState, type GlView} from '../../kit/index.ts';
+import {Empty, fmtNum, type DataState, type GlView} from '../../kit/index.ts';
 import css from './BarChart.module.css';
 import {
-  DEFAULT_HEIGHT, Figure, Legend, Note, OTHER, RowsGate, ValueGrid, assignSlots, barPath, clip, clipPath, count, entityOf, fmtValue,
-  foldSeries, formatOf, inspect, kit, label, linearAxis, notes, num, pick, roleY, say, slotKind, textWidth, tickFormat, useChartBox,
-  useDrawIn, useMarkNav, useSlots, widest, words, type FieldInfo, type Mark, type ValueAxis,
+  DEFAULT_HEIGHT, Figure, Legend, Note, OTHER, RowsGate, ValueGrid, barPath, clipName, clipPath, count, entityOf, fillVar,
+  fmtValue, foldSeries, formatOf, inspect, kit, label, linearAxis, notes, num, pick, roleY, say, slotKind, textWidth, tickFormat, useChartBox,
+  useDrawIn, useMarkNav, useSlots, useSlotter, widest, words, type FieldInfo, type Mark, type Slotter, type ValueAxis,
 } from './chartkit/index.ts';
 
 type Mode = 'grouped' | 'stacked' | 'pct';
@@ -41,7 +41,7 @@ interface Options {
   limit: number;
 }
 
-function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: Options, slots: SurfaceMeta['slots'] | undefined): Model | string {
+function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: Options, slots: SurfaceMeta['slots'] | undefined, assign: Slotter): Model | string {
   const fields = inspect(rows, fieldList);
   const yKeys = words(opts.y);
   if (yKeys.length === 0) yKeys.push(...roleY(roles));
@@ -86,7 +86,7 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
   const names = folded.size > 0 ? [...keep, OTHER] : keep;
   const seriesInfo = seriesKey ? fields.get(seriesKey) : undefined;
   const kind = slotKind(seriesInfo);
-  const slotOf = assignSlots(names, kind ? slots?.[kind] : undefined);
+  const slotOf = assign(names, kind ? slots?.[kind] : undefined);
   const series: Series[] = names.map(name => ({name, slot: slotOf.get(name) ?? 0, info: seriesKey ? undefined : fields.get(name)}));
 
   let list: Category[] = [...cats].map(([name, cat]) => {
@@ -161,7 +161,11 @@ function extents(cat: Category, mode: Mode): Array<[number, number] | undefined>
   });
 }
 
-function layoutBars(model: Model, mode: Mode, horizontal: boolean, width: number, boxHeight: number): Layout {
+/**
+ * `boxHeight` is the height the chart has to fill (the measured box of a sized cell, else the family default);
+ * `stretch` says the box is a sized cell, where horizontal bars may grow into height they would leave blank.
+ */
+function layoutBars(model: Model, mode: Mode, horizontal: boolean, width: number, boxHeight: number, stretch: boolean): Layout {
   const {cats, series} = model;
   const k = series.length;
   const grouped = mode === 'grouped' && k > 1;
@@ -198,7 +202,7 @@ function layoutBars(model: Model, mode: Mode, horizontal: boolean, width: number
     marks.push({
       x: bar.x, y: bar.y, w: Math.max(1, bar.w), h: Math.max(1, bar.h),
       title: title(bar.cat),
-      rows: [{label: s.info?.label ?? s.name, value: mode === 'pct' ? fmtValue(cat.values[bar.series], s.info ?? model.valueInfo) + share : value, color: catVar(s.slot)}],
+      rows: [{label: s.info?.label ?? s.name, value: mode === 'pct' ? fmtValue(cat.values[bar.series], s.info ?? model.valueInfo) + share : value, color: fillVar(s.slot)}],
       foot: mode === 'stacked' && k > 1 ? `total ${fmt(totals[bar.cat]!.up + totals[bar.cat]!.down)}` : undefined,
       entity: cat.entity,
       say: `${say(cat.label)}, ${k > 1 ? `${say(s.name, 40)} ` : ''}${value}`,
@@ -206,16 +210,20 @@ function layoutBars(model: Model, mode: Mode, horizontal: boolean, width: number
   };
 
   if (horizontal) {
-    const thick = grouped ? 10 : 14;
-    const band = grouped ? k * thick + (k - 1) * 2 + 8 : 20;
     const top = 4;
     const bottom = 34;
+    // 14 px bars on a 20 px band; a sized cell with few bars gives them up to 1.7 times that before it stays blank
+    const natural = grouped ? k * 10 + (k - 1) * 2 + 8 : 20;
+    const grow = stretch ? Math.max(1, Math.min(1.7, (boxHeight - top - bottom) / (cats.length * natural))) : 1;
+    const thick = Math.round((grouped ? 10 : 14) * Math.min(grow, 1.45));
+    const band = Math.floor(natural * grow);
+    const inset = Math.floor((band - (grouped ? k * thick + (k - 1) * 2 : thick)) / 2);
     const labelW = Math.max(24, Math.min(widest(cats.map(cat => cat.label)), width * 0.4, 260));
     const x0 = Math.min(width - 40, labelW + 10 + (hasNeg ? valueW : 0));
     const x1 = Math.max(x0 + 24, width - valueW - 2);
-    const axis = linearAxis(mode === 'pct' ? [0, 100] : ends, [x0, x1], {count: Math.max(2, Math.min(5, Math.floor((x1 - x0) / 72)))});
+    const axis = linearAxis(mode === 'pct' ? [0, 100] : ends, [x0, x1], {count: Math.max(2, Math.min(5, Math.floor((x1 - x0) / 72))), whole: mode !== 'pct'});
     cats.forEach((_, c) => {
-      const y0 = top + c * band + (grouped ? 4 : 3);
+      const y0 = top + c * band + inset;
       labels.push({cat: c, x: labelW, y: top + c * band + band / 2, width: labelW, first: bars.length});
       const stack = stacks[c]!;
       const outer = stack.reduce((last, extent, s) => (extent && extent[0] !== extent[1] ? s : last), -1);
@@ -248,12 +256,13 @@ function layoutBars(model: Model, mode: Mode, horizontal: boolean, width: number
   const top = 24;
   const bottom = 24;
   const right = 8;
-  const probe = linearAxis(mode === 'pct' ? [0, 100] : ends, [height - bottom, top], {count: Math.max(2, Math.min(5, Math.floor((height - top - bottom) / 44)))});
+  const probe = linearAxis(mode === 'pct' ? [0, 100] : ends, [height - bottom, top], {count: Math.max(2, Math.min(5, Math.floor((height - top - bottom) / 44))), whole: mode !== 'pct'});
   const tickText = tickFormat(probe.ticks, mode === 'pct' ? 'pct' : formatOf(model.valueInfo));
   const left = Math.min(width * 0.3, widest(probe.ticks.map(tickText)) + 14);
   const band = Math.max(1, (width - left - right) / cats.length);
   const inner = Math.max(1, band - Math.min(6, band * 0.3));
-  const thick = grouped ? Math.max(1, Math.min(20, (inner - (k - 1) * 2) / k)) : Math.min(28, inner);
+  // a few bars on a wide plate are drawn wider, so they do not read as sticks
+  const thick = grouped ? Math.max(1, Math.min(20, (inner - (k - 1) * 2) / k)) : Math.min(Math.max(28, Math.min(44, band * 0.22)), inner);
   const groupW = grouped ? k * thick + (k - 1) * 2 : thick;
   cats.forEach((_, c) => {
     const x0 = left + c * band + (band - groupW) / 2;
@@ -282,10 +291,11 @@ function layoutBars(model: Model, mode: Mode, horizontal: boolean, width: number
 function Plot(p: {id: string; rows: Rows; state: DataState<Rows>; skipped: number; props: C.ViewProps<typeof C.BarChart>}): JSX.Element {
   const {id, rows, state, props} = p;
   const slots = useSlots();
+  const assign = useSlotter();
   const limit = props.limit ?? 20;
   const model = useMemo(
-    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, series: props.series, limit}, slots),
-    [rows, state.fields, state.roles, props.x, props.y, props.series, limit, slots],
+    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, series: props.series, limit}, slots, assign),
+    [rows, state.fields, state.roles, props.x, props.y, props.series, limit, slots, assign],
   );
   if (typeof model === 'string') return <Empty message={`${model}${state.ds ? ` (${state.ds.source})` : ''}`} />;
   return <Bars id={id} model={model} skipped={p.skipped} props={props} />;
@@ -297,7 +307,7 @@ function Bars(p: {id: string; model: Model; skipped: number; props: C.ViewProps<
   const mode: Mode = props.mode ?? 'grouped';
   const horizontal = props.dir ? props.dir === 'h' : model.cats.length > 8 || model.cats.some(cat => cat.label.length > 12);
   const layout = useMemo(
-    () => (width <= 0 ? undefined : layoutBars(model, mode, horizontal, width, fill ? Math.max(120, boxHeight) : DEFAULT_HEIGHT)),
+    () => (width <= 0 ? undefined : layoutBars(model, mode, horizontal, width, fill ? Math.max(120, boxHeight) : DEFAULT_HEIGHT, fill)),
     [model, mode, horizontal, width, fill, boxHeight],
   );
   const nav = useMarkNav({id, marks: layout?.marks ?? [], box: boxRef});
@@ -313,7 +323,7 @@ function Bars(p: {id: string; model: Model; skipped: number; props: C.ViewProps<
             key={i}
             className={`${css.bar} ${layout.horizontal ? kit.growX : kit.growY}`}
             d={barPath(bar.x, bar.y, bar.w, bar.h, bar.end, bar.round ? 2 : 0)}
-            style={{fill: catVar(series[bar.series]!.slot)}}
+            style={{fill: fillVar(series[bar.series]!.slot)}}
             data-i={i}
             data-entity={cats[bar.cat]!.entity ? '' : undefined}
             data-neg={bar.end === 'left' || bar.end === 'bottom' || undefined}
@@ -351,7 +361,7 @@ function Bars(p: {id: string; model: Model; skipped: number; props: C.ViewProps<
         width={layout?.width ?? 0}
         height={layout ? (fill ? Math.max(layout.height, layout.horizontal ? boxHeight : 0) : layout.height) : fill ? 0 : DEFAULT_HEIGHT}
         drawing={drawing}
-        header={series.length > 1 ? <Legend items={series.map(s => ({key: s.name, label: s.info?.label ?? s.name, color: catVar(s.slot)}))} /> : undefined}
+        header={series.length > 1 ? <Legend items={series.map(s => ({key: s.name, label: s.info?.label ?? s.name, color: fillVar(s.slot)}))} /> : undefined}
       >
         {layout ? (
           <>
@@ -359,7 +369,8 @@ function Bars(p: {id: string; model: Model; skipped: number; props: C.ViewProps<
             {drawn}
             {layout.labels.map(lab => {
               const cat = cats[lab.cat]!;
-              const parts = cat.path ? clipPath(cat.label, lab.width) : {dir: '', base: clip(cat.label, lab.width)};
+              // a file keeps its name and the nearest directories; any other name with slashes keeps its last segment
+              const parts = cat.path ? clipPath(cat.label, lab.width) : clipName(cat.label, lab.width);
               const dim = lab.first >= 0 && nav.picked && !nav.picked[lab.first];
               return (
                 <text
@@ -386,7 +397,7 @@ function Bars(p: {id: string; model: Model; skipped: number; props: C.ViewProps<
 }
 
 export const BarChartView: GlView<typeof C.BarChart> = ({id, props}) => (
-  <RowsGate name="BarChart" id={id} input={props.data}>
+  <RowsGate name="BarChart" id={id} input={props.data} size={props.size}>
     {(rows, state, skipped) => <Plot id={id} rows={rows} state={state} skipped={skipped} props={props} />}
   </RowsGate>
 );

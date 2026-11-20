@@ -1,7 +1,7 @@
 // Pure data helpers shared by every chart: coercion, field sniffing, default encodings, entities, series slots and
 // text fitting. Nothing here touches the DOM.
-import {parseFileLoc, type DataRow, type EntityRef, type Field, type FieldKind, type Format, type Roles, type Rows} from '@glimpse/catalog';
-import {fmtNum} from '../../../kit/index.ts';
+import type {DataRow, EntityRef, Field, FieldKind, Format, Roles, Rows} from '@glimpse/catalog';
+import {elidePath, fileEntity, fmtNum, splitPath} from '../../../kit/index.ts';
 
 export const DASH = '—';
 export const OTHER = 'other';
@@ -164,11 +164,6 @@ const ENTITY_KINDS: Partial<Record<FieldKind, EntityRef['type']>> = {path: 'file
 // Inline rows carry no field kinds: the usual column names say what a value is.
 const ENTITY_KEYS: Record<string, EntityRef['type']> = {path: 'file', file: 'file', module: 'module', author: 'author', owner: 'author', commit: 'commit', sha: 'commit', symbol: 'symbol'};
 
-function fileEntity(loc: string): EntityRef {
-  const parsed = parseFileLoc(loc);
-  return {type: 'file', id: parsed.path, path: parsed.path, ...(parsed.line != null ? {line: parsed.line} : {}), ...(parsed.endLine != null ? {endLine: parsed.endLine} : {})};
-}
-
 /**
  * The entity a mark stands for. A path field (or a row that carries `path` / `file`) is a file; module, author,
  * commit and symbol fields are entities of that type; anything else is a `row` named by its label.
@@ -185,21 +180,10 @@ export function entityOf(info: FieldInfo | undefined, value: unknown, row?: Data
   return text === undefined ? undefined : {type: 'row', id: text, label: text};
 }
 
-/** True when a mark's entity is the surface selection: same type and id, the same path, or a file inside a selected directory. */
-export function matches(selected: EntityRef | null, entity: EntityRef | undefined): boolean {
-  if (!selected || !entity) return false;
-  if (selected.type === entity.type && selected.id === entity.id) return true;
-  const selectedPath = selected.path ?? (selected.type === 'file' || selected.type === 'dir' ? selected.id : undefined);
-  if (selectedPath == null || entity.path == null) return false;
-  if (selectedPath === entity.path) return true;
-  return selected.type === 'dir' && (selectedPath === '' || entity.path.startsWith(selectedPath + '/'));
-}
-
-/** `path:line` as an editor or a terminal takes it; the label or id for entities without a path. */
-export function clipText(entity: EntityRef): string {
-  if (!entity.path) return entity.label ?? entity.id;
-  return entity.line != null ? `${entity.path}:${entity.line}` : entity.path;
-}
+// Whether a mark's entity is the surface selection or lies inside it (same type and id, the same path, a file inside
+// a selected directory), and what `c` copies, are the kit's rules (marksSelection, entityClipText): one definition
+// for every component. Re-exported under the names the charts use.
+export {entityClipText as clipText, marksSelection as matches} from '../../../kit/index.ts';
 
 // ---------------------------------------------------------------- series and slots
 export type SlotKind = 'lang' | 'module' | 'author';
@@ -215,31 +199,28 @@ export function slotKind(info: Pick<FieldInfo, 'key' | 'kind'> | undefined): Slo
   return undefined;
 }
 
+// Colour slots for series names come from the kit (design D6): a name the session gave a slot keeps it, the rest
+// take the lowest free slots in order of first appearance, and only a ninth name is `other`. Re-exported so the
+// charts have one import site.
+export {assignSlots, isOtherKey} from '../../../kit/index.ts';
+
 /**
- * Colour slots (1..8, 0 = other) for series names. A name the server already gave a slot keeps it, so an entity
- * wears the same ink on every plate; the rest take the free slots in order, never cycled.
+ * Fill of the folded `other` series: a light neutral, so the remainder never reads as the heaviest ink of a chart.
+ * Lines and dots keep the plain `other` ink (`catVar(0)`), which has to hold against the surface on its own.
  */
-export function assignSlots(names: readonly string[], known?: Record<string, number>): Map<string, number> {
-  const slots = new Map<string, number>();
-  const taken = new Set<number>();
-  for (const name of names) {
-    const slot = name === OTHER ? 0 : known?.[name];
-    if (typeof slot === 'number' && Number.isInteger(slot) && slot >= 1 && slot <= 8 && !taken.has(slot)) {
-      slots.set(name, slot);
-      taken.add(slot);
-    }
-  }
-  let next = 1;
-  for (const name of names) {
-    if (slots.has(name)) continue;
-    while (taken.has(next)) next++;
-    if (name === OTHER || next > 8) slots.set(name, 0);
-    else {
-      slots.set(name, next);
-      taken.add(next);
-    }
-  }
-  return slots;
+export const OTHER_FILL = 'color-mix(in oklab, var(--gl-cat-other) 38%, var(--gl-surface))';
+
+/** Fill for a series slot: its categorical ink, or the light neutral for `other`. */
+export function fillVar(slot: number): string {
+  return slot >= 1 && slot <= 8 ? `var(--gl-cat-${slot})` : OTHER_FILL;
+}
+
+/**
+ * A categorical ink as an area tint (treemap and icicle cells): mixed into the surface, more strongly on the dark
+ * plate, where a light mix turns to mud.
+ */
+export function tintVar(ink: string): string {
+  return `light-dark(color-mix(in oklab, ${ink} 32%, var(--gl-surface)), color-mix(in oklab, ${ink} 46%, var(--gl-surface)))`;
 }
 
 /** Up to eight series are kept; beyond that the seven largest stay and the rest fold into `other`. */
@@ -274,16 +255,46 @@ export function clip(text: string, maxPx: number, px = 11): string {
   return fit <= 1 ? '' : text.slice(0, fit - 1) + '…';
 }
 
-/** Splits a path into a directory (cut at the front when it is too long) and a base name that stays whole when it can. */
-export function clipPath(path: string, maxPx: number, px = 11): {dir: string; base: string} {
+/**
+ * Cuts a path to a pixel width with the ellipsis at the front: the end of a path is the part that names it. The cut
+ * is the kit's (elidePath, design rule D12): whole directories go first and the last name stays whole when it can.
+ */
+export function clipTail(text: string, maxPx: number, px = 11): string {
   const fit = Math.floor(maxPx / (px * ADVANCE));
-  const slash = path.lastIndexOf('/');
-  const dir = slash >= 0 ? path.slice(0, slash + 1) : '';
-  const base = slash >= 0 ? path.slice(slash + 1) : path;
-  if (path.length <= fit) return {dir, base};
-  if (base.length >= fit) return {dir: '', base: clip(base, maxPx, px)};
-  const room = fit - base.length;
-  return {dir: room <= 1 ? '' : '…' + dir.slice(dir.length - (room - 1)), base};
+  if (text.length <= fit) return text;
+  return fit <= 1 ? '' : elidePath(text, fit);
+}
+
+/**
+ * A path fitted to a pixel width (clipTail), split into the directory part (drawn dim, ellipsis included) and the
+ * base name (drawn in ink).
+ */
+export function clipPath(path: string, maxPx: number, px = 11): {dir: string; base: string} {
+  return splitPath(clipTail(path, maxPx, px));
+}
+
+/**
+ * Fits a path-like name ('typescript/renderers/lit', 'swift/core/Tests/*') by cutting its middle: the last segment
+ * stays whole, then as many leading segments as fit, so names that share a prefix stay apart. Text without a slash
+ * is cut at the end. `dir` is everything before the last segment as drawn, ellipsis included.
+ */
+export function clipName(text: string, maxPx: number, px = 11): {dir: string; base: string} {
+  const fit = Math.floor(maxPx / (px * ADVANCE));
+  const parts = text.split('/');
+  // a trailing wildcard or an empty segment is not a name: it stays with the segment before it
+  let tail = 1;
+  while (tail < parts.length && /^\**$/.test(parts[parts.length - tail]!)) tail++;
+  if (parts.length <= tail) return {dir: '', base: clip(text, maxPx, px)};
+  const base = parts.slice(parts.length - tail).join('/');
+  const lead = parts.slice(0, parts.length - tail);
+  if (text.length <= fit) return {dir: lead.join('/') + '/', base};
+  if (base.length + 2 > fit) return {dir: '', base: clip(base, maxPx, px)};
+  let head = '';
+  for (const part of lead) {
+    if (head.length + part.length + 1 + 2 + base.length > fit) break;
+    head += part + '/';
+  }
+  return {dir: head + '…/', base};
 }
 
 /** '1 row', '12,840 rows': the count in tabular form with the noun in the right number. */

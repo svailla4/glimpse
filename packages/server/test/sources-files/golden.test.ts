@@ -150,13 +150,14 @@ describe('repo.*', () => {
       {label: 'Files', value: 36},
       {label: 'Lines', value: 634, format: 'compact'},
       {label: 'Languages', value: 4},
-      {label: 'Modules', value: 9},
+      // three manifests: package.json, pyproject.toml and services/gateway/go.mod (the rows of repo.packages)
+      {label: 'Modules', value: 3},
       {label: 'Cycles', value: 1, tone: 'warn'},
       // one commit in the 30 days before the pinned clock (4 Nov), three in the 30 days before that
       {label: 'Commits (30d)', value: 1, delta: -2},
       {label: 'Contributors', value: 3},
     ]);
-    expect(result.summary).toBe('7 rows; fields label value; Files 36, Lines 634, Languages 4, Modules 9, Cycles 1, Commits (30d) 1, Contributors 3');
+    expect(result.summary).toBe('7 rows; fields label value; Files 36, Lines 634, Languages 4, Modules 3 (packages), File cycles 1, Commits (30d) 1, Contributors 3');
     expect(result.warnings).toBeUndefined();
     checkResult('repo.kpis', result);
   });
@@ -216,7 +217,6 @@ describe('deps.*', () => {
       'ext:pg | pg |  | in 1 out 0',
       'ext:react | react |  | in 1 out 0',
       'ext:redis | redis |  | in 1 out 0',
-      'ext:zod | zod |  | in 1 out 0',
     ]);
     expect(edgeLines(graph)).toEqual([
       'src/api -> src/auth 3',
@@ -232,7 +232,6 @@ describe('deps.*', () => {
       'src/auth -> src/orders 1 cycle',
       'src/lib -> ext:pg 1',
       'src/lib -> ext:redis 1',
-      'src/orders -> ext:zod 1',
       'src/orders -> src/lib 1',
       'src/ui -> ext:react 1',
       'test -> src/auth 1',
@@ -240,7 +239,11 @@ describe('deps.*', () => {
     expect(graph.groups).toEqual([{id: 'dir:src', label: 'src'}]);
     expect(graph.nodes.find(node => node.id === 'src/auth')).toMatchObject({kind: 'cluster', slotKey: 'src/auth', files: 3, loc: 107, file: 'src/auth/service.ts'});
     expect(graph.nodes.find(node => node.id === 'ext:pg')).toEqual({id: 'ext:pg', label: 'pg', kind: 'external', fanIn: 1, fanOut: 0});
-    expect(result).toMatchObject({total: 14, summary: '14 nodes 17 edges, 1 cycle; level module'});
+    // the default graph keeps the four most used external packages; top= asks for more
+    expect(result).toMatchObject({total: 13, summary: '13 nodes 16 edges, 1 module cycle; level module'});
+    const more = await run(ctx, 'deps.modules top=48');
+    expect((more.data as GraphData).nodes.filter(node => node.kind === 'external').map(node => node.id)).toEqual(['ext:vitest', 'ext:pg', 'ext:react', 'ext:redis', 'ext:zod']);
+    expect(more).toMatchObject({total: 14, summary: '14 nodes 17 edges, 1 module cycle; level module'});
     checkResult('deps.modules', result);
   });
 
@@ -267,7 +270,7 @@ describe('deps.*', () => {
       'test -> src/auth/service.ts',
     ]);
     expect(graph.groups).toEqual([{id: 'scope', label: 'src/auth'}]);
-    expect(result.summary).toBe('7 nodes 12 edges, 1 cycle; level file; 4 imports out of src/auth');
+    expect(result.summary).toBe('7 nodes 12 edges, 1 file cycle; level file; 4 imports out of src/auth');
     checkResult('deps.modules', result);
   });
 
@@ -278,9 +281,9 @@ describe('deps.*', () => {
     expect(edgeLines(graph)).toEqual(['src/ui -> src/orders 2', 'src/ui -> ext:react 1']);
     // the numbers of a node are those of the whole graph, not of the cut-out
     expect(graph.nodes.find(node => node.id === 'src/orders')).toMatchObject({fanIn: 4, fanOut: 2, cycle: true});
-    expect(byLabel.truncated).toEqual({total: 14, returned: 3, strategy: 'neighborhood', by: 'src/ui'});
+    expect(byLabel.truncated).toEqual({total: 13, returned: 3, strategy: 'neighborhood', by: 'src/ui'});
     const wider = await run(ctx, 'deps.modules focus=src/ui depth=2');
-    expect((wider.data as GraphData).nodes.map(node => node.id).sort()).toEqual(['ext:react', 'ext:zod', 'src/api', 'src/auth', 'src/lib', 'src/orders', 'src/ui', 'test']);
+    expect((wider.data as GraphData).nodes.map(node => node.id).sort()).toEqual(['ext:react', 'src/api', 'src/auth', 'src/lib', 'src/orders', 'src/ui', 'test']);
     checkResult('deps.modules', wider);
   });
 
@@ -308,7 +311,7 @@ describe('deps.*', () => {
     expect(graph.nodes[0]).toEqual({
       id: 'src/auth/service.ts', label: 'service.ts', sub: 'src/auth', kind: 'file', slotKey: 'src/auth', loc: 53, fanIn: 3, fanOut: 4, file: 'src/auth/service.ts', cycle: true,
     });
-    expect(result.summary).toBe('7 nodes 12 edges, 1 cycle; level file; service.ts imports 4, imported by 3');
+    expect(result.summary).toBe('7 nodes 12 edges, 1 file cycle; level file; service.ts imports 4, imported by 3');
     checkResult('deps.files', result);
 
     const withPackages = await run(ctx, 'deps.files src/lib/db.ts');

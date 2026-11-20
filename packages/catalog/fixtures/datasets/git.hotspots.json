@@ -65,12 +65,13 @@
     {
       "key": "complexity",
       "kind": "bar",
+      "label": "Indentation",
       "priority": 1
     },
     {
       "key": "sloc",
       "kind": "num",
-      "label": "SLOC",
+      "label": "Lines",
       "priority": 3
     },
     {
@@ -93,6 +94,7 @@
   },
   "total": 7,
   "pageable": true,
+  "wt": true,
   "cache": "miss",
   "elapsedMs": 12
 }

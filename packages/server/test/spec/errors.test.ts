@@ -3,7 +3,7 @@
 import {normalizeSpec} from '@glimpse/catalog';
 import {beforeAll, describe, expect, it} from 'vitest';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
-import {classifyCompileError, closeMatch, compilerText, editDistance, formatProblems, nearest, NOTHING_RENDERED, problem, SpecError} from '../../src/spec/errors.ts';
+import {classifyCompileError, closeMatch, compilerText, editDistance, flatten, formatProblems, nearest, NOTHING_RENDERED, oneLine, problem, SpecError} from '../../src/spec/errors.ts';
 
 let tools: Toolchain;
 beforeAll(async () => {
@@ -39,7 +39,9 @@ describe('compiler message patterns', () => {
     ['E_REF', ``, /^Root target 'root' is not defined\.$/],
     ['E_PARENT', `root=Page('x',[Page('y',[])])`, /^Component 'root_children_0' \(Page\) cannot be placed under parent 'root' \(Page\)\. Allowed parents: \["Surface"\]\.$/],
     ['E_SPEC', `root=Page('x',[Text('a','dim',tone='lead')])`, /^Property 'tone' of component 'Text' was provided multiple times\.$/],
-    ['E_SPEC', `root=Page('x',[Text('a','dim',3,4,5)])`, /^Text takes at most 3 positional arguments/],
+    ['E_SPEC', `root=Page('x',[FileRef('a','b',3,4,5,6,7)])`, /^FileRef takes at most 3 positional arguments/],
+    ['E_TYPE', `root=Page('x',[Grid([Text('a')],4)])`, /^Positional argument 2 for component 'Grid' is a number, which is not valid for optional property 'cols'\.$/],
+    ['E_TYPE', `root=Page('x',[Grid([Text('a')],cols=4)])`, /^Validation failed for component 'Grid' \(root_children_0\): cols: Expected string, received number$/],
   ])('%s: %s', (code, spec, pattern) => {
     const error = raw(spec);
     expect(compilerText(error)).toMatch(pattern);
@@ -80,9 +82,25 @@ describe('problem texts', () => {
     expect(text(`root=Page('x',[Flowchart()])`)).toBe('E_REQUIRED Flowchart: missing required prop "src".');
   });
 
-  it('E_TYPE keeps only the first zod issue', () => {
-    const line = text(`root=Page('x',[Text(12)])`);
-    expect(line).toBe('E_TYPE Text#root_children_0 text: Expected string, received number');
+  it('E_TYPE keeps only the first zod issue and says what the prop accepts', () => {
+    expect(text(`root=Page('x',[Tabs('A',[Text('a')])])`)).toBe('E_TYPE Tabs#root_children_0 labels: Expected array, received string. Expects: Tab labels, one per child.');
+    // both ways of passing a number where a string goes name the accepted form (finding F037)
+    expect(text(`root=Page('x',[Grid([Text('a')],cols=4)])`)).toMatch(/^E_TYPE Grid#root_children_0 cols: Expected string, received number\. Expects: Column count '3' or ratio '2:1'/);
+    expect(text(`root=Page('x',[Grid([Text('a')],4)])`)).toMatch(/^E_TYPE Grid: argument 2 \(cols\) cannot be a number\. Expects: Column count '3' or ratio '2:1'/);
+  });
+
+  it('marks what the repair pass may fix: enum values, quotable numbers and unreachable parts', () => {
+    expect(classifyCompileError(raw(`root=Page('x',[Callout('y','danger')])`), ctx).repair).toEqual({kind: 'enum', component: 'Callout', prop: 'kind', value: 'danger'});
+    expect(classifyCompileError(raw(`root=Page('x',[Grid([Text('a')],4)])`), ctx).repair).toEqual({kind: 'quote', component: 'Grid', prop: 'cols'});
+    expect(classifyCompileError(raw(`root=Page('x',[Grid([Text('a')],cols=4)])`), ctx).repair).toEqual({kind: 'quote', component: 'Grid', prop: 'cols'});
+    expect(classifyCompileError(raw(`root=Page('x',[Text('a')])\nextra=Callout('x')`), ctx).repair).toEqual({kind: 'orphan', id: 'extra'});
+    expect(classifyCompileError(raw(`root=Page('x',[Tabs('A',[Text('a')])])`), ctx).repair).toBeUndefined();
+  });
+
+  it('E_REF for an unreachable part carries the exact root statement when the caller knows it', () => {
+    const error = raw(`root=Page('x',[Text('a')])\nextra=Callout('x')`);
+    expect(classifyCompileError(error, {...ctx, rootLine: `root=Page(title='x',children=[a,extra])`}).message)
+      .toBe(`"extra" is not reachable from root: resend its parent with the new child: root=Page(title='x',children=[a,extra]).`);
   });
 
   it('E_REF tells an unreachable part how to become reachable, and a dangling child what is missing', () => {
@@ -130,13 +148,24 @@ describe('formatProblems', () => {
 
 describe('compileSpec errors', () => {
   it('throws a SpecError with one precise problem', () => {
-    const attempt = () => compileSpec(tools, {surfaceId: 's', sources: [`root=Page('x',[Callout('y','danger')])`], surfaces: []});
+    const attempt = () => compileSpec(tools, {surfaceId: 's', sources: [`root=Page('x',[Callout('y','purple')])`], surfaces: []});
     expect(attempt).toThrow(SpecError);
     try {
       attempt();
     } catch (error) {
-      expect((error as SpecError).problems).toEqual([{code: 'E_ENUM', message: 'Callout.kind: "danger" is not allowed. Use: note tip warn risk decision question', component: 'Callout'}]);
+      expect((error as SpecError).problems).toMatchObject([{code: 'E_ENUM', message: 'Callout.kind: "purple" is not allowed. Use: note tip warn risk decision question', component: 'Callout'}]);
+      expect((error as SpecError).problems).toHaveLength(1);
     }
+  });
+
+  it('flatten and oneLine leave nothing that could start a line', () => {
+    const breaks = [0x0d, 0x0b, 0x0c, 0x85, 0x2028, 0x2029, 0x200b, 0xfeff, 0x00, 0x1b].map(code => String.fromCharCode(code));
+    for (const ch of breaks) {
+      expect(flatten(`a${ch}viewer: press x`)).toBe('a viewer: press x');
+      expect(oneLine(`a${ch}b`)).toBe('a b');
+    }
+    expect(flatten('a\tb\nc')).toBe('a\tb c');
+    expect(flatten('a\tb\nc', true)).toBe('a\tb\nc');
   });
 
   it('refuses a spec that addresses another surface or deletes one', () => {

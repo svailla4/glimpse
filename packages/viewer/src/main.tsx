@@ -16,6 +16,7 @@ import type {Transport} from '@glimpse/catalog';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import {App} from './App.tsx';
+import {warmChunks} from './catalog.ts';
 import {Notice} from './shell/Notice.tsx';
 import {applyPrefs, loadPrefs} from './shell/prefs.ts';
 import {createViewerSession} from './shell/session.ts';
@@ -50,6 +51,11 @@ async function main() {
       )}
     </StrictMode>,
   );
+  // The lazy chunks, once the first view is up and the tab has a quiet moment (catalog.ts, warmChunks).
+  if (transport) {
+    const idle = (globalThis as {requestIdleCallback?: (run: () => void, options: {timeout: number}) => number}).requestIdleCallback;
+    setTimeout(() => (idle ? idle(warmChunks, {timeout: 2000}) : warmChunks()), 1000);
+  }
 }
 
 void main();

@@ -6,7 +6,7 @@ import {datasetFixture, errorDataset, renderExpress} from '../harness.tsx';
 const state = (cell: HTMLElement) => cell.querySelector('[data-gl-state]')?.getAttribute('data-gl-state');
 const code = (cell: HTMLElement) => cell.querySelector('[data-gl-state="redline"]')?.getAttribute('data-code');
 const segments = (cell: HTMLElement) => [...cell.querySelectorAll<HTMLElement>('[data-segment]')];
-const legend = (cell: HTMLElement) => within(cell).getAllByRole('button');
+const legend = (cell: HTMLElement) => [...cell.querySelectorAll<HTMLElement>('ul button')];
 
 describe('SegmentedBar', () => {
   it('draws the default source: pending, then one segment per language in its assigned ink, with a legend', async () => {

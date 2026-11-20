@@ -7,6 +7,8 @@ Glimpse is two things:
 - **A component library**: 44 React components behind an [A2UI](https://a2ui.org) v1.0 catalog, drawn in one design language, Linework.
 - **An MCP server** with five tools. It compiles the agent's spec, runs the repository analyzers, and hosts the viewer on `127.0.0.1`.
 
+**Status: version 0.1.0, working but young.** All 44 components, the 26 data sources, the ten preset views and the five tools are implemented and covered by unit, component and end-to-end tests. It has been run on macOS with Chromium only, there is no release build yet (you build it from a checkout, see [Install](#install)), and it has had one round of testing with a model writing the specs. [Status and known limitations](#status-and-known-limitations) has the details.
+
 ## What it looks like
 
 There are no screenshots here yet, so in words. A view is a sheet of warm paper under a hairline top bar. Each titled component is a *plate*: a frame with small registration ticks at the corners, a vermilion `PL. 03` numeral and a serif title, like a figure in an engineering atlas. Text is IBM Plex with Newsreader for titles and the large numerals; code and identifiers are monospace. Colour is used for data: a language or a module keeps the same ink in every plate of the session, and vermilion marks the selection. There is a dark theme (`t`) and a denser row height (`d`).
@@ -19,28 +21,36 @@ Asking a model to write an HTML page for every explanation is slow and costs tho
 
 - **The model names things; it does not draw them.** `show{view:"overview"}` is about five output tokens. A bespoke view is a few lines of spec, 20 to 160 tokens.
 - **Data stays on your machine.** The agent writes `DataTable('git.churn src/auth top=20')`. The rows are computed locally and bound straight into the page; they never pass through the model. The tool result carries a one-line summary per dataset (row count, field names, the top row) so the agent can talk about what you see.
+- **The agent is told what you actually see.** A result lists what the server corrected for it (`fixed`) and what the tab could not draw (`warn`), so an `ok` is not a guess.
 - **A standard wire format.** Server and viewer speak A2UI v1.0, and the catalog is published as `catalog.json`.
 
-The whole up-front cost for the agent is the server instructions (3,896 characters) plus two tool definitions (1,075 characters): about 1,250 tokens per session.
+The whole up-front cost for the agent is the server instructions (about 3,700 characters) plus two tool definitions (about 1,150 characters): roughly 1,250 tokens per session.
 
 ## Install
 
-Requirements: Node 22.18 or newer and `git` on the PATH. `plugin/dist` is build output and is not committed yet, so today every route starts from a checkout:
+Requirements: Node 22.18 or newer, npm, and `git` on the PATH.
+
+`plugin/dist` (the bundled server and the built viewer) is build output. It is **not committed**, so there is nothing to install straight from the hosted repository yet: every route starts from a checkout and one build.
 
 ```sh
 git clone <this repository> glimpse
 cd glimpse
-npm install
-npm run build        # writes plugin/dist/server.mjs and plugin/dist/viewer
+npm install          # .npmrc sets ignore-scripts: no dependency runs code at install time
+npm run build        # writes plugin/dist/server.mjs, plugin/dist/viewer/ and plugin/skills/glimpse/SKILL.md
 ```
+
+`npm run build` ends by starting the bundle from an empty directory to check that it runs with no `node_modules`. After it, `plugin/` is a complete Claude Code plugin and `plugin/dist/server.mjs` is a self-contained MCP server.
 
 ### As a Claude Code plugin
 
+Start Claude Code in the project you want to look at, pointing it at the built plugin:
+
 ```sh
+cd /path/to/your/project
 claude --plugin-dir /path/to/glimpse/plugin
 ```
 
-Or register the checkout as a local marketplace and install from it:
+Or register the checkout as a local marketplace once and install from it:
 
 ```sh
 claude plugin marketplace add /path/to/glimpse
@@ -49,7 +59,7 @@ claude plugin install glimpse@glimpse
 
 The plugin brings the MCP server, a skill that tells Claude when and how to use Glimpse, and a `UserPromptSubmit` hook that passes along what you clicked in the tab since your last prompt. Then ask for something: "show me an overview of this repo", "what does this branch change?", "walk me through `src/auth/service.ts`".
 
-Installing straight from the hosted repository (`claude plugin marketplace add <owner>/<repo>`) will work once a release commits `plugin/dist`; until then the installed plugin has no server to start.
+Rebuild (`npm run build`) after pulling changes. Installing with `claude plugin marketplace add <owner>/<repo>` will work only once a release commits `plugin/dist`; until then a plugin installed that way has no server to start.
 
 ### As a plain MCP server
 
@@ -66,7 +76,7 @@ The bundle is one file with no dependencies to install. For any MCP host that sp
 }
 ```
 
-The project root is `CLAUDE_PROJECT_DIR` when the host sets it, else `--root`, else the directory the server is started in. Without the plugin's hook, interactions reach the agent on its next Glimpse call or through the `events` tool.
+The project root is `CLAUDE_PROJECT_DIR` when the host sets it, else `--root`, else the directory the server is started in. Without the plugin's hook, what you do in the tab reaches the agent on its next Glimpse call or through the `events` tool.
 
 ### Without an agent
 
@@ -83,23 +93,35 @@ The demo plays the agent's part: it starts the server, calls `show` three times 
 |---|---|
 | `GLIMPSE_PORT` | Preferred port (default 4517, then the next 19, then any free port; `0` picks any free port). |
 | `GLIMPSE_NO_OPEN=1` | Never open a browser tab or an editor; the tool result carries the link instead. |
-| `GLIMPSE_EDITOR` | Command that opens a file from the viewer, for example `code -g {file}:{line}`. Without it Glimpse tries `code`, `cursor` and `zed`, then the system default. |
+| `GLIMPSE_EDITOR` | Command that opens a file from the viewer, for example `code -g {file}:{line}`. Without it Glimpse uses the first editor it knows on the PATH (`code`, `cursor`, `zed` and a few more). If there is none, nothing is opened: a repository file is never handed to the system's default opener. |
 
 ## Tools
 
 | Tool | Purpose |
 |---|---|
-| `show` | Render a preset (`view`), a custom view (`spec`), or patch a view that is already open (`id` plus `spec`). Returns the dataset summaries, the named parts of the view, warnings, and anything you did in the tab. |
-| `catalog` | Look up a component, a data source, a preset (`view:diff` returns its source, which doubles as an example), the spec grammar or worked examples. |
+| `show` | Render a preset (`view`), a custom view (`id` plus `spec`), or patch a view that is already open (its `id` plus only the parts that change). Returns the dataset summaries, the named parts of the view, what was corrected, what the tab could not draw, and anything you did in the tab. |
+| `catalog` | Look up a component (its props, the shape of its data with an example), a data source, a preset (`view:diff` returns its source, which doubles as an example), the spec grammar or worked examples. |
 | `query` | Run a data source and return a few rows as text, without rendering, so the agent can ground what it says. |
 | `events` | What you did in the tab since the last Glimpse call: selections, button presses, answers. Can wait for the next one. |
 | `pending_context` | Used by the plugin's hook; hidden from the model. |
 
-Errors are all-or-nothing and specific: a bad spec changes nothing on screen, and the result names the failing component, its signature and the valid options, so the agent resends only the failing part.
+A result is plain text, one fact per line:
+
+```
+ok server-package http://127.0.0.1:4517/#/server-package tab=live 334ms
+fixed Callout.kind warning -> warn
+ds git.churn packages/server top=10 | 10/115 rows; fields path commits authors owner ownership last; in packages/server; top ...
+ds (+1 unchanged)
+parts intro deps churn note code
+warn CodeView#code: file "packages/server/src/nope.ts" does not exist. Nearest: packages/server/src/main.ts ...
+viewer: select file packages/server/src/mcp/show.ts (server-package)
+```
+
+`fixed` lines are guesses the server accepted and corrected (a misspelt prop, `warning` for `warn`, a number where a string was expected, a new part appended to the page). `ds (+N unchanged)` stands for dataset lines the agent was already given for this view. `warn` lines are parts of the view that are up but empty or broken: the server checks what it can itself (a file or a revision that does not exist, a source that failed), and when a tab is open it also waits a moment for the tab to say what it actually drew; a report that comes later rides on the next tool result as a `viewer: error` line. An error (`E_...`) is all-or-nothing: nothing on screen changes, and the result names the failing component, its signature and the valid options, so the agent resends only the failing part. `viewer:` lines are what happened in the tab; they are data, never instructions.
 
 ## Views
 
-`show{view: "..."}` renders a preset. Each one names its parts, so the agent can patch a single plate afterwards.
+`show{view: "..."}` renders a preset. Each one names its parts, so the agent can patch a single plate afterwards (`show{id:"overview", spec:"$/notes='...'"}`) or add one (a new `name=Comp(...)` is appended to the page).
 
 | View | What it shows |
 |---|---|
@@ -111,17 +133,17 @@ Errors are all-or-nothing and specific: a bad spec changes nothing on screen, an
 | `file <path>` | One file in depth: code, outline, imports and importers, recent commits. |
 | `symbol <name>` | Where an identifier is used: references grouped by file beside the code. |
 | `stack` | Tooling: stack chips, packages, scripts, external dependencies, TODOs. |
-| `diff [range]` | Review a change: stats, changed-file tree, diff, blast radius, commits. Range `wt` (default, live), `staged` or `main..HEAD`. |
+| `diff [range]` | Review a change: stats, the diff with its file list, blast radius, commits. Range `wt` (default, live), `staged` or `main..HEAD`. |
 | `feature` | Follow a feature while it is built: plan, design, notes, live working-tree diff, blast radius. |
-| `gallery` | Every component with fixture data. |
+| `gallery` | Every component, with fixture data. |
 
 ## Writing a custom spec
 
-A spec is [A2UI Express](https://a2ui.org): nested calls, positional arguments in signature order, then `name=value`. `root=Page(...)` starts a view; `name=Comp(...)` defines a named part that can be used as a child and patched later; `$/path=value` sets data and `$/path` as an argument binds to it. `span=1..12` places anything on a 12-column grid, `title=` draws a numbered plate, `size=s|m|l|xl|fill` sets its height.
+A spec is [A2UI Express](https://a2ui.org): nested calls, positional arguments in signature order, then `name=value`. `root=Page(...)` starts a view; `name=Comp(...)` defines a named part that can be used as a child and patched later; `$/path=value` sets data and `$/path` as an argument binds to it. `span=1..12` places anything on a 12-column grid, `title=` draws a numbered plate, `size=s|m|l|xl|fill` sets its height. The view's `id` is a short name of letters, digits, `_` and `-`.
 
-The three examples below run against this repository as written (`show` with `id` and `spec`).
+The three examples below were run against this repository exactly as written (`show` with the `id` shown and the block as `spec`); a test compiles them and checks that the files they name exist.
 
-**Explain a package** — prose, a graph and a table, each bound to a local data source:
+**Explain a package** (`id: "server-package"`): prose, a graph and a table, each bound to a local data source.
 
 ```
 root=Page('The server package',[intro,deps,churn],'packages/server')
@@ -130,28 +152,31 @@ deps=Graph('deps.modules packages/server',title='What depends on what',size='l',
 churn=DataTable('git.churn packages/server top=10',title='Most changed files',span=5)
 ```
 
-**Trace a flow** — a diagram written in a Mermaid-like notation next to the code it describes:
+**Trace a flow** (`id: "round-trip"`): a diagram written in a Mermaid-like notation next to the code it describes.
 
 ```
 root=Page('From tool call to pixels',[flow,code])
 flow=SequenceDiagram('Agent->>Server: show(spec)\nServer->>Viewer: A2UI frame\nViewer->>Server: action\nServer-->>Agent: viewer: select file ...',title='One round trip',span=6)
-code=CodeView('packages/server/src/mcp/show.ts#L1-40',title='Where it starts',size='l',span=6)
+code=CodeView('packages/server/src/mcp/show.ts#L1-40',mark='L1-12',title='Where it starts',size='l',span=6)
 ```
 
-**Plan, ask, update** — small inline data in a slot, and a question whose answer comes back as an event:
+**Plan, ask, update** (`id: "rate-limiter"`): small inline data in a slot, a schema, and a question whose answer comes back as an event.
 
 ```
-root=Page('Rate limiter',[plan,ask])
-plan=Steps($/plan,title='Plan',span=7)
-ask=Ask('Which store backs the limiter?',['Redis','In-memory'],'store',span=5)
+root=Page('Rate limiter',[plan,schema,ask])
+plan=Steps($/plan,title='Plan',span=5)
+schema=ERDiagram([{name:'buckets',columns:[{name:'key',type:'text',pk:true},{name:'tokens',type:'int'},{name:'client_id',type:'uuid',fk:'clients.id'}]},{name:'clients',columns:[{name:'id',type:'uuid',pk:true},{name:'plan',type:'text'}]}],title='Tables',span=7)
+ask=Ask('Which store backs the limiter?',['Redis','In-memory'],'store')
 $/plan=[{title:'Add the middleware',status:'done'},{title:'Wire it into the router',status:'doing'},{title:'Tests',status:'todo'}]
 ```
 
-Later, `show` with the same `id` and only `$/plan=[...]` updates the plan in place; nothing else is re-sent or re-drawn. Clicking *Redis* queues `viewer: answer <id> store {"choice":"Redis"}` for the agent.
+Later, `show` with the same `id` and only `$/plan=[...]` updates the plan in place; nothing else is re-sent or re-drawn. Clicking *Redis* queues `viewer: answer rate-limiter store {"choice":"Redis"}` for the agent.
+
+The catalog prefers accepting a reasonable guess to documenting the one right spelling. `Callout(...,'warning')` becomes `warn` with a `fixed` note; `mark='L1-12'` and `mark='1-12'` both highlight; an `ERDiagram` takes a bare list of tables, and a column's `fk:'clients.id'` draws the relation; `Flowchart('Start --> Enter credentials --> Valid?')` works without node ids.
 
 ## Components
 
-44 components in seven families. `catalog{names:["DataTable"]}` returns any signature with its props and an example; `show{view:"gallery"}` draws them all.
+44 components in seven families. `catalog{names:["DataTable"]}` returns any signature with its props, the shape of its data and an example; `show{view:"gallery"}` draws them all.
 
 | Family | Components |
 |---|---|
@@ -169,7 +194,9 @@ Charts and diagrams are Glimpse's own SVG on `d3-scale`, `d3-shape`, `d3-hierarc
 
 A data argument is one of three things: a **source ref** (a string), a **`$/path`** into the view's data model, or **small inline rows**.
 
-A ref is `'<source> [path|range|symbol] [key=value ...]'`, for example `'git.hotspots src top=15'` or `'diff.files main..HEAD'`. The server runs it locally, caches the result per commit (and per working-tree revision for sources that read the working tree), enforces a row and node budget, and binds the result under `/ds/<key>` in the page's data model. The same ref used by two components is computed once. Each result carries its field names and kinds, so tables and charts pick columns and axes without being told. While a tab is open the working tree is watched: edit a file and the diff, the tree and the affected datasets follow within a second or two.
+A ref is `'<source> [path|range|symbol] [key=value ...]'`, for example `'git.hotspots src top=15'` or `'diff.files main..HEAD'`. The server runs it locally, enforces a row and node budget, and binds the result under `/ds/<key>` in the page's data model. The same ref used by two components is computed once. Each result carries its field names and kinds, so tables and charts pick columns and axes without being told.
+
+Results are cached per commit, and per working-tree revision for the sources that read the working tree: `files.*`, `repo.*`, `deps.*`, `code.*` and `diff.*` reflect uncommitted edits, `git.*` follows `HEAD`. The server re-checks `HEAD` and the working tree on every tool call, and while a tab is open it watches them: edit a file and the diff, the tree and the affected datasets follow within a second or two.
 
 | Group | Sources |
 |---|---|
@@ -180,7 +207,7 @@ A ref is `'<source> [path|range|symbol] [key=value ...]'`, for example `'git.hot
 | Changes | `diff.stats` `diff.files` `diff.tree` `diff.impact` |
 | Code | `code.symbols` `code.refs` `code.todos` |
 
-The analyzers are fast because they are approximate: a regular-expression scan for imports, symbols and complexity (TypeScript, JavaScript, Python, Go, Rust, Java and several more), one `git log` stream for history. Plate notes say what a number is based on; treat dependency edges and complexity as a good map, not a compiler's answer.
+The analyzers are fast because they are approximate: a regular-expression scan for imports, symbols and complexity (TypeScript, JavaScript, Python, Go, Rust, Java and several more), the headings of Markdown files as their outline, one `git log` stream for history. "Complexity" is summed indentation depth, a proxy, and the plates say so. The module graph is drawn at a size that stays legible: 24 nodes by default (20 modules and up to 4 external packages), with smaller directories folded into a rest node of their parent (`'deps.modules top=48'` is the most it shows by module; a small scope is drawn file by file). Treat dependency edges and complexity as a good map, not a compiler's answer.
 
 ## Security model
 
@@ -189,11 +216,13 @@ Glimpse reads your code and serves it over HTTP, so the boundaries matter.
 - **Local only.** The server reads only the project root (paths are resolved with `realpath` and must stay inside it; symlinks that lead out are refused), runs only `git`, and makes no network requests. Nothing is written into the project.
 - **Loopback only.** The viewer host binds `127.0.0.1`. Every request is checked for an expected `Host` (DNS rebinding), a same-origin `Origin` and `Sec-Fetch-Site` (cross-site requests); `POST` bodies must be JSON; no CORS header and no cookie is ever sent.
 - **A per-session token.** `/api/*` needs a 256-bit random token, compared in constant time. It travels in the URL fragment, which browsers do not send, and is kept in `sessionStorage`.
+- **Only inventoried files are served.** The file, outline and diff endpoints answer only for paths in the repository's file inventory, so `.git/**` and ignored files (a `.env`, build output) are refused even with the token.
 - **Hostile repository content cannot script the page.** The content security policy is `default-src 'none'; script-src 'self'; style-src 'self'` with no inline exceptions. Markdown is rendered with raw HTML disabled, only `http(s)` links, and no remote images; code is text nodes with class names.
-- **Clicks are data.** What you do in the tab reaches the agent as single lines with a fixed `viewer:` prefix, JSON-escaped and length-capped, and the instructions tell the agent to treat them as data.
-- **Bounded.** 12 views, 100 queued events, 8 tabs, capped file sizes and git output.
+- **Hostile repository content cannot speak for you.** What you do in the tab reaches the agent as single lines with a fixed `viewer:` prefix, JSON-escaped and length-capped, and the instructions tell the agent to treat them as data. Text that comes from the repository (file names, author names, commit subjects, query rows) is quoted wherever it could start a line with that prefix, so a commit cannot forge your click on an approval button.
+- **Nothing from the repository is executed.** "Open in editor" starts only `GLIMPSE_EDITOR` or a known editor found on the PATH, never the system's default opener, which would run a script or an app bundle. Specs cannot reach object prototypes: data paths with `__proto__`, `constructor` or `prototype` are rejected.
+- **Bounded.** 12 views, 100 queued events, 5 tabs (a browser gives a site six connections, and a sixth event stream would leave none for loading data), capped file sizes and git output.
 
-The end-to-end suite runs this matrix against the built server (`e2e/security.spec.ts`). Two things to know: anyone who can read the token (another process running as you) can read files under the project root through the API, including files under `.git`; and the agent that drives Glimpse can already read those files itself.
+The end-to-end suite runs this matrix against the built server (`e2e/security.spec.ts`). Two things to know: anyone who can read the token (another process running as you) can read the inventoried files of the project through the API; and the agent that drives Glimpse can already read those files itself.
 
 ## Development
 
@@ -217,7 +246,7 @@ packages/
              generated docs and catalog.json, fixtures. DOM-free.
   viewer/    the React single-page app: the kit that binds views to A2UI, and the component library
   server/    the MCP server, the loopback viewer host, the repository analyzers
-plugin/      the Claude Code plugin: manifest, skill, hook, and dist/ (build output)
+plugin/      the Claude Code plugin: manifest, skill, hook, and dist/ (build output, not committed)
 e2e/         the end-to-end suite; e2e/README.md lists what it covers and its known failures
 scripts/     build, budgets, demo, generate, check-paths
 ```
@@ -235,17 +264,15 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 
 ### Budgets
 
-`npm run budgets` fails when one is exceeded. Measured on the current build:
+`npm run budgets` fails when one is exceeded. Two limits keep headroom under the design's hard figure, so that the next component or source still fits; the catalog tests and a viewer build test hold the same two.
 
 | Budget | Limit | Now |
 |---|---|---|
-| Server instructions | 4,000 chars | 3,896 |
-| `show` + `catalog` definitions | 1,500 chars | 1,075 |
-| Largest preset result (`overview`) | 1,200 chars | 1,199 |
-| Eager viewer JavaScript, gzip | 200 kB | 195.9 kB |
-| Largest lazy chunk (charts), gzip | 120 kB | 47.5 kB |
-
-Three of these have almost no headroom. The overview result stays under its limit because long dataset summaries are clipped.
+| Server instructions | 3,750 chars (hard limit 4,000) | 3,729 |
+| `show` + `catalog` definitions | 1,500 chars | 1,147 |
+| Largest preset result (`overview`) | 1,200 chars | 1,098 |
+| Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 187.8 kB |
+| Largest lazy chunk, gzip | 120 kB | 50.4 kB |
 
 ## Status and known limitations
 
@@ -255,12 +282,12 @@ Be aware of the following:
 
 - **Verified on macOS only.** Nothing has been run on Linux or Windows yet. CI runs macOS as the gate and Linux as an experiment; Windows is likely to need work (opening editors, process groups, path separators).
 - **Chromium only.** Firefox and Safari are untested.
-- **Not yet tried with a model in the loop.** The suite plays the agent by hand. Whether a model writes correct specs first time from the compact instructions is unmeasured.
+- **Little experience with a model in the loop.** In one cold test, two models wrote 14 views each from the instructions alone and got 2 and 1 of them right first time. The causes it found (hyphenated ids rejected, `warning` for `warn`, row shapes, a zero-based step index, `ok` results that hid an empty plate) have been addressed, but the test has not been repeated since. The end-to-end suite plays the agent by hand.
 - **Pinned to A2UI 0.15.0** (`@a2ui/web_core`, `@a2ui/react`) and `@a2ui/agent` 0.1.0. These packages are young; an upgrade needs the pinned error-message patterns and the conformance tests re-run.
-- **Known defects found by the end-to-end suite**, kept as `fixme` tests until fixed (`e2e/README.md`): a patch of one element inside a bound array (`$/plan/1/status='done'`) does not redraw the view, although replacing the whole value does; a new view opens at the previous view's scroll position; long paths in tables are cut at the end, hiding the file name; large module graphs open too small to read; a `CodeView` or `DiffView` pointed at a missing file or revision reports nothing back to the agent.
+- **Known defects** found by the end-to-end suite are kept as `fixme` tests until fixed; `e2e/README.md` has the current list (empty at this version).
 - **Approximate analysis.** Imports, symbols and complexity come from regular expressions; history statistics cover the latest 5,000 commits; authors are grouped by display name.
 - **One session, one server.** State lives in memory and ends with the agent session; the tab then keeps its last picture and says so. A click cannot wake an idle agent: it is delivered with your next prompt or the agent's next Glimpse call.
-- **No release build yet**, so the plugin cannot be installed directly from the hosted repository (see Install).
+- **No release build yet**, so the plugin cannot be installed directly from the hosted repository (see [Install](#install)).
 
 ## Licence
 

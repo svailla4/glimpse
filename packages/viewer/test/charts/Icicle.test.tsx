@@ -1,6 +1,6 @@
 import {fireEvent} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
-import {errorDataset} from '../harness.tsx';
+import {datasetFixture, errorDataset} from '../harness.tsx';
 import {chart} from './util.tsx';
 
 const cells = (view: {all(selector: string): Element[]}) => view.all('[data-cell]').map(el => el.getAttribute('data-cell'));
@@ -81,5 +81,34 @@ describe('Icicle', () => {
     expect(view.all('[data-cell]:not([data-dim])').map(el => el.getAttribute('data-cell'))).toEqual(['', 'b.ts']);
     view.setData('/d', {name: '', path: '', dir: true, children: [{name: 'c.ts', path: 'c.ts', loc: 5}]});
     expect(cells(view)).toEqual(['', 'c.ts']);
+  });
+  it('grows the rows of a sized cell up to 32 px and keeps the legend under them (F009)', async () => {
+    const plain = await chart('Icicle()');
+    expect(new Set(plain.all('[data-cell] rect:first-child').map(el => el.getAttribute('height')))).toEqual(new Set(['20']));
+    plain.unmount();
+    // four levels in a 600 px box: 32 px rows, then the legend, then blank
+    const sized = await chart(`Icicle(size='l')`);
+    expect(new Set(sized.all('[data-cell] rect:first-child').map(el => el.getAttribute('height')))).toEqual(new Set(['32']));
+    expect(sized.svg.getAttribute('height')).toBe(String(4 * 33 - 1));
+    // the legend is inside the plot box, right after the drawing
+    const legend = sized.root.querySelector('[data-chart-legend]')!;
+    expect(sized.svg.parentElement!.parentElement!.contains(legend)).toBe(true);
+    sized.unmount();
+    // a box too short for more keeps the 20 px rows
+    const short = await chart(`Icicle(size='s')`, {size: {width: 960, height: 100}});
+    expect(new Set(short.all('[data-cell] rect:first-child').map(el => el.getAttribute('height')))).toEqual(new Set(['20']));
+  });
+
+  it('names the scope of a drilled tree and steps out of the drill with Backspace (D1, F074)', async () => {
+    const view = await chart('Icicle()');
+    view.key('Backspace');
+    expect(view.actions.filter(action => action.name === 'gl_drill')).toHaveLength(0);
+    const scoped = datasetFixture<{children: unknown[]}>('files.tree');
+    const data = {name: 'ui', path: 'src/ui', dir: true, files: 1, loc: 700, children: [{name: 'app.css', path: 'src/ui/app.css', dir: false, files: 1, loc: 700, lang: 'CSS'}]};
+    view.setData('/ds/files_tree', {...scoped, data, drill: {target: 'src/ui', up: 'src'}});
+    expect(crumbs(view)).toBe('ui');
+    expect(view.root.querySelector('[data-cell="src/ui"] text')?.textContent).toBe('ui');
+    view.key('Backspace');
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', sourceComponentId: 'c', context: {ds: 'files_tree', target: 'src'}});
   });
 });

@@ -1,9 +1,9 @@
 import type * as C from '@glimpse/catalog';
-import {parseLineRanges, type TokenLine} from '@glimpse/catalog';
+import type {TokenLine} from '@glimpse/catalog';
 import {useEffect, useMemo, useRef, useState, type KeyboardEvent} from 'react';
 import {Empty, Icon, Redline, useHost, type GlView} from '../../kit/index.ts';
 import s from './CodeBlock.module.css';
-import {coerceLines, cx, inRanges, lineText, plainLines, textCols, TokenSpans} from './codekit/lines.tsx';
+import {coerceLines, cx, ignoredMarksText, inRanges, lineText, parseMarks, plainLines, textCols, TokenSpans} from './codekit/lines.tsx';
 import k from './codekit/lines.module.css';
 import {useFetched} from './codekit/useFetched.ts';
 import {VirtualRows} from './codekit/VirtualRows.tsx';
@@ -45,7 +45,7 @@ export const CodeBlockView: GlView<typeof C.CodeBlock> = ({id, props}) => {
       return line && lineText(line) === text ? line : text === '' ? [] : [[text, 0]];
     });
   }, [plain, highlighted.data]);
-  const marks = useMemo(() => parseLineRanges(props.mark), [props.mark]);
+  const {ranges: marks, ignored: badMarks} = useMemo(() => parseMarks(props.mark), [props.mark]);
   const cols = useMemo(() => plain.reduce((max, text) => Math.max(max, Math.min(textCols(text), 2016)), 0), [plain]);
   const [copied, copy] = useCopied();
 
@@ -55,6 +55,8 @@ export const CodeBlockView: GlView<typeof C.CodeBlock> = ({id, props}) => {
   if (!code) return <Empty message="no code" />;
 
   const numbered = plain.length > NUMBERS_ABOVE;
+  // A `mark` that names no line is said in the header, not swallowed.
+  const headed = Boolean(title || lang || badMarks.length > 0);
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'c' || event.metaKey || event.ctrlKey || event.altKey) return;
     event.preventDefault();
@@ -63,7 +65,7 @@ export const CodeBlockView: GlView<typeof C.CodeBlock> = ({id, props}) => {
   const copyButton = (
     <button
       type="button"
-      className={cx(k.tool, !title && !lang && s.float)}
+      className={cx(k.tool, !headed && s.float)}
       tabIndex={-1}
       aria-label={copied ? 'Copied' : 'Copy code'}
       aria-keyshortcuts="c"
@@ -77,9 +79,10 @@ export const CodeBlockView: GlView<typeof C.CodeBlock> = ({id, props}) => {
 
   return (
     <div className={cx(k.code, s.block)} data-well="" data-gl-code="block" style={{['--gl-digits' as never]: String(plain.length).length}}>
-      {title || lang ? (
+      {headed ? (
         <div className={k.head}>
           {title ? <span className={s.title}>{title}</span> : null}
+          {badMarks.length > 0 ? <span className={cx(k.meta, s.ignored)} data-gl-marginal="" data-gl-mark-ignored="" title={ignoredMarksText(badMarks)}>{ignoredMarksText(badMarks)}</span> : null}
           <span className={k.grow} />
           {lang ? <span className={k.badge} data-gl-lang="">{lang}</span> : null}
           {copyButton}

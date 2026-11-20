@@ -168,4 +168,63 @@ describe('BarChart', () => {
     fireEvent.click(view.all('path[data-i]')[0]!, {metaKey: true});
     expect(view.actions.at(-1)).toMatchObject({name: 'gl_open', context: {file: 'src/auth/service.ts'}});
   });
+  it('uses the height of a sized cell: horizontal bars grow before the plate stays blank (F009)', async () => {
+    const bars = (view: {all(selector: string): Element[]}) => view.all('path[data-i]').map(el => /V([\d.]+)/.exec(el.getAttribute('d') ?? ''));
+    const plain = await chart(`BarChart($/d,dir='h')`, {rows: FILES});
+    expect(plain.svg.getAttribute('height')).toBe(String(4 + 3 * 20 + 34));
+    expect(bars(plain)).toHaveLength(3);
+    plain.unmount();
+    // three bars in a 600 px box: the band grows to 1.7 times, the bar to 20 px
+    const sized = await chart(`BarChart($/d,dir='h',size='l')`, {rows: FILES});
+    const ys = sized.all('path[data-i]').map(el => Number(/^M[\d.]+,([\d.]+)/.exec(el.getAttribute('d') ?? '')![1]));
+    expect(ys[1]! - ys[0]!).toBe(34);
+    const heights = sized.all('path[data-i]').map(el => {
+      const numbers = (el.getAttribute('d') ?? '').match(/V([\d.]+)/g)!.map(text => Number(text.slice(1)));
+      return Math.max(...numbers) - Number(/^M[\d.]+,([\d.]+)/.exec(el.getAttribute('d') ?? '')![1]);
+    });
+    // (measured to where the 2 px corner starts: a 20 px bar, against 14 px without a size)
+    expect(new Set(heights)).toEqual(new Set([18]));
+    sized.unmount();
+    // thirty bars already fill the box: they keep the 14 px bar on a 20 px band
+    const rows = Array.from({length: 30}, (_, i) => ({name: `n${i}`, v: i + 1}));
+    const full = await chart(`BarChart($/d,dir='h',size='l',limit=30)`, {rows});
+    const tops = full.all('path[data-i]').map(el => Number(/^M[\d.]+,([\d.]+)/.exec(el.getAttribute('d') ?? '')![1]));
+    expect(tops[1]! - tops[0]!).toBe(20);
+  });
+
+  it('draws a few vertical bars wider on a wide plate, and never ticks a count at a fraction (F009, F007)', async () => {
+    const view = await chart(`BarChart($/d,'name','n',dir='v')`, {rows: [{name: 'a', n: 1}, {name: 'b', n: 2}, {name: 'c', n: 3}]});
+    const widths = view.all('path[data-i]').map(el => {
+      const d = el.getAttribute('d') ?? '';
+      const xs = [...d.matchAll(/[MH]([\d.]+)/g)].map(match => Number(match[1]));
+      return Math.round(Math.max(...xs) - Math.min(...xs));
+    });
+    // (measured to where the 2 px corner starts: 44 px bars, against the 28 px of a crowded axis)
+    expect(new Set(widths)).toEqual(new Set([42]));
+    const ticks = view.all('svg text').map(el => el.textContent ?? '').filter(text => /^[\d.]+$/.test(text));
+    expect(ticks).toEqual(expect.arrayContaining(['0', '1', '2', '3']));
+    expect(ticks.every(text => !text.includes('.'))).toBe(true);
+  });
+
+  it('draws the folded other series in the light neutral and keeps the last segment of a module name (F005, D12)', async () => {
+    const rows = Array.from({length: 10}, (_, s) => ({q: 'Q1', team: `team-${s}`, n: 10 - s}));
+    const stacked = await chart(`BarChart($/d,'q','n','team',mode='stacked')`, {rows});
+    const fills = stacked.all('path[data-i]').map(el => (el as SVGElement).style.fill);
+    expect(fills.at(-1)).toBe('color-mix(in oklab, var(--gl-cat-other) 38%, var(--gl-surface))');
+    expect(fills.slice(0, 7)).toEqual([1, 2, 3, 4, 5, 6, 7].map(slot => `var(--gl-cat-${slot})`));
+    stacked.unmount();
+    const modules = [{module: 'typescript/renderers/angular', n: 3}, {module: 'typescript/renderers/lit', n: 2}, {module: 'swift/core/Tests/*', n: 1}];
+    const view = await chart(`BarChart($/d,'module','n')`, {rows: modules, size: {width: 300, height: 600}});
+    expect(view.all('[data-bar-label]').map(el => el.textContent)).toEqual(['…/angular', 'typescript/…/lit', 'swift/core/Tests/*']);
+  });
+  it('keeps the ink a series took when the rows change under it (D6)', async () => {
+    const rows = ['x', 'y', 'z'].map((team, i) => ({q: 'Q1', team, n: i + 1}));
+    const view = await chart(`BarChart($/d,'q','n','team',mode='stacked')`, {rows});
+    const inks = () => Object.fromEntries(view.all('[data-chart-legend] [data-series]').map(el => [el.getAttribute('data-series'), (el.querySelector('span') as HTMLElement).style.background]));
+    expect(inks()).toEqual({x: 'var(--gl-cat-1)', y: 'var(--gl-cat-2)', z: 'var(--gl-cat-3)'});
+    // x leaves, a new series arrives and the order changes: y and z are not repainted (in order of appearance they
+    // would now be 3 and 1), and the newcomer takes the ink that is free
+    view.setData('/d', [rows[2], {q: 'Q1', team: 'w', n: 9}, rows[1]]);
+    expect(inks()).toEqual({z: 'var(--gl-cat-3)', w: 'var(--gl-cat-1)', y: 'var(--gl-cat-2)'});
+  });
 });

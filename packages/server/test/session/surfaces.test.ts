@@ -149,19 +149,34 @@ describe('draft and commit', () => {
     expect(store.get('demo')).toBe(record);
   });
 
-  it('kept datasets keep their envelope and drill target; dropped ones lose both', () => {
+  // Decision D1: a patch keeps the scopes the user drilled to; a show that replaces the surface clears them.
+  it('a patch keeps envelopes and drill targets; a replace keeps undrilled envelopes and resets drilled ones', () => {
     const store = new SurfaceStore();
     const first = apply(store, 'demo', BASE);
     const [rowsKey, kpisKey] = first.newKeys as [string, string];
     const record = store.get('demo')!;
-    record.ds[rowsKey] = {$ds: rowsKey, kind: 'rows', status: 'ready', source: 'fake.rows src', data: []};
-    record.ds[kpisKey] = {$ds: kpisKey, kind: 'rows', status: 'pending', source: 'repo.kpis'};
+    record.ds[rowsKey] = {$ds: rowsKey, kind: 'rows', status: 'ready', source: 'fake.rows src/deep', data: [], drill: {target: 'src/deep', up: ''}};
+    record.ds[kpisKey] = {$ds: kpisKey, kind: 'rows', status: 'ready', source: 'repo.kpis', data: []};
     record.drills.set(rowsKey, 'src/deep');
-    record.drills.set(kpisKey, 'x');
-    const d = apply(store, 'demo', `root=Page('Demo',[table])`);
-    expect(d.newKeys).toEqual([]);
-    expect(store.get('demo')!.ds).toEqual({[rowsKey]: record.ds[rowsKey]});
+
+    const patched = apply(store, 'demo', `$/notes='still drilled'`);
+    expect(patched.mode).toBe('patch');
+    expect(patched.newKeys).toEqual([]);
     expect([...store.get('demo')!.drills]).toEqual([[rowsKey, 'src/deep']]);
+    expect(store.get('demo')!.ds[rowsKey]!.drill).toEqual({target: 'src/deep', up: ''});
+
+    const replaced = apply(store, 'demo', `root=Page('Demo',[table,side])`);
+    expect(replaced.mode).toBe('replace');
+    // the drilled dataset is asked for again at the spec's own scope; the other one keeps its data
+    expect(replaced.newKeys).toEqual([rowsKey]);
+    expect(store.get('demo')!.ds[kpisKey]).toBe(record.ds[kpisKey]);
+    expect(store.get('demo')!.ds[rowsKey]).toEqual({$ds: rowsKey, kind: 'rows', status: 'pending', source: rowsKey});
+    expect([...store.get('demo')!.drills]).toEqual([]);
+
+    // a dataset no component binds any more loses its envelope
+    apply(store, 'demo', `root=Page('Demo',[table])`);
+    expect(Object.keys(store.get('demo')!.ds)).toEqual([rowsKey]);
+    expect([...store.get('demo')!.bindings.keys()]).toEqual([rowsKey]);
   });
 
   it('a /ds binding that names no dataset of the surface is reported, not bound', () => {
@@ -228,7 +243,53 @@ describe('setPath', () => {
     setPath(data, '/', 1);
     setPath(data, '/__proto__/polluted', true);
     setPath(data, '/a/constructor/prototype/polluted', true);
-    expect(data).toEqual({});
+    setPath(data, '/toString/polluted', true);
+    expect(data).toEqual({toString: {polluted: true}});
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect((Object.prototype.toString as unknown as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it('creates an array where the next segment is an index, as the viewer data model does (finding F073)', () => {
+    const data: Record<string, unknown> = {};
+    setPath(data, '/fresh/0/x', 1);
+    setPath(data, '/fresh/2', 'c');
+    setPath(data, '/grid/1/0', 'cell');
+    expect(data).toEqual({fresh: [{x: 1}, null, 'c'], grid: [null, ['cell']]});
+    // an array is only ever indexed, and never grown without bound
+    setPath(data, '/fresh/length', 99);
+    setPath(data, '/fresh/01', 'no');
+    setPath(data, '/fresh/999999999', 'no');
+    expect(data.fresh).toEqual([{x: 1}, null, 'c']);
+  });
+});
+
+describe('patches below a slot (decision D4)', () => {
+  it('the delta of a patch carries each touched slot once, whole and detached from the record', () => {
+    const store = new SurfaceStore();
+    apply(store, 'demo', `$/plan=[{title:'A',status:'todo'},{title:'B',status:'todo'}]\n$/n=1\nroot=Page('x',[Steps($/plan)])`);
+    const d = draft(store, 'demo', `$/plan/0/status='done'\n$/n=2\n$/plan/1/status='doing'\n$/ui/sel=null`);
+    expect(d.mode).toBe('patch');
+    expect(d.delta.map(message => ('updateDataModel' in message ? [message.updateDataModel.path, message.updateDataModel.value] : []))).toEqual([
+      ['/plan', [{title: 'A', status: 'done'}, {title: 'B', status: 'doing'}]],
+      ['/n', 2],
+      ['/ui/sel', null],
+    ]);
+    const sent = (d.delta[0] as Extract<A2uiMessage, {updateDataModel: unknown}>).updateDataModel.value;
+    expect(sent).toEqual(d.record.data.plan);
+    expect(sent).not.toBe(d.record.data.plan);
+  });
+});
+
+describe('the selection in snapshots (finding F082)', () => {
+  it('dataModelOf puts the stored selection and file over what the spec wrote', () => {
+    const store = new SurfaceStore();
+    apply(store, 'demo', `$/ui/file='src/a.ts#L3'\nroot=Page('x',[CodeView()])`);
+    const record = store.get('demo')!;
+    record.sel = {type: 'file', id: 'src/b.ts', path: 'src/b.ts'};
+    record.file = 'src/b.ts';
+    expect(dataModelOf(record, META).ui).toEqual({sel: {type: 'file', id: 'src/b.ts', path: 'src/b.ts'}, file: 'src/b.ts'});
+    // a later spec write to /ui wins again
+    apply(store, 'demo', `$/ui/file='src/c.ts'`);
+    expect(dataModelOf(store.get('demo')!, META).ui).toEqual({sel: null, file: 'src/c.ts'});
   });
 });

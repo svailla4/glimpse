@@ -4,10 +4,12 @@
 import {
   SOURCE_BY_NAME, type DiffFileRow, type DirNode, type GraphData, type GraphEdge, type GraphNode, type SourceMeta, type StatItem,
 } from '@glimpse/catalog';
+import {importersOfGone} from '../../analyze/index.ts';
+import {isPackageImport} from '../../analyze/model.ts';
 import {langOfPath} from '../../code/langs.ts';
-import type {FileEntry, RepoContext, Source, SourceResult} from '../../contracts.ts';
+import type {FileEntry, ImportEdge, RepoContext, Source, SourceResult} from '../../contracts.ts';
 import {listChanges, type Change, type ChangeSet} from '../../git/diff.ts';
-import {subtree} from '../../git/log.ts';
+import {FULL_HISTORY, subtree} from '../../git/log.ts';
 import {cutRows, requireGit, SHALLOW_WARNING, summarize, topOf} from './args.ts';
 
 const MAX_CHILDREN = 40;
@@ -64,7 +66,9 @@ const diffStats: Source = {
     const {range, totals} = changes;
     let commits = 0;
     if (range.logArgs) {
-      const counted = await ctx.runGit(['rev-list', '--count', '--no-merges', ...range.logArgs, ...(await subtree(ctx))], {signal});
+      // The same commits git.log lists for the range: one definition of a commit (git/log.ts).
+      const within = await subtree(ctx);
+      const counted = await ctx.runGit(['rev-list', '--count', '--no-merges', ...(within.length > 0 ? [FULL_HISTORY] : []), ...range.logArgs, ...within], {signal});
       commits = Number(counted.toString('utf8').trim()) || 0;
     }
     const tests = changes.files.filter(file => testOf(file, entries)).length;
@@ -207,11 +211,34 @@ const diffImpact: Source = {
     const changedPaths = new Set(shown.map(file => file.path));
 
     // Importers: files that are not part of the change but import something that is.
-    const edges = changes.files.length > 0 ? await ctx.index.edges() : [];
+    const current = changes.files.length > 0 ? await ctx.index.edges() : [];
     signal.throwIfAborted();
+    // A deleted file, and the old name of a renamed one, has no importers in the working tree: an import of a path
+    // that is gone resolves to nothing. Those are the importers the change breaks, so they are looked up by resolving
+    // the import statements against the path as it was. An import of a renamed file's old name lands on the file.
+    const landsOn = new Map<string, string>();
+    for (const file of shown) {
+      if (file.status === 'D') landsOn.set(file.path, file.path);
+      else if (file.status === 'R' && file.from) landsOn.set(file.from, file.path);
+    }
+    let broken: ImportEdge[] = [];
+    if (landsOn.size > 0) {
+      try {
+        broken = (await importersOfGone(ctx, [...landsOn.keys()])).map(edge => ({...edge, to: landsOn.get(edge.to) ?? edge.to}));
+      } catch (error) {
+        ctx.log(`glimpse: diff.impact without importers of removed files: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      signal.throwIfAborted();
+    }
+    const brokenFrom = new Set(broken.filter(edge => !changedPaths.has(edge.from)).map(edge => edge.from));
+    const edges = broken.length > 0 ? [...current, ...broken] : current;
     const hits = new Map<string, number>();
+    /** Importers that reach the change only by importing a whole package or module that a changed file belongs to. */
+    const byName = new Set<string>();
     for (const edge of edges) {
-      if (changedPaths.has(edge.to) && !changedPaths.has(edge.from)) hits.set(edge.from, (hits.get(edge.from) ?? 0) + 1);
+      if (!changedPaths.has(edge.to) || changedPaths.has(edge.from)) continue;
+      hits.set(edge.from, (hits.get(edge.from) ?? 0) + 1);
+      if (!isPackageImport(edge)) byName.add(edge.from);
     }
     const importers = [...hits].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([path]) => path);
     const affected = importers.slice(0, Math.max(0, budget - shown.length));
@@ -239,6 +266,13 @@ const diffImpact: Source = {
     const cut = nodes.length < total || links.length > MAX_EDGES;
     if (changes.range.kind === 'commits' && changes.range.head !== changes.range.repoHead && importers.length > 0) {
       warnings.push('importers are read from the working tree, not from the head of the range');
+    }
+    const wholePackage = importers.filter(path => !byName.has(path)).length;
+    if (wholePackage > 0) {
+      warnings.push(`${wholePackage} of ${importers.length} importers import a whole package or module that holds a changed file, not the file by name`);
+    }
+    if (brokenFrom.size > 0) {
+      warnings.push(`${brokenFrom.size} ${brokenFrom.size === 1 ? 'importer still imports' : 'importers still import'} a file this change deletes or renames`);
     }
     return {
       data: {level: 'file', nodes, edges: links.slice(0, MAX_EDGES)},

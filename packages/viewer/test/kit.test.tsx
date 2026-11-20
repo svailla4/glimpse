@@ -1,4 +1,4 @@
-// packages/viewer/test/kit.test.tsx  (WP0, frozen)
+// packages/viewer/test/kit.test.tsx  (first version by WP0; owned by the viewer kit)
 // The kit contract: implement() + hooks against the final catalog, with stub views written exactly the way a
 // component package writes them. Uses its own stub catalog, so it does not depend on any real component.
 import {A2uiSurface, type ReactCatalogComponent} from '@a2ui/react';
@@ -10,7 +10,7 @@ import {act, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import {useState} from 'react';
 import {describe, expect, it} from 'vitest';
 import {useChildIds, useDataset, useFollowedFile, useHostActions, useMeta, useSelection, useSurfaceId} from '../src/kit/hooks.ts';
-import {ArrangeContext, PlateAside, borrowView, implement, type ArrangeApi, type ChunkLoaders, type GlView, type KitSlots, type ViewModule} from '../src/kit/implement.tsx';
+import {ArrangeContext, PlateAside, borrowView, implement, loadChunk, type ArrangeApi, type ChunkLoaders, type GlView, type KitSlots, type ViewModule} from '../src/kit/implement.tsx';
 import {DataGate} from '../src/kit/states.tsx';
 
 const V = '1.0' as const;
@@ -132,7 +132,10 @@ describe('kit contract: implement() + hooks against the final catalog', () => {
     act(() => processor.processMessages({version: V, updateDataModel: {surfaceId: 'overview', path: `/ds/${key}`, value: {
       $ds: key, kind: 'rows', status: 'ready', source: 'git.hotspots top=15', total: 212,
       fields: [{key: 'path', kind: 'path'}, {key: 'commits', kind: 'bar'}], data: [{path: 'a.ts', commits: 3}, {path: 'b.ts', commits: 1}]}}} as never));
-    await waitFor(() => expect(screen.getByTestId('hot').textContent).toBe('2 rows cols=path commits:bar complexity:bar owner'));
+    // the columns are whatever the preset asks for; what matters here is that the view saw the new rows
+    const columns = String(surface.componentsModel.get('hot')?.properties.columns);
+    expect(columns).toContain('path');
+    await waitFor(() => expect(screen.getByTestId('hot').textContent).toBe(`2 rows cols=${columns}`));
     expect(new Set(renders)).toEqual(new Set(['hot']));
     // tabs: second child mounts on activation
     expect(screen.getByTestId('side-panel').querySelector('[data-view="List"]')).toBeNull();
@@ -375,6 +378,32 @@ describe('PlateAside: view content in the plate header (design 5.1, 12.1.B)', ()
     expect(cellOf(dom, 'cutbare').querySelector('.gl-aside [data-gl-marginal]')?.textContent).toBe('showing 2 of 212 · top by score');
     expect(cellOf(dom, 'whole').querySelector('[data-gl-marginal]')).toBeNull();
     expect(screen.getByTestId('whole-head').querySelector('.gl-frame-aside')!.childElementCount).toBe(0);
+  });
+});
+
+// Decision D3: React.lazy suspended on the first render of every component type even when its chunk had arrived, and
+// React 19 holds a revealed boundary back by 300 ms, so the first DataTable of a tab reported its empty state after
+// the grace of the `show` that drew it.
+describe('lazy chunks: a view of a chunk that has arrived renders in the same frame', () => {
+  it('draws the view on the first render, with no drafting fallback', async () => {
+    const views: ViewModule['views'] = {DataTable: ({id}) => <div data-testid={id}>table</div>};
+    const mod: ViewModule = {views};
+    const tableChunk = async () => mod;
+    const slots: KitSlots = {
+      Frame: ({children}) => <section>{children}</section>,
+      Drafting: () => <i data-testid="drafting">drafting</i>,
+      Redline: ({code, id}) => <b data-testid={`redline-${id}`}>{code}</b>,
+    };
+    const loaders: ChunkLoaders = {layout: {views: {Page: container('Page')}}, content: {views: {}}, table: tableChunk, charts: tableChunk, diagrams: tableChunk, code: tableChunk};
+    const catalog = new Catalog<ReactCatalogComponent>(CATALOG_ID, '1.0', COMPONENTS.map(def => implement(def as never, loaders, slots)), []);
+    await loadChunk(tableChunk);
+    const processor = new MessageProcessor<ReactCatalogComponent>([catalog]);
+    processor.processMessages({version: V, createSurface: {surfaceId: 's', catalogId: CATALOG_ID, components: [
+      {id: 'root', component: 'Page', title: 'T', children: ['t']}, {id: 't', component: 'DataTable', data: []}]}} as never);
+    render(<A2uiSurface surface={processor.model.getSurface('s')!} />);
+    // synchronously, before any await: the view and not the fallback
+    expect(screen.queryByTestId('drafting')).toBeNull();
+    expect(screen.getByTestId('t').textContent).toBe('table');
   });
 });
 

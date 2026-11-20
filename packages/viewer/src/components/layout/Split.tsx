@@ -12,12 +12,25 @@ const MAX = 0.9;
 const STEP = 0.02;
 const clamp = (fraction: number) => Math.min(MAX, Math.max(MIN, fraction));
 
-/** Share of the first pane for a ratio like '1:2' (one third); one half when the ratio is missing or malformed. */
-export function parseRatio(ratio: string | undefined): number {
-  const parts = (ratio ?? '').split(':').map(part => Number(part.trim()));
-  const [start, end] = parts;
-  if (parts.length !== 2 || start === undefined || end === undefined || !Number.isFinite(start) || !Number.isFinite(end) || start <= 0 || end <= 0) return 0.5;
-  return clamp(start / (start + end));
+/**
+ * Share of the first pane. The documented form is a ratio, '1:2' (one third; '1/2' too); the other ways authors write
+ * a share are taken as meant (F037): a percentage '30%' or '30', a fraction '0.3' (the server quotes a number given
+ * for this string prop). One half when the ratio is missing or means nothing.
+ */
+export function parseRatio(ratio: string | number | undefined): number {
+  const text = String(ratio ?? '').trim();
+  const pair = /^([\d.]+)\s*[:/]\s*([\d.]+)$/.exec(text);
+  if (pair) {
+    const start = Number(pair[1]);
+    const end = Number(pair[2]);
+    return Number.isFinite(start) && Number.isFinite(end) && start > 0 && end > 0 ? clamp(start / (start + end)) : 0.5;
+  }
+  const share = /^([\d.]+)\s*(%?)$/.exec(text);
+  if (!share) return 0.5;
+  const value = Number(share[1]);
+  if (!Number.isFinite(value) || value <= 0) return 0.5;
+  if (share[2] === '%' || (value > 1 && value < 100)) return value < 100 ? clamp(value / 100) : 0.5;
+  return value < 1 ? clamp(value) : 0.5;
 }
 
 export const SplitView: GlView<typeof C.Split> = ({props, child}) => {

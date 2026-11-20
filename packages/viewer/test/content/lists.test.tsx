@@ -9,7 +9,7 @@ const PLAN = `[{title:'Add limiter middleware',note:'Sliding window per IP, see 
 
 describe('Steps', () => {
   it('draws numbered steps with status marks, a count and a segmented progress rule', async () => {
-    const view = renderExpress(`$/plan=${PLAN}\nroot=Page('T',[plan])\nplan=Steps($/plan,1,title='Plan')`);
+    const view = renderExpress(`$/plan=${PLAN}\nroot=Page('T',[plan])\nplan=Steps($/plan,2,title='Plan')`);
     const cell = view.cell('plan');
     const steps = [...cell.querySelectorAll('ol > li')] as HTMLElement[];
     expect(steps).toHaveLength(5);
@@ -20,7 +20,7 @@ describe('Steps', () => {
     expect(steps[0]!.textContent).toContain('1Add limiter middleware');
     expect(steps[0]!.querySelector('code')?.textContent).toBe('take()');
     expect(steps[0]!.querySelector('.gl-path-base')?.textContent).toBe('limiter.go');
-    // `current` marks the active step
+    // `current` counts like the numerals on screen: 2 is the step numbered 2
     expect(steps.map(step => step.getAttribute('aria-current'))).toEqual([null, 'step', null, null, null]);
     // the plate header carries the count; the body starts with one segment per step
     const frame = cell.querySelector('.gl-frame')!;

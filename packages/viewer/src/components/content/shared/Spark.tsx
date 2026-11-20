@@ -1,7 +1,7 @@
 // The sparkline mark (design 5.3 Sparkline): a 1.25 px line in cat-1 with a 3 px end dot on a surface ring, no axes.
 // Pure SVG at a given pixel size; Stat cells use it at 72 x 20 and the Sparkline view at its measured width.
-import {useMemo, type JSX} from 'react';
-import {fmtNum, toNumber} from '../../../kit/index.ts';
+import {useMemo, useState, type JSX, type PointerEvent} from 'react';
+import {fmtNum, toNumber, useTooltip} from '../../../kit/index.ts';
 import styles from './Spark.module.css';
 
 export type SparkKind = 'line' | 'bar' | 'area';
@@ -117,16 +117,68 @@ export function describeSpark(values: Array<number | undefined>): string {
   return `${fmtNum(defined.length)} ${defined.length === 1 ? 'point' : 'points'}, ${fmtNum(lo, 'compact')} to ${fmtNum(hi, 'compact')}, last ${fmtNum(defined.at(-1), 'compact')}`;
 }
 
-export function Spark(p: {values: Array<number | undefined>; kind?: SparkKind; width?: number; height?: number; label?: string}): JSX.Element {
+/** The point of `values` nearest to a horizontal position (0..1 across the plot); undefined when no point has a value. */
+export function nearestPoint(values: Array<number | undefined>, at: number): number | undefined {
+  if (values.length === 0) return undefined;
+  const target = Math.round(Math.min(1, Math.max(0, at)) * (values.length - 1));
+  for (let step = 0; step < values.length; step++) {
+    if (values[target - step] !== undefined) return target - step;
+    if (values[target + step] !== undefined) return target + step;
+  }
+  return undefined;
+}
+
+/**
+ * `name` and `unit` say what the numbers are in the tooltip ('Commits · 41 · point 12 of 30'). The tooltip follows the
+ * pointer and reads the nearest point; a hairline marks which one.
+ */
+export function Spark(p: {values: Array<number | undefined>; kind?: SparkKind; width?: number; height?: number; label?: string; name?: string; unit?: string}): JSX.Element {
   const {values, kind = 'line', width = 72, height = 20} = p;
   const shape = useMemo(() => layout(values, kind, width, height), [values, kind, width, height]);
   const label = p.label ?? `Sparkline, ${describeSpark(values)}`;
+  const tooltip = useTooltip();
+  const [hover, setHover] = useState<number | undefined>(undefined);
+  const inner = Math.max(1, width - PAD_X * 2);
+  const onMove = (event: PointerEvent<SVGSVGElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    // The box is `width` wide in CSS pixels unless a parent scales it.
+    const scale = box.width > 0 ? width / box.width : 1;
+    const index = nearestPoint(values, ((event.clientX - box.left) * scale - PAD_X) / inner);
+    if (index === undefined) return;
+    setHover(index);
+    tooltip.show(
+      <span className={styles.tip}>
+        {p.name ? <span className={styles.tipName}>{p.name}</span> : null}
+        <span className={styles.tipValue}>{fmtNum(values[index])}{p.unit ? ` ${p.unit}` : ''}</span>
+        <span className={styles.tipAt}>point {fmtNum(index + 1)} of {fmtNum(values.length)}</span>
+      </span>,
+      event.clientX,
+      event.clientY,
+    );
+  };
+  const onLeave = () => {
+    setHover(undefined);
+    tooltip.hide();
+  };
+  const hoverX = hover === undefined ? undefined : round(values.length === 1 ? PAD_X + inner : PAD_X + (hover / (values.length - 1)) * inner);
   return (
-    <svg className={styles.spark} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label} data-kind={kind}>
+    <svg
+      className={styles.spark}
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label={label}
+      data-kind={kind}
+      data-gl-spark=""
+      onPointerMove={onMove}
+      onPointerLeave={onLeave}
+    >
       {shape.area ? <path className={styles.area} d={shape.area} /> : null}
       {shape.bars.map(bar => <rect key={bar.x} className={styles.bar} x={bar.x} y={bar.y} width={bar.w} height={bar.h} />)}
       {shape.line ? <path className={styles.line} d={shape.line} pathLength={1} /> : null}
       {shape.end ? <circle className={styles.dot} cx={shape.end.x} cy={shape.end.y} r={1.5} /> : null}
+      {hoverX !== undefined ? <line className={styles.cursor} x1={hoverX} x2={hoverX} y1={0} y2={height} data-gl-spark-cursor="" /> : null}
     </svg>
   );
 }

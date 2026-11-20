@@ -8,6 +8,7 @@ import {fromJsonSchema, McpServer} from '@modelcontextprotocol/server';
 import {serveStdio} from '@modelcontextprotocol/server/stdio';
 import {startHost} from '../host/host.ts';
 import type {Launcher} from '../host/open.ts';
+import {ownEnv} from '../session/env.ts';
 import {Session, type ServerDeps} from '../session/session.ts';
 import {CATALOG_DESCRIPTION, CATALOG_SCHEMA, catalogTool} from './catalogTool.ts';
 import {EVENTS_DESCRIPTION, EVENTS_SCHEMA, eventsTool} from './events.ts';
@@ -17,7 +18,13 @@ import {failure, type ToolResult} from './result.ts';
 import {DEFAULT_SETTLE_MS, SHOW_DESCRIPTION, SHOW_SCHEMA, showTool, type ShowArgs} from './show.ts';
 import {VERSION} from './version.ts';
 
-const ANNOTATIONS = {readOnlyHint: true, idempotentHint: true, openWorldHint: false} as const;
+/**
+ * No tool writes to the project or reaches the network: they read the repository and draw. `catalog` and `query`
+ * answer the same question the same way. `show` opens or updates the user's tab, and `events` and
+ * `pending_context` hand each queued line over once, so a repeated call is not the same call: not idempotent.
+ */
+const READS = {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false} as const;
+const READS_ONCE = {...READS, idempotentHint: false} as const;
 const ALWAYS_LOAD = {'anthropic/alwaysLoad': true} as const;
 
 export interface McpOptions {
@@ -42,7 +49,7 @@ export function createMcpServer(options: McpOptions): McpServer {
 
   server.registerTool(
     'show',
-    {description: SHOW_DESCRIPTION, inputSchema: fromJsonSchema<ShowArgs>(SHOW_SCHEMA), annotations: ANNOTATIONS, _meta: ALWAYS_LOAD},
+    {description: SHOW_DESCRIPTION, inputSchema: fromJsonSchema<ShowArgs>(SHOW_SCHEMA), annotations: READS_ONCE, _meta: ALWAYS_LOAD},
     args => safely(() => {
       session.warm();
       return showTool(session, args, options.settleMs ?? DEFAULT_SETTLE_MS);
@@ -51,9 +58,11 @@ export function createMcpServer(options: McpOptions): McpServer {
 
   server.registerTool(
     'catalog',
-    {description: CATALOG_DESCRIPTION, inputSchema: fromJsonSchema<{names?: string[]}>(CATALOG_SCHEMA), annotations: ANNOTATIONS, _meta: ALWAYS_LOAD},
+    {description: CATALOG_DESCRIPTION, inputSchema: fromJsonSchema<{names?: string[]}>(CATALOG_SCHEMA), annotations: READS, _meta: ALWAYS_LOAD},
     args => safely(async () => {
       session.warm();
+      // The catalog reads nothing from the repository, but every call is a moment to notice that it moved (D8).
+      void session.revalidate();
       const result = await catalogTool(args, session.registry);
       const events = result.isError ? [] : session.events.drain();
       return events.length > 0 ? {...result, content: [{type: 'text', text: `${result.content[0]!.text}\n\n${events.join('\n')}`}]} : result;
@@ -62,7 +71,7 @@ export function createMcpServer(options: McpOptions): McpServer {
 
   server.registerTool(
     'query',
-    {description: QUERY_DESCRIPTION, inputSchema: fromJsonSchema<QueryArgs>(QUERY_SCHEMA), annotations: ANNOTATIONS},
+    {description: QUERY_DESCRIPTION, inputSchema: fromJsonSchema<QueryArgs>(QUERY_SCHEMA), annotations: READS},
     args => safely(() => {
       session.warm();
       return queryTool(session, args);
@@ -71,8 +80,9 @@ export function createMcpServer(options: McpOptions): McpServer {
 
   server.registerTool(
     'events',
-    {description: EVENTS_DESCRIPTION, inputSchema: fromJsonSchema<{wait?: number}>(EVENTS_SCHEMA), annotations: ANNOTATIONS},
+    {description: EVENTS_DESCRIPTION, inputSchema: fromJsonSchema<{wait?: number}>(EVENTS_SCHEMA), annotations: READS_ONCE},
     (args, ctx) => safely(() => {
+      void session.revalidate();
       const progressToken = ctx.mcpReq._meta?.progressToken;
       return eventsTool(session.events, args, {
         signal: ctx.mcpReq.signal,
@@ -87,7 +97,7 @@ export function createMcpServer(options: McpOptions): McpServer {
   // anything: it runs on every prompt, also in sessions that never use Glimpse.
   server.registerTool(
     'pending_context',
-    {description: PENDING_CONTEXT_DESCRIPTION, annotations: ANNOTATIONS, _meta: {ui: {visibility: ['app']}}},
+    {description: PENDING_CONTEXT_DESCRIPTION, annotations: READS_ONCE, _meta: {ui: {visibility: ['app']}}},
     () => safely(() => pendingContextTool(session.events)),
   );
 
@@ -133,7 +143,8 @@ export function serve(options: ServeOptions): void {
   console.log = console.error;
   console.info = console.error;
   console.debug = console.error;
-  const {env} = options;
+  // The environment as it is now, on an object nothing can add to later (decision D10).
+  const env = ownEnv(options.env);
   const log = (message: string) => void process.stderr.write(`${message}\n`);
   const session: Session = new Session({
     root: projectRoot(env, options.argv),

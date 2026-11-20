@@ -9,6 +9,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .ignored { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   /* without a header the copy control floats over the top-right corner and shows on hover or focus */
   .block .float {
     position: absolute;

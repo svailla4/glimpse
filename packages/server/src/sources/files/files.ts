@@ -8,8 +8,13 @@ import {readHistory, type History} from './history.ts';
 import {byText, clampSummary, compact, define, inScope, plural, rowsResult, scopeOf, type SourceOptions} from './shared.ts';
 
 const MAX_CHILDREN = 40;
-/** A tree asked for by path may show more of that one directory, so drilling into a rollup reveals what it hid. */
-const MAX_CHILDREN_OF_TARGET = 200;
+/**
+ * The directory the tree was asked for (the repository root when no path is given) shows ALL of its own entries, as
+ * far as the node budget goes. A rollup row has to have somewhere to go, and drilling into the directory a rollup sits
+ * in is the way to see what it hid: for the scope's own level that is the view the reader is already in, so a rollup
+ * there could never be opened. Only a directory with more direct entries than the whole budget still gets one.
+ */
+const MAX_CHILDREN_OF_TARGET = Number.POSITIVE_INFINITY;
 const SECONDS_PER_DAY = 86_400;
 
 /** Files under `scope`; E_TARGET when the scope names nothing in the repository. */
@@ -128,10 +133,12 @@ export function filesSources(options: SourceOptions): Source[] {
     const single = model.byPath.get(scope);
     if (single) {
       const node = fileNode(single, model, history, now);
-      return {data: node, total: 1, summary: `1 file, ${compact(node.loc)} loc`};
+      return {data: node, total: 1, ...(history && history.warnings.length > 0 ? {warnings: history.warnings} : {}), summary: `1 file, ${compact(node.loc)} loc`};
     }
+    // Commit counts and ages come from the shared history: what limits it (a shallow clone, the parsed window) is said.
+    const warnings = [...model.warnings, ...(history?.warnings ?? [])];
     const {root, nodes} = rollUp(filesIn(model, scope, meta.name), scope, model, history, now);
-    const {kept, rollups} = cutTree(root, meta.budget, scope === '' ? MAX_CHILDREN : MAX_CHILDREN_OF_TARGET);
+    const {kept, rollups} = cutTree(root, meta.budget, MAX_CHILDREN_OF_TARGET);
     const generated = model.files.reduce((sum, file) => sum + (file.generated && inScope(file.path, scope) ? 1 : 0), 0);
     const summary = [
       `${plural(root.node.files, 'file')}, ${compact(root.node.loc)} loc`,
@@ -142,7 +149,7 @@ export function filesSources(options: SourceOptions): Source[] {
       data: root.node,
       total: nodes,
       ...(rollups > 0 ? {truncated: {total: nodes, returned: kept, strategy: 'treecut' as const, by: 'loc'}} : {}),
-      ...(model.warnings.length > 0 ? {warnings: model.warnings} : {}),
+      ...(warnings.length > 0 ? {warnings} : {}),
       summary: clampSummary(summary),
     };
   });
@@ -166,7 +173,7 @@ export function filesSources(options: SourceOptions): Source[] {
       ...(first ? {lead: `top ${String(first.path)} ${String(first.loc)} loc`} : {}),
       // Without history there is no commits column to show.
       ...(history ? {} : {fields: (meta.fields ?? []).filter(field => field.key !== 'commits')}),
-      warnings: model.warnings,
+      warnings: [...model.warnings, ...(history?.warnings ?? [])],
     });
   });
 

@@ -82,6 +82,7 @@
       }
     ]
   },
+  "wt": true,
   "cache": "miss",
   "elapsedMs": 12,
   "total": 5

@@ -7,6 +7,17 @@ import type {RunGit} from '../contracts.ts';
 export const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 const MAX_STDERR = 16 * 1024;
 
+/**
+ * Configuration forced on every git call. The repository's own .git/config is untrusted input: `core.fsmonitor` names
+ * a program git would run for a plain `git status`, and a hooks path could do the same for other commands. Glimpse
+ * only reads, so both are switched off; paths are printed unquoted.
+ */
+export const SAFE_CONFIG: readonly string[] = [
+  '-c', 'core.quotepath=off',
+  '-c', 'core.fsmonitor=false',
+  '-c', `core.hooksPath=${process.platform === 'win32' ? 'NUL' : '/dev/null'}`,
+];
+
 export interface GitRunner {
   runGit: RunGit;
   /** Kills every git process still running and fails new calls. */
@@ -39,7 +50,7 @@ export function createRunGit(root: string, env: NodeJS.ProcessEnv = process.env)
       if (closed) return reject(new Error(`${what} failed: the session has ended`));
       if (opts?.signal?.aborted) return reject(new Error(`${what} aborted`));
       const limit = opts?.maxBuffer ?? GIT_MAX_BUFFER;
-      const child = spawn('git', ['-c', 'core.quotepath=off', ...args], {
+      const child = spawn('git', [...SAFE_CONFIG, ...args], {
         cwd: root, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32',
       });
       const out: Buffer[] = [];

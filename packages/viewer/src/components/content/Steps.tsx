@@ -20,6 +20,21 @@ const MAX_SEGMENTS = 60;
 const STATUS_LABEL: Record<StepStatus, string> = {todo: 'To do', doing: 'Doing', done: 'Done', blocked: 'Blocked', skipped: 'Skipped'};
 const STATUS_ORDER: StepStatus[] = ['done', 'doing', 'blocked', 'skipped', 'todo'];
 const isStatus = (value: unknown): value is StepStatus => typeof value === 'string' && Object.hasOwn(STATUS_LABEL, value);
+/** What writers reach for instead of the five status words; keys are lower case with single spaces. */
+const STATUS_SYNONYMS: Readonly<Record<string, StepStatus>> = {
+  'in progress': 'doing', inprogress: 'doing', active: 'doing', wip: 'doing', started: 'doing', running: 'doing', ongoing: 'doing', current: 'doing', now: 'doing',
+  complete: 'done', completed: 'done', finished: 'done', ok: 'done', passed: 'done', success: 'done', shipped: 'done',
+  pending: 'todo', 'to do': 'todo', open: 'todo', planned: 'todo', queued: 'todo', next: 'todo', 'not started': 'todo', waiting: 'todo',
+  block: 'blocked', failed: 'blocked', stuck: 'blocked', error: 'blocked',
+  skip: 'skipped', dropped: 'skipped', cancelled: 'skipped', canceled: 'skipped', 'n/a': 'skipped',
+};
+/** A status as written: the five words in any case, or a common synonym ('in_progress', 'completed', 'pending'). */
+export function toStatus(value: unknown): StepStatus | undefined {
+  if (typeof value !== 'string') return undefined;
+  const word = value.trim().toLowerCase().replace(/[\s_-]+/g, ' ');
+  if (isStatus(word)) return word;
+  return Object.hasOwn(STATUS_SYNONYMS, word) ? STATUS_SYNONYMS[word] : undefined;
+}
 
 interface Step { title: string; note: string; status?: StepStatus; file?: string; entity?: EntityRef }
 
@@ -30,7 +45,7 @@ function normalize(items: readonly unknown[]): Step[] {
       const file = typeof item.file === 'string' && item.file.trim() !== '' ? item.file.trim() : undefined;
       const title = cellText(item.title ?? item.name ?? item.label).trim() || file || '';
       if (!title) continue;
-      steps.push({title, note: cellText(item.note).trim(), status: isStatus(item.status) ? item.status : undefined, file, entity: file ? fileEntity(file) : undefined});
+      steps.push({title, note: cellText(item.note).trim(), status: toStatus(item.status), file, entity: file ? fileEntity(file) : undefined});
     } else {
       const title = cellText(item).trim();
       if (title) steps.push({title, note: ''});
@@ -74,14 +89,15 @@ export const StepsView: GlView<typeof C.Steps> = ({id, props}) => {
   const shown = expanded ? steps : steps.slice(0, FOLD);
   const roving = useRoving<HTMLOListElement>(shown.length);
   const rows = useEntityRows(id);
+  // `current` counts the way the numerals on screen do: 1 is the first step (D5). 0 or no value marks none.
   const currentProp = toNumber(props.current);
-  const current = currentProp !== undefined && Number.isInteger(currentProp) ? currentProp : -1;
+  const current = currentProp !== undefined && Number.isInteger(currentProp) ? currentProp - 1 : -1;
   const tracked = steps.some(step => step.status !== undefined);
   const done = steps.filter(step => step.status === 'done').length;
   const count = tracked ? <span className={styles.count} data-gl-steps-count="">{fmtNum(done)} / {fmtNum(steps.length)} done</span> : undefined;
 
   return (
-    <DataPlate id={id} def={StepsDef} title={textOf(props.title).trim() || undefined} state={state} aside={state.status === 'ready' ? count : undefined}>
+    <DataPlate id={id} def={StepsDef} title={textOf(props.title).trim() || undefined} note={textOf(props.note).trim() || undefined} state={state} aside={state.status === 'ready' ? count : undefined}>
       {data => {
         if (!Array.isArray(data)) return <Redline code="E_SHAPE" id={`Steps#${id}`} message={shapeMessage('a list of {title, note?, status?, file?}', data)} />;
         if (steps.length === 0) return <Empty message="no steps to show" />;

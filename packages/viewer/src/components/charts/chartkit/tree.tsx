@@ -1,12 +1,11 @@
 // What Treemap and Icicle share: the cleaned tree, size metrics with rollups, fills, the breadcrumb and legends.
 import type {DataInput, DirNode, EntityRef, SurfaceMeta} from '@glimpse/catalog';
-import {quantileSorted} from 'd3-array';
 import {hierarchy, type HierarchyNode} from 'd3-hierarchy';
 import {useMemo, type JSX, type ReactNode} from 'react';
-import {DataGate, catVar, fmtNum, seqVar, useDataset, type DataState} from '../../../kit/index.ts';
-import {Legend, Ramp, ShapeError, type LegendItem} from './Chart.tsx';
+import {DataGate, assignSlots, catVar, fmtNum, isOtherKey, matchSelection, seqVar, useDataset, type DataState} from '../../../kit/index.ts';
+import {Legend, Ramp, ShapeError, reserve, type LegendItem, type Slotter} from './Chart.tsx';
 import css from './chartkit.module.css';
-import {matches, num, OTHER} from './data.ts';
+import {num, OTHER, tintVar} from './data.ts';
 
 export type Metric = 'loc' | 'bytes' | 'files' | 'commits';
 export type ColorMode = 'lang' | 'churn' | 'age' | 'complexity' | 'depth' | 'none';
@@ -34,6 +33,8 @@ export interface TreeNode {
 export interface CleanTree {
   root: TreeNode;
   byPath: Map<string, TreeNode>;
+  /** Languages of the whole tree in order of first appearance: the order in which those without a session slot take a free ink. */
+  langs: string[];
   /** Nodes left out: repeated paths, cycles, entries that are not objects, anything past the node cap. */
   dropped: number;
 }
@@ -51,6 +52,7 @@ export function cleanTree(input: unknown): CleanTree | undefined {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return undefined;
   const seen = new Set<object>();
   const byPath = new Map<string, TreeNode>();
+  const langs = new Set<string>();
   let dropped = 0;
   const visit = (raw: Record<string, unknown>, parent: TreeNode | undefined, depth: number): TreeNode | undefined => {
     const name = typeof raw.name === 'string' ? raw.name : typeof raw.path === 'string' ? (raw.path.split('/').pop() ?? '') : '';
@@ -76,6 +78,7 @@ export function cleanTree(input: unknown): CleanTree | undefined {
       parent,
     };
     byPath.set(path, node);
+    if (node.lang) langs.add(node.lang);
     for (const kid of kids) {
       if (typeof kid !== 'object' || kid === null || Array.isArray(kid)) {
         dropped++;
@@ -95,7 +98,7 @@ export function cleanTree(input: unknown): CleanTree | undefined {
     return node;
   };
   const root = visit(input as Record<string, unknown>, undefined, 0);
-  return root ? {root, byPath, dropped} : undefined;
+  return root ? {root, byPath, langs: [...langs], dropped} : undefined;
 }
 
 /**
@@ -134,12 +137,10 @@ export function nodeEntity(node: TreeNode): EntityRef {
   return {type: dir ? 'dir' : 'file', id: node.path, path: node.path, label: node.name || node.path};
 }
 
-/** Selection test for tree cells: the usual rules, plus a directory cell that contains the selected file. */
+/** Selection test for tree cells: the kit's rule, plus a directory cell that holds the selection (a rollup holds nothing). */
 export function nodeMatches(selected: EntityRef | null, node: TreeNode): boolean {
-  if (!selected) return false;
-  if (matches(selected, nodeEntity(node))) return true;
-  const path = selected.path ?? (selected.type === 'file' ? selected.id : undefined);
-  return node.dir && path != null && (node.path === '' || path.startsWith(node.path + '/'));
+  const match = matchSelection(selected, nodeEntity(node));
+  return match === 'exact' || match === 'within' || (match === 'contains' && node.dir);
 }
 
 const COLOR_FIELD: Partial<Record<ColorMode, 'commits' | 'age' | 'complexity'>> = {churn: 'commits', age: 'age', complexity: 'complexity'};
@@ -152,17 +153,67 @@ export interface Painter {
 }
 
 /**
- * Fills for one colour mode over the cells that are drawn. `lang` mixes the language's ink at 28% into the surface;
- * the metric modes spread the cells over the seven sequential steps by quantile, so a few hot files do not flatten
- * the rest.
+ * Ink slots for the languages of a tree, from the kit's assignment (design D6). A language the session gave a slot
+ * keeps it; the others take the lowest free slots in order of first appearance in the WHOLE tree, so zooming or
+ * switching the metric repaints nothing; only a ninth language is `other`, and so is a language the server could
+ * not name ('Other'), which never takes a hue.
  */
-export function createPainter(mode: ColorMode, cells: ReadonlyArray<{node: TreeNode; weight: number}>, slots: SurfaceMeta['slots'] | undefined): Painter {
+export function langSlots(langs: readonly string[], known: Record<string, number> | undefined, assign: Slotter = assignSlots): Map<string, number> {
+  return assign(langs, known);
+}
+
+/**
+ * The value a metric fill compares cells by. Commits and complexity of a directory grow with its size, which the
+ * area already shows, so a directory cell is read per file; a file is its own figure. Age is a date, not a sum.
+ */
+function density(node: TreeNode, field: 'commits' | 'age' | 'complexity'): number | undefined {
+  const value = node[field];
+  if (value === undefined || field === 'age' || !node.dir) return value;
+  return value / Math.max(1, node.files);
+}
+
+/**
+ * Six cuts that split the drawn AREA into seven equal parts by value. Quantiles by cell count let hundreds of small
+ * files take the low steps and paint every large cell with the top one; by area the ramp spreads over what the eye
+ * sees.
+ */
+export function areaCuts(entries: ReadonlyArray<{value: number; weight: number}>): number[] {
+  const sorted = [...entries].sort((a, b) => a.value - b.value);
+  let total = 0;
+  for (const entry of sorted) total += entry.weight;
+  const even = !(total > 0);
+  if (even) total = sorted.length;
+  const cuts: number[] = [];
+  let acc = 0;
+  for (const entry of sorted) {
+    acc += even ? 1 : entry.weight;
+    while (cuts.length < 6 && acc >= (total * (cuts.length + 1)) / 7) cuts.push(entry.value);
+  }
+  return cuts;
+}
+
+/**
+ * Fills for one colour mode over the cells that are drawn. `lang` tints the surface with the language's ink (the
+ * legend shows the ink itself: a swatch is a key, not a fill); the metric modes spread the cells over the seven
+ * sequential steps by area-weighted quantile, so neither a few hot files nor a few large directories flatten the rest.
+ */
+export function createPainter(
+  mode: ColorMode,
+  cells: ReadonlyArray<{node: TreeNode; weight: number}>,
+  slots: SurfaceMeta['slots'] | undefined,
+  langs: readonly string[] = [],
+  assign: Slotter = assignSlots,
+): Painter {
   if (mode === 'lang') {
     // a rollup wears the dominant language of the directory it stands for
     const langOf = (node: TreeNode) => (node.rollup ? node.parent?.lang : node.lang);
-    const slotOf = (node: TreeNode) => slots?.lang?.[langOf(node) ?? ''] ?? 0;
+    const assigned = langSlots(langs, slots?.lang, assign);
+    const slotOf = (node: TreeNode) => {
+      const lang = langOf(node);
+      return lang === undefined || isOtherKey(lang) ? 0 : (assigned.get(lang) ?? 0);
+    };
     return {
-      fill: node => ({color: `color-mix(in oklab, ${catVar(slotOf(node))} 28%, var(--gl-surface))`, strong: false}),
+      fill: node => ({color: tintVar(catVar(slotOf(node))), strong: false}),
       legend() {
         const weights = new Map<string, {slot: number; weight: number}>();
         for (const {node, weight} of cells) {
@@ -174,31 +225,41 @@ export function createPainter(mode: ColorMode, cells: ReadonlyArray<{node: TreeN
         }
         const items: LegendItem[] = [...weights]
           .sort((a, b) => (a[0] === OTHER ? 1 : b[0] === OTHER ? -1 : b[1].weight - a[1].weight))
-          .map(([name, entry]) => ({key: name, label: name, color: `color-mix(in oklab, ${catVar(entry.slot)} 28%, var(--gl-surface))`}));
+          .map(([name, entry]) => ({key: name, label: name, color: catVar(entry.slot)}));
         return items.length > 1 || items[0]?.key !== OTHER ? <Legend items={items} /> : null;
       },
     };
   }
   const field = COLOR_FIELD[mode];
   if (field) {
-    const values: number[] = [];
-    for (const {node} of cells) if (node[field] !== undefined) values.push(node[field]);
-    values.sort((a, b) => a - b);
-    const cuts = [1, 2, 3, 4, 5, 6].map(i => quantileSorted(values, i / 7) ?? 0);
+    const entries: Array<{value: number; weight: number}> = [];
+    let lo = Infinity;
+    let hi = -Infinity;
+    let perFile = false;
+    for (const {node, weight} of cells) {
+      const value = density(node, field);
+      if (value === undefined) continue;
+      entries.push({value, weight});
+      lo = Math.min(lo, value);
+      hi = Math.max(hi, value);
+      perFile ||= field !== 'age' && node.dir;
+    }
+    const cuts = areaCuts(entries);
     const stepOf = (value: number) => {
       let step = 1;
       for (const cut of cuts) if (value > cut) step++;
       return step;
     };
+    const unit = `${field}${perFile ? ' per file' : ''}`;
     return {
       fill(node) {
-        const value = node[field];
+        const value = density(node, field);
         if (value === undefined) return {color: 'var(--gl-grid)', strong: false};
-        const step = values[0] === values[values.length - 1] ? 4 : stepOf(value);
+        const step = lo === hi ? 4 : stepOf(value);
         return {color: seqVar(step), strong: step >= 5};
       },
-      legend: () => (values.length > 0
-        ? <Legend items={[]} end={<Ramp steps={[1, 2, 3, 4, 5, 6, 7].map(seqVar)} low={`${field} ${fmtNum(values[0], 'compact')}`} high={fmtNum(values[values.length - 1], 'compact')} />} />
+      legend: () => (entries.length > 0
+        ? <Legend items={[]} end={<Ramp steps={[1, 2, 3, 4, 5, 6, 7].map(seqVar)} low={`${unit} ${fmtNum(lo, 'compact')}`} high={fmtNum(hi, 'compact')} />} />
         : null),
     };
   }
@@ -212,6 +273,17 @@ export function createPainter(mode: ColorMode, cells: ReadonlyArray<{node: TreeN
     };
   }
   return {fill: () => ({color: NEUTRAL, strong: false}), legend: () => null};
+}
+
+/**
+ * What to call the root of a tree. The whole repository goes by its name. A tree that starts further down (the
+ * spec asked for a directory) goes by its path. While a drill has re-scoped the dataset the kit's scope row already
+ * spells that path out above the chart, so the root is just the directory's own name.
+ */
+export function rootLabel(tree: CleanTree, repo: string | undefined, drilled: boolean): string {
+  const path = tree.root.path;
+  if (!path) return repo || tree.root.name || 'root';
+  return drilled ? (path.split('/').filter(Boolean).pop() ?? path) : path;
 }
 
 /** Path from the tree root to the zoomed directory; every crumb but the last zooms back out to its level. */
@@ -244,14 +316,17 @@ export function TreeGate(p: {
   name: string;
   id: string;
   input: DataInput<DirNode>;
+  /** The cell's `size` prop and the height the chart takes without one: a pending tree holds that height (see reserve). */
+  size?: string;
+  height?: number;
   children: (tree: CleanTree, state: DataState<DirNode>) => ReactNode;
 }): JSX.Element {
   const state = useDataset<DirNode>(p.input);
-  return (
+  return reserve(state, p.size, (
     <DataGate state={state} id={`${p.name}#${p.id}`}>
       {(data, ready) => <Cleaned name={p.name} id={p.id} data={data}>{tree => p.children(tree, ready)}</Cleaned>}
     </DataGate>
-  );
+  ), p.height);
 }
 
 /** Next option of a toolbar cycle. */

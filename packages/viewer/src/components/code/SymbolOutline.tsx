@@ -10,9 +10,10 @@ import k from './codekit/lines.module.css';
 import {useFetched} from './codekit/useFetched.ts';
 import {VirtualRows, type VirtualRowsHandle} from './codekit/VirtualRows.tsx';
 
-const BADGE: Record<string, string> = {fn: 'FN', class: 'CLS', method: 'MTD', type: 'TY', iface: 'IF', const: 'CONST', var: 'VAR', enum: 'ENUM', mod: 'MOD'};
+const BADGE: Record<string, string> = {fn: 'FN', class: 'CLS', method: 'MTD', type: 'TY', iface: 'IF', const: 'CONST', var: 'VAR', enum: 'ENUM', mod: 'MOD', heading: 'H'};
 const KIND_NAME: Record<string, string> = {
   fn: 'function', class: 'class', method: 'method', type: 'type', iface: 'interface', const: 'constant', var: 'variable', enum: 'enum', mod: 'module',
+  heading: 'heading',
 };
 const ROW = 24;
 const MAX_DEPTH = 12;

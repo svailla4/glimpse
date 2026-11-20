@@ -94,7 +94,20 @@ describe('Split', () => {
     expect(parseRatio('1:2')).toBeCloseTo(1 / 3);
     expect(parseRatio('3:1')).toBeCloseTo(0.75);
     expect(parseRatio('1:99')).toBe(0.1);
-    for (const bad of [undefined, '', '1', '1:2:3', 'a:b', '0:1', '1:-1']) expect(parseRatio(bad), String(bad)).toBe(0.5);
+    for (const bad of [undefined, '', '1', '1:2:3', 'a:b', '0:1', '1:-1', '0', '100%', '250', '-30%']) expect(parseRatio(bad), String(bad)).toBe(0.5);
+  });
+
+  it('takes a share written as a fraction or a percentage as meant, not as one half (F037)', async () => {
+    expect(parseRatio('0.3')).toBeCloseTo(0.3);
+    expect(parseRatio(0.3)).toBeCloseTo(0.3);
+    expect(parseRatio('30%')).toBeCloseTo(0.3);
+    expect(parseRatio('30')).toBeCloseTo(0.3);
+    expect(parseRatio('2/1')).toBeCloseTo(2 / 3);
+    expect(parseRatio(' 25 % ')).toBeCloseTo(0.25);
+    expect(parseRatio('5%')).toBe(0.1);
+    const view = renderExpress(`root=Page('T',[s])\ns=Split(Text('left pane'),Text('right pane'),'0.3',size='m')`);
+    await view.settle();
+    expect(Number.parseFloat(view.container.querySelector<HTMLElement>('[data-dir]')!.style.getPropertyValue('--a'))).toBeCloseTo(0.3);
   });
 
   const SPEC = `root=Page('T',[s])\ns=Split(Text('left pane'),Text('right pane'),'1:3',size='m')`;

@@ -209,6 +209,11 @@ describe('CodeView', () => {
     const large = renderExpress(`root=Page('T',[c])\nc=CodeView('dump.sql')`, {host: {file: skipped('too-large', 3_400_000)}});
     await waitFor(() => expect(large.cell('c').querySelector('[data-gl-state="empty"]')?.textContent).toBe('dump.sql is too large to show (3.4 MB)'));
     large.unmount();
+    // the service says 'outside-root' for every file that is not in the inventory, inside the root or not
+    const ignored = renderExpress(`root=Page('T',[c])\nc=CodeView('.git/config')`, {host: {file: skipped('outside-root', 0)}});
+    await waitFor(() => expect(ignored.cell('c').querySelector('[data-gl-state="empty"]')?.textContent).toBe('.git/config is not a file of this project (outside it, ignored, or under .git)'));
+    await waitFor(() => expect(ignored.reports.map(report => report.message)).toContain('CodeView#c: .git/config is not a file of this project (outside it, ignored, or under .git)'));
+    ignored.unmount();
     const empty = renderExpress(`root=Page('T',[c])\nc=CodeView('empty.ts')`, {host: {file: bigFile(0)}});
     await waitFor(() => expect(empty.cell('c').querySelector('[data-gl-state="empty"]')?.textContent).toBe('empty.ts is empty'));
   });

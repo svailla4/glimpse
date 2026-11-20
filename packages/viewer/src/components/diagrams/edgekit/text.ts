@@ -1,21 +1,26 @@
 // Text sizing without a DOM. SVG text neither wraps nor clips, and node sizes must be known before layout, so widths
 // are estimated from character classes of the two faces diagrams use (IBM Plex Sans and IBM Plex Mono). The
-// estimates err on the wide side.
+// estimates err on the wide side: checked against the browser's own measurement of both faces, they run from equal
+// to about 8% over for labels as they occur (names, paths, counts), so a fitted label never leaves its box.
 
 export interface Face { size: number; mono?: boolean }
 export const UI_12: Face = {size: 12};
 export const MONO_11: Face = {size: 11, mono: true};
 export const MONO_12: Face = {size: 12, mono: true};
 
-const NARROW = new Set("iljtfrI.,:;|!'`()[]{} /\\-");
+const NARROW = new Set("iljI.,:;|!'`()[]{} /\\-");
+/** Narrower than a letter, wider than an `i`: measured at 0.36 to 0.39 em in Plex Sans 500. */
+const SLIM = new Set('rtf');
 const WIDE = new Set('mwMW@%&—…');
 
 function charWidth(ch: string, face: Face): number {
+  // CJK and other full-width glyphs take a whole em in either face (the mono face falls back for them too).
+  if (ch.charCodeAt(0) > 0x2e7f) return 1;
   if (face.mono) return 0.6;
   if (NARROW.has(ch)) return 0.34;
+  if (SLIM.has(ch)) return 0.4;
   if (WIDE.has(ch)) return 0.9;
   if (ch >= 'A' && ch <= 'Z') return 0.68;
-  if (ch.charCodeAt(0) > 0x2e7f) return 1;
   return 0.57;
 }
 

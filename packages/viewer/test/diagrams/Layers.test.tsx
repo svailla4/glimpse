@@ -142,4 +142,18 @@ describe('Layers', () => {
     await waitFor(() => expect(bands(view.cell('l')).map(band => band.getAttribute('data-layer'))).toEqual(['Z']));
     expect(view.errors).toEqual([]);
   });
+
+  it('names a band by name, label or title, and an item by label, name or title (D5, F040)', async () => {
+    const clean = cleanLayers([
+      {title: 'Interface', items: [{title: 'ui'}, {name: 'api', file: 'src/api.ts'}]},
+      {label: 'Domain', items: ['auth']},
+      {name: 'Storage', title: 'ignored', items: [{label: 'postgres', name: 'pg'}]},
+      {items: ['orphan']},
+    ]);
+    expect(clean.bands.map(band => band.name)).toEqual(['Interface', 'Domain', 'Storage', '—']);
+    expect(clean.bands.map(band => band.items.map(item => item.label))).toEqual([['ui', 'api'], ['auth'], ['postgres'], ['orphan']]);
+    expect(clean.dropped).toBe(0);
+    const view = await ready(BOUND, {data: {'/layers': [{title: 'Interface', items: ['ui']}, {label: 'Domain', items: ['auth']}]}});
+    expect(bands(view.cell('l')).map(band => band.getAttribute('data-layer'))).toEqual(['Interface', 'Domain']);
+  });
 });

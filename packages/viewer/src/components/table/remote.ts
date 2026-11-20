@@ -1,7 +1,7 @@
 // Remote paging for pageable datasets: the full row set stays in the server and is read through useRows in windows
 // of 200 rows around the viewport. Loaded windows are kept, so scrolling back does not blank the rows.
 import type {DataRow, Dataset, RowsPage} from '@glimpse/catalog';
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useRef, useState} from 'react';
 import {useRev, useRows} from '../../kit/index.ts';
 
 export const WINDOW = 200;
@@ -19,15 +19,14 @@ export interface RemoteRows {
 }
 
 interface Cache {
-  scope: string;
+  /** The envelope the windows were read from: a re-run of the source (refresh, drill) puts a new one under the same key. */
+  ds?: Dataset;
+  /** Sort, search and working-tree revision the windows answer. */
+  query: string;
   pages: Map<number, DataRow[]>;
   /** Windows of the query before this one: shown until the new query answers, so a sort or a refresh does not blank the rows. */
   previous?: Map<number, DataRow[]>;
   total?: number;
-  /** What the two hooks still held when the query changed: answers to the old query, never taken for the new one. */
-  stale: ReadonlyArray<RowsPage | undefined>;
-  ds?: Dataset;
-  generation: number;
 }
 
 /**
@@ -39,38 +38,30 @@ export function useRemoteRows(ds: Dataset | undefined, query: {sort?: string; q?
   const rev = useRev();
   const [windows, setWindows] = useState<readonly [number, number]>([0, 0]);
   const {sort, q} = query;
-  const cacheRef = useRef<Cache>({scope: '', pages: new Map(), stale: [], ds, generation: 0});
+  const cacheRef = useRef<Cache>({ds, query: '', pages: new Map()});
   const cache = cacheRef.current;
 
-  // useRows refetches on key, query and revision. A re-run of the source (refresh, drill) replaces the envelope
-  // under the same key without any of those changing, so the pager lets go of the dataset for one render: useRows
-  // then sees the key again and fetches the new rows.
-  const replaced = cache.ds !== ds && cache.ds?.$ds === ds?.$ds && ds !== undefined;
-  if (cache.ds !== ds) {
-    cache.ds = ds;
-    if (replaced) cache.generation++;
-  }
-  const [released, setReleased] = useState(0);
-  const generation = cache.generation;
-  useEffect(() => setReleased(generation), [generation]);
-  const source = released === generation ? ds : undefined;
+  // useRows fetches again on key, query, revision and envelope, and says `loading` until the answer to the CURRENT
+  // request is in: what it returns meanwhile is the previous answer, which is never taken for this one (see accept).
+  const first = useRows(ds, {offset: windows[0] * WINDOW, limit: WINDOW, sort, q});
+  const second = useRows(windows[1] !== windows[0] ? ds : undefined, {offset: windows[1] * WINDOW, limit: WINDOW, sort, q});
 
-  const first = useRows(source, {offset: windows[0] * WINDOW, limit: WINDOW, sort, q});
-  const second = useRows(windows[1] !== windows[0] ? source : undefined, {offset: windows[1] * WINDOW, limit: WINDOW, sort, q});
-
-  const scope = `${ds?.$ds ?? ''}\u0001${sort ?? ''}\u0001${q ?? ''}\u0001${rev}\u0001${generation}`;
-  if (cache.scope !== scope) {
-    // A new query starts empty, but what the previous one showed (and its count) stays up until the new one
-    // answers. Whatever page the hooks still hold belongs to the old query.
-    const sameDataset = cache.scope.startsWith(`${ds?.$ds ?? ''}\u0001`);
+  const asked = `${sort ?? ''}\u0001${q ?? ''}\u0001${rev}`;
+  if (cache.ds !== ds || cache.query !== asked) {
+    // A new query or a new run starts empty, but what the previous one showed (and its count) stays up until the new
+    // one answers, as long as it is the same dataset.
+    const sameDataset = ds !== undefined && cache.ds?.$ds === ds.$ds;
     cache.previous = sameDataset && cache.pages.size > 0 ? cache.pages : sameDataset ? cache.previous : undefined;
     if (!sameDataset) cache.total = undefined;
-    cache.scope = scope;
+    cache.ds = ds;
+    cache.query = asked;
     cache.pages = new Map();
-    cache.stale = [first.page, second.page];
   }
-  const accept = (page: RowsPage | undefined, window: number, enabled: boolean) => {
-    if (!enabled || !page || cache.stale.includes(page) || !Array.isArray(page.rows) || page.offset !== window * WINDOW) return;
+  const accept = (answer: {page?: RowsPage; loading: boolean; error?: string}, window: number, enabled: boolean) => {
+    const {page} = answer;
+    // Only a settled answer is the answer to this request: while loading (and after a failure) useRows still holds
+    // the previous page of the dataset.
+    if (!enabled || answer.loading || answer.error !== undefined || !page || !Array.isArray(page.rows) || page.offset !== window * WINDOW) return;
     if (cache.pages.get(window) === page.rows) return;
     cache.previous = undefined;
     cache.pages.set(window, page.rows);
@@ -83,8 +74,8 @@ export function useRemoteRows(ds: Dataset | undefined, query: {sort?: string; q?
       }
     }
   };
-  accept(first.page, windows[0], source !== undefined);
-  accept(second.page, windows[1], source !== undefined && windows[1] !== windows[0]);
+  accept(first, windows[0], ds !== undefined);
+  accept(second, windows[1], ds !== undefined && windows[1] !== windows[0]);
 
   const want = useCallback((from: number, to: number) => {
     const next = [Math.max(0, Math.floor(from / WINDOW)), Math.max(0, Math.floor(to / WINDOW))] as const;
@@ -104,7 +95,7 @@ export function useRemoteRows(ds: Dataset | undefined, query: {sort?: string; q?
       return inOrder && !cache.previous ? inline[index] : undefined;
     },
     want,
-    loading: first.loading || second.loading || (ds !== undefined && source === undefined),
+    loading: first.loading || second.loading,
     error: first.error ?? second.error,
   };
 }

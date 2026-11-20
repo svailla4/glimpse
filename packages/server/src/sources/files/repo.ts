@@ -2,7 +2,7 @@
 import type {ChipItem, LangRow, Rows, StatItem} from '@glimpse/catalog';
 import {repoModel, type RepoModel} from '../../analyze/index.ts';
 import {languageOf} from '../../analyze/languages.ts';
-import {codeLines} from '../../analyze/model.ts';
+import {codeLines, declaredPackages} from '../../analyze/model.ts';
 import type {Source} from '../../contracts.ts';
 import {languageMix} from './files.ts';
 import {readHistory} from './history.ts';
@@ -52,10 +52,13 @@ const KNOWN_DEPENDENCIES: Readonly<Record<string, {label: string; category: Cate
 
 function knownDependency(name: string) {
   const lower = name.toLowerCase();
-  return KNOWN_DEPENDENCIES[lower]
+  // Dependency names come from manifests in the repository: a package called `constructor` must not find
+  // Object.prototype.constructor here.
+  const known = (key: string) => (Object.hasOwn(KNOWN_DEPENDENCIES, key) ? KNOWN_DEPENDENCIES[key] : undefined);
+  return known(lower)
     // Maven and NuGet names carry an artifact after the group.
-    ?? KNOWN_DEPENDENCIES[lower.split(':')[0]!]
-    ?? KNOWN_DEPENDENCIES[lower.split('.').slice(0, 2).join('.')];
+    ?? known(lower.split(':')[0]!)
+    ?? known(lower.split('.').slice(0, 2).join('.'));
 }
 
 /** The language mix without data, prose and configuration formats: the languages someone writes code in. */
@@ -77,7 +80,9 @@ export function repoSources(options: SourceOptions): Source[] {
       {label: 'Files', value: model.files.length},
       {label: 'Lines', value: lines, format: 'compact'},
       {label: 'Languages', value: codedLanguages(model).length},
-      {label: 'Modules', value: model.cut.ids.length},
+      // A count of what the repository declares, never the number of clusters a graph happens to draw.
+      {label: 'Modules', value: model.modules.count},
+      // File-level cycles: the rows of deps.cycles. A module graph counts its own, between clusters.
       {label: 'Cycles', value: model.cycles.length, ...(model.cycles.length > 0 ? {tone: 'warn' as const} : {})},
     ];
     const warnings = [...model.warnings];
@@ -85,10 +90,16 @@ export function repoSources(options: SourceOptions): Source[] {
       const now = options.now() / 1000;
       const recent = history.times.filter(time => time > now - THIRTY_DAYS).length;
       const before = history.times.filter(time => time <= now - THIRTY_DAYS && time > now - 2 * THIRTY_DAYS).length;
+      // The same commits and authors git.log and git.authors list: one parsed history (git/log.ts).
       stats.push({label: 'Commits (30d)', value: recent, delta: recent - before}, {label: 'Contributors', value: history.authors.size});
-      if (ctx.git?.shallow) warnings.push('shallow clone: history is incomplete');
+      warnings.push(...history.totalWarnings);
     } else warnings.push('no git history: commit and contributor counts are omitted');
-    const lead = (shown: StatItem[]) => shown.map(stat => `${stat.label} ${typeof stat.value === 'number' ? compact(stat.value) : stat.value}`).join(', ');
+    // Exact below 10,000, as the viewer shows them: a rounded "4.7k" next to "4,690 files" reads as a second count.
+    const shownValue = (value: number) => (Math.abs(value) < 10_000 ? value.toLocaleString('en-US') : compact(value));
+    const lead = (shown: StatItem[]) => shown.map(stat => {
+      const value = typeof stat.value === 'number' ? shownValue(stat.value) : stat.value;
+      return stat.label === 'Modules' ? `${stat.label} ${value} (${model.modules.unit})` : stat.label === 'Cycles' ? `File cycles ${value}` : `${stat.label} ${value}`;
+    }).join(', ');
     return itemsResult(meta, ref, stats, 'label value', lead, warnings);
   });
 
@@ -123,7 +134,7 @@ export function repoSources(options: SourceOptions): Source[] {
 
   const packages = define('repo.packages', async (ctx, ref, _signal, meta) => {
     const model = await repoModel(ctx);
-    const rows: Rows = model.manifests.packages.filter(pkg => pkg.ecosystem !== 'make')
+    const rows: Rows = declaredPackages(model.manifests)
       .map(pkg => ({name: pkg.name, ecosystem: pkg.ecosystem, version: pkg.version, dir: pkg.dir, deps: pkg.deps.length}));
     const ecosystems = new Map<string, number>();
     for (const row of rows) ecosystems.set(String(row.ecosystem), (ecosystems.get(String(row.ecosystem)) ?? 0) + 1);

@@ -1,9 +1,10 @@
-// Pure row logic for the table family: coercion, column resolution, sort, search, grouping and the entity a row
-// stands for. No React, no DOM.
+// Row logic for the table family: coercion, column resolution, sort, search, grouping and the entity a row stands
+// for. No DOM. Which entity a file location names and how an entity relates to the selection are the kit's rules.
 import {
   parseColumns, parseFileLoc, parseRef,
   type DataRow, type Dataset, type EntityRef, type Field, type FieldKind,
 } from '@glimpse/catalog';
+import {fileEntity, matchSelection} from '../../kit/index.ts';
 
 /** Numbers and numeric strings; everything else (null, '', NaN, objects) is undefined. */
 export function num(value: unknown): number | undefined {
@@ -223,11 +224,6 @@ export function rowFile(row: DataRow): string | undefined {
   return value?.trim() || undefined;
 }
 
-function fileEntity(loc: string): EntityRef {
-  const {path, line, endLine} = parseFileLoc(loc);
-  return {type: 'file', id: path, path, ...(line != null ? {line} : {}), ...(endLine != null ? {endLine} : {})};
-}
-
 /** The entity an entity-kind cell stands for; undefined for empty cells and non-entity kinds. */
 export function cellEntity(column: Column, row: DataRow, ds: Dataset | undefined): EntityRef | undefined {
   const value = row[column.key];
@@ -276,22 +272,14 @@ export function rowEntity(row: DataRow, columns: readonly Column[], index: numbe
 export type SelectionMark = 'exact' | 'within' | undefined;
 
 export function selectionMark(selected: EntityRef | null, entity: EntityRef): SelectionMark {
-  if (!selected) return undefined;
-  if (selected.type === entity.type && selected.id === entity.id) {
-    return selected.line == null || entity.line == null || selected.line === entity.line ? 'exact' : undefined;
-  }
-  if (selected.type === 'dir' && entity.path !== undefined) {
-    const dir = selected.path ?? selected.id;
-    return dir === '' || entity.path.startsWith(dir + '/') ? 'within' : undefined;
-  }
-  return undefined;
+  const match = matchSelection(selected, entity);
+  // Two rows of one file ('a.ts#L3', 'a.ts#L9') are different places: a selection with a line marks only its row.
+  if (match === 'exact') return selected?.line == null || entity.line == null || selected.line === entity.line ? 'exact' : undefined;
+  return match === 'within' ? 'within' : undefined;
 }
 
-/** `path:line` for an editor or a terminal; the id for entities without a path. */
-export function clipText(entity: EntityRef): string {
-  if (!entity.path) return entity.type === 'row' ? (entity.label ?? entity.id) : entity.id;
-  return entity.line != null ? `${entity.path}:${entity.line}` : entity.path;
-}
+/** `path:line` for an editor or a terminal; the label or id for entities without a path. The kit's rule (`c` copies the same text in every component). */
+export {entityClipText as clipText} from '../../kit/index.ts';
 
 export function copyText(text: string): void {
   void navigator.clipboard?.writeText(text)?.catch(() => {});

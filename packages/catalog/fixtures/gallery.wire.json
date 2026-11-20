@@ -256,7 +256,8 @@
         {
           "id": "content_children_2",
           "component": "Markdown",
-          "text": "## Markdown\nProse with **bold**, `code`, a list:\n- one\n- two\n\nand a file ref [[src/auth/service.ts#L20]].",
+          "text": "Prose with **bold**, `code`, a list:\n- one\n- two\n\nand a file ref [[README.md#L1]].",
+          "title": "Markdown",
           "span": 6
         },
         {
@@ -280,7 +281,7 @@
         {
           "id": "content_children_3_children_1",
           "component": "Text",
-          "text": "Body text with `inline code` and [[src/api/routes.ts#L12]]."
+          "text": "Body text with `inline code` and [[README.md#L3]]."
         },
         {
           "id": "content_children_3_children_2",
@@ -291,7 +292,7 @@
         {
           "id": "content_children_3_children_3",
           "component": "FileRef",
-          "file": "src/auth/cache.ts#L5-30"
+          "file": "README.md#L1-12"
         },
         {
           "id": "content_children_3_children_4",
@@ -334,7 +335,7 @@
           "text": "Reads the balance before taking the row lock.",
           "kind": "risk",
           "title": "Race",
-          "file": "src/auth/service.ts#L42",
+          "file": "README.md#L1",
           "span": 4
         },
         {
@@ -357,7 +358,7 @@
           "data": {
             "@path": "/g/plan"
           },
-          "current": 1,
+          "current": 2,
           "title": "Steps",
           "span": 5
         },
@@ -366,7 +367,7 @@
           "component": "KeyValue",
           "data": {
             "Language": "TypeScript",
-            "Entry": "src/api/routes.ts",
+            "Entry": "README.md",
             "Tests": true,
             "Maintainers": [
               "Mira",
@@ -411,8 +412,7 @@
           "sort": "-commits",
           "search": true,
           "title": "DataTable",
-          "size": "m",
-          "span": 8
+          "size": "m"
         },
         {
           "id": "data_children_1",
@@ -423,26 +423,26 @@
           "heat": "churn",
           "title": "FileTree",
           "size": "m",
-          "span": 4
+          "span": 5
         },
         {
           "id": "data_children_2",
-          "component": "CommitList",
-          "data": {
-            "@path": "/g/commits"
-          },
-          "title": "CommitList",
-          "span": 7
-        },
-        {
-          "id": "data_children_3",
           "component": "JsonView",
           "data": {
             "@path": "/g/config"
           },
           "depth": 2,
           "title": "JsonView",
-          "span": 5
+          "size": "m",
+          "span": 7
+        },
+        {
+          "id": "data_children_3",
+          "component": "CommitList",
+          "data": {
+            "@path": "/g/commits"
+          },
+          "title": "CommitList"
         },
         {
           "id": "charts_children_0",
@@ -569,14 +569,14 @@
               ]
             },
             {
-              "name": "Domain",
+              "title": "Domain",
               "items": [
                 "auth"
               ],
               "note": "owns sessions"
             },
             {
-              "name": "Storage",
+              "label": "Storage",
               "items": [
                 "postgres",
                 "redis"
@@ -608,7 +608,7 @@
             "@path": "/g/schema"
           },
           "title": "ERDiagram",
-          "size": "m"
+          "size": "l"
         },
         {
           "id": "code_children_0",
@@ -631,7 +631,7 @@
           "id": "code_children_2",
           "component": "CodeView",
           "file": "README.md#L1-40",
-          "mark": "1-3",
+          "mark": "L1-3",
           "notes": [
             {
               "line": 2,
@@ -657,11 +657,11 @@
             {
               "file": "README.md#L1-12",
               "title": "Start here",
-              "note": "The readme explains the layout."
+              "note": "A stop shows one range of a file."
             },
             {
-              "file": "package.json#L1-20",
-              "note": "Workspaces and scripts."
+              "file": "README.md#L13-30",
+              "note": "The next stop scrolls to its own range."
             }
           ],
           "title": "CodeTour",
@@ -1222,6 +1222,7 @@
                 "fanIn": 1,
                 "fanOut": 1,
                 "cycle": true,
+                "status": "modified",
                 "file": "src/api/routes.ts"
               },
               {
@@ -1243,7 +1244,8 @@
                 "kind": "cluster",
                 "slotKey": "ui",
                 "fanIn": 0,
-                "fanOut": 2
+                "fanOut": 2,
+                "status": "affected"
               },
               {
                 "id": "redis",
@@ -1339,56 +1341,118 @@
               "note": "Needs metrics endpoint."
             }
           ],
-          "schema": {
-            "tables": [
-              {
-                "name": "users",
-                "file": "src/auth/schema.sql#L1",
-                "columns": [
-                  {
-                    "name": "id",
-                    "type": "uuid",
-                    "pk": true
-                  },
-                  {
-                    "name": "email",
-                    "type": "text"
-                  },
-                  {
-                    "name": "created_at",
-                    "type": "timestamptz"
-                  }
-                ]
-              },
-              {
-                "name": "sessions",
-                "columns": [
-                  {
-                    "name": "id",
-                    "type": "uuid",
-                    "pk": true
-                  },
-                  {
-                    "name": "user_id",
-                    "type": "uuid",
-                    "fk": true
-                  },
-                  {
-                    "name": "expires_at",
-                    "type": "timestamptz",
-                    "nullable": true
-                  }
-                ]
-              }
-            ],
-            "relations": [
-              {
-                "from": "sessions.user_id",
-                "to": "users.id",
-                "card": "n-1"
-              }
-            ]
-          },
+          "schema": [
+            {
+              "name": "users",
+              "file": "src/auth/schema.sql#L1",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "uuid",
+                  "pk": true
+                },
+                {
+                  "name": "email",
+                  "type": "text"
+                },
+                {
+                  "name": "created_at",
+                  "type": "timestamptz"
+                }
+              ]
+            },
+            {
+              "name": "sessions",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "uuid",
+                  "pk": true
+                },
+                {
+                  "name": "user_id",
+                  "type": "uuid",
+                  "fk": "users.id"
+                },
+                {
+                  "name": "expires_at",
+                  "type": "timestamptz",
+                  "nullable": true
+                }
+              ]
+            },
+            {
+              "name": "orders",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "uuid",
+                  "pk": true
+                },
+                {
+                  "name": "user_id",
+                  "type": "uuid",
+                  "fk": "users.id"
+                },
+                {
+                  "name": "status",
+                  "type": "text"
+                },
+                {
+                  "name": "currency",
+                  "type": "text"
+                },
+                {
+                  "name": "subtotal_cents",
+                  "type": "int"
+                },
+                {
+                  "name": "tax_cents",
+                  "type": "int"
+                },
+                {
+                  "name": "shipping_cents",
+                  "type": "int"
+                },
+                {
+                  "name": "total_cents",
+                  "type": "int"
+                },
+                {
+                  "name": "coupon",
+                  "type": "text",
+                  "nullable": true
+                },
+                {
+                  "name": "ship_to",
+                  "type": "jsonb"
+                },
+                {
+                  "name": "bill_to",
+                  "type": "jsonb"
+                },
+                {
+                  "name": "placed_at",
+                  "type": "timestamptz"
+                },
+                {
+                  "name": "paid_at",
+                  "type": "timestamptz",
+                  "nullable": true
+                },
+                {
+                  "name": "shipped_at",
+                  "type": "timestamptz",
+                  "nullable": true
+                },
+                {
+                  "name": "cancelled_at",
+                  "type": "timestamptz",
+                  "nullable": true
+                }
+              ]
+            }
+          ],
           "config": {
             "name": "demo",
             "private": true,

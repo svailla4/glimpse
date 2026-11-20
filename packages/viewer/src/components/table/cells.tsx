@@ -1,8 +1,8 @@
 // One renderer per FieldKind. Text comes from the kit formatters; this file adds the visual treatment (bars, heat
 // swatches, sparklines, chips) and wraps entity kinds in EntityLink so selection, open and copy work in a cell.
-import type {DataRow, Dataset, SurfaceMeta} from '@glimpse/catalog';
+import type {DataRow, Dataset} from '@glimpse/catalog';
 import {memo, type JSX, type PointerEvent, type ReactNode} from 'react';
-import {EntityLink, Icon, PathText, catVar, fmtCell, fmtDate, fmtNum, seqVar, useTooltip} from '../../kit/index.ts';
+import {EntityLink, Icon, PathText, fmtCell, fmtDate, fmtNum, seqVar, useTooltip} from '../../kit/index.ts';
 import s from './cells.module.css';
 import {cellEntity, isRecord, num, type Column} from './rows.ts';
 
@@ -13,7 +13,11 @@ const MINUS = '−';
 export interface CellContext {
   componentId: string;
   ds: Dataset | undefined;
-  slots: SurfaceMeta['slots'] | undefined;
+  /**
+   * Categorical ink per kind of category, from the kit (D6): a key the session knows wears its ink, the others take
+   * the free inks in order of first appearance in this table. A cell never picks or greys out a colour itself.
+   */
+  cat: Readonly<Record<'lang' | 'module' | 'chip', (key: string | undefined) => string>>;
   /** Largest value per column key, for bars and heat swatches. */
   max: ReadonlyMap<string, number>;
 }
@@ -21,8 +25,8 @@ export interface CellContext {
 const isBlank = (value: unknown) => value === null || value === undefined || value === '' || (typeof value === 'number' && Number.isNaN(value));
 const Blank = () => <span className={s.blank}>{DASH}</span>;
 
-function Dot(p: {slot: number | undefined}): JSX.Element {
-  return <span className={s.dot} style={{background: catVar(p.slot ?? 0)}} aria-hidden="true" />;
+function Dot(p: {color: string}): JSX.Element {
+  return <span className={s.dot} style={{background: p.color}} aria-hidden="true" />;
 }
 
 function Bar(p: {value: number; max: number; text: string}): JSX.Element {
@@ -69,6 +73,8 @@ function Spark(p: {values: number[]; label: string}): JSX.Element {
   );
 }
 
+/** Chips drawn in one cell. */
+export const MAX_CHIPS = 6;
 type ChipTone = 'good' | 'info' | 'serious' | 'critical';
 const CHIP_TONES: Readonly<Record<string, ChipTone>> = {
   a: 'good', added: 'good', new: 'good', done: 'good', ok: 'good', stable: 'good',
@@ -78,28 +84,51 @@ const CHIP_TONES: Readonly<Record<string, ChipTone>> = {
 };
 const STATUS_WORDS: Readonly<Record<string, string>> = {A: 'added', M: 'modified', D: 'deleted', R: 'renamed'};
 
-function Chip(p: {value: unknown; status: boolean}): JSX.Element {
-  const raw = isRecord(p.value) && typeof p.value.label === 'string' ? p.value.label : String(p.value);
-  const tone = CHIP_TONES[raw.toLowerCase()];
+/** The text of a chip value: its label when it is an object. */
+export const chipLabel = (value: unknown): string => (isRecord(value) && typeof value.label === 'string' ? value.label : String(value));
+/** Whether a chip's dot carries a status tone (added, fixme, ...) rather than a category colour. */
+export const chipHasTone = (label: string): boolean => Object.hasOwn(CHIP_TONES, label.toLowerCase());
+
+function Chip(p: {value: unknown; status: boolean; color: (key: string | undefined) => string}): JSX.Element {
+  const raw = chipLabel(p.value);
+  const tone = chipHasTone(raw) ? CHIP_TONES[raw.toLowerCase()] : undefined;
   return (
     <span className={s.chip} data-tone={tone}>
-      <span className={s.chipDot} aria-hidden="true" />
+      <span className={s.chipDot} style={tone ? undefined : {background: p.color(raw)}} aria-hidden="true" />
       {(p.status && STATUS_WORDS[raw]) || raw}
     </span>
   );
 }
 
+const DAY_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 86_400_000;
+const DAY_AGES = [[365, 'y'], [30, 'mo'], [7, 'wk'], [1, 'd']] as const;
+
+/**
+ * Age text of a date. A value with a time is an age down to the minute ('20 min'). A day-only value ('2026-11-20',
+ * a UTC day as the analyzers write it) knows nothing below a day, so it is counted in whole days against today's UTC
+ * date and never shown in hours: 'today', '1 d', '3 wk'.
+ */
+export function ageText(iso: string, now: number = Date.now()): string {
+  if (!DAY_ONLY.test(iso.trim())) return fmtDate(iso, 'rel');
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return DASH;
+  const days = Math.abs(Math.round((Math.floor(now / DAY_MS) * DAY_MS - time) / DAY_MS));
+  for (const [size, unit] of DAY_AGES) if (days >= size) return `${Math.floor(days / size)} ${unit}`;
+  return 'today';
+}
+
 /** A date as its age ('3 d'); the absolute date is in the tooltip and in the accessible text. */
 export function DateCell(p: {iso: string}): JSX.Element {
   const tip = useTooltip();
-  const rel = fmtDate(p.iso, 'rel');
+  const rel = ageText(p.iso);
   if (rel === DASH) return <span className={s.text} title={p.iso}>{p.iso}</span>;
   const abs = fmtDate(p.iso, 'abs');
   const show = (event: PointerEvent) => tip.show(<span className={s.tip}>{abs}</span>, event.clientX, event.clientY);
   return (
     <time className={s.date} dateTime={p.iso} onPointerEnter={show} onPointerMove={show} onPointerLeave={tip.hide}>
       {rel}
-      <span className={s.hidden}> ago, {abs}</span>
+      <span className={s.hidden}>{rel === 'today' ? ', ' : ' ago, '}{abs}</span>
     </time>
   );
 }
@@ -109,15 +138,16 @@ function Delta(p: {value: unknown}): ReactNode {
     const add = num(p.value.add);
     const del = num(p.value.del);
     if (add === undefined && del === undefined) return <Blank />;
+    // A zero is not a change: it is printed in the dim ink, never in green or red.
     return (
       <span className={s.delta}>
-        <span className={s.add}>+{fmtNum(add ?? 0)}</span> <span className={s.del}>{MINUS}{fmtNum(del ?? 0)}</span>
+        <span className={add ? s.add : s.zero}>+{fmtNum(add ?? 0)}</span> <span className={del ? s.del : s.zero}>{MINUS}{fmtNum(del ?? 0)}</span>
       </span>
     );
   }
   const n = num(p.value);
   if (n === undefined) return <span className={s.text}>{String(p.value)}</span>;
-  return <span className={s.delta}><span className={n < 0 ? s.del : s.add}>{n < 0 ? '' : '+'}{fmtNum(n)}</span></span>;
+  return <span className={s.delta}><span className={n === 0 ? s.zero : n < 0 ? s.del : s.add}>{n < 0 ? '' : '+'}{fmtNum(n)}</span></span>;
 }
 
 function Entity(p: {column: Column; row: DataRow; ctx: CellContext; children: ReactNode}): JSX.Element {
@@ -153,7 +183,7 @@ export const CellContent = memo(function CellContent(p: {column: Column; row: Da
     case 'chip':
       return (
         <span className={s.chips}>
-          {(Array.isArray(value) ? value.slice(0, 6) : [value]).map((item, i) => <Chip key={i} value={item} status={column.key === 'status'} />)}
+          {(Array.isArray(value) ? value.slice(0, MAX_CHIPS) : [value]).map((item, i) => <Chip key={i} value={item} status={column.key === 'status'} color={ctx.cat.chip} />)}
         </span>
       );
     case 'date':
@@ -177,14 +207,15 @@ export const CellContent = memo(function CellContent(p: {column: Column; row: Da
     case 'module':
       return (
         <Entity column={column} row={row} ctx={ctx}>
-          <Dot slot={typeof value === 'string' ? ctx.slots?.module?.[value] : undefined} />
-          <span className={s.mono}>{text}</span>
+          <Dot color={ctx.cat.module(typeof value === 'string' ? value : undefined)} />
+          {/* A module is a directory ('typescript/renderers'): its last segment tells the rows apart (D12). */}
+          {typeof value === 'string' && value.includes('/') ? <PathText file={value} /> : <span className={s.mono}>{text}</span>}
         </Entity>
       );
     case 'lang':
       return (
         <span className={s.entity}>
-          <Dot slot={typeof value === 'string' ? ctx.slots?.lang?.[value] : undefined} />
+          <Dot color={ctx.cat.lang(typeof value === 'string' ? value : undefined)} />
           <span className={s.plain}>{text}</span>
         </span>
       );
@@ -194,27 +225,63 @@ export const CellContent = memo(function CellContent(p: {column: Column; row: Da
 });
 
 /** Grid track per kind: a floor that keeps the cell legible and a share of the spare width. */
-const TRACKS: Readonly<Record<Column['kind'], readonly [min: number, track: string]>> = {
-  text: [88, 'minmax(88px, 2fr)'],
-  code: [140, 'minmax(140px, 3fr)'],
-  path: [156, 'minmax(156px, 3fr)'],
-  symbol: [112, 'minmax(112px, 2fr)'],
-  module: [88, 'minmax(88px, 1.4fr)'],
-  author: [64, 'minmax(64px, 1.2fr)'],
-  lang: [88, 'minmax(88px, 1.2fr)'],
-  commit: [64, '64px'],
-  num: [44, 'minmax(44px, 0.8fr)'],
-  bytes: [60, 'minmax(60px, 0.8fr)'],
-  pct: [48, 'minmax(48px, 0.8fr)'],
-  duration: [60, 'minmax(60px, 0.8fr)'],
-  bar: [100, 'minmax(100px, 1.6fr)'],
-  heat: [92, 'minmax(92px, 1fr)'],
-  spark: [72, '72px'],
-  chip: [76, 'minmax(76px, 1fr)'],
-  date: [52, 'minmax(52px, 0.8fr)'],
-  delta: [80, 'minmax(80px, 0.9fr)'],
-  bool: [32, '32px'],
+const TRACKS: Readonly<Record<Column['kind'], readonly [min: number, grow: number]>> = {
+  text: [88, 2],
+  code: [140, 3],
+  // The path column takes the largest share: it is what tells the rows apart (D12).
+  path: [168, 4],
+  symbol: [112, 2],
+  module: [88, 1.4],
+  author: [64, 1.2],
+  lang: [88, 1.2],
+  commit: [64, 0],
+  num: [44, 0.8],
+  bytes: [60, 0.8],
+  pct: [48, 0.8],
+  duration: [60, 0.8],
+  bar: [88, 1.2],
+  heat: [92, 1],
+  spark: [72, 0],
+  chip: [76, 1],
+  date: [52, 0.8],
+  delta: [80, 0.9],
+  bool: [32, 0],
 };
-export const trackOf = (column: Column): string => TRACKS[column.kind][1];
-export const minWidthOf = (column: Column): number => TRACKS[column.kind][0];
+/**
+ * Kinds whose text is short, mono and tabular. Their column is as wide as its longest value and its header, no
+ * wider, so the spare width goes to the columns that have something to say with it (paths, text, bars).
+ */
+const CONTENT_SIZED: ReadonlySet<Column['kind']> = new Set(['num', 'bytes', 'pct', 'duration', 'date', 'delta']);
+const CHAR = 7.25;
+const HEAD_CHAR = 7.1;
+const SORT_GLYPH = 12;
+const MAX_CONTENT = 168;
+
+export const isContentSized = (column: Column): boolean => CONTENT_SIZED.has(column.kind);
+/** A column that takes a share of the spare width. */
+export const isFlexible = (column: Column): boolean => TRACKS[column.kind][1] > 0 && !CONTENT_SIZED.has(column.kind);
+
+/** Characters a content-sized cell prints, 0 for a blank. */
+export function contentChars(value: unknown, column: Column): number {
+  if (isBlank(value)) return 0;
+  if (column.kind === 'date') return typeof value === 'string' ? Math.max(5, ageText(value).length) : String(value).length;
+  return fmtCell(value, column).length;
+}
+
+/**
+ * Width of a column's track. `chars` is the longest value seen in a content-sized column (undefined: not measured).
+ * `flexible` says the table has another column to take the spare width; without one a content-sized column grows.
+ */
+export function minWidthOf(column: Column, chars?: number): number {
+  const floor = TRACKS[column.kind][0];
+  if (!CONTENT_SIZED.has(column.kind) || chars === undefined) return floor;
+  const head = column.label.length * HEAD_CHAR + SORT_GLYPH;
+  return Math.round(Math.min(MAX_CONTENT, Math.max(floor, chars * CHAR + 2, head)));
+}
+export function trackOf(column: Column, chars?: number, flexible = false): string {
+  const [, grow] = TRACKS[column.kind];
+  const min = minWidthOf(column, chars);
+  if (grow === 0 || (flexible && CONTENT_SIZED.has(column.kind) && chars !== undefined)) return `${min}px`;
+  return `minmax(${min}px, ${grow}fr)`;
+}
 export const isRightAligned = (column: Column): boolean => column.kind === 'num' || column.kind === 'bytes' || column.kind === 'pct' || column.kind === 'duration';

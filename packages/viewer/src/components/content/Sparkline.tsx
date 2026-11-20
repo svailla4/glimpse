@@ -21,12 +21,12 @@ function seriesOf(state: DataState<unknown>): Array<number | undefined> {
 }
 
 /** Mounted only once there is something to plot, so the box is measured when it exists. */
-function Plot(p: {values: Array<number | undefined>; kind: SparkKind}): JSX.Element {
+function Plot(p: {values: Array<number | undefined>; kind: SparkKind; name?: string}): JSX.Element {
   const box = useRef<HTMLDivElement>(null);
   const {width} = useSize(box);
   return (
     <div className={styles.sparkline} ref={box}>
-      <Spark values={p.values} kind={p.kind} width={Math.max(MIN_WIDTH, Math.floor(width))} height={HEIGHT} label={`Sparkline, ${describeSpark(p.values)}`} />
+      <Spark values={p.values} kind={p.kind} width={Math.max(MIN_WIDTH, Math.floor(width))} height={HEIGHT} label={`Sparkline, ${describeSpark(p.values)}`} name={p.name} />
     </div>
   );
 }

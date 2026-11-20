@@ -2,7 +2,10 @@
 // THE catalog. One entry per component; key order of `props` is the Express positional order.
 // Rules (enforced by test/lint.test.ts): no prop named id|component|metadata|catalogId|accessibility|checks;
 // schemas are strict; no unions in static props; required props come first.
-import {component, opt, p} from './props.ts';
+// Accepting a reasonable guess beats documenting the one right spelling: enum props list the other words authors
+// write as `aliases` (the spec pipeline rewrites them and says so), and data shapes say which key spellings a
+// component reads (datasets.ts). The shapes and one example each are in docs.ts (SHAPES).
+import {component, minor, opt, p} from './props.ts';
 import type {
   ChipItem, CodeNote, CommitRow, DirNode, ErData, GraphData, KeyValueData, LayerItem, ListItem, Rows, StatItem,
   StepItem, TourStop,
@@ -11,14 +14,31 @@ import type {
 // ---- shared prop groups -----------------------------------------------------------------------------------
 /** Every component: columns it spans in the enclosing 12-column grid (Page, Section) or its flex share (Row). */
 const CELL = {span: opt(p.int('Grid columns 1-12.', 1, 12))};
-/** Plate-able leaves: with `title` the component draws its own numbered plate frame; without it renders bare. */
+const SIZE_ALIASES = {xs: 's', sm: 's', small: 's', md: 'm', medium: 'm', lg: 'l', large: 'l', xlarge: 'xl', full: 'fill', auto: 'fill'} as const;
+/**
+ * Plate-able leaves: with `title` the component draws its own numbered plate frame; without it renders bare.
+ * The viewer kit frames every non-layout component that carries all three of title, note and size (hasFrame).
+ * Callout and CodeBlock take a `title` of their own (a lead-in, a header label) and no FRAME: they draw no plate.
+ */
 const FRAME = {
   title: opt(p.text('Plate title; draws the numbered frame.')),
   note: opt(p.text('Caption under the plate.')),
-  size: opt(p.enum(['s', 'm', 'l', 'xl', 'fill'], 'Height 160/280/420/640px or fill the viewport.')),
+  size: opt(p.enum(['s', 'm', 'l', 'xl', 'fill'], 'Height 160/280/420/640px or fill the viewport.', SIZE_ALIASES)),
   ...CELL,
 };
-const GAP = opt(p.enum(['none', 's', 'm', 'l'], 'Gap 0/8/20/32px.'));
+
+/**
+ * True for components that carry the whole FRAME group (title, note, size): the docs list those props once, and the
+ * viewer draws the numbered plate around them when they have a title. One rule for both.
+ */
+export function hasFrame(def: {family: string; props: object}): boolean {
+  return def.family !== 'layout' && 'title' in def.props && 'note' in def.props && 'size' in def.props;
+}
+const GAP = opt(p.enum(['none', 's', 'm', 'l'], 'Gap 0/8/20/32px.', {'0': 'none', xs: 's', sm: 's', small: 's', md: 'm', medium: 'm', lg: 'l', large: 'l'}));
+const ALIGN_ALIASES = {left: 'start', top: 'start', right: 'end', bottom: 'end', middle: 'center', centre: 'center'} as const;
+const DIR_ALIASES = {td: 'TB', bt: 'TB', vertical: 'TB', down: 'TB', rl: 'LR', horizontal: 'LR', right: 'LR'} as const;
+const TREE_VALUE_ALIASES = {lines: 'loc', sloc: 'loc', size: 'bytes', churn: 'commits'} as const;
+const TREE_COLOR_ALIASES = {language: 'lang', commits: 'churn', heat: 'churn'} as const;
 
 // ---- layout (8) ------------------------------------------------------------------------------------------------
 export const Page = component('Page', {
@@ -29,7 +49,7 @@ export const Page = component('Page', {
   title: p.text('View title.'),
   children: p.children('Plates and other content, top to bottom.'),
   subtitle: opt(p.text('One line next to the title.')),
-  width: opt(p.enum(['page', 'wide', 'full'], 'Max width 1320px, 1680px or 100%.')),
+  width: minor(opt(p.enum(['page', 'wide', 'full'], 'Max width 1320px, 1680px or 100%.', {normal: 'page', default: 'page', fill: 'full'}))),
 });
 
 export const Plate = component('Plate', {
@@ -40,7 +60,7 @@ export const Plate = component('Plate', {
   title: p.text('Plate title.'),
   children: p.children('Body, stacked vertically.'),
   note: opt(p.text('Caption under the plate.')),
-  collapsed: opt(p.flag('Start collapsed.')),
+  collapsed: minor(opt(p.flag('Start collapsed.'))),
   ...CELL,
 });
 
@@ -73,8 +93,8 @@ export const Row = component('Row', {
 }, {
   children: p.children('Items.'),
   gap: GAP,
-  align: opt(p.enum(['start', 'center', 'end', 'stretch', 'baseline'], 'Cross-axis alignment.')),
-  wrap: opt(p.flag('Allow wrapping. Default true.')),
+  align: opt(p.enum(['start', 'center', 'end', 'stretch', 'baseline'], 'Cross-axis alignment.', ALIGN_ALIASES)),
+  wrap: minor(opt(p.flag('Allow wrapping. Default true.'))),
   ...CELL,
 });
 
@@ -85,7 +105,7 @@ export const Column = component('Column', {
 }, {
   children: p.children('Items.'),
   gap: GAP,
-  align: opt(p.enum(['start', 'center', 'end', 'stretch'], 'Cross-axis alignment.')),
+  align: opt(p.enum(['start', 'center', 'end', 'stretch'], 'Cross-axis alignment.', ALIGN_ALIASES)),
   ...CELL,
 });
 
@@ -107,8 +127,8 @@ export const Split = component('Split', {
   start: p.child('Left/top pane.'),
   end: p.child('Right/bottom pane.'),
   ratio: opt(p.str("Initial ratio like '1:2'. Default '1:1'.")),
-  dir: opt(p.enum(['row', 'col'], 'Side by side or stacked.')),
-  size: opt(p.enum(['s', 'm', 'l', 'xl', 'fill'], 'Height.')),
+  dir: opt(p.enum(['row', 'col'], 'Side by side or stacked.', {horizontal: 'row', h: 'row', column: 'col', vertical: 'col', v: 'col'})),
+  size: minor(opt(p.enum(['s', 'm', 'l', 'xl', 'fill'], 'Height.', SIZE_ALIASES))),
   ...CELL,
 });
 
@@ -119,8 +139,10 @@ export const Text = component('Text', {
   example: "Text('Entry point is [[src/main.ts#L12]].','lead')",
 }, {
   text: p.text('Text with inline micro-markup. No HTML.'),
-  tone: opt(p.enum(['body', 'lead', 'dim', 'caption', 'mono'], 'Style.')),
-  ...CELL,
+  tone: opt(p.enum(['body', 'lead', 'dim', 'caption', 'mono'], 'Style.', {
+    normal: 'body', default: 'body', muted: 'dim', secondary: 'dim', subtle: 'dim', small: 'caption', code: 'mono', heading: 'lead', title: 'lead',
+  })),
+  ...FRAME,
 });
 
 export const Markdown = component('Markdown', {
@@ -129,7 +151,7 @@ export const Markdown = component('Markdown', {
   example: "Markdown($/notes)",
 }, {
   text: p.text('Markdown source.'),
-  ...CELL,
+  ...FRAME,
 });
 
 export const Callout = component('Callout', {
@@ -138,7 +160,10 @@ export const Callout = component('Callout', {
   example: "Callout('Reads the balance before taking the row lock.','risk',file='src/ledger/post.ts#L42')",
 }, {
   text: p.text('Body (inline micro-markup).'),
-  kind: opt(p.enum(['note', 'tip', 'warn', 'risk', 'decision', 'question'], 'Tag and colour. Default note.')),
+  kind: opt(p.enum(['note', 'tip', 'warn', 'risk', 'decision', 'question'], 'Tag and colour. Default note.', {
+    info: 'note', information: 'note', warning: 'warn', caution: 'warn', danger: 'risk', error: 'risk', critical: 'risk',
+    success: 'tip', hint: 'tip', idea: 'tip',
+  })),
   title: opt(p.text('Bold lead-in.')),
   file: opt(p.text("File anchor 'path#L10-20'.")),
   ...CELL,
@@ -149,10 +174,9 @@ export const KeyValue = component('KeyValue', {
   doc: 'Definition grid; paths, numbers, lists and booleans format themselves.',
   example: "KeyValue({Language:'TypeScript',Entry:'src/main.ts',Tests:true})",
 }, {
-  data: p.data<KeyValueData>('KeyValueData', 'Object or [{k,v}].'),
+  data: p.data<KeyValueData>('KeyValueData', 'Object {Label:value} or [{k,v}].'),
   cols: opt(p.int('Columns 1-3. Default 1.', 1, 3)),
-  title: opt(p.text('Plate title.')),
-  ...CELL,
+  ...FRAME,
 });
 
 export const Chips = component('Chips', {
@@ -161,7 +185,7 @@ export const Chips = component('Chips', {
   example: "Chips(['React','Vite','PostgreSQL'])",
 }, {
   data: opt(p.data<ChipItem[]>('ChipItem[]', 'Strings or [{label,tone?}].', 'repo.stack')),
-  ...CELL,
+  ...FRAME,
 });
 
 export const FileRef = component('FileRef', {
@@ -177,12 +201,11 @@ export const FileRef = component('FileRef', {
 export const Steps = component('Steps', {
   family: 'content', chunk: 'content', tier: 'A',
   doc: 'Numbered plan or walkthrough with status marks and a progress rule.',
-  example: "Steps($/plan,title='Plan')",
+  example: "Steps([{title:'Add the middleware',status:'done'},{title:'Wire the router',status:'doing'},{title:'Tests'}],title='Plan')",
 }, {
   data: p.data<StepItem[]>('StepItem[]', '[{title,note?,status?,file?}]; status todo|doing|done|blocked|skipped.'),
-  current: opt(p.number('Index of the active step.')),
-  title: opt(p.text('Plate title.')),
-  ...CELL,
+  current: opt(p.number('Number of the active step, counting from 1 as drawn. Usually omitted: give that step status doing.')),
+  ...FRAME,
 });
 
 export const Stat = component('Stat', {
@@ -194,18 +217,20 @@ export const Stat = component('Stat', {
   label: opt(p.text('Caption.')),
   delta: opt(p.number('Signed change.')),
   unit: opt(p.text('Unit after the value.')),
-  spark: opt(p.data<number[]>('number[]', 'Numbers for a sparkline.')),
-  format: opt(p.enum(['num', 'compact', 'bytes', 'pct', 'duration'], 'Number format. Default compact.')),
+  spark: minor(opt(p.data<number[]>('number[]', 'Numbers for a sparkline.'))),
+  format: minor(opt(p.enum(['num', 'compact', 'bytes', 'pct', 'duration'], 'Number format. Default compact.', {
+    number: 'num', int: 'num', integer: 'num', full: 'num', short: 'compact', size: 'bytes', percent: 'pct', percentage: 'pct', time: 'duration', ms: 'duration',
+  }))),
   ...CELL,
 });
 
 export const Stats = component('Stats', {
   family: 'content', chunk: 'content', tier: 'A',
   doc: 'KPI strip: hairline-separated Stat cells.',
-  example: 'Stats()',
+  example: "Stats([{label:'Files',value:412},{label:'Tests',value:1866,delta:12}])",
 }, {
-  data: opt(p.data<StatItem[]>('StatItem[]', '[{label,value,unit?,delta?,spark?,format?}].', 'repo.kpis')),
-  ...CELL,
+  data: opt(p.data<StatItem[]>('StatItem[]', '[{label,value,unit?,delta?,spark?,format?,tone?}].', 'repo.kpis')),
+  ...FRAME,
 });
 
 // List draws ListItem[] as given. For any other rows (a dataset such as 'deps.external' or 'code.todos') each row
@@ -220,9 +245,7 @@ export const List = component('List', {
 }, {
   data: p.data<ListItem[]>('ListItem[]', '[{title,sub?,value?,file?}] or any rows dataset.'),
   limit: opt(p.int('Rows shown. Default 10.', 1, 200)),
-  title: opt(p.text('Plate title.')),
-  note: opt(p.text('Caption.')),
-  ...CELL,
+  ...FRAME,
 });
 
 // ---- data (4) ----------------------------------------------------------------------------------------------------
@@ -234,8 +257,8 @@ export const DataTable = component('DataTable', {
   data: p.data<Rows>('Rows', 'Rows: source ref, $/path or inline list of objects.'),
   columns: opt(p.str("Shorthand 'key[:kind][=Label] ...'. Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
   sort: opt(p.str("'field' or '-field'.")),
-  search: opt(p.flag('Show the search box. Default: when more than 20 rows.')),
-  group: opt(p.str('Group rows by this field.')),
+  search: minor(opt(p.flag('Show the search box. Default: when more than 20 rows.'))),
+  group: minor(opt(p.str('Group rows by this field.'))),
   ...FRAME,
 });
 
@@ -245,9 +268,9 @@ export const FileTree = component('FileTree', {
   example: "FileTree(heat='churn',size='fill')",
 }, {
   data: opt(p.data<DirNode>('DirNode', 'Tree dataset.', 'files.tree')),
-  metric: opt(p.enum(['loc', 'bytes', 'files', 'commits', 'changes', 'none'], 'Bar metric. Default loc.')),
-  heat: opt(p.enum(['none', 'churn', 'age', 'complexity'], 'Heat strip. Default none.')),
-  depth: opt(p.int('Levels expanded initially. Default 2.', 0, 12)),
+  metric: opt(p.enum(['loc', 'bytes', 'files', 'commits', 'changes', 'none'], 'Bar metric. Default loc.', {...TREE_VALUE_ALIASES, diff: 'changes', delta: 'changes'})),
+  heat: opt(p.enum(['none', 'churn', 'age', 'complexity'], 'Heat strip. Default none.', {commits: 'churn'})),
+  depth: minor(opt(p.int('Levels expanded initially. Default 2.', 0, 12))),
   ...FRAME,
 });
 
@@ -266,7 +289,7 @@ export const JsonView = component('JsonView', {
   example: "JsonView($/config,2)",
 }, {
   data: p.data<unknown>('unknown', 'Any JSON value.'),
-  depth: opt(p.int('Levels expanded initially. Default 1.', 0, 12)),
+  depth: minor(opt(p.int('Levels expanded initially. Default 1.', 0, 12))),
   ...FRAME,
 });
 
@@ -277,7 +300,7 @@ export const Sparkline = component('Sparkline', {
   example: 'Sparkline([3,5,4,9,12])',
 }, {
   data: p.data<number[]>('number[]', 'Numbers.'),
-  kind: opt(p.enum(['line', 'bar', 'area'], 'Default line.')),
+  kind: minor(opt(p.enum(['line', 'bar', 'area'], 'Default line.', {bars: 'bar', column: 'bar'}))),
   ...CELL,
 });
 
@@ -301,9 +324,9 @@ export const BarChart = component('BarChart', {
   x: opt(p.str('Category field.')),
   y: opt(p.str('Value field(s), space separated.')),
   series: opt(p.str('Field that splits bars into series.')),
-  mode: opt(p.enum(['grouped', 'stacked', 'pct'], 'Default grouped.')),
-  dir: opt(p.enum(['h', 'v'], 'Orientation. Default automatic.')),
-  limit: opt(p.int('Bars kept; the rest fold into Other. Default 20.', 1, 200)),
+  mode: opt(p.enum(['grouped', 'stacked', 'pct'], 'Default grouped.', {group: 'grouped', stack: 'stacked', percent: 'pct', normalized: 'pct'})),
+  dir: minor(opt(p.enum(['h', 'v'], 'Orientation. Default automatic.', {horizontal: 'h', row: 'h', vertical: 'v', column: 'v', col: 'v'}))),
+  limit: minor(opt(p.int('Bars kept; the rest fold into Other. Default 20.', 1, 200))),
   ...FRAME,
 });
 
@@ -316,8 +339,8 @@ export const LineChart = component('LineChart', {
   x: opt(p.str('X field (date or number).')),
   y: opt(p.str('Value field(s), space separated.')),
   series: opt(p.str('Field that splits rows into series.')),
-  mode: opt(p.enum(['line', 'area', 'stacked', 'pct'], 'Default line.')),
-  scale: opt(p.enum(['linear', 'log'], 'Y scale.')),
+  mode: opt(p.enum(['line', 'area', 'stacked', 'pct'], 'Default line.', {lines: 'line', stack: 'stacked', percent: 'pct', normalized: 'pct'})),
+  scale: minor(opt(p.enum(['linear', 'log'], 'Y scale.', {lin: 'linear', logarithmic: 'log'}))),
   ...FRAME,
 });
 
@@ -332,8 +355,8 @@ export const ScatterPlot = component('ScatterPlot', {
   r: opt(p.str('Radius field.')),
   color: opt(p.str('Category field for colour.')),
   label: opt(p.str('Label field (outliers are labelled).')),
-  scale: opt(p.enum(['linear', 'logx', 'logy', 'loglog'], 'Axis scales.')),
-  quadrants: opt(p.flag('Draw median lines.')),
+  scale: minor(opt(p.enum(['linear', 'logx', 'logy', 'loglog'], 'Axis scales.', {log: 'loglog'}))),
+  quadrants: minor(opt(p.flag('Draw median lines.'))),
   ...FRAME,
 });
 
@@ -344,8 +367,8 @@ export const Histogram = component('Histogram', {
 }, {
   data: p.data<Rows | number[]>('Rows|number[]', 'Rows or numbers.'),
   value: opt(p.str('Numeric field.')),
-  bins: opt(p.int('Bin count. Default automatic.', 2, 80)),
-  log: opt(p.flag('Log-scale counts.')),
+  bins: minor(opt(p.int('Bin count. Default automatic.', 2, 80))),
+  log: minor(opt(p.flag('Log-scale counts.'))),
   ...FRAME,
 });
 
@@ -358,7 +381,7 @@ export const Heatmap = component('Heatmap', {
   x: opt(p.str('Column field.')),
   y: opt(p.str('Row field.')),
   value: opt(p.str('Cell field.')),
-  mode: opt(p.enum(['seq', 'div'], 'Ramp. Default seq.')),
+  mode: minor(opt(p.enum(['seq', 'div'], 'Ramp. Default seq.', {sequential: 'seq', diverging: 'div'}))),
   ...FRAME,
 });
 
@@ -379,9 +402,9 @@ export const Treemap = component('Treemap', {
   example: "Treemap(color='churn',title='Where the code is')",
 }, {
   data: opt(p.data<DirNode>('DirNode', 'Tree dataset.', 'files.tree')),
-  value: opt(p.enum(['loc', 'bytes', 'files', 'commits'], 'Size metric. Default loc.')),
-  color: opt(p.enum(['lang', 'churn', 'age', 'complexity', 'depth', 'none'], 'Fill. Default lang.')),
-  depth: opt(p.int('Levels shown. Default 2.', 1, 6)),
+  value: opt(p.enum(['loc', 'bytes', 'files', 'commits'], 'Size metric. Default loc.', TREE_VALUE_ALIASES)),
+  color: opt(p.enum(['lang', 'churn', 'age', 'complexity', 'depth', 'none'], 'Fill. Default lang.', TREE_COLOR_ALIASES)),
+  depth: minor(opt(p.int('Levels shown. Default 2.', 1, 6))),
   ...FRAME,
 });
 
@@ -391,8 +414,8 @@ export const Icicle = component('Icicle', {
   example: "Icicle(title='Tree by size')",
 }, {
   data: opt(p.data<DirNode>('DirNode', 'Tree dataset.', 'files.tree')),
-  value: opt(p.enum(['loc', 'bytes', 'files', 'commits'], 'Size metric. Default loc.')),
-  color: opt(p.enum(['lang', 'churn', 'age', 'complexity', 'depth', 'none'], 'Fill. Default lang.')),
+  value: opt(p.enum(['loc', 'bytes', 'files', 'commits'], 'Size metric. Default loc.', TREE_VALUE_ALIASES)),
+  color: opt(p.enum(['lang', 'churn', 'age', 'complexity', 'depth', 'none'], 'Fill. Default lang.', TREE_COLOR_ALIASES)),
   ...FRAME,
 });
 
@@ -402,8 +425,8 @@ export const Graph = component('Graph', {
   doc: 'Node-link diagram on a dot grid: clusters, cycle marks, pan/zoom, focus on a node.',
   example: "Graph('deps.modules src/auth',title='How auth depends on the rest')",
 }, {
-  data: opt(p.data<GraphData>('GraphData', '{nodes,edges,groups?}.', 'deps.modules')),
-  dir: opt(p.enum(['LR', 'TB'], 'Flow direction. Default LR.')),
+  data: opt(p.data<GraphData>('GraphData', '{nodes:[{id,label}],edges:[{from,to}],groups?}.', 'deps.modules')),
+  dir: opt(p.enum(['LR', 'TB'], 'Flow direction. Default LR.', DIR_ALIASES)),
   focus: opt(p.text('Node id to centre; its neighbourhood is emphasised.')),
   depth: opt(p.int('Hops shown around the focus. Default 1.', 1, 4)),
   ...FRAME,
@@ -415,7 +438,7 @@ export const Flowchart = component('Flowchart', {
   example: "Flowchart('Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429])')",
 }, {
   src: p.text("Statements split by ';' or newline: 'A[Label] --> B{Decision}', '-->|label|', '-.->' dashed. Shapes: [box] {diamond} ([pill]) [(store)] ((circle))."),
-  dir: opt(p.enum(['TB', 'LR'], 'Flow direction. Default TB.')),
+  dir: opt(p.enum(['TB', 'LR'], 'Flow direction. Default TB.', DIR_ALIASES)),
   ...FRAME,
 });
 
@@ -433,17 +456,17 @@ export const Layers = component('Layers', {
   doc: 'Architecture tiers: horizontal bands of boxes, top tier first.',
   example: "Layers([{name:'API',items:['routes','middleware']},{name:'Domain',items:['ledger','payouts']}])",
 }, {
-  data: p.data<LayerItem[]>('LayerItem[]', "[{name,items:[label|{label,file?,note?}],note?}]."),
+  data: p.data<LayerItem[]>('LayerItem[]', "[{name,items:['label'|{label,file?,note?}],note?}], top tier first."),
   ...FRAME,
 });
 
 export const ERDiagram = component('ERDiagram', {
   family: 'diagram', chunk: 'diagrams', tier: 'C',
   doc: 'Tables with column rows and key marks, joined by relation edges.',
-  example: "ERDiagram($/schema,title='Data model')",
+  example: "ERDiagram([{name:'users',columns:[{name:'id',type:'uuid',pk:true},{name:'email'}]},{name:'orders',columns:[{name:'id',pk:true},{name:'user_id',fk:'users.id'}]}],title='Data model')",
 }, {
-  data: p.data<ErData>('ErData', '{tables:[{name,columns:[{name,type?,pk?,fk?}]}],relations?:[{from,to,label?}]}.'),
-  dir: opt(p.enum(['LR', 'TB'], 'Layout direction. Default LR.')),
+  data: p.data<ErData>('ErData', "Tables [{name,columns:[{name,type?,pk?,fk?}]}], or {tables,relations}. fk:'users.id' draws the relation."),
+  dir: minor(opt(p.enum(['LR', 'TB'], 'Layout direction. Default LR.', DIR_ALIASES))),
   ...FRAME,
 });
 
@@ -455,7 +478,7 @@ export const CodeBlock = component('CodeBlock', {
 }, {
   code: p.text('Source text.'),
   lang: opt(p.str('Language id (ts, py, go, rust, sql, json, sh ...).')),
-  mark: opt(p.str("Lines to highlight: '3,7-9'.")),
+  mark: opt(p.str("Lines to highlight: '3,7-9' (or 'L3,L7-9').")),
   title: opt(p.text('Header label.')),
   ...CELL,
 });
@@ -466,7 +489,7 @@ export const CodeView = component('CodeView', {
   example: "CodeView('src/auth/service.ts#L20-58',mark='31-36')",
 }, {
   file: opt(p.text("'path' or 'path#L10-40'. Omit to follow the selected file.")),
-  mark: opt(p.str("Lines to highlight: '12-18,30'.")),
+  mark: opt(p.str("Lines of the file to highlight: '12-18,30' (or 'L12-18').")),
   notes: opt(p.data<CodeNote[]>('CodeNote[]', '[{line,text,kind?}] callouts anchored to lines.')),
   ...FRAME,
 });
@@ -478,7 +501,7 @@ export const DiffView = component('DiffView', {
 }, {
   range: opt(p.text("'wt' (working tree vs HEAD, default), 'staged', or a git range 'main..HEAD'.")),
   file: opt(p.text('Limit to one path.')),
-  mode: opt(p.enum(['auto', 'unified', 'split'], 'Layout. Default auto.')),
+  mode: minor(opt(p.enum(['auto', 'unified', 'split'], 'Layout. Default auto.', {inline: 'unified', 'side-by-side': 'split', sidebyside: 'split', side: 'split'}))),
   ...FRAME,
 });
 
@@ -508,7 +531,7 @@ export const Button = component('Button', {
 }, {
   label: p.text('Button text.'),
   action: p.action("Event('name',{context})."),
-  tone: opt(p.enum(['default', 'primary', 'quiet'], 'Style.')),
+  tone: opt(p.enum(['default', 'primary', 'quiet'], 'Style.', {secondary: 'default', normal: 'default', ghost: 'quiet', subtle: 'quiet', link: 'quiet'})),
   ...CELL,
 });
 

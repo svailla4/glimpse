@@ -130,6 +130,27 @@ describe('DiffView', () => {
     expect(list.getAttribute('aria-activedescendant')).toBe(cell.querySelector('[data-path="src/auth/service.ts"]')?.id);
   });
 
+  it('draws the line-less hunk of a cut diff as a note row, never as a hunk to jump to', async () => {
+    const payload = fixture();
+    const cut = '@@ 4,120 more diff lines not shown: the change is too large for one view @@';
+    payload.files[1]!.hunks!.push({oldStart: 0, oldLines: 0, newStart: 0, newLines: 0, header: cut, lines: []});
+    for (const mode of ['unified', 'split']) {
+      const view = renderExpress(`root=Page('T',[d])\nd=DiffView(mode='${mode}')`, {size: NARROW, data: {'/ui/file': 'src/auth/service.ts'}, host: {diff: () => Promise.resolve(structuredClone(payload))}});
+      const cell = view.cell('d');
+      await waitFor(() => expect(cell.querySelector('[data-gl-diff-note]')?.textContent).toBe('4,120 more diff lines not shown: the change is too large for one view'));
+      expect(cell.querySelector('[data-gl-diff-note]')?.getAttribute('role')).toBe('note');
+      expect([...cell.querySelectorAll('[data-gl-hunk]')].map(hunk => hunk.textContent)).not.toContain(cut);
+      expect(cell.querySelectorAll('[data-gl-hunk]')).toHaveLength(2);
+      expect(cell.querySelector('[role="region"]')?.getAttribute('aria-label')).toBe(`Diff of src/auth/service.ts, ${mode}, 2 hunks, cut`);
+      // j stops at the last real hunk
+      const root = cell.querySelector('[data-gl-code="diff"]')!;
+      fireEvent.keyDown(root, {key: 'j'});
+      fireEvent.keyDown(root, {key: 'j'});
+      await waitFor(() => expect(cell.querySelector('[data-gl-hunk][data-active]')?.getAttribute('data-gl-hunk')).toBe('1'));
+      view.unmount();
+    }
+  });
+
   it('loads hunks on demand for a file that arrived without them', async () => {
     const full = fixture();
     const diff = (query: {range: string; path?: string}): Promise<DiffPayload> => {
@@ -183,7 +204,7 @@ describe('DiffView', () => {
 
   it('says so when nothing changed, and redlines a failed or malformed answer', async () => {
     const empty = renderExpress(SPEC, {host: {diff: q => Promise.resolve({range: q.range, files: [], totals: {files: 0, add: 0, del: 0}, rev: 1})}});
-    await waitFor(() => expect(empty.cell('d').querySelector('[data-gl-state="empty"]')?.textContent).toBe('no changes in wt'));
+    await waitFor(() => expect(empty.cell('d').querySelector('[data-gl-state="empty"]')?.textContent).toBe('no uncommitted changes'));
     empty.unmount();
 
     const failed = renderExpress(`root=Page('T',[d])\nd=DiffView('nope..x')`, {host: {diff: () => Promise.reject(new Error('unknown revision nope'))}});

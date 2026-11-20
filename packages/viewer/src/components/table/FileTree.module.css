@@ -12,6 +12,8 @@
   .root[data-sized] { flex: 1 1 0; min-height: 0; max-height: none; }
   .scroll { flex: 0 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 0; }
   .root[data-sized] .scroll { flex: 1 1 0; }
+  /* More rows below: the bottom edge fades, so a row cut by the plate reads as "scroll", not as a layout fault. */
+  .scroll[data-more-y] { mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent); }
   .body { position: relative; }
 
   .scope {
@@ -35,7 +37,8 @@
     box-sizing: border-box;
     width: 100%;
     height: 24px;
-    padding: 0 14px 0 10px;
+    padding: 0 14px 0 12px;
+    overflow: hidden;
     cursor: default;
     transition: background-color var(--gl-t-hover) var(--gl-ease);
   }
@@ -45,8 +48,8 @@
   .row:focus-visible { outline: 2px solid var(--gl-accent); outline-offset: -2px; }
   .row[data-more]:not([aria-disabled='true']) { cursor: pointer; }
 
-  .heat { position: absolute; left: 3px; top: 3px; bottom: 3px; width: 3px; }
-  .row[data-selected='exact'] .heat { left: 4px; }
+  /* Inset from the plate edge and its corner tick, and clear of the selection rule. */
+  .heat { position: absolute; left: 5px; top: 4px; bottom: 4px; width: 3px; }
 
   /* One hairline per level, drawn in the middle of each 16 px step so it lines up under the parent's chevron. */
   .guides {
@@ -60,8 +63,13 @@
   .chevron { fill: none; stroke: var(--gl-ink-3); stroke-width: 1.25; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--gl-t-state) var(--gl-ease); }
   .chevron[data-open] { transform: rotate(90deg); }
 
-  .label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dir { font: 500 12.5px/18px var(--gl-font-ui); }
+  /* The name keeps a readable width: on a narrow or deeply nested row the bar gives way first (see .bar). */
+  .label { flex: 1 1 auto; display: flex; min-width: min(14ch, 60%); overflow: hidden; white-space: nowrap; }
+  .dir { display: flex; min-width: 0; font: 500 12.5px/18px var(--gl-font-ui); }
+  /* A folded chain of single-entry directories: the outer segments are dim and give way first, the last stays. */
+  .chain { flex: 0 1000000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 400; color: var(--gl-ink-2); }
+  .chain:first-child { min-width: 2ch; }
+  .dirName { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .more { flex: 1 1 auto; min-width: 0; font-style: italic; color: var(--gl-ink-3); white-space: nowrap; }
 
   .status { flex: none; display: inline-flex; align-items: center; gap: 4px; font: 10.5px/16px var(--gl-font-mono); letter-spacing: 0.04em; color: var(--gl-ink-2); }
@@ -72,16 +80,20 @@
   .status[data-status='R'] .statusDot { background: var(--gl-serious); }
 
   .bar {
-    flex: none;
+    flex: 0 1000 64px;
     display: flex;
-    width: 64px;
+    min-width: 0;
     height: 4px;
     margin-left: 8px;
+    overflow: hidden;
     background: linear-gradient(var(--gl-rule), var(--gl-rule)) left center / 100% 1px no-repeat;
   }
-  .barFill { height: 100%; background: var(--gl-cat-1); }
-  .barAdd { height: 100%; background: var(--gl-good); }
-  .barDel { height: 100%; background: var(--gl-critical); }
+  /* The +/- counts already carry the size of a change; its bar is a short ratio mark. */
+  .bar[data-metric='changes'] { flex-basis: 40px; }
+  .barFill, .barAdd, .barDel { flex: none; height: 100%; min-width: 1px; }
+  .barFill { background: var(--gl-cat-1); }
+  .barAdd { background: var(--gl-good); }
+  .barDel { background: var(--gl-critical); }
   .value {
     flex: none;
     min-width: 6ch;
@@ -93,27 +105,9 @@
   }
   .add { color: var(--gl-good); }
   .del { color: var(--gl-critical); }
+  .zero { color: var(--gl-ink-3); }
 
-  .none { padding: 20px 14px; text-align: center; font: 11px/16px var(--gl-font-mono); color: var(--gl-ink-3); }
   .note { font: 11px/16px var(--gl-font-mono); color: var(--gl-ink-3); white-space: nowrap; }
-  .back {
-    all: unset;
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    height: 24px;
-    padding: 0 8px;
-    border: 1px solid var(--gl-rule-strong);
-    border-radius: var(--gl-r-1);
-    font: 11px/16px var(--gl-font-mono);
-    color: var(--gl-ink);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .back:hover { background: var(--gl-sunken); }
-  .back:focus-visible { outline: 2px solid var(--gl-accent); outline-offset: 2px; }
-
   .find {
     position: absolute;
     right: 8px;
@@ -131,6 +125,10 @@
   .caret { width: 1px; height: 12px; margin-left: 1px; background: var(--gl-accent); }
   .hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
+  /* On a narrow tree the name is worth more than the badge that repeats its extension, then more than the bar. */
+  @container (max-width: 359px) {
+    .label :global(.gl-path-ext) { display: none; }
+  }
   @container (max-width: 259px) {
     .bar { display: none; }
   }

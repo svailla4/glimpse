@@ -78,13 +78,63 @@ describe('parseFlow', () => {
     ['A --> ', [{statement: 1, message: 'expected a node id at column 6, found end of statement'}]],
     ['A --> B; B -> C', [{statement: 2, message: 'expected an arrow (-->, -->|label|, -- label -->, -.->) at column 3, found "-> C"'}]],
     ['A --> B\nC[open', [{statement: 2, message: 'unclosed "[" in node C (column 2)'}]],
-    ['flowchart TD\n%% note\nA --> B\n--> C\nD --> 9', [
+    ['flowchart TD\n%% note\nA --> B\n--> C\nD --> [x]', [
       {statement: 2, message: 'expected a node id at column 1, found "--> C"'},
-      {statement: 3, message: 'expected a node id at column 7, found "9"'},
+      {statement: 3, message: 'expected a node id at column 7, found "[x]"'},
     ]],
     ['', [{statement: 1, message: 'no statements: expected something like "A[Start] --> B{Decision}"'}]],
   ])('reports errors by statement number for %j', (src, errors) => {
     expect(flowErrors(src)).toEqual(errors);
+  });
+});
+
+// F044: a small model wrote 'Start --> Enter credentials --> Valid? ; Valid? -- yes --> Session' and got four
+// E_NOTATION lines that never said a node id cannot contain spaces. Plain words are now a node.
+describe('parseFlow: nodes written as plain words', () => {
+  it('parses the flowchart of the review', () => {
+    expect(flow('Start --> Enter credentials --> Valid? ; Valid? -- yes --> Session ; Valid? -- no --> Retry ; Retry --> Enter credentials')).toEqual({
+      nodes: [
+        {id: 'Start', label: 'Start', shape: 'box'}, {id: 'Enter_credentials', label: 'Enter credentials', shape: 'box'},
+        {id: 'Valid', label: 'Valid?', shape: 'diamond'}, {id: 'Session', label: 'Session', shape: 'box'}, {id: 'Retry', label: 'Retry', shape: 'box'},
+      ],
+      edges: [
+        {from: 'Start', to: 'Enter_credentials'}, {from: 'Enter_credentials', to: 'Valid'}, {from: 'Valid', to: 'Session', label: 'yes'},
+        {from: 'Valid', to: 'Retry', label: 'no'}, {from: 'Retry', to: 'Enter_credentials'},
+      ],
+    });
+  });
+
+  it.each([
+    ['Enter credentials', {id: 'Enter_credentials', label: 'Enter credentials', shape: 'box'}],
+    ['Over the limit?', {id: 'Over_the_limit', label: 'Over the limit?', shape: 'diamond'}],
+    ['Sign-in page', {id: 'Sign_in_page', label: 'Sign-in page', shape: 'box'}],
+    ['"Enter credentials"', {id: 'Enter_credentials', label: 'Enter credentials', shape: 'box'}],
+    ['429', {id: 'n_429', label: '429', shape: 'box'}],
+    ['3 retries', {id: 'n_3_retries', label: '3 retries', shape: 'box'}],
+    ['Démarrer la session', {id: 'Démarrer_la_session', label: 'Démarrer la session', shape: 'box'}],
+  ])('node %s', (src, node) => {
+    expect(flow(src)).toEqual({nodes: [node], edges: []});
+    expect(flow(`A --> ${src} --> B`).nodes).toEqual([{id: 'A', label: 'A', shape: 'box'}, node, {id: 'B', label: 'B', shape: 'box'}]);
+  });
+
+  it('the same words are the same node, and its id can be used to give it a shape or to refer to it', () => {
+    const ast = flow('Read config --> Parse; Parse -.-> Read config; Read config -->|ok| Done; Valid? --> Done; Valid --> Parse');
+    expect(ast.nodes.map(n => n.id)).toEqual(['Read_config', 'Parse', 'Done', 'Valid']);
+    expect(ast.nodes.find(n => n.id === 'Valid')).toEqual({id: 'Valid', label: 'Valid?', shape: 'diamond'});
+    expect(ast.edges).toHaveLength(5);
+  });
+
+  it('mixes with id[label] nodes, labelled edges and &', () => {
+    expect(flow('A[Start] --> Check the cache -- miss --> DB[(Postgres)]; Check the cache -->|hit| Return early').edges).toEqual([
+      {from: 'A', to: 'Check_the_cache'}, {from: 'Check_the_cache', to: 'DB', label: 'miss'}, {from: 'Check_the_cache', to: 'Return_early', label: 'hit'},
+    ]);
+    expect(flow('First step & Second step --> Done').edges).toEqual([{from: 'First_step', to: 'Done'}, {from: 'Second_step', to: 'Done'}]);
+  });
+
+  it('text with brackets, pipes or a single-dash arrow is still read by the id[label] grammar and reported', () => {
+    expect(flowErrors('B -> C')).toEqual([{statement: 1, message: 'expected an arrow (-->, -->|label|, -- label -->, -.->) at column 3, found "-> C"'}]);
+    expect(flowErrors('A foo[bar] --> B')).toEqual([{statement: 1, message: expect.stringContaining('expected an arrow')}]);
+    expect(flowErrors('C[open --> B')).toEqual([{statement: 1, message: 'unclosed "[" in node C (column 2)'}]);
   });
 });
 

@@ -59,6 +59,37 @@
     white-space: nowrap;
   }
   .grow { flex: 1 1 0; min-width: 0; }
+  /* ---- lines that could not be loaded: what is missing, why, and a way to ask again */
+  .failed { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .notice {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 4px 6px 4px 10px;
+    border-bottom: 1px solid var(--gl-rule);
+    border-left: 2px solid var(--gl-critical);
+    font: 400 12px/18px var(--gl-font-mono);
+  }
+  .noticeText { flex: 1 1 auto; min-width: 0; color: var(--gl-ink-2); overflow-wrap: anywhere; }
+  .retry {
+    all: unset;
+    flex: none;
+    box-sizing: border-box;
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--gl-rule-strong);
+    border-radius: var(--gl-r-1);
+    color: var(--gl-ink);
+    cursor: pointer;
+    font: 400 11px/20px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .failed > .retry { margin-left: 12px; }
+  .retry:hover { background: var(--gl-sunken); }
+  .retry:focus-visible { outline: 2px solid var(--gl-accent); outline-offset: 2px; }
   .tool {
     all: unset;
     display: inline-grid;
@@ -86,6 +117,7 @@
     outline: none;
   }
   .scroller:focus-visible { outline: 2px solid var(--gl-accent); outline-offset: -2px; }
+  .scroller[data-more-y] { mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent); }
   .sizer { position: relative; box-sizing: border-box; min-width: 100%; }
   .vrow { position: absolute; top: 0; left: 0; width: 100%; }
 

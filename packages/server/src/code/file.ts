@@ -1,11 +1,13 @@
 // packages/server/src/code/file.ts
 // Reading files of the project safely, and serving them as highlighted line windows.
-// Every read goes through locate(): the real path of the file must stay inside the real path of the root.
+// Every read goes through locate(): the real path of the file must stay inside the real path of the root. The file
+// service also serves only files of the inventory (tracked, or untracked and not ignored): nothing under .git, no
+// ignored secrets, whatever asks for them.
 import {lstat, readFile, realpath, stat} from 'node:fs/promises';
 import {relative, resolve, sep} from 'node:path';
 import {parseFileLoc, type FileQuery, type FileSlice, type TokenLine} from '@glimpse/catalog';
 import type {GrammarState} from 'shiki/core';
-import type {RepoContext} from '../contracts.ts';
+import {inInventory, type RepoContext} from '../contracts.ts';
 import {plainLines, prepareLang, splitLines, tokenizeLines} from './highlight.ts';
 import {langOfPath, PLAIN_LANG} from './langs.ts';
 
@@ -36,7 +38,8 @@ export function repoPath(text: string | undefined): string | null {
   return parts.join('/');
 }
 
-export type Located = {ok: true; abs: string; rel: string} | {ok: false; reason: 'missing' | 'outside-root'};
+/** `rel` is the path as it was asked for; `real` is where it leads once symbolic links are followed. */
+export type Located = {ok: true; abs: string; rel: string; real: string} | {ok: false; reason: 'missing' | 'outside-root'};
 
 /**
  * Resolves `path` (relative to the root, or absolute) to a real file-system path inside `root`, which must itself
@@ -54,7 +57,7 @@ export async function locate(root: string, path: string): Promise<Located> {
     return {ok: false, reason: 'missing'};
   }
   if (!inside(abs)) return {ok: false, reason: 'outside-root'};
-  return {ok: true, abs, rel: relative(root, lexical).split(sep).join('/')};
+  return {ok: true, abs, rel: relative(root, lexical).split(sep).join('/'), real: relative(root, abs).split(sep).join('/')};
 }
 
 export function isBinary(bytes: Uint8Array): boolean {
@@ -155,6 +158,9 @@ export function createFileReader(ctx: RepoContext, root: Promise<string>): (q: F
     let entry = cache.get(where.abs);
     const info = await stat(where.abs).catch(() => null);
     if (!info || !info.isFile()) return skipped(where.rel, 'missing');
+    // Inside the root is not enough: .git/config, an ignored .env or a dependency's file are not files of the project.
+    // The file a link leads to is what is judged, so a link cannot stand in for a file that would be refused.
+    if (!(await inInventory(ctx.index, where.real).catch(() => false))) return skipped(where.rel, 'outside-root');
     if (!entry || entry.mtimeMs !== info.mtimeMs || entry.size !== info.size) {
       const file = await readTextFile(where.abs);
       if (!file.ok) return skipped(where.rel, file.reason, file.size);

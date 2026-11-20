@@ -1,0 +1,91 @@
+// The README is the first thing a reader meets, so what it shows must be true: the example specs compile, the files
+// they name exist, and the tables list what the catalog actually has.
+import {existsSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {describe, expect, it} from 'vitest';
+import {COMPONENTS, SOURCE_BY_NAME, SOURCES, VIEW_INDEX, formatRef, parseFileLoc, type A2uiMessage} from '../src/index.ts';
+import {compileExpress, expandRefs, strictErrors} from '../testing/index.ts';
+import {readText} from './support.ts';
+
+const repoFile = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
+const readme = readText('../../../README.md');
+const pluginReadme = readText('../../../plugin/README.md');
+
+/** The section between `## <title>` and the next `## `. */
+function section(text: string, title: string): string {
+  const start = text.indexOf(`\n## ${title}\n`);
+  expect(start, `section "${title}"`).toBeGreaterThanOrEqual(0);
+  const end = text.indexOf('\n## ', start + 1);
+  return text.slice(start, end < 0 ? undefined : end);
+}
+const fenced = (text: string) => [...text.matchAll(/```\n([\s\S]*?)\n```/g)].map(m => m[1]!);
+
+describe('README: the example specs', () => {
+  const specs = fenced(section(readme, 'Writing a custom spec'));
+
+  it('has three examples, each with the id it was run under', () => {
+    expect(specs).toHaveLength(3);
+    const ids = [...section(readme, 'Writing a custom spec').matchAll(/\(`id: "([^"]+)"`\)/g)].map(m => m[1]!);
+    expect(ids).toHaveLength(3);
+    // hyphens are part of what the README shows working
+    for (const id of ids) expect(id).toMatch(/^[A-Za-z0-9_][A-Za-z0-9_-]{0,47}$/);
+    expect(ids.some(id => id.includes('-'))).toBe(true);
+  });
+
+  it.each(specs.map((spec, i) => [i + 1, spec] as const))('example %i compiles, is strictly valid, and names sources and files that exist', (_n, spec) => {
+    const messages = compileExpress('readme', spec);
+    const refs = expandRefs(messages);
+    expect(strictErrors(messages)).toEqual([]);
+    for (const ref of refs.values()) expect(SOURCE_BY_NAME.has(ref.source), formatRef(ref)).toBe(true);
+    const create = messages[0] as Extract<A2uiMessage, {createSurface: unknown}>;
+    const components = create.createSurface.components as unknown as Array<Record<string, unknown>>;
+    expect(components[0]).toMatchObject({id: 'root', component: 'Page'});
+    const files: string[] = [];
+    for (const component of components) {
+      if (['CodeView', 'FileRef', 'SymbolOutline'].includes(String(component.component)) && typeof component.file === 'string') files.push(component.file);
+      if (typeof component.text === 'string') for (const m of component.text.matchAll(/\[\[([^\]]+)\]\]/g)) files.push(m[1]!);
+    }
+    for (const file of files) expect(existsSync(repoFile(parseFileLoc(file).path)), `${file} exists in this repository`).toBe(true);
+    // a path scope in a source ref is a directory of this repository
+    for (const ref of refs.values()) if (ref.target && /^[\w./-]+$/.test(ref.target) && ref.target.includes('/')) expect(existsSync(repoFile(ref.target)), formatRef(ref)).toBe(true);
+  });
+
+  it('between them the examples use a source ref, a slot, a diagram notation, a code view and an input', () => {
+    const all = specs.join('\n');
+    for (const needle of ["Graph('deps.modules", "DataTable('git.churn", 'SequenceDiagram(', 'CodeView(', 'Steps($/plan', '$/plan=[', 'ERDiagram(', 'Ask(']) expect(all, needle).toContain(needle);
+  });
+});
+
+describe('README: what it lists is what exists', () => {
+  it('names every component, every source and every preset', () => {
+    for (const def of COMPONENTS) expect(section(readme, 'Components'), def.name).toContain(`\`${def.name}\``);
+    for (const source of SOURCES) expect(section(readme, 'Data sources'), source.name).toContain(`\`${source.name}\``);
+    for (const entry of VIEW_INDEX.split(' | ')) expect(section(readme, 'Views'), entry).toContain(`| \`${entry}\` |`);
+    expect(section(readme, 'Components')).toMatch(new RegExp(`^${COMPONENTS.length} components in seven families`, 'm'));
+  });
+
+  it('gives the build-from-source route for the plugin and for a plain MCP server, and says dist is not committed', () => {
+    const install = section(readme, 'Install');
+    expect(install).toMatch(/`plugin\/dist`[^.]*\. It is \*\*not committed\*\*/);
+    for (const command of ['npm install', 'npm run build', 'claude --plugin-dir /path/to/glimpse/plugin', 'claude plugin marketplace add /path/to/glimpse', 'claude plugin install glimpse@glimpse']) {
+      expect(install, command).toContain(command);
+    }
+    expect(install).toContain('"args": ["/path/to/glimpse/plugin/dist/server.mjs", "--root", "/path/to/your/project"]');
+    expect(pluginReadme).toMatch(/not committed/);
+    for (const command of ['npm install', 'npm run build', 'claude --plugin-dir']) expect(pluginReadme, command).toContain(command);
+  });
+
+  it('has the sections a reader needs: status, tools, security model, limitations', () => {
+    expect(readme).toMatch(/\*\*Status: version 0\.1\.0/);
+    for (const tool of ['show', 'catalog', 'query', 'events', 'pending_context']) {
+      expect(section(readme, 'Tools'), tool).toContain(`| \`${tool}\` |`);
+      expect(pluginReadme, tool).toContain(`| \`${tool}\` |`);
+    }
+    expect(section(readme, 'Security model')).toMatch(/127\.0\.0\.1/);
+    expect(section(readme, 'Status and known limitations')).toMatch(/macOS only/);
+  });
+
+  it('carries no absolute local path, user name or token', () => {
+    for (const text of [readme, pluginReadme]) expect(text).not.toMatch(/\/Users\/|\/home\/[a-z]|[A-Za-z0-9._-]+@[A-Za-z0-9-]+\.[a-z]{2,}\b(?!\/)/);
+  });
+});

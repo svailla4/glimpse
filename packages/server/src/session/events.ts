@@ -2,6 +2,7 @@
 // reaches the model from the viewer passes through the formatters here: a fixed `viewer:` prefix, JSON-escaped values
 // and a length cap, so text typed or rendered in the tab cannot pose as an instruction or break the line format.
 import {formatFileLoc, type EntityRef} from '@glimpse/catalog';
+import {oneLine} from '../spec/errors.ts';
 
 export const MAX_EVENTS = 100;
 const MAX_VALUE = 300;
@@ -36,7 +37,22 @@ export function actionLine(verb: 'press' | 'answer' | 'event', surfaceId: string
   return `${PREFIX} ${verb} ${name(surfaceId)} ${name(action)}${json ? ' ' + json : ''}`;
 }
 
-interface Entry { line: string; selection: boolean }
+/**
+ * `viewer: error overview DataTable#impact E_SHAPE expected an array of rows, received an object`: what a tab drew
+ * in place of a component (decision D3). The text comes from the viewer and may quote the repository, so it is
+ * flattened to one line and capped like every other value here.
+ */
+export function reportLine(surfaceId: string, component: string, code: string, message: string): string {
+  return `${PREFIX} error ${name(surfaceId)} ${reportText(component, code, message)}`;
+}
+
+/** `DataTable#impact: E_SHAPE expected an array of rows, received an object`, the form a `warn` line carries. */
+export function reportText(component: string, code: string, message: string): string {
+  const flat = oneLine(message, 200);
+  return `${component.replace(/[^\w#.-]/g, '_').slice(0, 80)}: ${name(code)} ${clip(flat, 200)}`.trim();
+}
+
+interface Entry { line: string; selection: boolean; /** Reports: `<surface>\u0000<component>`, replaced by a newer report of the same component. */ report?: {surfaceId: string; component: string; text: string} }
 
 export class EventQueue {
   private entries: Entry[] = [];
@@ -45,6 +61,33 @@ export class EventQueue {
   /** Queues an action for the agent. Beyond MAX_EVENTS the oldest entry is dropped. */
   push(line: string): void {
     this.add({line, selection: false});
+  }
+
+  /** Queues what a tab reported about one component; an undelivered earlier report of that component is replaced. */
+  report(surfaceId: string, component: string, code: string, message: string): void {
+    this.entries = this.entries.filter(entry => !(entry.report && entry.report.surfaceId === surfaceId && entry.report.component === component));
+    this.add({line: reportLine(surfaceId, component, code, message), selection: false, report: {surfaceId, component, text: reportText(component, code, message)}});
+  }
+
+  /** Takes the undelivered reports of a surface out of the queue (a `show` prints them as `warn` lines instead). */
+  takeReports(surfaceId: string): string[] {
+    const taken = this.entries.filter(entry => entry.report?.surfaceId === surfaceId).map(entry => entry.report!.text);
+    if (taken.length > 0) this.entries = this.entries.filter(entry => entry.report?.surfaceId !== surfaceId);
+    return taken;
+  }
+
+  /**
+   * Forgets the undelivered reports of a surface (it was replaced or closed); with `only`, just those of the
+   * components with these ids (a replace in place keeps the reports of the components it did not change).
+   */
+  dropReports(surfaceId: string, only?: ReadonlySet<string>): void {
+    const drops = (report: NonNullable<Entry['report']>) => report.surfaceId === surfaceId && (only === undefined || only.has(report.component.slice(report.component.indexOf('#') + 1)));
+    this.entries = this.entries.filter(entry => !entry.report || !drops(entry.report));
+  }
+
+  /** How many reports are waiting for a surface. */
+  reportsFor(surfaceId: string): number {
+    return this.entries.filter(entry => entry.report?.surfaceId === surfaceId).length;
   }
 
   /** The current selection replaces an undelivered earlier one; null withdraws it. */

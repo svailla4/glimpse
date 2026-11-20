@@ -4,7 +4,8 @@
    Sizing contract with kit/implement.tsx: the direct child of a .gl-cell is the plate frame (.gl-frame) or, without
    a title, a plain .gl-body. `.gl-cell[data-size] > :is(.gl-frame, .gl-body)` gives that child the height of the
    size step, and the frame passes the rest under its header on to its own .gl-body. A view root with `height: 100%`
-   therefore fills the box in both cases.
+   therefore fills the box in both cases. Without a frame the sized .gl-body is a flex column, so a toolbar row
+   the view renders in place (PlateAside, the scope row) takes its height out of the box instead of adding to it.
 
    Cells and their container. @a2ui/react puts a `display: contents` host element with an unstable tag name between
    a container and the cells of its children, so a container never selects its children. It talks to them through
@@ -73,6 +74,22 @@
     --gl-c7: initial; --gl-c8: initial; --gl-c9: initial; --gl-c10: initial; --gl-c11: initial; --gl-c12: initial;
   }
   .gl-cell[data-size] > :is(.gl-frame, .gl-body) { height: var(--gl-h); }
+  /* A chart without a size step is as tall as it draws: its plate does not grow to the tallest neighbour of its
+     grid row and leave blank paper under the marks. The cell still stretches (it has no looks of its own), so this
+     holds on both axes, in a Grid, a Row and a Column alike. */
+  .gl-cell[data-family='chart']:not([data-size]) > :is(.gl-frame, .gl-body) { flex: 0 0 auto; }
+  /* Without a plate, what a view puts above its content (the in-place aside, the scope row) shares the sized box
+     with it: the box is a column, the rows keep their height and the view takes what is left. */
+  .gl-cell[data-size] > .gl-body { display: flex; flex-direction: column; }
+  .gl-cell[data-size] > .gl-body > * { flex: 0 1 auto; min-height: 0; }
+  .gl-cell[data-size] > .gl-body > :is(.gl-aside, .gl-scope) { flex: none; }
+  /* A component with nothing to show does not hold its size step open: 96 px, or the height of its row. */
+  .gl-cell[data-size]:not([data-family='layout']):has(
+    > .gl-body > .gl-empty,
+    > .gl-body > * > .gl-empty:only-child,
+    > .gl-frame > .gl-frame-body > .gl-empty,
+    > .gl-frame > .gl-frame-body > * > .gl-empty:only-child
+  ) > :is(.gl-frame, .gl-body) { height: auto; min-height: 96px; }
 
   /* Below 1100 px of page width a plate is half or full width; below 720 px everything is one column. */
   @container page (max-width: 1099px) {

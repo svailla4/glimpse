@@ -1,5 +1,7 @@
 // packages/server/src/git/log.ts
-// The shared history: one `git log --name-status -z` stream, parsed once per HEAD and reused by every git.* source.
+// The shared history: one `git log --name-status -z` stream, parsed once per HEAD and reused by every source that
+// counts commits: git.* and, through sources/files/history.ts, files.* and repo.kpis. There is no second parser, so
+// "a commit", "an author" and "a commit of this file" mean the same thing in every number the product shows.
 // Paths are followed through renames, so a file's history is counted under the name it has today.
 import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
@@ -8,6 +10,11 @@ import {resolveCommit} from './range.ts';
 
 /** Commits read per stream. Longer histories are reported as truncated. */
 export const LOG_LIMIT = 5_000;
+/** The warning every result carries whose per-file numbers come from a history longer than LOG_LIMIT. */
+export const LIMIT_WARNING = `history limited to the latest ${LOG_LIMIT.toLocaleString('en-US')} commits`;
+export const SHALLOW_WARNING = 'shallow clone: history is incomplete';
+/** Commits read without their files (author and time only) when the history is longer than LOG_LIMIT. */
+export const HEADER_LIMIT = 200_000;
 const FORMAT = '--format=%x01%H%x1f%aN%x1f%at%x1f%s';
 const LOG_ARGS = ['log', '--no-merges', '-M', '--name-status', '-z', '--relative', '--no-show-signature', FORMAT, '-n', String(LOG_LIMIT)];
 const ROOTS_CACHED = 4;
@@ -31,6 +38,19 @@ export interface GitLog {
   truncated: boolean;
   /** Paths that exist at HEAD. */
   alive: ReadonlySet<string>;
+}
+
+/** Who and when, without the files: what counting commits and contributors needs. */
+export interface LogHeader {
+  author: string;
+  time: number;
+}
+
+export interface LogHeaders {
+  /** Every commit of HEAD (merges excluded), newest first. */
+  headers: readonly LogHeader[];
+  /** True when even this stream stopped (at HEADER_LIMIT commits). */
+  truncated: boolean;
 }
 
 export interface LogScope {
@@ -98,8 +118,16 @@ function trim(map: Map<string, unknown>, max: number): void {
 const subtrees = new Map<string, Promise<string[]>>();
 
 /**
+ * With a pathspec git simplifies history: it follows one parent of a merge and drops commits whose changes did not
+ * survive to HEAD, which loses real commits and their authors. Every pathspec here is therefore paired with this
+ * flag, so a commit counts whenever it touched the path. (Without a pathspec there is nothing to simplify.)
+ */
+export const FULL_HISTORY = '--full-history';
+
+/**
  * Pathspec that narrows history to the project when its root is a directory inside a larger repository
  * (['--', '.']); empty when the root is the top of the repository. Paths are then relative to the root everywhere.
+ * A caller that passes it to `git log` or `git rev-list` also passes FULL_HISTORY when it is not empty.
  */
 export function subtree(ctx: RepoContext): Promise<string[]> {
   let args = subtrees.get(ctx.root);
@@ -117,6 +145,8 @@ interface CacheEntry {
   head: string;
   base: Promise<GitLog>;
   scoped: Map<string, Promise<GitLog>>;
+  /** Read only for histories longer than LOG_LIMIT. */
+  headers?: Promise<LogHeaders>;
 }
 const cache = new Map<string, CacheEntry>();
 
@@ -143,9 +173,10 @@ async function readCommits(ctx: RepoContext, args: string[], signal?: AbortSigna
 
 async function readLog(ctx: RepoContext, head: string, extra: string[], pathspec: string | undefined): Promise<GitLog> {
   // No caller's signal here: the run is shared by every source that asks while it is in flight.
+  const within = await subtree(ctx);
   const args = pathspec
-    ? ['--literal-pathspecs', ...LOG_ARGS, '--full-diff', ...extra, head, '--', pathspec]
-    : [...LOG_ARGS, ...extra, head, ...(await subtree(ctx))];
+    ? ['--literal-pathspecs', ...LOG_ARGS, FULL_HISTORY, '--full-diff', ...extra, head, '--', pathspec]
+    : [...LOG_ARGS, ...(within.length > 0 ? [FULL_HISTORY] : []), ...extra, head, ...within];
   const [commits, tree] = await Promise.all([readCommits(ctx, args), ctx.runGit(['ls-tree', '-r', '-z', '--name-only', head])]);
   return {commits, truncated: commits.length >= LOG_LIMIT, alive: new Set(tree.toString('utf8').split('\0').filter(Boolean))};
 }
@@ -199,9 +230,47 @@ export async function getLog(ctx: RepoContext, scope: LogScope = {}, signal?: Ab
   return log;
 }
 
+async function readHeaders(ctx: RepoContext, head: string): Promise<LogHeaders> {
+  const within = await subtree(ctx);
+  const raw = await ctx.runGit([
+    'log', '--no-merges', '--no-show-signature', '--format=%at%x1f%aN', '-n', String(HEADER_LIMIT), ...(within.length > 0 ? [FULL_HISTORY] : []), head, ...within,
+  ]);
+  const headers: LogHeader[] = [];
+  for (const line of raw.toString('utf8').split('\n')) {
+    const cut = line.indexOf('\x1f');
+    if (cut <= 0) continue;
+    headers.push({time: Number(line.slice(0, cut)) || 0, author: line.slice(cut + 1)});
+  }
+  return {headers, truncated: headers.length >= HEADER_LIMIT};
+}
+
+/**
+ * Author and time of every commit of HEAD. For a history the shared parse holds completely this is that parse; for
+ * a longer one it is a second, cheap stream without file lists, so counts of commits and contributors stay exact
+ * where the per-file numbers are limited to the latest LOG_LIMIT commits.
+ */
+export async function getHeaders(ctx: RepoContext, signal?: AbortSignal): Promise<LogHeaders> {
+  if (!ctx.git) throw new SourceError('E_NO_GIT', 'not a git repository');
+  const head = await resolveCommit(ctx, 'HEAD', signal);
+  if (!head) return {headers: [], truncated: false};
+  const entry = entryFor(ctx, head);
+  const base = await entry.base;
+  signal?.throwIfAborted();
+  if (!base.truncated) return {headers: base.commits, truncated: false};
+  if (!entry.headers) {
+    const created = readHeaders(ctx, head);
+    entry.headers = created;
+    created.catch(() => { if (entry.headers === created) entry.headers = undefined; });
+  }
+  const headers = await entry.headers;
+  signal?.throwIfAborted();
+  return headers;
+}
+
 /** The commits a resolved range adds (ResolvedRange.logArgs), newest first. Not cached: ranges are short. */
 export async function rangeLog(ctx: RepoContext, logArgs: string[], signal?: AbortSignal): Promise<{commits: LogCommit[]; truncated: boolean}> {
-  const commits = await readCommits(ctx, [...LOG_ARGS, ...logArgs, ...(await subtree(ctx))], signal);
+  const within = await subtree(ctx);
+  const commits = await readCommits(ctx, [...LOG_ARGS, ...(within.length > 0 ? [FULL_HISTORY] : []), ...logArgs, ...within], signal);
   return {commits, truncated: commits.length >= LOG_LIMIT};
 }
 

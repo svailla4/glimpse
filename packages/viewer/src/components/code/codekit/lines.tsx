@@ -73,6 +73,38 @@ export function Crumbs(p: {path: string}): ReactNode {
 
 export type LineRanges = ReadonlyArray<readonly [number, number]>;
 
+/**
+ * The `mark` prop as line ranges: '3,7-9'. Lines may be written the way file locations are everywhere else
+ * ('L1-60', '#L10-L20', '12:18'), since that is what a writer who has just typed 'path#L10-20' reaches for.
+ * Segments that name no line are left out and returned in `ignored`, so the view can say so instead of
+ * silently marking nothing.
+ */
+export function parseMarks(spec: unknown): {ranges: Array<[number, number]>; ignored: string[]} {
+  const ranges: Array<[number, number]> = [];
+  const ignored: string[] = [];
+  if (typeof spec === 'number' && Number.isInteger(spec) && spec > 0) return {ranges: [[spec, spec]], ignored};
+  if (typeof spec !== 'string') return {ranges, ignored};
+  for (const part of spec.split(/[,;]/)) {
+    const text = part.trim();
+    if (text === '') continue;
+    const match = /^#?L?(\d+)(?:\s*(?:-|–|:|\.\.)\s*#?L?(\d+))?$/i.exec(text);
+    const from = match ? Number(match[1]) : 0;
+    if (!match || from < 1) {
+      ignored.push(text);
+      continue;
+    }
+    const to = match[2] ? Number(match[2]) : from;
+    ranges.push([Math.min(from, to), Math.max(from, to)]);
+  }
+  return {ranges, ignored};
+}
+
+/** 'mark: "abc" is not a line range' — the note a view shows for segments parseMarks could not read. */
+export function ignoredMarksText(ignored: readonly string[]): string {
+  const shown = ignored.slice(0, 3).map(text => `"${text.length > 16 ? `${text.slice(0, 15)}…` : text}"`).join(', ');
+  return `mark: ${shown}${ignored.length > 3 ? ` and ${ignored.length - 3} more` : ''} ${ignored.length === 1 ? 'is not a line range' : 'are not line ranges'}`;
+}
+
 export function inRanges(ranges: LineRanges, line: number): boolean {
   for (const [from, to] of ranges) if (line >= from && line <= to) return true;
   return false;

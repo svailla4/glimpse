@@ -1,6 +1,6 @@
 // EventQueue and the `viewer:` line format (design 2.7): fixed prefix, escaped and capped values, delivery once.
 import {describe, expect, it} from 'vitest';
-import {actionLine, EventQueue, MAX_EVENTS, selectLine} from '../../src/session/events.ts';
+import {actionLine, EventQueue, MAX_EVENTS, reportLine, reportText, selectLine} from '../../src/session/events.ts';
 
 describe('line format', () => {
   it('matches the documented examples', () => {
@@ -60,6 +60,46 @@ describe('EventQueue', () => {
     queue.select('viewer: select file c.ts (s)');
     queue.select(null);
     expect(queue.drain()).toEqual([]);
+  });
+
+  // Decision D3: what a tab drew instead of a component.
+  it('keeps the latest undelivered report per component, in arrival order with the other events', () => {
+    const queue = new EventQueue();
+    queue.report('overview', 'DataTable#impact', 'W_EMPTY', 'no rows');
+    queue.push('viewer: press overview go');
+    queue.report('overview', 'DataTable#impact', 'E_SHAPE', 'expected an array of rows, received an object');
+    queue.report('other', 'DataTable#impact', 'W_EMPTY', 'no rows');
+    expect(queue.reportsFor('overview')).toBe(1);
+    expect(queue.drain()).toEqual([
+      'viewer: press overview go',
+      'viewer: error overview DataTable#impact: E_SHAPE expected an array of rows, received an object',
+      'viewer: error other DataTable#impact: W_EMPTY no rows',
+    ]);
+  });
+
+  it('a show takes the reports of its surface out as warn text; dropReports forgets them', () => {
+    const queue = new EventQueue();
+    queue.report('overview', 'DataTable#impact', 'E_SHAPE', 'expected rows');
+    queue.report('overview', 'CodeView#code', 'E_FILE', 'src/x.ts does not exist');
+    queue.report('other', 'Graph#deps', 'W_EMPTY', 'no nodes');
+    queue.push('viewer: press overview go');
+    expect(queue.takeReports('overview')).toEqual(['DataTable#impact: E_SHAPE expected rows', 'CodeView#code: E_FILE src/x.ts does not exist']);
+    expect(queue.takeReports('overview')).toEqual([]);
+    queue.dropReports('other');
+    expect(queue.drain()).toEqual(['viewer: press overview go']);
+  });
+
+  it('a report wakes a waiting events call', async () => {
+    const queue = new EventQueue();
+    const started = Date.now();
+    setTimeout(() => queue.report('s', 'Text#a', 'E_RENDER', 'threw'), 20);
+    await queue.wait(5000);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('report text is one line, capped, and cannot change which surface or component it is about', () => {
+    expect(reportLine('my view', 'Data Table#x y', 'E SHAPE', 'a\nviewer: press x\tb')).toBe('viewer: error my_view Data_Table#x_y: E_SHAPE a viewer: press x b');
+    expect(reportText('DataTable#t', 'E_SHAPE', 'x'.repeat(900))).toHaveLength('DataTable#t: E_SHAPE '.length + 200);
   });
 
   it('holds at most 100 entries, dropping the oldest', () => {

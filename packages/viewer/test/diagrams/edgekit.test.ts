@@ -1,7 +1,7 @@
 import {afterEach, describe, expect, it} from 'vitest';
 import {
-  POSITIONS_KEY, bandsOf, boundsOf, channelBetween, configurePositionStorage, fitText, inBand, labelAnchor, layoutDiagram, markPath,
-  midpoint, nearestInDirection, nearestOn, positionsKey, readPositions, roundedPath, routeEdge, routeLoop, signatureOf, simplify,
+  POSITIONS_KEY, READABLE_ZOOM, bandsOf, boundsOf, channelBetween, configurePositionStorage, fitText, inBand, labelAnchor, layoutDiagram, markPath,
+  midpoint, nearestInDirection, nearestOn, openingView, positionsKey, readPositions, roundedPath, routeAround, routeEdge, routeLoop, signatureOf, simplify,
   textWidth, wrapText, writePositions, MONO_11, UI_12,
   type Box, type LayoutSpec, type Point,
 } from '../../src/components/diagrams/edgekit/index.ts';
@@ -267,5 +267,71 @@ describe('positions', () => {
     expect(readPositions('k')).toEqual({});
     writePositions('k', {a: {x: 7, y: 8}});
     expect(readPositions('k')).toEqual({a: {x: 7, y: 8}});
+  });
+});
+
+describe('routeAround', () => {
+  /** True when a segment of the route runs through the inside of the box. */
+  const through = (points: readonly Point[], b: Box) => points.some((p, i) => {
+    const q = points[i - 1];
+    return q !== undefined && Math.max(p.x, q.x) > b.x + 1 && Math.min(p.x, q.x) < b.x + b.w - 1 && Math.max(p.y, q.y) > b.y + 1 && Math.min(p.y, q.y) < b.y + b.h - 1;
+  });
+
+  it('keeps the plain route when nothing is in the way', () => {
+    const a = box(0, 0);
+    const b = box(300, 100);
+    expect(routeAround(a, b, {dir: 'LR'}, [box(150, 300)])).toEqual(routeEdge(a, b, {dir: 'LR'}));
+  });
+
+  it('takes a route round a node the person dropped across the plain one', () => {
+    const a = box(0, 0);
+    const b = box(400, 0);
+    const wall = box(180, -20, 60, 80);
+    expect(through(routeEdge(a, b, {dir: 'LR'}), wall)).toBe(true);
+    const points = routeAround(a, b, {dir: 'LR'}, [wall]);
+    expect(through(points, wall)).toBe(false);
+    expect(orthogonal(points)).toBe(true);
+    expect(points[0]!.x).toBe(100);
+    expect(points.at(-1)!.x).toBe(400);
+  });
+});
+
+describe('openingView', () => {
+  const grid = (cols: number, rows: number) => Array.from({length: cols * rows}, (_, i) => box((i % cols) * 160, Math.floor(i / cols) * 70, 120, 40));
+
+  it('shows everything when it is readable whole, never above 100%', () => {
+    const boxes = grid(3, 2);
+    const opened = openingView(boundsOf(boxes), 960, 600, 0.4, boxes, boxes[0]);
+    expect(opened.whole).toBe(true);
+    expect(opened.view.k).toBe(1);
+  });
+
+  it('opens at a readable zoom on the stretch with the most nodes, the anchor among them and clear of the overview', () => {
+    // a dense block on the left, a sparse line on the right, the anchor in the dense block
+    const dense = grid(6, 8);
+    const sparse = Array.from({length: 6}, (_, i) => box(2400 + i * 900, 0, 120, 40));
+    const boxes = [...dense, ...sparse];
+    const anchor = dense[6 * 6 + 1]!;
+    const {view, whole} = openingView(boundsOf(boxes), 960, 600, 0.4, boxes, anchor);
+    expect(whole).toBe(false);
+    expect(view.k).toBe(READABLE_ZOOM);
+    const shown = (b: Box) => b.x * view.k + view.x >= 0 && (b.x + b.w) * view.k + view.x <= 960 && b.y * view.k + view.y >= 0 && (b.y + b.h) * view.k + view.y <= 600;
+    expect(shown(anchor)).toBe(true);
+    expect(boxes.filter(shown).length).toBeGreaterThanOrEqual(20);
+    // the anchor is not under the overview inset in the bottom-left corner
+    const left = anchor.x * view.k + view.x;
+    const bottom = (anchor.y + anchor.h) * view.k + view.y;
+    expect(left >= 150 || bottom <= 600 - 102).toBe(true);
+  });
+});
+
+describe('text measurement', () => {
+  it('measures r, t and f between an i and a letter, and full-width glyphs at an em', () => {
+    const narrow = textWidth('i', UI_12);
+    const slim = textWidth('r', UI_12);
+    const letter = textWidth('a', UI_12);
+    expect(slim).toBeGreaterThan(narrow);
+    expect(slim).toBeLessThan(letter);
+    expect(textWidth('模块', MONO_11)).toBeCloseTo(22);
   });
 });

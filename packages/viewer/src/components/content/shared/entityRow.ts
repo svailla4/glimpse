@@ -3,8 +3,7 @@
 // editor, `c` copies path:line, Escape clears the selection.
 import {formatFileLoc, type EntityRef} from '@glimpse/catalog';
 import type {KeyboardEvent, MouseEvent} from 'react';
-import {entityClipText, useHostActions, useSelection} from '../../../kit/index.ts';
-import {matchesSelection} from './data.ts';
+import {entityClipText, marksSelection, useHostActions, useSelection} from '../../../kit/index.ts';
 
 export interface EntityRows {
   selected: EntityRef | null;
@@ -22,7 +21,7 @@ export function useEntityRows(componentId: string): EntityRows {
   };
   return {
     selected,
-    isMarked: entity => matchesSelection(selected, entity),
+    isMarked: entity => marksSelection(selected, entity),
     onClick(entity, event) {
       if (!entity) return;
       if (event.metaKey || event.ctrlKey) open(entity);

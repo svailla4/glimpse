@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import type {DirNode, GraphData} from '@glimpse/catalog';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
-import {MAX_MODULES} from '../../src/analyze/cluster.ts';
+import {DEFAULT_MODULES, MAX_MODULES} from '../../src/analyze/cluster.ts';
 import {repoModel} from '../../src/analyze/index.ts';
 import type {RepoContext} from '../../src/contracts.ts';
 import {checkResult, makeContext, run} from './helpers.ts';
@@ -86,11 +86,15 @@ describe('a generated repository of more than 5,000 files', () => {
     let widest = 0;
     const walk = (node: DirNode) => {
       if (node.more) rollups++;
-      widest = Math.max(widest, node.children?.length ?? 0);
+      if (node !== tree) widest = Math.max(widest, node.children?.length ?? 0);
       for (const child of node.children ?? []) walk(child);
     };
     walk(tree);
     expect(widest).toBeLessThanOrEqual(40);
+    // The directory that was asked for (here the root) shows all of its own entries: a rollup row at its level would
+    // have nowhere to go, because drilling into the root is the view the reader is already in.
+    expect(tree.children).toHaveLength(PACKAGES + 3);
+    expect(tree.more).toBeUndefined();
     expect(rollups).toBeGreaterThan(10);
     expect(result.summary).toMatch(/^5,241 files, [\d.]+k loc, \d+ rollups \(1500 of [\d,]+ nodes\)$/);
     // the flat directory shows its 40 largest files and counts the rest
@@ -99,12 +103,15 @@ describe('a generated repository of more than 5,000 files', () => {
     expect(flat?.more).toEqual({files: FLAT_FILES + 1 - 40, loc: (FLAT_FILES + 1 - 40) * 2});
   });
 
-  it('files.tree <dir> shows more of the directory asked for, so a rollup can be opened', async () => {
+  it('files.tree <dir> shows every entry of the directory asked for, so a rollup can be opened and none sits at the scope root (F026)', async () => {
+    // a drill into 'flat' (the rollup under it in the whole tree) reveals all 601 entries, not 200 and a rollup that
+    // would only drill into 'flat' again
     const result = await run(ctx, 'files.tree flat');
     checkResult('files.tree', result);
     const flat = result.data as DirNode;
-    expect(flat.children).toHaveLength(200);
-    expect(flat.more?.files).toBe(FLAT_FILES + 1 - 200);
+    expect(flat.children).toHaveLength(FLAT_FILES + 1);
+    expect(flat.more).toBeUndefined();
+    expect(result.truncated).toBeUndefined();
     expect(flat.children?.[0]?.path).toBe('flat/hub.ts');
   });
 
@@ -119,26 +126,54 @@ describe('a generated repository of more than 5,000 files', () => {
     expect(capped.allRows).toHaveLength(600);
   });
 
-  it('clustering never exceeds 40 modules, and every file belongs to one of them', async () => {
+  it('clustering stays at a legible number of modules, and every file belongs to one of them', async () => {
     const model = await repoModel(ctx);
-    expect(model.cut.ids).toHaveLength(MAX_MODULES);
+    expect(model.cut.ids).toHaveLength(DEFAULT_MODULES);
     const used = new Set<string>();
     for (const file of model.files) if (file.path.endsWith('.ts')) used.add(model.cut.moduleOf(file.path));
     expect([...used].sort()).toEqual([...model.cut.ids].sort());
-    const kpis = (await run(ctx, 'repo.kpis')).data as Array<{label: string; value: number}>;
-    expect(kpis.find(stat => stat.label === 'Modules')?.value).toBe(MAX_MODULES);
   });
 
-  it('deps.modules stays within 150 nodes and 400 edges', async () => {
+  it('the Modules KPI counts what the repository declares, not the clusters a graph draws', async () => {
+    const result = await run(ctx, 'repo.kpis');
+    const kpis = result.data as Array<{label: string; value: number}>;
+    const modules = kpis.find(stat => stat.label === 'Modules')?.value;
+    // 520 manifests: the number repo.packages lists, far past any cap on clusters
+    expect(modules).toBe(MANIFESTS);
+    expect(modules).toBe((await run(ctx, 'repo.packages')).total);
+    expect(modules).not.toBe(MAX_MODULES);
+    expect(modules).not.toBe(DEFAULT_MODULES);
+    expect(result.summary).toContain(`Modules ${MANIFESTS} (packages)`);
+  });
+
+  it('deps.modules is legible by default (about two dozen nodes) and top= raises it to the hard cap', async () => {
     const result = await run(ctx, 'deps.modules');
     checkResult('deps.modules', result);
     const graph = result.data as GraphData;
     expect(graph.level).toBe('module');
-    expect(graph.nodes.filter(node => node.kind === 'cluster')).toHaveLength(MAX_MODULES);
-    expect(graph.nodes.filter(node => node.kind === 'external')).toHaveLength(8);
-    expect(graph.edges.length).toBeLessThanOrEqual(400);
+    expect(graph.nodes.length).toBeLessThanOrEqual(24);
+    expect(graph.nodes.filter(node => node.kind === 'cluster')).toHaveLength(DEFAULT_MODULES);
+    expect(graph.nodes.filter(node => node.kind === 'external')).toHaveLength(4);
+    // nothing is dropped: the packages that are not drawn are folded into the rest cluster, which says so
+    const rest = graph.nodes.find(node => node.id === '(root)');
+    expect(rest).toMatchObject({label: '(other)', kind: 'cluster'});
+    expect(rest?.sub).toMatch(/^\d+ smaller directories of the repository: [\d,]+ files, /);
+    expect(graph.nodes.filter(node => node.kind === 'cluster').reduce((sum, node) => sum + (node.files ?? 0), 0)).toBe(RING_FILES + FLAT_FILES + 1 + 2 * PAIRS);
     // the ring of packages is one cycle at module level
-    expect(graph.nodes.filter(node => node.cycle).length).toBeGreaterThan(30);
+    expect(graph.nodes.filter(node => node.cycle).length).toBeGreaterThan(15);
+    expect(result.summary).toMatch(/^24 nodes \d+ edges, 1 module cycle; level module$/);
+
+    const fine = await run(ctx, 'deps.modules top=48');
+    checkResult('deps.modules', fine);
+    const finer = fine.data as GraphData;
+    expect(finer.nodes.filter(node => node.kind === 'cluster')).toHaveLength(MAX_MODULES);
+    expect(finer.nodes.filter(node => node.kind === 'external')).toHaveLength(8);
+    expect(finer.edges.length).toBeLessThanOrEqual(400);
+    expect(finer.nodes.filter(node => node.cycle).length).toBeGreaterThan(30);
+    // asking for more than the hard cap gives the hard cap
+    expect(((await run(ctx, 'deps.modules top=500')).data as GraphData).nodes).toHaveLength(48);
+    // and a small request is honoured too
+    expect(((await run(ctx, 'deps.modules top=10')).data as GraphData).nodes.length).toBeLessThanOrEqual(10);
   });
 
   it('a flat directory of hundreds of files is drawn as its 150 best connected files', async () => {
@@ -190,7 +225,7 @@ describe('a generated repository of more than 5,000 files', () => {
     }
     const matrix = await run(ctx, 'deps.matrix');
     expect(checkResult('deps.matrix', matrix)).toBeLessThanOrEqual(1600);
-    expect((matrix.data as unknown[]).length).toBeGreaterThan(40);
+    expect((matrix.data as unknown[]).length).toBeGreaterThan(20);
   });
 
   it('answers in seconds, not minutes', async () => {
