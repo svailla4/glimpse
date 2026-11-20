@@ -57,6 +57,11 @@ export interface Dataset<T = unknown> {
   pageable?: boolean;
   /** Depends on the working tree; re-run when /meta/rev changes. */
   wt?: boolean;
+  /**
+   * Set by the server while a viewer drill (gl_drill) has re-scoped this dataset.
+   * `target` is the current scope; `up` is the target one level out ('' restores the spec's own scope).
+   */
+  drill?: {target: string; up: string};
   cache?: 'hit' | 'partial' | 'miss';
   elapsedMs?: number;
   warnings?: string[];
