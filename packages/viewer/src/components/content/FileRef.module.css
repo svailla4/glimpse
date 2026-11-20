@@ -1,0 +1,7 @@
+@layer gl.components {
+  .ref {
+    min-width: 0;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+  }
+}

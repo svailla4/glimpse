@@ -1,0 +1,4 @@
+@layer gl.components {
+  /* The cells keep their own height: a column stacks, it does not share out its height. */
+  .column { display: flex; flex-direction: column; align-items: var(--align); gap: var(--gap); min-width: 0; --gl-cell-flex: 0 0 auto; }
+}

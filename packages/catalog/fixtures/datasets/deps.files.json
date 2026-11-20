@@ -1,0 +1,89 @@
+{
+  "$ds": "deps_files",
+  "kind": "graph",
+  "status": "ready",
+  "source": "deps.files src/auth/service.ts",
+  "data": {
+    "level": "file",
+    "nodes": [
+      {
+        "id": "src/auth/service.ts",
+        "label": "service.ts",
+        "sub": "src/auth",
+        "kind": "file",
+        "slotKey": "auth",
+        "fanIn": 2,
+        "fanOut": 2,
+        "cycle": true,
+        "file": "src/auth/service.ts"
+      },
+      {
+        "id": "src/auth/cache.ts",
+        "label": "cache.ts",
+        "sub": "src/auth",
+        "kind": "file",
+        "slotKey": "auth",
+        "fanIn": 1,
+        "fanOut": 1,
+        "file": "src/auth/cache.ts"
+      },
+      {
+        "id": "src/api/routes.ts",
+        "label": "routes.ts",
+        "sub": "src/api",
+        "kind": "file",
+        "slotKey": "api",
+        "fanIn": 2,
+        "fanOut": 2,
+        "cycle": true,
+        "file": "src/api/routes.ts"
+      },
+      {
+        "id": "src/ui/App.tsx",
+        "label": "App.tsx",
+        "sub": "src/ui",
+        "kind": "file",
+        "slotKey": "ui",
+        "fanIn": 0,
+        "fanOut": 2,
+        "file": "src/ui/App.tsx"
+      },
+      {
+        "id": "ext:pg",
+        "label": "pg",
+        "kind": "external",
+        "fanIn": 1,
+        "fanOut": 0
+      }
+    ],
+    "edges": [
+      {
+        "from": "src/auth/service.ts",
+        "to": "src/auth/cache.ts"
+      },
+      {
+        "from": "src/auth/service.ts",
+        "to": "src/api/routes.ts",
+        "cycle": true
+      },
+      {
+        "from": "src/api/routes.ts",
+        "to": "src/auth/service.ts",
+        "cycle": true
+      },
+      {
+        "from": "src/ui/App.tsx",
+        "to": "src/auth/service.ts",
+        "kind": "dashed"
+      },
+      {
+        "from": "src/auth/service.ts",
+        "to": "ext:pg"
+      }
+    ]
+  },
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12,
+  "total": 5
+}

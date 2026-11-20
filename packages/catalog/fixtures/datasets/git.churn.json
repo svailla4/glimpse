@@ -1,0 +1,104 @@
+{
+  "$ds": "git_churn",
+  "kind": "rows",
+  "status": "ready",
+  "source": "git.churn",
+  "data": [
+    {
+      "path": "src/auth/service.ts",
+      "commits": 51,
+      "authors": 3,
+      "owner": "Mira",
+      "ownership": 62.7,
+      "first": "2025-03-02",
+      "last": "2026-11-17"
+    },
+    {
+      "path": "src/api/routes.ts",
+      "commits": 33,
+      "authors": 2,
+      "owner": "Jon",
+      "ownership": 72.7,
+      "first": "2025-03-02",
+      "last": "2026-11-14"
+    },
+    {
+      "path": "package.json",
+      "commits": 30,
+      "authors": 3,
+      "owner": "Jon",
+      "ownership": 46.7,
+      "first": "2025-02-20",
+      "last": "2026-11-16"
+    },
+    {
+      "path": "src/auth/cache.ts",
+      "commits": 22,
+      "authors": 2,
+      "owner": "Mira",
+      "ownership": 86.4,
+      "first": "2025-06-11",
+      "last": "2026-11-10"
+    },
+    {
+      "path": "README.md",
+      "commits": 12,
+      "authors": 3,
+      "owner": "Ade",
+      "ownership": 41.7,
+      "first": "2025-02-20",
+      "last": "2026-11-05"
+    },
+    {
+      "path": "src/api/limiter.go",
+      "commits": 11,
+      "authors": 1,
+      "owner": "Ade",
+      "ownership": 100,
+      "first": "2026-09-30",
+      "last": "2026-10-20"
+    }
+  ],
+  "fields": [
+    {
+      "key": "path",
+      "kind": "path",
+      "label": "File",
+      "priority": 1
+    },
+    {
+      "key": "commits",
+      "kind": "bar",
+      "priority": 1
+    },
+    {
+      "key": "authors",
+      "kind": "num"
+    },
+    {
+      "key": "owner",
+      "kind": "author"
+    },
+    {
+      "key": "ownership",
+      "kind": "pct",
+      "priority": 3
+    },
+    {
+      "key": "last",
+      "kind": "date"
+    }
+  ],
+  "roles": {
+    "label": "path",
+    "value": "commits",
+    "x": "path",
+    "y": [
+      "commits"
+    ]
+  },
+  "total": 9,
+  "pageable": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}

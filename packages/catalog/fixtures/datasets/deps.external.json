@@ -1,0 +1,61 @@
+{
+  "$ds": "deps_external",
+  "kind": "rows",
+  "status": "ready",
+  "source": "deps.external",
+  "data": [
+    {
+      "package": "redis",
+      "importers": 3,
+      "ecosystem": "npm"
+    },
+    {
+      "package": "zod",
+      "importers": 3,
+      "ecosystem": "npm"
+    },
+    {
+      "package": "pg",
+      "importers": 2,
+      "ecosystem": "npm"
+    },
+    {
+      "package": "react",
+      "importers": 1,
+      "ecosystem": "npm"
+    },
+    {
+      "package": "golang.org/x/time",
+      "importers": 1,
+      "ecosystem": "go"
+    }
+  ],
+  "fields": [
+    {
+      "key": "package",
+      "kind": "text",
+      "priority": 1
+    },
+    {
+      "key": "importers",
+      "kind": "bar",
+      "priority": 1
+    },
+    {
+      "key": "ecosystem",
+      "kind": "chip"
+    }
+  ],
+  "roles": {
+    "label": "package",
+    "value": "importers",
+    "x": "package",
+    "y": [
+      "importers"
+    ]
+  },
+  "total": 5,
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}

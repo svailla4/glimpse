@@ -1,0 +1,41 @@
+{
+  "$ds": "repo_stack",
+  "kind": "rows",
+  "status": "ready",
+  "source": "repo.stack",
+  "data": [
+    {
+      "label": "TypeScript",
+      "slotKey": "TypeScript"
+    },
+    {
+      "label": "CSS",
+      "slotKey": "CSS"
+    },
+    {
+      "label": "Go",
+      "slotKey": "Go"
+    },
+    {
+      "label": "SQL",
+      "slotKey": "SQL"
+    },
+    "React",
+    "Vite",
+    "vitest",
+    {
+      "label": "PostgreSQL",
+      "tone": "info"
+    },
+    {
+      "label": "Redis",
+      "tone": "info"
+    },
+    "Docker",
+    "GitHub Actions"
+  ],
+  "total": 11,
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}

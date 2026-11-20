@@ -1,0 +1,50 @@
+{
+  "$ds": "repo_packages",
+  "kind": "rows",
+  "status": "ready",
+  "source": "repo.packages",
+  "data": [
+    {
+      "name": "demo",
+      "ecosystem": "npm",
+      "version": "1.4.0",
+      "dir": "",
+      "deps": 12
+    },
+    {
+      "name": "example.com/demo/limiter",
+      "ecosystem": "go",
+      "version": "",
+      "dir": "src/api",
+      "deps": 2
+    }
+  ],
+  "fields": [
+    {
+      "key": "name",
+      "kind": "text",
+      "label": "Package",
+      "priority": 1
+    },
+    {
+      "key": "ecosystem",
+      "kind": "chip"
+    },
+    {
+      "key": "version",
+      "kind": "code"
+    },
+    {
+      "key": "dir",
+      "kind": "path"
+    },
+    {
+      "key": "deps",
+      "kind": "num"
+    }
+  ],
+  "total": 2,
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}

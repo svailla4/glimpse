@@ -1,0 +1,28 @@
+@layer gl.kit {
+  .app { display: flex; flex-direction: column; min-height: 100vh; }
+  .main { flex: 1 1 auto; min-width: 0; }
+  /* Stays under the top bar while the snapshot scrolls. */
+  .banner {
+    position: sticky;
+    top: 32px;
+    z-index: 49;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    margin: 0;
+    padding: 6px 32px;
+    border-bottom: 1px solid var(--gl-rule);
+    background: var(--gl-sunken);
+    font: italic 400 14px/20px var(--gl-font-display);
+    color: var(--gl-ink-2);
+  }
+  @media (max-width: 719px) { .banner { padding: 6px 16px; } }
+  /* What the tab shows while there is no surface to mount. */
+  .waiting { margin: 0 auto; padding: 28px 32px; max-width: 1320px; height: min(420px, 60vh); }
+  .notice { display: grid; gap: 12px; align-content: center; justify-items: center; min-height: 100vh; padding: 32px; text-align: center; }
+  .noticeTitle { margin: 0; font: 500 30px/34px var(--gl-font-display); letter-spacing: -0.01em; color: var(--gl-ink); }
+  .noticeText { margin: 0; max-width: 56ch; font: 400 14px/22px var(--gl-font-ui); color: var(--gl-ink-2); }
+  .noticeText code { font: 400 12px/20px var(--gl-font-mono); color: var(--gl-ink); }
+  .noticeText a { color: inherit; text-underline-offset: 3px; }
+}

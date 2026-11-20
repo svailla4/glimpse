@@ -1,0 +1,3 @@
+@layer gl.components {
+  .stack { display: flex; flex-direction: column; gap: 12px; min-height: 100%; --gl-cell-flex: 0 0 auto; }
+}

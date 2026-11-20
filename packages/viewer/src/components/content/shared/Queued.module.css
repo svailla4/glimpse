@@ -1,0 +1,45 @@
+@layer gl.components {
+  .queued {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--gl-ink-3);
+    font: 400 11px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  /* Empty, the live region stays in the tree but takes no room in its flex parent. */
+  .queued:empty {
+    position: absolute;
+  }
+  /* An outgoing mark: a short rule that ends in an open chevron. */
+  .mark {
+    flex: none;
+    width: 14px;
+    height: 7px;
+    background:
+      linear-gradient(currentColor, currentColor) left center / 12px 1px no-repeat;
+    position: relative;
+  }
+  .mark::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 5px;
+    height: 5px;
+    border-top: 1px solid currentColor;
+    border-right: 1px solid currentColor;
+    transform: rotate(45deg);
+  }
+  .queued[data-gl-queued='failed'] {
+    color: var(--gl-critical);
+  }
+  .detail {
+    overflow: hidden;
+    color: var(--gl-ink-2);
+    text-overflow: ellipsis;
+  }
+}

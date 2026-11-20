@@ -1,0 +1,79 @@
+/* Cell kinds shared by DataTable (and the group headers that reuse them). */
+@layer gl.components {
+  .blank { color: var(--gl-ink-3); }
+  .text, .plain { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .num, .mono, .sha, .date, .delta, .barValue, .heatValue, .code {
+    font-family: var(--gl-font-mono);
+    font-size: 12px;
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    white-space: nowrap;
+  }
+  .num { display: block; text-align: right; }
+  .mono { overflow: hidden; text-overflow: ellipsis; }
+  .sha { color: var(--gl-ink-3); }
+  .date { color: var(--gl-ink-2); }
+  .code { overflow: hidden; text-overflow: ellipsis; color: var(--gl-ink-2); }
+  .hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .tip { font-family: var(--gl-font-mono); font-size: 11px; }
+
+  .entity {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The entity button is a flex item: without this it keeps the width of its text and the path inside it can never
+     give way (D12: the directory is elided, the file name stays). */
+  .entity > * { min-width: 0; }
+  /* The button holds the cell's text (an author, a module, a symbol): it is the box that elides it. */
+  .entity > :global(.gl-entity) { overflow: hidden; text-overflow: ellipsis; }
+  .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; }
+
+  .bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .track {
+    flex: 1;
+    min-width: 24px;
+    height: 6px;
+    background: linear-gradient(var(--gl-rule), var(--gl-rule)) left center / 100% 1px no-repeat;
+  }
+  .fill { display: block; height: 100%; min-width: 1px; background: var(--gl-cat-1); }
+  .barValue { flex: none; min-width: 5ch; text-align: right; }
+
+  .heat { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .swatch { flex: none; width: 44px; height: 12px; }
+  .heatValue { min-width: 3ch; }
+
+  .spark { display: block; overflow: visible; }
+  .spark polyline { fill: none; stroke: var(--gl-cat-1); stroke-width: 1.25; stroke-linejoin: round; stroke-linecap: round; }
+  .spark circle { fill: var(--gl-cat-1); stroke: var(--gl-surface); stroke-width: 1; }
+
+  .chips { display: inline-flex; gap: 4px; min-width: 0; overflow: hidden; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 18px;
+    padding: 0 6px;
+    border: 1px solid var(--gl-rule-strong);
+    border-radius: var(--gl-r-1);
+    font: 10.5px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--gl-ink);
+  }
+  .chipDot { flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--gl-ink-3); }
+  .chip[data-tone='good'] .chipDot { background: var(--gl-good); }
+  .chip[data-tone='info'] .chipDot { background: var(--gl-info); }
+  .chip[data-tone='serious'] .chipDot { background: var(--gl-serious); }
+  .chip[data-tone='critical'] .chipDot { background: var(--gl-critical); }
+
+  .add { color: var(--gl-good); }
+  .del { color: var(--gl-critical); }
+  .zero { color: var(--gl-ink-3); }
+  .bool { display: inline-flex; color: var(--gl-ink); }
+}

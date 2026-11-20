@@ -1,0 +1,21 @@
+Third-party files in this directory
+===================================
+
+The four JSON Schema files under v1_0/ are part of the A2UI specification:
+
+  v1_0/common_types.json
+  v1_0/catalog_definition.json
+  v1_0/agent_to_renderer.json
+  v1_0/renderer_to_agent.json
+
+Source:   https://github.com/a2ui-project/a2ui, directory specification/v1_0/json
+Revision: 2d38217c1635021c9e794afa01f25d8912d87761
+Changes:  none; the files are byte-for-byte copies.
+
+They are copyright the A2UI authors and licensed under the Apache License,
+Version 2.0. A copy of that license is in APACHE-2.0.txt in this directory and at
+http://www.apache.org/licenses/LICENSE-2.0.
+
+Glimpse uses these files only in its tests, to check that the Glimpse catalog and
+the messages Glimpse emits conform to the A2UI v1.0 specification. They are not
+loaded at run time. The rest of this repository is not covered by this notice.

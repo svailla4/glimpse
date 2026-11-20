@@ -1,0 +1,110 @@
+@layer gl.components {
+  .root {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    /* min(rows, cap): the cap comes from the cell's size step (table/shell.tsx, decision D20) */
+    max-height: var(--gl-cap, 420px);
+    container-type: inline-size;
+    font: 12.5px/18px var(--gl-font-ui);
+    color: var(--gl-ink);
+  }
+  .scroll { flex: 0 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+  .scroll[data-more-y] { mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent); }
+  .body { position: relative; }
+
+  .row {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    height: var(--gl-row, 28px);
+    padding: 0 14px;
+    border-bottom: 1px solid var(--gl-rule);
+    cursor: default;
+    transition: background-color var(--gl-t-hover) var(--gl-ease);
+  }
+  .row:hover { background: var(--gl-sunken); }
+  .row[data-selected] { background: var(--gl-accent-wash); box-shadow: inset 2px 0 0 var(--gl-accent); }
+  .row:focus-visible { outline: 2px solid var(--gl-accent); outline-offset: -2px; }
+
+  .sha { flex: none; width: 7ch; font: 12px/18px var(--gl-font-mono); font-feature-settings: 'tnum' 1, 'zero' 1; color: var(--gl-ink-3); }
+  /* The subject is the flexible track: everything else in the row has a fixed or capped width. */
+  .subject { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dim { color: var(--gl-ink-3); font-style: italic; }
+  .skeleton { display: block; width: 50%; height: 1px; background: var(--gl-rule); }
+
+  /* At most two chips and a count, each chip capped and elided inside its own border: a chip is never cut by its
+     neighbour. */
+  .refs { flex: none; display: inline-flex; gap: 4px; max-width: 45%; }
+  .ref, .refMore {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: calc(14ch + 14px);
+    height: 18px;
+    box-sizing: border-box;
+    padding: 0 6px;
+    border: 1px solid var(--gl-rule-strong);
+    border-radius: var(--gl-r-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font: 10.5px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .refMore { flex: none; color: var(--gl-ink-2); }
+  /* A ref loses its start, not its end: the tail tells branches apart ('…a2ui-renderer', '…a2ui-v0.9'). */
+  .ref { direction: rtl; text-align: left; }
+  .ref > bdi { direction: ltr; }
+
+  .author, .authorGap { flex: none; width: 18px; height: 18px; box-sizing: border-box; }
+  .author {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid color-mix(in oklab, var(--gl-commit-ink) 55%, var(--gl-surface));
+    background: color-mix(in oklab, var(--gl-commit-ink) 16%, var(--gl-surface));
+    font: 500 9.5px/1 var(--gl-font-mono);
+    letter-spacing: 0.02em;
+    color: var(--gl-ink);
+  }
+  .date { flex: none; width: 6ch; text-align: right; }
+
+  /* Every row reserves the width of the list's widest counts (--gl-commit-counts, set by the list), so the author and
+     age columns stay put whatever one commit's counts are. */
+  .changes { flex: none; display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; width: calc(48px + var(--gl-commit-counts, 86px)); }
+  .bars {
+    flex: none;
+    display: flex;
+    width: 40px;
+    height: 4px;
+    background: linear-gradient(var(--gl-rule), var(--gl-rule)) left center / 100% 1px no-repeat;
+  }
+  .barAdd { height: 100%; background: var(--gl-good); }
+  .barDel { height: 100%; background: var(--gl-critical); }
+  .counts { flex: none; width: var(--gl-commit-counts, 86px); overflow: hidden; text-align: right; font: 11px/16px var(--gl-font-mono); font-feature-settings: 'tnum' 1, 'zero' 1; white-space: nowrap; }
+  .add { color: var(--gl-good); }
+  .del { color: var(--gl-critical); }
+  .zero { color: var(--gl-ink-3); }
+
+  .note, .failed { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 11px/16px var(--gl-font-mono); color: var(--gl-ink-3); white-space: nowrap; }
+  .failed { color: var(--gl-critical); }
+  .hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  @container (max-width: 519px) {
+    .bars { display: none; }
+    .changes { width: var(--gl-commit-counts, 86px); }
+  }
+  @container (max-width: 399px) {
+    .changes, .refs { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .row { transition: none; }
+  }
+}

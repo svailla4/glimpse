@@ -1,0 +1,4 @@
+@layer gl.components {
+  .bin { fill: var(--gl-cat-1); shape-rendering: crispEdges; }
+  .p90 { stroke: var(--gl-ink-3); stroke-width: 1; shape-rendering: crispEdges; }
+}

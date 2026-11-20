@@ -1,0 +1,147 @@
+@layer gl.components {
+  .wrap {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    height: var(--gl-row);
+    border-bottom: 1px solid var(--gl-rule);
+    outline: none;
+    font: 400 12.5px/20px var(--gl-font-ui);
+    transition: background var(--gl-t-hover) var(--gl-ease);
+  }
+  .row:last-child {
+    border-bottom: 0;
+  }
+  .row[data-entity] {
+    cursor: pointer;
+  }
+  .row[data-entity]:hover {
+    background: var(--gl-sunken);
+  }
+  .row[data-selected] {
+    background: var(--gl-accent-wash);
+    box-shadow: inset 2px 0 0 var(--gl-accent);
+  }
+  .row:focus-visible {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: -2px;
+  }
+
+  .rank {
+    flex: none;
+    width: var(--list-rank, 3ch);
+    color: var(--gl-ink-3);
+    font: 400 11px/20px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    text-align: right;
+  }
+  .title {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--gl-ink);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Text beside a location (V039): the location takes what it needs up to 40% of the row, where its directory gives
+     way first and its file name and line stay; the text takes the rest and elides. */
+  .row[data-where] .title {
+    flex: 1 1 0;
+  }
+  .text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .where {
+    display: flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 40%;
+  }
+  .where :global(.gl-path-base) {
+    color: var(--gl-ink-2);
+  }
+  /* The file name already says what kind of file it is. */
+  .where :global(.gl-path-ext) {
+    display: none;
+  }
+  .tone {
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+  }
+  .sub {
+    flex: 0 1 auto;
+    max-width: 40%;
+    overflow: hidden;
+    color: var(--gl-ink-3);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sub[data-short] {
+    flex: none;
+    max-width: none;
+  }
+  .value {
+    position: relative;
+    flex: none;
+    min-width: 56px;
+    max-width: 45%;
+    overflow: hidden;
+    color: var(--gl-ink);
+    font: 400 12px/20px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bar {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--gl-cat-1);
+  }
+
+  .tip { display: inline-flex; align-items: baseline; gap: 8px; max-width: 420px; font: 400 11px/16px var(--gl-font-mono); font-feature-settings: 'tnum' 1, 'zero' 1; }
+  .tipTitle { min-width: 0; overflow: hidden; color: var(--gl-ink-2); text-overflow: ellipsis; white-space: nowrap; }
+  .tipValue { flex: none; color: var(--gl-ink); font-weight: 500; }
+  .tipShare { flex: none; color: var(--gl-ink-3); }
+
+  .more {
+    align-self: flex-start;
+    margin-top: 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--gl-ink-2);
+    font: 500 11px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .more:hover {
+    color: var(--gl-ink);
+  }
+  .more:focus-visible {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: 2px;
+  }
+}

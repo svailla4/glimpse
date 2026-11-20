@@ -1,0 +1,17 @@
+@layer gl.components {
+  .bare {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  /* A size step without a plate: the list scrolls inside the step instead of running over the next row. */
+  :global(.gl-cell[data-size]) > :global(.gl-body) > .bare {
+    overflow: auto;
+  }
+  .note {
+    margin: 0;
+    color: var(--gl-ink-2);
+    font: italic 400 14px/20px var(--gl-font-display);
+  }
+}

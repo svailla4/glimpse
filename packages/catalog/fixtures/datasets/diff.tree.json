@@ -1,0 +1,106 @@
+{
+  "$ds": "diff_tree",
+  "kind": "tree",
+  "status": "ready",
+  "source": "diff.tree wt",
+  "data": {
+    "name": "",
+    "path": "",
+    "dir": true,
+    "files": 3,
+    "loc": 0,
+    "bytes": 0,
+    "add": 132,
+    "del": 4,
+    "children": [
+      {
+        "name": "src",
+        "path": "src",
+        "dir": true,
+        "files": 2,
+        "loc": 0,
+        "bytes": 0,
+        "add": 127,
+        "del": 4,
+        "children": [
+          {
+            "name": "api",
+            "path": "src/api",
+            "dir": true,
+            "files": 1,
+            "loc": 0,
+            "bytes": 0,
+            "add": 118,
+            "del": 0,
+            "children": [
+              {
+                "name": "limiter.ts",
+                "path": "src/api/limiter.ts",
+                "dir": false,
+                "files": 1,
+                "loc": 118,
+                "bytes": 3900,
+                "lang": "TypeScript",
+                "add": 118,
+                "del": 0,
+                "status": "A"
+              }
+            ]
+          },
+          {
+            "name": "auth",
+            "path": "src/auth",
+            "dir": true,
+            "files": 1,
+            "loc": 0,
+            "bytes": 0,
+            "add": 9,
+            "del": 4,
+            "children": [
+              {
+                "name": "service.ts",
+                "path": "src/auth/service.ts",
+                "dir": false,
+                "files": 1,
+                "loc": 825,
+                "bytes": 30200,
+                "lang": "TypeScript",
+                "add": 9,
+                "del": 4,
+                "status": "M"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "test",
+        "path": "test",
+        "dir": true,
+        "files": 1,
+        "loc": 0,
+        "bytes": 0,
+        "add": 5,
+        "del": 0,
+        "children": [
+          {
+            "name": "limiter.test.ts",
+            "path": "test/limiter.test.ts",
+            "dir": false,
+            "files": 1,
+            "loc": 5,
+            "bytes": 180,
+            "lang": "TypeScript",
+            "add": 5,
+            "del": 0,
+            "status": "A"
+          }
+        ]
+      }
+    ]
+  },
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12,
+  "total": 3
+}

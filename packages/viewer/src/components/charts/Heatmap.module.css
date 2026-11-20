@@ -1,0 +1,9 @@
+@layer gl.components {
+  /* a cell without data is an outline: a cell with any value is a fill, in both themes */
+  .blank { fill: none; stroke: var(--gl-grid); stroke-width: 1; shape-rendering: crispEdges; }
+  .hatch { stroke: var(--gl-rule-strong); stroke-width: 1; }
+  .labelRest { fill: var(--gl-ink-2); }
+  .onStrong, .onLight { pointer-events: none; }
+  .onStrong { fill: var(--gl-surface); }
+  .onLight { fill: var(--gl-ink); }
+}

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:glimpse:glimpse",
+            "tool": "pending_context",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

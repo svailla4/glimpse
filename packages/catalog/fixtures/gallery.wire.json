@@ -1,0 +1,1507 @@
+[
+  {
+    "version": "1.0",
+    "createSurface": {
+      "surfaceId": "gallery",
+      "catalogId": "urn:glimpse:catalog:v1",
+      "components": [
+        {
+          "id": "root",
+          "component": "Page",
+          "title": "Glimpse gallery",
+          "children": [
+            "layout",
+            "content",
+            "data",
+            "charts",
+            "diagrams",
+            "code",
+            "input"
+          ],
+          "subtitle": "every component, fixture data"
+        },
+        {
+          "id": "layout",
+          "component": "Section",
+          "title": "Layout",
+          "children": [
+            "layout_children_0",
+            "layout_children_1",
+            "layout_children_2"
+          ],
+          "subtitle": "Page, Section, Plate, Grid, Row, Column, Tabs, Split"
+        },
+        {
+          "id": "content",
+          "component": "Section",
+          "title": "Content",
+          "children": [
+            "content_children_0",
+            "content_children_1",
+            "content_children_2",
+            "content_children_3",
+            "content_children_4",
+            "content_children_5",
+            "content_children_6",
+            "content_children_7",
+            "content_children_8",
+            "content_children_9"
+          ]
+        },
+        {
+          "id": "data",
+          "component": "Section",
+          "title": "Data",
+          "children": [
+            "data_children_0",
+            "data_children_1",
+            "data_children_2",
+            "data_children_3"
+          ]
+        },
+        {
+          "id": "charts",
+          "component": "Section",
+          "title": "Charts",
+          "children": [
+            "charts_children_0",
+            "charts_children_1",
+            "charts_children_2",
+            "charts_children_3",
+            "charts_children_4",
+            "charts_children_5",
+            "charts_children_6",
+            "charts_children_7",
+            "charts_children_8"
+          ]
+        },
+        {
+          "id": "diagrams",
+          "component": "Section",
+          "title": "Diagrams",
+          "children": [
+            "diagrams_children_0",
+            "diagrams_children_1",
+            "diagrams_children_2",
+            "diagrams_children_3",
+            "diagrams_children_4"
+          ]
+        },
+        {
+          "id": "code",
+          "component": "Section",
+          "title": "Code",
+          "children": [
+            "code_children_0",
+            "code_children_1",
+            "code_children_2",
+            "code_children_3",
+            "code_children_4"
+          ]
+        },
+        {
+          "id": "input",
+          "component": "Section",
+          "title": "Input",
+          "children": [
+            "input_children_0",
+            "input_children_1",
+            "input_children_2"
+          ]
+        },
+        {
+          "id": "layout_children_0",
+          "component": "Plate",
+          "title": "Plate",
+          "children": [
+            "layout_children_0_children_0",
+            "layout_children_0_children_1"
+          ],
+          "note": "Caption text sits under the frame.",
+          "span": 6
+        },
+        {
+          "id": "layout_children_0_children_0",
+          "component": "Text",
+          "text": "A plate groups several children under one numbered frame."
+        },
+        {
+          "id": "layout_children_0_children_1",
+          "component": "Row",
+          "children": [
+            "layout_children_0_children_1_children_0",
+            "layout_children_0_children_1_children_1",
+            "layout_children_0_children_1_children_2"
+          ]
+        },
+        {
+          "id": "layout_children_0_children_1_children_0",
+          "component": "Stat",
+          "value": 9,
+          "label": "files"
+        },
+        {
+          "id": "layout_children_0_children_1_children_1",
+          "component": "Stat",
+          "value": 4210,
+          "label": "lines",
+          "format": "compact"
+        },
+        {
+          "id": "layout_children_0_children_1_children_2",
+          "component": "Stat",
+          "value": "TS",
+          "label": "main language"
+        },
+        {
+          "id": "layout_children_1",
+          "component": "Tabs",
+          "labels": [
+            "Grid",
+            "Column"
+          ],
+          "children": [
+            "layout_children_1_children_0",
+            "layout_children_1_children_1"
+          ],
+          "span": 6
+        },
+        {
+          "id": "layout_children_1_children_0",
+          "component": "Grid",
+          "children": [
+            "layout_children_1_children_0_children_0",
+            "layout_children_1_children_0_children_1",
+            "layout_children_1_children_0_children_2"
+          ],
+          "cols": "1:2:1"
+        },
+        {
+          "id": "layout_children_1_children_0_children_0",
+          "component": "Text",
+          "text": "one"
+        },
+        {
+          "id": "layout_children_1_children_0_children_1",
+          "component": "Text",
+          "text": "two"
+        },
+        {
+          "id": "layout_children_1_children_0_children_2",
+          "component": "Text",
+          "text": "three"
+        },
+        {
+          "id": "layout_children_1_children_1",
+          "component": "Column",
+          "children": [
+            "layout_children_1_children_1_children_0",
+            "layout_children_1_children_1_children_1"
+          ]
+        },
+        {
+          "id": "layout_children_1_children_1_children_0",
+          "component": "Text",
+          "text": "first"
+        },
+        {
+          "id": "layout_children_1_children_1_children_1",
+          "component": "Text",
+          "text": "second",
+          "tone": "dim"
+        },
+        {
+          "id": "layout_children_2",
+          "component": "Split",
+          "start": "layout_children_2_start",
+          "end": "layout_children_2_end",
+          "ratio": "1:2",
+          "size": "s"
+        },
+        {
+          "id": "layout_children_2_start",
+          "component": "Text",
+          "text": "start pane",
+          "tone": "lead"
+        },
+        {
+          "id": "layout_children_2_end",
+          "component": "Text",
+          "text": "end pane",
+          "tone": "mono"
+        },
+        {
+          "id": "content_children_0",
+          "component": "Stats",
+          "data": {
+            "@path": "/g/kpis"
+          }
+        },
+        {
+          "id": "content_children_1",
+          "component": "Chips",
+          "data": [
+            "TypeScript",
+            "Go",
+            {
+              "label": "PostgreSQL",
+              "tone": "info"
+            },
+            {
+              "label": "1 cycle",
+              "tone": "warn"
+            }
+          ]
+        },
+        {
+          "id": "content_children_2",
+          "component": "Markdown",
+          "text": "Prose with **bold**, `code`, a list:\n- one\n- two\n\nand a file ref [[README.md#L1]].",
+          "title": "Markdown",
+          "span": 6
+        },
+        {
+          "id": "content_children_3",
+          "component": "Column",
+          "children": [
+            "content_children_3_children_0",
+            "content_children_3_children_1",
+            "content_children_3_children_2",
+            "content_children_3_children_3",
+            "content_children_3_children_4"
+          ],
+          "span": 6
+        },
+        {
+          "id": "content_children_3_children_0",
+          "component": "Text",
+          "text": "Lead text introduces a plate.",
+          "tone": "lead"
+        },
+        {
+          "id": "content_children_3_children_1",
+          "component": "Text",
+          "text": "Body text with `inline code` and [[README.md#L3]]."
+        },
+        {
+          "id": "content_children_3_children_2",
+          "component": "Text",
+          "text": "Caption text in serif italic.",
+          "tone": "caption"
+        },
+        {
+          "id": "content_children_3_children_3",
+          "component": "FileRef",
+          "file": "README.md#L1-12"
+        },
+        {
+          "id": "content_children_3_children_4",
+          "component": "Row",
+          "children": [
+            "content_children_3_children_4_children_0",
+            "content_children_3_children_4_children_1"
+          ]
+        },
+        {
+          "id": "content_children_3_children_4_children_0",
+          "component": "Stat",
+          "value": 38,
+          "label": "commits (30d)",
+          "delta": 6,
+          "spark": [
+            2,
+            4,
+            3,
+            8,
+            12,
+            9
+          ]
+        },
+        {
+          "id": "content_children_3_children_4_children_1",
+          "component": "Sparkline",
+          "data": [
+            3,
+            5,
+            4,
+            9,
+            12,
+            7
+          ]
+        },
+        {
+          "id": "content_children_4",
+          "component": "Callout",
+          "text": "Reads the balance before taking the row lock.",
+          "kind": "risk",
+          "title": "Race",
+          "file": "README.md#L1",
+          "span": 4
+        },
+        {
+          "id": "content_children_5",
+          "component": "Callout",
+          "text": "Tokens are cached for 15 minutes.",
+          "kind": "note",
+          "span": 4
+        },
+        {
+          "id": "content_children_6",
+          "component": "Callout",
+          "text": "Per-IP or per-user limits?",
+          "kind": "question",
+          "span": 4
+        },
+        {
+          "id": "content_children_7",
+          "component": "Steps",
+          "data": {
+            "@path": "/g/plan"
+          },
+          "current": 2,
+          "title": "Steps",
+          "span": 5
+        },
+        {
+          "id": "content_children_8",
+          "component": "KeyValue",
+          "data": {
+            "Language": "TypeScript",
+            "Entry": "README.md",
+            "Tests": true,
+            "Maintainers": [
+              "Mira",
+              "Jon"
+            ],
+            "Size": 131072
+          },
+          "cols": 2,
+          "title": "KeyValue",
+          "span": 4
+        },
+        {
+          "id": "content_children_9",
+          "component": "List",
+          "data": [
+            {
+              "title": "redis",
+              "sub": "npm",
+              "value": 14
+            },
+            {
+              "title": "zod",
+              "sub": "npm",
+              "value": 9
+            },
+            {
+              "title": "pg",
+              "sub": "npm",
+              "value": 4
+            }
+          ],
+          "title": "List",
+          "span": 3
+        },
+        {
+          "id": "data_children_0",
+          "component": "DataTable",
+          "data": {
+            "@path": "/g/files"
+          },
+          "columns": "path:path lang:lang loc:num commits:bar complexity:heat owner:author last:date trend:spark delta:delta ok:bool",
+          "sort": "-commits",
+          "search": true,
+          "title": "DataTable",
+          "size": "m"
+        },
+        {
+          "id": "data_children_1",
+          "component": "FileTree",
+          "data": {
+            "@path": "/g/tree"
+          },
+          "heat": "churn",
+          "title": "FileTree",
+          "size": "m",
+          "span": 5
+        },
+        {
+          "id": "data_children_2",
+          "component": "JsonView",
+          "data": {
+            "@path": "/g/config"
+          },
+          "depth": 2,
+          "title": "JsonView",
+          "size": "m",
+          "span": 7
+        },
+        {
+          "id": "data_children_3",
+          "component": "CommitList",
+          "data": {
+            "@path": "/g/commits"
+          },
+          "title": "CommitList"
+        },
+        {
+          "id": "charts_children_0",
+          "component": "SegmentedBar",
+          "data": {
+            "@path": "/g/langs"
+          },
+          "label": "lang",
+          "value": "loc",
+          "title": "SegmentedBar",
+          "span": 12
+        },
+        {
+          "id": "charts_children_1",
+          "component": "BarChart",
+          "data": {
+            "@path": "/g/files"
+          },
+          "x": "path",
+          "y": "commits",
+          "title": "BarChart",
+          "span": 6
+        },
+        {
+          "id": "charts_children_2",
+          "component": "LineChart",
+          "data": {
+            "@path": "/g/weeks"
+          },
+          "x": "week",
+          "y": "commits",
+          "series": "module",
+          "mode": "stacked",
+          "title": "LineChart",
+          "span": 6
+        },
+        {
+          "id": "charts_children_3",
+          "component": "ScatterPlot",
+          "data": {
+            "@path": "/g/files"
+          },
+          "x": "commits",
+          "y": "complexity",
+          "r": "loc",
+          "label": "path",
+          "quadrants": true,
+          "title": "ScatterPlot",
+          "span": 6
+        },
+        {
+          "id": "charts_children_4",
+          "component": "Histogram",
+          "data": {
+            "@path": "/g/files"
+          },
+          "value": "loc",
+          "title": "Histogram",
+          "span": 6
+        },
+        {
+          "id": "charts_children_5",
+          "component": "Heatmap",
+          "data": {
+            "@path": "/g/matrix"
+          },
+          "x": "to",
+          "y": "from",
+          "value": "weight",
+          "title": "Heatmap",
+          "span": 4
+        },
+        {
+          "id": "charts_children_6",
+          "component": "CalendarHeatmap",
+          "data": {
+            "@path": "/g/days"
+          },
+          "title": "CalendarHeatmap",
+          "span": 8
+        },
+        {
+          "id": "charts_children_7",
+          "component": "Treemap",
+          "data": {
+            "@path": "/g/tree"
+          },
+          "title": "Treemap",
+          "size": "l",
+          "span": 7
+        },
+        {
+          "id": "charts_children_8",
+          "component": "Icicle",
+          "data": {
+            "@path": "/g/tree"
+          },
+          "title": "Icicle",
+          "size": "l",
+          "span": 5
+        },
+        {
+          "id": "diagrams_children_0",
+          "component": "Graph",
+          "data": {
+            "@path": "/g/graph"
+          },
+          "title": "Graph",
+          "span": 7
+        },
+        {
+          "id": "diagrams_children_1",
+          "component": "Layers",
+          "data": [
+            {
+              "name": "Interface",
+              "items": [
+                "ui",
+                {
+                  "label": "api",
+                  "file": "src/api/routes.ts"
+                }
+              ]
+            },
+            {
+              "title": "Domain",
+              "items": [
+                "auth"
+              ],
+              "note": "owns sessions"
+            },
+            {
+              "label": "Storage",
+              "items": [
+                "postgres",
+                "redis"
+              ]
+            }
+          ],
+          "title": "Layers",
+          "span": 5
+        },
+        {
+          "id": "diagrams_children_2",
+          "component": "Flowchart",
+          "src": "Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429]); H --> DB[(Postgres)]; H -.-> C((cache))",
+          "title": "Flowchart",
+          "span": 6
+        },
+        {
+          "id": "diagrams_children_3",
+          "component": "SequenceDiagram",
+          "src": "User->>API: POST /login; API->>Auth: verify(password); Auth->>DB: find user; DB-->>Auth: row; Note over Auth,DB: constant-time compare; Auth-->>API: token; API-->>User: 200",
+          "title": "SequenceDiagram",
+          "span": 6
+        },
+        {
+          "id": "diagrams_children_4",
+          "component": "ERDiagram",
+          "data": {
+            "@path": "/g/schema"
+          },
+          "title": "ERDiagram"
+        },
+        {
+          "id": "code_children_0",
+          "component": "CodeBlock",
+          "code": "export async function take(ip: string) {\n  const n = await redis.incr(`rl:${ip}`);\n  return n <= 100;\n}",
+          "lang": "ts",
+          "mark": "2",
+          "title": "CodeBlock",
+          "span": 6
+        },
+        {
+          "id": "code_children_1",
+          "component": "SymbolOutline",
+          "file": "README.md",
+          "title": "SymbolOutline",
+          "size": "m",
+          "span": 6
+        },
+        {
+          "id": "code_children_2",
+          "component": "CodeView",
+          "file": "README.md#L1-40",
+          "mark": "L1-3",
+          "notes": [
+            {
+              "line": 2,
+              "text": "Notes anchor to lines.",
+              "kind": "note"
+            }
+          ],
+          "title": "CodeView",
+          "size": "m",
+          "span": 6
+        },
+        {
+          "id": "code_children_3",
+          "component": "DiffView",
+          "title": "DiffView (working tree)",
+          "size": "m",
+          "span": 6
+        },
+        {
+          "id": "code_children_4",
+          "component": "CodeTour",
+          "data": [
+            {
+              "file": "README.md#L1-12",
+              "title": "Start here",
+              "note": "A stop shows one range of a file."
+            },
+            {
+              "file": "README.md#L13-30",
+              "note": "The next stop scrolls to its own range."
+            }
+          ],
+          "title": "CodeTour",
+          "size": "l"
+        },
+        {
+          "id": "input_children_0",
+          "component": "Button",
+          "label": "Queue an event",
+          "action": {
+            "event": {
+              "name": "demo_pressed",
+              "context": {
+                "from": "gallery"
+              }
+            }
+          },
+          "tone": "primary",
+          "span": 3
+        },
+        {
+          "id": "input_children_1",
+          "component": "Button",
+          "label": "Quiet",
+          "action": {
+            "event": {
+              "name": "demo_quiet"
+            }
+          },
+          "tone": "quiet",
+          "span": 3
+        },
+        {
+          "id": "input_children_2",
+          "component": "Ask",
+          "prompt": "Which store backs the limiter?",
+          "options": [
+            "Redis",
+            "In-memory"
+          ],
+          "name": "store",
+          "span": 6
+        }
+      ],
+      "dataModel": {
+        "g": {
+          "tree": {
+            "name": "",
+            "path": "",
+            "dir": true,
+            "files": 9,
+            "loc": 4210,
+            "bytes": 131072,
+            "children": [
+              {
+                "name": "src",
+                "path": "src",
+                "dir": true,
+                "files": 7,
+                "loc": 3900,
+                "bytes": 120000,
+                "lang": "TypeScript",
+                "commits": 140,
+                "age": 2,
+                "complexity": 310,
+                "children": [
+                  {
+                    "name": "auth",
+                    "path": "src/auth",
+                    "dir": true,
+                    "files": 3,
+                    "loc": 1500,
+                    "bytes": 52000,
+                    "lang": "TypeScript",
+                    "commits": 80,
+                    "age": 2,
+                    "complexity": 160,
+                    "children": [
+                      {
+                        "name": "service.ts",
+                        "path": "src/auth/service.ts",
+                        "dir": false,
+                        "files": 1,
+                        "loc": 820,
+                        "bytes": 30000,
+                        "lang": "TypeScript",
+                        "commits": 51,
+                        "age": 2,
+                        "complexity": 96
+                      },
+                      {
+                        "name": "cache.ts",
+                        "path": "src/auth/cache.ts",
+                        "dir": false,
+                        "files": 1,
+                        "loc": 410,
+                        "bytes": 14000,
+                        "lang": "TypeScript",
+                        "commits": 22,
+                        "age": 9,
+                        "complexity": 41
+                      },
+                      {
+                        "name": "schema.sql",
+                        "path": "src/auth/schema.sql",
+                        "dir": false,
+                        "files": 1,
+                        "loc": 270,
+                        "bytes": 8000,
+                        "lang": "SQL",
+                        "commits": 7,
+                        "age": 120,
+                        "complexity": 4
+                      }
+                    ]
+                  },
+                  {
+                    "name": "api",
+                    "path": "src/api",
+                    "dir": true,
+                    "files": 2,
+                    "loc": 1300,
+                    "bytes": 40000,
+                    "lang": "TypeScript",
+                    "commits": 44,
+                    "age": 5,
+                    "complexity": 90,
+                    "children": [
+                      {
+                        "name": "routes.ts",
+                        "path": "src/api/routes.ts",
+                        "dir": false,
+                        "files": 1,
+                        "loc": 900,
+                        "bytes": 28000,
+                        "lang": "TypeScript",
+                        "commits": 33,
+                        "age": 5,
+                        "complexity": 70
+                      },
+                      {
+                        "name": "limiter.go",
+                        "path": "src/api/limiter.go",
+                        "dir": false,
+                        "files": 1,
+                        "loc": 400,
+                        "bytes": 12000,
+                        "lang": "Go",
+                        "commits": 11,
+                        "age": 30,
+                        "complexity": 20
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ui",
+                    "path": "src/ui",
+                    "dir": true,
+                    "files": 2,
+                    "loc": 1100,
+                    "bytes": 28000,
+                    "lang": "CSS",
+                    "commits": 16,
+                    "age": 40,
+                    "complexity": 60,
+                    "more": {
+                      "files": 12,
+                      "loc": 800
+                    },
+                    "children": [
+                      {
+                        "name": "app.css",
+                        "path": "src/ui/app.css",
+                        "dir": false,
+                        "files": 1,
+                        "loc": 700,
+                        "bytes": 18000,
+                        "lang": "CSS",
+                        "commits": 9,
+                        "age": 40,
+                        "complexity": 0
+                      },
+                      {
+                        "name": "App.tsx",
+                        "path": "src/ui/App.tsx",
+                        "dir": false,
+                        "files": 1,
+                        "loc": 400,
+                        "bytes": 10000,
+                        "lang": "TypeScript",
+                        "commits": 7,
+                        "age": 60,
+                        "complexity": 60
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "README.md",
+                "path": "README.md",
+                "dir": false,
+                "files": 1,
+                "loc": 210,
+                "bytes": 7000,
+                "lang": "Markdown",
+                "commits": 12,
+                "age": 14,
+                "complexity": 0
+              },
+              {
+                "name": "package.json",
+                "path": "package.json",
+                "dir": false,
+                "files": 1,
+                "loc": 100,
+                "bytes": 4072,
+                "lang": "JSON",
+                "commits": 30,
+                "age": 3,
+                "complexity": 0
+              }
+            ]
+          },
+          "files": [
+            {
+              "path": "src/auth/service.ts",
+              "lang": "TypeScript",
+              "loc": 820,
+              "commits": 51,
+              "complexity": 96,
+              "owner": "Mira",
+              "last": "2026-11-17",
+              "trend": [
+                2,
+                4,
+                3,
+                8,
+                12,
+                9
+              ],
+              "delta": {
+                "add": 120,
+                "del": 44
+              },
+              "ok": true
+            },
+            {
+              "path": "src/api/routes.ts",
+              "lang": "TypeScript",
+              "loc": 900,
+              "commits": 33,
+              "complexity": 70,
+              "owner": "Jon",
+              "last": "2026-11-14",
+              "trend": [
+                5,
+                3,
+                4,
+                2,
+                6,
+                4
+              ],
+              "delta": {
+                "add": 60,
+                "del": 12
+              },
+              "ok": true
+            },
+            {
+              "path": "src/auth/cache.ts",
+              "lang": "TypeScript",
+              "loc": 410,
+              "commits": 22,
+              "complexity": 41,
+              "owner": "Mira",
+              "last": "2026-11-10",
+              "trend": [
+                1,
+                1,
+                0,
+                3,
+                2,
+                2
+              ],
+              "delta": {
+                "add": 14,
+                "del": 30
+              },
+              "ok": false
+            },
+            {
+              "path": "src/api/limiter.go",
+              "lang": "Go",
+              "loc": 400,
+              "commits": 11,
+              "complexity": 20,
+              "owner": "Ade",
+              "last": "2026-10-20",
+              "trend": [
+                0,
+                0,
+                4,
+                1,
+                0,
+                0
+              ],
+              "delta": {
+                "add": 400,
+                "del": 0
+              },
+              "ok": true
+            },
+            {
+              "path": "src/ui/app.css",
+              "lang": "CSS",
+              "loc": 700,
+              "commits": 9,
+              "complexity": 0,
+              "owner": "Jon",
+              "last": "2026-10-10",
+              "trend": [
+                1,
+                0,
+                0,
+                0,
+                2,
+                0
+              ],
+              "delta": {
+                "add": 9,
+                "del": 2
+              },
+              "ok": true
+            }
+          ],
+          "langs": [
+            {
+              "lang": "TypeScript",
+              "files": 5,
+              "loc": 2530,
+              "pct": 60
+            },
+            {
+              "lang": "CSS",
+              "files": 1,
+              "loc": 700,
+              "pct": 17
+            },
+            {
+              "lang": "Go",
+              "files": 1,
+              "loc": 400,
+              "pct": 10
+            },
+            {
+              "lang": "SQL",
+              "files": 1,
+              "loc": 270,
+              "pct": 6
+            },
+            {
+              "lang": "Markdown",
+              "files": 1,
+              "loc": 210,
+              "pct": 5
+            },
+            {
+              "lang": "JSON",
+              "files": 1,
+              "loc": 100,
+              "pct": 2
+            }
+          ],
+          "kpis": [
+            {
+              "label": "Files",
+              "value": 9
+            },
+            {
+              "label": "Lines",
+              "value": 4210,
+              "format": "compact",
+              "spark": [
+                3100,
+                3300,
+                3500,
+                3900,
+                4210
+              ]
+            },
+            {
+              "label": "Modules",
+              "value": 3
+            },
+            {
+              "label": "File cycles",
+              "value": 1,
+              "tone": "warn"
+            },
+            {
+              "label": "Commits (30d)",
+              "value": 38,
+              "delta": 6
+            },
+            {
+              "label": "Contributors",
+              "value": 3
+            }
+          ],
+          "weeks": [
+            {
+              "week": "2026-10-05",
+              "module": "auth",
+              "commits": 4
+            },
+            {
+              "week": "2026-10-05",
+              "module": "api",
+              "commits": 2
+            },
+            {
+              "week": "2026-10-12",
+              "module": "auth",
+              "commits": 7
+            },
+            {
+              "week": "2026-10-12",
+              "module": "api",
+              "commits": 5
+            },
+            {
+              "week": "2026-10-19",
+              "module": "auth",
+              "commits": 3
+            },
+            {
+              "week": "2026-10-19",
+              "module": "api",
+              "commits": 6
+            },
+            {
+              "week": "2026-10-26",
+              "module": "auth",
+              "commits": 9
+            },
+            {
+              "week": "2026-10-26",
+              "module": "api",
+              "commits": 1
+            },
+            {
+              "week": "2026-11-02",
+              "module": "auth",
+              "commits": 12
+            },
+            {
+              "week": "2026-11-02",
+              "module": "api",
+              "commits": 4
+            },
+            {
+              "week": "2026-11-09",
+              "module": "auth",
+              "commits": 8
+            },
+            {
+              "week": "2026-11-09",
+              "module": "api",
+              "commits": 7
+            }
+          ],
+          "days": [
+            {
+              "date": "2026-11-02",
+              "commits": 3
+            },
+            {
+              "date": "2026-11-03",
+              "commits": 1
+            },
+            {
+              "date": "2026-11-05",
+              "commits": 6
+            },
+            {
+              "date": "2026-11-06",
+              "commits": 2
+            },
+            {
+              "date": "2026-11-09",
+              "commits": 4
+            },
+            {
+              "date": "2026-11-10",
+              "commits": 9
+            },
+            {
+              "date": "2026-11-12",
+              "commits": 1
+            },
+            {
+              "date": "2026-11-13",
+              "commits": 5
+            },
+            {
+              "date": "2026-11-16",
+              "commits": 2
+            },
+            {
+              "date": "2026-11-17",
+              "commits": 7
+            }
+          ],
+          "matrix": [
+            {
+              "from": "auth",
+              "to": "api",
+              "weight": 2
+            },
+            {
+              "from": "api",
+              "to": "auth",
+              "weight": 9
+            },
+            {
+              "from": "ui",
+              "to": "api",
+              "weight": 6
+            },
+            {
+              "from": "ui",
+              "to": "auth",
+              "weight": 1
+            },
+            {
+              "from": "api",
+              "to": "ui",
+              "weight": 0
+            }
+          ],
+          "graph": {
+            "level": "module",
+            "groups": [
+              {
+                "id": "srv",
+                "label": "server"
+              }
+            ],
+            "nodes": [
+              {
+                "id": "api",
+                "label": "api",
+                "sub": "2 files, 1.3k loc",
+                "kind": "cluster",
+                "group": "srv",
+                "slotKey": "api",
+                "fanIn": 1,
+                "fanOut": 1,
+                "cycle": true,
+                "status": "modified",
+                "file": "src/api/routes.ts"
+              },
+              {
+                "id": "auth",
+                "label": "auth",
+                "sub": "3 files, 1.5k loc",
+                "kind": "cluster",
+                "group": "srv",
+                "slotKey": "auth",
+                "fanIn": 2,
+                "fanOut": 1,
+                "cycle": true,
+                "file": "src/auth/service.ts"
+              },
+              {
+                "id": "ui",
+                "label": "ui",
+                "sub": "2 files, 1.1k loc",
+                "kind": "cluster",
+                "slotKey": "ui",
+                "fanIn": 0,
+                "fanOut": 2,
+                "status": "affected"
+              },
+              {
+                "id": "redis",
+                "label": "redis",
+                "kind": "external",
+                "fanIn": 1,
+                "fanOut": 0
+              }
+            ],
+            "edges": [
+              {
+                "from": "api",
+                "to": "auth",
+                "weight": 9,
+                "cycle": true
+              },
+              {
+                "from": "auth",
+                "to": "api",
+                "weight": 2,
+                "cycle": true
+              },
+              {
+                "from": "ui",
+                "to": "api",
+                "weight": 6
+              },
+              {
+                "from": "ui",
+                "to": "auth",
+                "weight": 1,
+                "kind": "dashed"
+              },
+              {
+                "from": "auth",
+                "to": "redis",
+                "weight": 3
+              }
+            ]
+          },
+          "commits": [
+            {
+              "sha": "4f2a91c0",
+              "subject": "Add sliding-window limiter",
+              "author": "Ade",
+              "date": "2026-11-17T10:12:00Z",
+              "add": 400,
+              "del": 0,
+              "files": 3,
+              "refs": [
+                "HEAD",
+                "main"
+              ]
+            },
+            {
+              "sha": "9be01d2a",
+              "subject": "Cache tokens with TTL",
+              "author": "Mira",
+              "date": "2026-11-14T16:40:00Z",
+              "add": 120,
+              "del": 44,
+              "files": 2
+            },
+            {
+              "sha": "77c0a3e1",
+              "subject": "Fix login redirect loop",
+              "author": "Jon",
+              "date": "2026-11-10T09:03:00Z",
+              "add": 9,
+              "del": 12,
+              "files": 1
+            }
+          ],
+          "plan": [
+            {
+              "title": "Add limiter middleware",
+              "note": "Sliding window per IP.",
+              "status": "done",
+              "file": "src/api/limiter.go#L1-40"
+            },
+            {
+              "title": "Wire into router",
+              "status": "doing",
+              "file": "src/api/routes.ts#L12"
+            },
+            {
+              "title": "Tests",
+              "status": "todo"
+            },
+            {
+              "title": "Dashboards",
+              "status": "blocked",
+              "note": "Needs metrics endpoint."
+            }
+          ],
+          "schema": [
+            {
+              "name": "users",
+              "file": "src/auth/schema.sql#L1",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "uuid",
+                  "pk": true
+                },
+                {
+                  "name": "email",
+                  "type": "text"
+                },
+                {
+                  "name": "created_at",
+                  "type": "timestamptz"
+                }
+              ]
+            },
+            {
+              "name": "sessions",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "uuid",
+                  "pk": true
+                },
+                {
+                  "name": "user_id",
+                  "type": "uuid",
+                  "fk": "users.id"
+                },
+                {
+                  "name": "expires_at",
+                  "type": "timestamptz",
+                  "nullable": true
+                }
+              ]
+            },
+            {
+              "name": "orders",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "uuid",
+                  "pk": true
+                },
+                {
+                  "name": "user_id",
+                  "type": "uuid",
+                  "fk": "users.id"
+                },
+                {
+                  "name": "status",
+                  "type": "text"
+                },
+                {
+                  "name": "currency",
+                  "type": "text"
+                },
+                {
+                  "name": "subtotal_cents",
+                  "type": "int"
+                },
+                {
+                  "name": "tax_cents",
+                  "type": "int"
+                },
+                {
+                  "name": "shipping_cents",
+                  "type": "int"
+                },
+                {
+                  "name": "total_cents",
+                  "type": "int"
+                },
+                {
+                  "name": "coupon",
+                  "type": "text",
+                  "nullable": true
+                },
+                {
+                  "name": "ship_to",
+                  "type": "jsonb"
+                },
+                {
+                  "name": "bill_to",
+                  "type": "jsonb"
+                },
+                {
+                  "name": "placed_at",
+                  "type": "timestamptz"
+                },
+                {
+                  "name": "paid_at",
+                  "type": "timestamptz",
+                  "nullable": true
+                },
+                {
+                  "name": "shipped_at",
+                  "type": "timestamptz",
+                  "nullable": true
+                },
+                {
+                  "name": "cancelled_at",
+                  "type": "timestamptz",
+                  "nullable": true
+                }
+              ]
+            }
+          ],
+          "config": {
+            "name": "demo",
+            "private": true,
+            "scripts": {
+              "dev": "vite",
+              "test": "vitest run"
+            },
+            "engines": {
+              "node": ">=20"
+            },
+            "workspaces": [
+              "packages/*"
+            ]
+          }
+        },
+        "ds": {},
+        "ui": {
+          "sel": null,
+          "file": null
+        },
+        "meta": {
+          "repo": {
+            "name": "demo",
+            "root": "/repo",
+            "branch": "main",
+            "head": "4f2a91c",
+            "dirty": false
+          },
+          "rev": 1,
+          "slots": {
+            "lang": {
+              "TypeScript": 1,
+              "CSS": 2,
+              "Go": 3,
+              "SQL": 4,
+              "Markdown": 5,
+              "JSON": 6
+            },
+            "module": {
+              "auth": 1,
+              "api": 2,
+              "ui": 3
+            },
+            "author": {
+              "Mira": 1,
+              "Jon": 2,
+              "Ade": 3
+            }
+          },
+          "generatedAt": "2026-11-19T00:00:00Z"
+        }
+      }
+    }
+  }
+]

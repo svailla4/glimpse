@@ -1,0 +1,27 @@
+@layer gl.components {
+  .split { display: grid; min-width: 0; min-height: 0; height: 100%; }
+  .split[data-dir='row'] { grid-template-columns: minmax(0, var(--a)) 9px minmax(0, var(--b)); }
+  .split[data-dir='col'] { grid-template-rows: minmax(0, var(--a)) 9px minmax(0, var(--b)); }
+  /* Without a height there is nothing to share out: stacked panes are as tall as their content. */
+  .split[data-dir='col']:not([data-sized]) { grid-template-rows: auto 9px auto; }
+  .split[data-dragging] { user-select: none; }
+
+  .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; }
+
+  /* The 9 px track is the hit area; the divider itself is the hairline in its middle. */
+  .divider { position: relative; touch-action: none; }
+  .divider::after { content: ''; position: absolute; background: var(--gl-rule); transition: background var(--gl-t-hover) var(--gl-ease); }
+  .divider:hover::after, .divider:focus-visible::after, .split[data-dragging] > .divider::after { background: var(--gl-ink); }
+  .divider:focus-visible { outline-offset: -2px; }
+  .split[data-dir='row'] > .divider { cursor: col-resize; }
+  .split[data-dir='row'] > .divider::after { top: 0; bottom: 0; left: 4px; width: 1px; }
+  .split[data-dir='col'] > .divider { cursor: row-resize; }
+  .split[data-dir='col'] > .divider::after { left: 0; right: 0; top: 4px; height: 1px; }
+
+  @container page (max-width: 719px) {
+    .split[data-dir='row'] { grid-template-columns: none; grid-template-rows: minmax(0, var(--a)) 9px minmax(0, var(--b)); }
+    .split[data-dir='row']:not([data-sized]) { grid-template-rows: auto 9px auto; }
+    .split[data-dir='row'] > .divider { cursor: row-resize; }
+    .split[data-dir='row'] > .divider::after { top: 4px; right: 0; bottom: auto; left: 0; width: auto; height: 1px; }
+  }
+}

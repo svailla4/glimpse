@@ -1,0 +1,174 @@
+import {fireEvent, screen, waitFor, within} from '@testing-library/react';
+import {describe, expect, it} from 'vitest';
+import {MAX_ITEMS, cleanLayers} from '../../src/components/diagrams/Layers.tsx';
+import {buildPatch, buildSurface, datasetFixture, errorDataset, pendingDataset, renderExpress, renderSpec} from '../harness.tsx';
+import {focus, key} from './util.tsx';
+
+const DATA = `[{name:'Interface',items:['ui',{label:'api',file:'src/api/routes.ts'}]},{name:'Domain',items:[{label:'auth',file:'src/auth/service.ts#L8',note:'sessions'}],note:'owns sessions'},{name:'Storage',items:['postgres','redis']}]`;
+const SPEC = `root=Page('T',[l])\nl=Layers(${DATA},title='Tiers')`;
+const BOUND = `root=Page('T',[l])\nl=Layers($/layers,title='Tiers',size='l')`;
+const ready = async (spec = SPEC, options: Parameters<typeof renderExpress>[1] = {}) => {
+  const view = renderExpress(spec, options);
+  await screen.findByRole('group', {name: /^Layers/});
+  return view;
+};
+const bands = (cell: HTMLElement) => [...cell.querySelectorAll('[data-layer]')];
+const items = (band: Element) => [...band.querySelectorAll('[data-layer-item]')].map(item => item.getAttribute('data-layer-item'));
+
+describe('Layers', () => {
+  it('stacks the tiers top first, with their items and notes', async () => {
+    const view = await ready();
+    const cell = view.cell('l');
+    expect(bands(cell).map(band => band.getAttribute('data-layer'))).toEqual(['Interface', 'Domain', 'Storage']);
+    expect(bands(cell).map(items)).toEqual([['ui', 'api'], ['auth'], ['postgres', 'redis']]);
+    expect(within(bands(cell)[0] as HTMLElement).getByRole('heading', {name: 'Interface'})).toBeTruthy();
+    expect(within(bands(cell)[1] as HTMLElement).getByText('owns sessions')).toBeTruthy();
+    expect(within(bands(cell)[1] as HTMLElement).getByText('sessions')).toBeTruthy();
+    // only the first band is without a separating hairline above it
+    expect(bands(cell).map(band => band.hasAttribute('data-first'))).toEqual([true, false, false]);
+    expect(screen.getByRole('group', {name: /^Layers/}).getAttribute('aria-label')).toBe('Layers, 3 tiers, 5 items: Interface, Domain, Storage');
+    expect(view.errors).toEqual([]);
+  });
+
+  it('makes items with a file entities: click selects, the rest dims, Cmd-click opens', async () => {
+    const view = await ready();
+    const cell = view.cell('l');
+    const buttons = within(cell).getAllByRole('button');
+    expect(buttons.map(b => b.textContent)).toEqual(['api', 'authsessions']);
+    fireEvent.click(buttons[1]!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'file', id: 'src/auth/service.ts', path: 'src/auth/service.ts', line: 8, label: 'auth'});
+    expect(view.getData('/ui/file')).toBe('src/auth/service.ts#L8');
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_select', sourceComponentId: 'l'});
+    const item = (label: string) => [...cell.querySelectorAll('[data-layer-item]')].find(el => el.getAttribute('data-layer-item') === label)!;
+    expect(item('auth').hasAttribute('data-selected')).toBe(true);
+    expect(item('auth').hasAttribute('data-dim')).toBe(false);
+    for (const label of ['ui', 'api', 'postgres']) expect(item(label).hasAttribute('data-dim')).toBe(true);
+
+    fireEvent.click(buttons[0]!, {metaKey: true});
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_open', context: {file: 'src/api/routes.ts'}});
+    fireEvent.keyDown(buttons[1]!, {key: 'Escape'});
+    expect(cell.querySelector('[data-layer-item][data-selected], [data-dim]')).toBeNull();
+  });
+
+  it('highlights the item whose file is selected elsewhere', async () => {
+    const view = await ready();
+    view.setData('/ui/sel', {type: 'file', id: 'src/api/routes.ts', path: 'src/api/routes.ts'});
+    const selected = () => [...view.cell('l').querySelectorAll('[data-layer-item][data-selected]')].map(el => el.getAttribute('data-layer-item'));
+    expect(selected()).toEqual(['api']);
+    view.setData('/ui/sel', {type: 'dir', id: 'src', path: 'src'});
+    expect(selected()).toEqual(['api', 'auth']);
+  });
+
+  it('is one tab stop with the arrow keys moving between entities', async () => {
+    const data = [
+      {name: 'One', items: [{label: 'a', file: 'a.ts'}, {label: 'b', file: 'b.ts'}, 'plain']},
+      {name: 'Two', items: ['plain too']},
+      {name: 'Three', items: [{label: 'c', file: 'c.ts'}, {label: 'd', file: 'd.ts'}]},
+    ];
+    const view = await ready(BOUND, {data: {'/layers': data}});
+    const buttons = within(view.cell('l')).getAllByRole('button');
+    expect(buttons.map(b => b.tabIndex)).toEqual([0, -1, -1, -1]);
+    focus(buttons[0]!);
+    key(buttons[0]!, 'ArrowRight');
+    expect(document.activeElement).toBe(buttons[1]);
+    await waitFor(() => expect(buttons.map(b => b.tabIndex)).toEqual([-1, 0, -1, -1]));
+    key(buttons[1]!, 'ArrowDown');
+    expect(document.activeElement).toBe(buttons[2]);
+    key(buttons[2]!, 'End');
+    expect(document.activeElement).toBe(buttons[3]);
+    key(buttons[3]!, 'ArrowUp');
+    expect(document.activeElement).toBe(buttons[0]);
+    key(buttons[0]!, 'ArrowLeft');
+    expect(document.activeElement).toBe(buttons[0]);
+    key(buttons[0]!, 'End');
+    key(buttons[3]!, 'Home');
+    expect(document.activeElement).toBe(buttons[0]);
+  });
+
+  it('shows drafting, redline and empty for dataset envelopes and an unbound path', async () => {
+    const view = renderExpress(BOUND);
+    await waitFor(() => expect(view.cell('l').querySelector('[data-gl-state="empty"]')).not.toBeNull());
+    view.setData('/layers', pendingDataset('files.tree', 'reading the tree'));
+    await waitFor(() => expect(view.cell('l').querySelector('[data-gl-state="drafting"]')!.textContent).toContain('reading the tree'));
+    view.setData('/layers', errorDataset('files.tree', 'E_INTERNAL', 'boom'));
+    await waitFor(() => expect(view.cell('l').querySelector('[data-code="E_INTERNAL"]')!.textContent).toContain('boom'));
+    view.setData('/layers', {...datasetFixture('repo.stack'), data: [{name: 'Edge', items: ['cdn']}]});
+    await waitFor(() => expect(bands(view.cell('l')).map(items)).toEqual([['cdn']]));
+    view.setData('/layers', []);
+    await waitFor(() => expect(view.cell('l').querySelector('[data-gl-state="empty"]')).not.toBeNull());
+  });
+
+  it('shows an E_SHAPE redline for a value that is not a list of tiers', async () => {
+    const view = renderExpress(BOUND, {data: {'/layers': {name: 'not a list'}}});
+    await waitFor(() => expect(view.cell('l').querySelector('[data-code="E_SHAPE"]')!.textContent).toMatch(/Layers#l expected an array of \{name, items\}, received an object/));
+    view.setData('/layers', 'tiers');
+    await waitFor(() => expect(view.cell('l').querySelector('[data-code="E_SHAPE"]')!.textContent).toMatch(/received a string/));
+  });
+
+  it('coerces malformed tiers and items, and counts what it had to drop', async () => {
+    const data = [
+      {name: 'Mixed', items: ['ok', 7, null, {note: 'no label'}, {label: 'fine'}, ['nested'], '']},
+      {items: ['nameless tier']},
+      {name: 'No items', items: 'oops'},
+      'bare',
+      42,
+      null,
+    ];
+    const view = await ready(BOUND, {data: {'/layers': data}});
+    const cell = view.cell('l');
+    expect(bands(cell).map(band => band.getAttribute('data-layer'))).toEqual(['Mixed', '—', 'No items', 'bare', '42']);
+    expect(bands(cell).map(items)).toEqual([['ok', '7', 'fine'], ['nameless tier'], [], [], []]);
+    expect(cell.querySelector('[data-gl-note]')!.textContent).toBe('5 unreadable entries dropped');
+  });
+
+  it('caps a huge tier and keeps a 500-character label on one line', async () => {
+    const long = 'z'.repeat(500);
+    const view = await ready(BOUND, {data: {'/layers': [{name: long, items: [long, ...Array.from({length: 200}, (_, i) => `item ${i}`)], note: long}]}});
+    const cell = view.cell('l');
+    expect(cell.querySelectorAll('[data-layer-item]')).toHaveLength(MAX_ITEMS);
+    expect(cell.querySelector('[data-more]')!.textContent).toBe('+ 141 more');
+    // the full label is the tooltip; CSS cuts the visible text
+    expect(cell.querySelector('[data-layer-item]')!.getAttribute('title')).toBe(long);
+    expect(cleanLayers(Array.from({length: 100}, (_, i) => ({name: `t${i}`, items: []}))).hiddenBands).toBe(60);
+  });
+
+  it('follows a binding update and a patch', async () => {
+    const base = buildSurface('test', BOUND, {data: {layers: [{name: 'A', items: ['one']}]}});
+    const view = renderSpec(base);
+    await waitFor(() => expect(bands(view.cell('l')).map(items)).toEqual([['one']]));
+    view.setData('/layers', [{name: 'A', items: ['one', 'two']}, {name: 'B', items: ['three']}]);
+    await waitFor(() => expect(bands(view.cell('l')).map(items)).toEqual([['one', 'two'], ['three']]));
+    view.send(buildPatch('test', base, `l=Layers([{name:'Z',items:['last']}],title='Tiers',size='l')`));
+    await waitFor(() => expect(bands(view.cell('l')).map(band => band.getAttribute('data-layer'))).toEqual(['Z']));
+    expect(view.errors).toEqual([]);
+  });
+
+  it('names a band by name, label or title, and an item by label, name or title (D5, F040)', async () => {
+    const clean = cleanLayers([
+      {title: 'Interface', items: [{title: 'ui'}, {name: 'api', file: 'src/api.ts'}]},
+      {label: 'Domain', items: ['auth']},
+      {name: 'Storage', title: 'ignored', items: [{label: 'postgres', name: 'pg'}]},
+      {items: ['orphan']},
+    ]);
+    expect(clean.bands.map(band => band.name)).toEqual(['Interface', 'Domain', 'Storage', '—']);
+    expect(clean.bands.map(band => band.items.map(item => item.label))).toEqual([['ui', 'api'], ['auth'], ['postgres'], ['orphan']]);
+    expect(clean.dropped).toBe(0);
+    const view = await ready(BOUND, {data: {'/layers': [{title: 'Interface', items: ['ui']}, {label: 'Domain', items: ['auth']}]}});
+    expect(bands(view.cell('l')).map(band => band.getAttribute('data-layer'))).toEqual(['Interface', 'Domain']);
+  });
+});
+
+// Decision D20: the tiers take their natural height, up to the plate's maximum height; past that they scroll.
+describe('Layers: content-sized', () => {
+  it.each([
+    ['no size: the diagram family\'s 640 px', SPEC, () => 640],
+    ['size l: 420 px', `root=Page('T',[l])\nl=Layers(${DATA},title='Tiers',size='l')`, () => 420],
+    ['size fill: the window less the masthead, never under 420 px', `root=Page('T',[l])\nl=Layers(${DATA},title='Tiers',size='fill')`, () => Math.max(420, window.innerHeight - 160)],
+  ])('takes %s as its maximum height', async (_name, spec, cap) => {
+    const view = await ready(spec);
+    const root = screen.getByRole('group', {name: /^Layers/});
+    expect(root.style.maxHeight).toBe(`${cap()}px`);
+    expect(root.style.height).toBe('');
+    expect(bands(view.cell('l'))).toHaveLength(3);
+  });
+});

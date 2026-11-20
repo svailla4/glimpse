@@ -1,0 +1,5 @@
+@layer gl.components {
+  .day { shape-rendering: crispEdges; }
+  /* days before the data begins: on the calendar, but not zero */
+  .before { fill: none; stroke: var(--gl-grid); stroke-width: 1; shape-rendering: crispEdges; }
+}

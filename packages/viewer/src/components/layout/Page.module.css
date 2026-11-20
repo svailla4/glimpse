@@ -1,0 +1,22 @@
+@layer gl.components {
+  .mast {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 16px;
+    min-height: 49px;
+    margin-bottom: 20px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--gl-ink);
+  }
+  .title { margin: 0; font: 500 30px/34px var(--gl-font-display); letter-spacing: -0.01em; color: var(--gl-ink); overflow-wrap: anywhere; }
+  .subtitle { margin: 0; font: italic 400 17px/24px var(--gl-font-display); color: var(--gl-ink-2); }
+  .source {
+    margin: 0 0 0 auto;
+    font: 400 11px/16px var(--gl-font-mono);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--gl-ink-3);
+  }
+}

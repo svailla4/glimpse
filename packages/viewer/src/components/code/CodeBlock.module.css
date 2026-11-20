@@ -1,0 +1,33 @@
+@layer gl.components {
+  .block { position: relative; border: 1px solid var(--gl-rule); }
+  .body { max-height: 400px; }
+  .title {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--gl-ink);
+    font: 500 12.5px/16px var(--gl-font-ui);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ignored { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* without a header the copy control floats over the top-right corner and shows on hover or focus */
+  .block .float {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    z-index: 2;
+    background: var(--gl-code-bg);
+    opacity: 0;
+  }
+  .block:hover .float,
+  .block:focus-within .float,
+  .block .float[data-copied] { opacity: 1; }
+  .live {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

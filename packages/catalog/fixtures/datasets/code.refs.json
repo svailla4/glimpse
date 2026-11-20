@@ -1,0 +1,37 @@
+{
+  "$ds": "code_refs",
+  "kind": "rows",
+  "status": "ready",
+  "source": "code.refs issueToken",
+  "data": [
+    {
+      "file": "src/auth/service.ts#L13",
+      "text": "  return issueToken(user);"
+    },
+    {
+      "file": "src/auth/service.ts#L16",
+      "text": "export async function issueToken(user: User): Promise<Session> {"
+    },
+    {
+      "file": "src/api/routes.ts#L41",
+      "text": "    const session = await issueToken(user);"
+    }
+  ],
+  "fields": [
+    {
+      "key": "file",
+      "kind": "path",
+      "label": "Where",
+      "priority": 1
+    },
+    {
+      "key": "text",
+      "kind": "code",
+      "priority": 1
+    }
+  ],
+  "total": 3,
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}

@@ -1,0 +1,138 @@
+{
+  "about": "Licence information scripts/notices.ts cannot read from node_modules. Texts are under texts/, verbatim from the upstream source named in each entry. An entry is keyed by the version of the package it applies to: after an upgrade the build fails until the entry is checked and its version updated.",
+  "missingText": [
+    {
+      "name": "react-compiler-runtime",
+      "version": "1.0.0",
+      "text": "react-compiler-runtime-1.0.0.LICENSE",
+      "why": "The package declares MIT and its files say \"licensed under the MIT license found in the LICENSE file in the root directory of this source tree\" (facebook/react), but the npm package has no LICENSE file. This is that repository's MIT licence, as in the react package."
+    },
+    {
+      "name": "@lit-labs/ssr-dom-shim",
+      "version": "1.6.0",
+      "text": "lit-ssr-dom-shim-1.6.0.LICENSE",
+      "why": "The package declares BSD-3-Clause and its files carry \"Copyright Google LLC, SPDX-License-Identifier: BSD-3-Clause\", but the npm package has no LICENSE file. This is the BSD-3-Clause licence of the lit/lit repository, as in the lit package."
+    }
+  ],
+  "vendored": [
+    {
+      "in": "@modelcontextprotocol/server@2.4.0",
+      "name": "ajv",
+      "version": "8.18.0",
+      "license": "MIT",
+      "source": "https://github.com/ajv-validator/ajv",
+      "text": "ajv-8.18.0.LICENSE",
+      "how": "Bundled into the package's dist files (found through their source maps)."
+    },
+    {
+      "in": "@modelcontextprotocol/server@2.4.0",
+      "name": "ajv-formats",
+      "version": "3.0.1",
+      "license": "MIT",
+      "source": "https://github.com/ajv-validator/ajv-formats",
+      "text": "ajv-formats-3.0.1.LICENSE",
+      "how": "Bundled into the package's dist files (found through their source maps)."
+    },
+    {
+      "in": "@modelcontextprotocol/server@2.4.0",
+      "name": "fast-uri",
+      "version": "3.1.8",
+      "license": "BSD-3-Clause",
+      "source": "https://github.com/fastify/fast-uri",
+      "text": "fast-uri-3.1.8.LICENSE",
+      "how": "Bundled into the package's dist files (found through their source maps)."
+    },
+    {
+      "in": "@modelcontextprotocol/server@2.4.0",
+      "name": "fast-deep-equal",
+      "version": "3.1.3",
+      "license": "MIT",
+      "source": "https://github.com/epoberezkin/fast-deep-equal",
+      "text": "fast-deep-equal-3.1.3.LICENSE",
+      "how": "Bundled into the package's dist files (found through their source maps)."
+    },
+    {
+      "in": "@modelcontextprotocol/server@2.4.0",
+      "name": "json-schema-traverse",
+      "version": "1.0.0",
+      "license": "MIT",
+      "source": "https://github.com/epoberezkin/json-schema-traverse",
+      "text": "json-schema-traverse-1.0.0.LICENSE",
+      "how": "Bundled into the package's dist files (found through their source maps)."
+    },
+    {
+      "in": "@modelcontextprotocol/server@2.4.0",
+      "name": "content-type",
+      "version": "1.0.5",
+      "license": "MIT",
+      "source": "https://github.com/jshttp/content-type",
+      "text": "content-type-1.0.5.LICENSE",
+      "how": "Bundled into the package's dist files (found through their source maps)."
+    },
+    {
+      "in": "redos-detector@6.1.4",
+      "name": "tslib (helpers)",
+      "version": "",
+      "license": "0BSD",
+      "source": "https://github.com/microsoft/tslib",
+      "text": "tslib-in-redos-detector-6.1.4.txt",
+      "how": "TypeScript's runtime helpers, inlined at the top of dist/redos-detector.js with this notice."
+    },
+    {
+      "in": "d3-array@3.2.5",
+      "name": "quickselect",
+      "version": "",
+      "license": "ISC",
+      "source": "https://github.com/mourner/quickselect",
+      "note": "d3-array's quickselect code says: \"Based on https://github.com/mourner/quickselect / ISC license, Copyright 2018 Vladimir Agafonkin.\" The ISC licence text is the one d3-array itself is distributed under (above)."
+    },
+    {
+      "in": "elkjs@0.12.1",
+      "name": "Google Guava and the GWT runtime",
+      "version": "Guava 31.1, GWT 2.13.0 (elkjs build.gradle at tag 0.12.1)",
+      "license": "Apache-2.0",
+      "source": "https://github.com/google/guava, https://github.com/gwtproject/gwt",
+      "text": "Apache-2.0.txt",
+      "note": "elkjs is Java compiled to JavaScript with GWT; lib/elk.bundled.js contains compiled code of Guava (com.google.common.*, Copyright (C) The Guava Authors) and of the GWT runtime and JRE emulation (com.google.gwt.*, java.*, javaemul.*, Copyright Google Inc. and The GWT Project Authors). elkjs's own LICENSE.md does not mention them."
+    },
+    {
+      "in": "elkjs@0.12.1",
+      "name": "Eclipse EMF and Xtext runtime library",
+      "version": "EMF GWT 2.12.4, Xtext 2.36.0 (elkjs build.gradle at tag 0.12.1)",
+      "license": "Eclipse Public License",
+      "source": "https://github.com/eclipse-emf/org.eclipse.emf, https://github.com/eclipse/xtext",
+      "note": "lib/elk.bundled.js contains compiled code of org.eclipse.emf.common, org.eclipse.emf.ecore and org.eclipse.xtext.xbase.lib, copyright the Eclipse contributors, under the Eclipse Public License. Their Source Code is available from the repositories named here."
+    }
+  ],
+  "grammars": {
+    "in": "@shikijs/langs@4.6.0",
+    "from": "tm-grammars 1.32.22 (https://github.com/shikijs/textmate-grammars-themes), from which Shiki converts its grammars",
+    "license": "tm-grammars-1.32.22.LICENSE",
+    "notice": "tm-grammars-1.32.22-NOTICE-excerpt.txt",
+    "noticeAbout": "The sections of tm-grammars' NOTICE file (verbatim) for the grammars Glimpse bundles.",
+    "grant": {
+      "text": "textmate-bundles-grant.txt",
+      "grammars": {
+        "yaml": "https://github.com/textmate/yaml.tmbundle",
+        "toml": "https://github.com/textmate/toml.tmbundle"
+      },
+      "about": "tm-grammars lists no licence for these two grammars. Their upstream repositories grant the following in their README files (verbatim):"
+    },
+    "omitted": {
+      "glsl": "No licence could be found for it (its upstream, polym0rph/GLSL.tmbundle, has none, and tm-grammars lists none), so scripts/server-bundle.ts leaves it out; C++ is still highlighted, except for GLSL embedded in it."
+    }
+  },
+  "runtimes": [
+    {
+      "match": "^\u0000?rolldown/",
+      "package": "rolldown",
+      "about": "the module runtime the bundler writes into the viewer scripts"
+    },
+    {
+      "match": "^\u0000?vite/",
+      "package": "vite",
+      "cutBefore": "# Licenses of bundled dependencies",
+      "about": "Vite's preload helper in the viewer scripts; only Vite's own licence applies to it (the rest of Vite's LICENSE.md covers Vite's build-time dependencies, which do not ship)"
+    }
+  ]
+}

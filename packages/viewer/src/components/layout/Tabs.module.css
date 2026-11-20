@@ -1,0 +1,36 @@
+@layer gl.components {
+  .tabs { display: flex; flex-direction: column; min-width: 0; }
+  .strip {
+    display: flex;
+    flex: none;
+    gap: 20px;
+    height: 28px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--gl-rule);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab {
+    flex: none;
+    height: 28px;
+    margin: 0;
+    padding: 0 1px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    font: 500 11px/26px var(--gl-font-mono);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--gl-ink-3);
+    cursor: pointer;
+    transition: color var(--gl-t-hover) var(--gl-ease);
+  }
+  .tab:hover { color: var(--gl-ink); }
+  .tab[aria-selected='true'] { border-bottom-color: var(--gl-ink); color: var(--gl-ink); }
+  .tab:focus-visible { outline-offset: -2px; }
+  /* What the panel shows sits in a row exactly when the Tabs does (its own --gl-fit, styles/base.css): beside a taller
+     plate it keeps its own height (D20); in a Split pane it fills it, as before. */
+  .panel { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; --gl-cell-fit: var(--gl-fit, 0); }
+  .panel[hidden] { display: none; }
+}

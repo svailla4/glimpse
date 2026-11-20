@@ -1,0 +1,86 @@
+// packages/catalog/src/gallery.ts
+// Showcase of every component. Everything except the Code section draws inline fixture data ($/g/*) and needs no
+// analyzer; the paths in that data (src/auth/service.ts ...) are illustrative. The plates that read from disk
+// (CodeView, SymbolOutline, CodeTour, DiffView) and every file link in prose point at ONE real file of the repository
+// being shown, GalleryOptions.file, so nothing is struck through as missing. The default, README.md, is the file most
+// repositories have, and its headings are its outline.
+// Used by: show{view:"gallery"}, scripts/demo.mjs, the viewer dev harness (?fixture=gallery) and visual tests.
+export const GALLERY_DATA = `$/g/tree={name:'',path:'',dir:true,files:9,loc:4210,bytes:131072,children:[
+ {name:'src',path:'src',dir:true,files:7,loc:3900,bytes:120000,lang:'TypeScript',commits:140,age:2,complexity:310,children:[
+  {name:'auth',path:'src/auth',dir:true,files:3,loc:1500,bytes:52000,lang:'TypeScript',commits:80,age:2,complexity:160,children:[
+   {name:'service.ts',path:'src/auth/service.ts',dir:false,files:1,loc:820,bytes:30000,lang:'TypeScript',commits:51,age:2,complexity:96},
+   {name:'cache.ts',path:'src/auth/cache.ts',dir:false,files:1,loc:410,bytes:14000,lang:'TypeScript',commits:22,age:9,complexity:41},
+   {name:'schema.sql',path:'src/auth/schema.sql',dir:false,files:1,loc:270,bytes:8000,lang:'SQL',commits:7,age:120,complexity:4}]},
+  {name:'api',path:'src/api',dir:true,files:2,loc:1300,bytes:40000,lang:'TypeScript',commits:44,age:5,complexity:90,children:[
+   {name:'routes.ts',path:'src/api/routes.ts',dir:false,files:1,loc:900,bytes:28000,lang:'TypeScript',commits:33,age:5,complexity:70},
+   {name:'limiter.go',path:'src/api/limiter.go',dir:false,files:1,loc:400,bytes:12000,lang:'Go',commits:11,age:30,complexity:20}]},
+  {name:'ui',path:'src/ui',dir:true,files:2,loc:1100,bytes:28000,lang:'CSS',commits:16,age:40,complexity:60,more:{files:12,loc:800},children:[
+   {name:'app.css',path:'src/ui/app.css',dir:false,files:1,loc:700,bytes:18000,lang:'CSS',commits:9,age:40,complexity:0},
+   {name:'App.tsx',path:'src/ui/App.tsx',dir:false,files:1,loc:400,bytes:10000,lang:'TypeScript',commits:7,age:60,complexity:60}]}]},
+ {name:'README.md',path:'README.md',dir:false,files:1,loc:210,bytes:7000,lang:'Markdown',commits:12,age:14,complexity:0},
+ {name:'package.json',path:'package.json',dir:false,files:1,loc:100,bytes:4072,lang:'JSON',commits:30,age:3,complexity:0}]}
+$/g/files=[{path:'src/auth/service.ts',lang:'TypeScript',loc:820,commits:51,complexity:96,owner:'Mira',last:'2026-11-17',trend:[2,4,3,8,12,9],delta:{add:120,del:44},ok:true},
+ {path:'src/api/routes.ts',lang:'TypeScript',loc:900,commits:33,complexity:70,owner:'Jon',last:'2026-11-14',trend:[5,3,4,2,6,4],delta:{add:60,del:12},ok:true},
+ {path:'src/auth/cache.ts',lang:'TypeScript',loc:410,commits:22,complexity:41,owner:'Mira',last:'2026-11-10',trend:[1,1,0,3,2,2],delta:{add:14,del:30},ok:false},
+ {path:'src/api/limiter.go',lang:'Go',loc:400,commits:11,complexity:20,owner:'Ade',last:'2026-10-20',trend:[0,0,4,1,0,0],delta:{add:400,del:0},ok:true},
+ {path:'src/ui/app.css',lang:'CSS',loc:700,commits:9,complexity:0,owner:'Jon',last:'2026-10-10',trend:[1,0,0,0,2,0],delta:{add:9,del:2},ok:true}]
+$/g/langs=[{lang:'TypeScript',files:5,loc:2530,pct:60},{lang:'CSS',files:1,loc:700,pct:17},{lang:'Go',files:1,loc:400,pct:10},{lang:'SQL',files:1,loc:270,pct:6},{lang:'Markdown',files:1,loc:210,pct:5},{lang:'JSON',files:1,loc:100,pct:2}]
+$/g/kpis=[{label:'Files',value:9},{label:'Lines',value:4210,format:'compact',spark:[3100,3300,3500,3900,4210]},{label:'Modules',value:3},{label:'File cycles',value:1,tone:'warn'},{label:'Commits (30d)',value:38,delta:6},{label:'Contributors',value:3}]
+$/g/weeks=[{week:'2026-10-05',module:'auth',commits:4},{week:'2026-10-05',module:'api',commits:2},{week:'2026-10-12',module:'auth',commits:7},{week:'2026-10-12',module:'api',commits:5},{week:'2026-10-19',module:'auth',commits:3},{week:'2026-10-19',module:'api',commits:6},{week:'2026-10-26',module:'auth',commits:9},{week:'2026-10-26',module:'api',commits:1},{week:'2026-11-02',module:'auth',commits:12},{week:'2026-11-02',module:'api',commits:4},{week:'2026-11-09',module:'auth',commits:8},{week:'2026-11-09',module:'api',commits:7}]
+$/g/days=[{date:'2026-11-02',commits:3},{date:'2026-11-03',commits:1},{date:'2026-11-05',commits:6},{date:'2026-11-06',commits:2},{date:'2026-11-09',commits:4},{date:'2026-11-10',commits:9},{date:'2026-11-12',commits:1},{date:'2026-11-13',commits:5},{date:'2026-11-16',commits:2},{date:'2026-11-17',commits:7}]
+$/g/matrix=[{from:'auth',to:'api',weight:2},{from:'api',to:'auth',weight:9},{from:'ui',to:'api',weight:6},{from:'ui',to:'auth',weight:1},{from:'api',to:'ui',weight:0}]
+$/g/graph={level:'module',groups:[{id:'srv',label:'server'}],nodes:[{id:'api',label:'api',sub:'2 files, 1.3k loc',kind:'cluster',group:'srv',slotKey:'api',fanIn:1,fanOut:1,cycle:true,status:'modified',file:'src/api/routes.ts'},{id:'auth',label:'auth',sub:'3 files, 1.5k loc',kind:'cluster',group:'srv',slotKey:'auth',fanIn:2,fanOut:1,cycle:true,file:'src/auth/service.ts'},{id:'ui',label:'ui',sub:'2 files, 1.1k loc',kind:'cluster',slotKey:'ui',fanIn:0,fanOut:2,status:'affected'},{id:'redis',label:'redis',kind:'external',fanIn:1,fanOut:0}],edges:[{from:'api',to:'auth',weight:9,cycle:true},{from:'auth',to:'api',weight:2,cycle:true},{from:'ui',to:'api',weight:6},{from:'ui',to:'auth',weight:1,kind:'dashed'},{from:'auth',to:'redis',weight:3}]}
+$/g/commits=[{sha:'4f2a91c0',subject:'Add sliding-window limiter',author:'Ade',date:'2026-11-17T10:12:00Z',add:400,del:0,files:3,refs:['HEAD','main']},{sha:'9be01d2a',subject:'Cache tokens with TTL',author:'Mira',date:'2026-11-14T16:40:00Z',add:120,del:44,files:2},{sha:'77c0a3e1',subject:'Fix login redirect loop',author:'Jon',date:'2026-11-10T09:03:00Z',add:9,del:12,files:1}]
+$/g/plan=[{title:'Add limiter middleware',note:'Sliding window per IP.',status:'done',file:'src/api/limiter.go#L1-40'},{title:'Wire into router',status:'doing',file:'src/api/routes.ts#L12'},{title:'Tests',status:'todo'},{title:'Dashboards',status:'blocked',note:'Needs metrics endpoint.'}]
+$/g/schema=[{name:'users',file:'src/auth/schema.sql#L1',columns:[{name:'id',type:'uuid',pk:true},{name:'email',type:'text'},{name:'created_at',type:'timestamptz'}]},
+ {name:'sessions',columns:[{name:'id',type:'uuid',pk:true},{name:'user_id',type:'uuid',fk:'users.id'},{name:'expires_at',type:'timestamptz',nullable:true}]},
+ {name:'orders',columns:[{name:'id',type:'uuid',pk:true},{name:'user_id',type:'uuid',fk:'users.id'},{name:'status',type:'text'},{name:'currency',type:'text'},{name:'subtotal_cents',type:'int'},{name:'tax_cents',type:'int'},{name:'shipping_cents',type:'int'},{name:'total_cents',type:'int'},{name:'coupon',type:'text',nullable:true},{name:'ship_to',type:'jsonb'},{name:'bill_to',type:'jsonb'},{name:'placed_at',type:'timestamptz'},{name:'paid_at',type:'timestamptz',nullable:true},{name:'shipped_at',type:'timestamptz',nullable:true},{name:'cancelled_at',type:'timestamptz',nullable:true}]}]
+$/g/config={name:'demo',private:true,scripts:{dev:'vite',test:'vitest run'},engines:{node:'>=20'},workspaces:['packages/*']}`;
+
+export interface GalleryOptions {
+  /**
+   * A file of the repository being shown, repo-relative: the Code section reads it and prose links point at it.
+   * SymbolOutline lists its declarations (a source file) or its headings (Markdown). Default 'README.md'. A trailing
+   * `#L<n>` is the same as `start: n` ('gallery src/x.ts#L41' opens past a licence header).
+   */
+  file?: string;
+  /**
+   * The first line worth showing (1-based): CodeView, FileRef and CodeTour start there, so a file that opens on a
+   * licence header shows its code. Default 1, or the `#L<n>` of `file`.
+   */
+  start?: number;
+}
+
+/** Escapes a value for use inside a single-quoted Express string. */
+const q = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+/**
+ * The gallery layout. Besides one instance of every component it exercises the forms the catalog accepts beyond the
+ * canonical one: a 1-based Steps `current`, an ERDiagram given as a bare table list with `fk:'users.id'` columns (and
+ * a table wide enough to fold), Layers rows named by `title` and `label`, `mark='L1-3'`, graph nodes with a status,
+ * and `title=` on Markdown.
+ */
+export function galleryRoot(options: GalleryOptions = {}): string {
+  const written = /^(.+?)#L(\d{1,7})$/.exec(options.file ?? '');
+  const file = q(written ? written[1]! : options.file ?? 'README.md');
+  const first = options.start ?? (written ? Number(written[2]) : 1);
+  const s = Number.isInteger(first) && first > 0 ? first : 1;
+  /** Lines `from`-`to` counted from the start line: `L${at(0, 39)}` is 'L1-40' for a file that starts at line 1. */
+  const at = (from: number, to?: number) => (to === undefined ? `${s + from}` : `${s + from}-${s + to}`);
+  return `root=Page('Glimpse gallery',[layout,content,data,charts,diagrams,code,input],'every component, fixture data')
+layout=Section('Layout',[Plate('Plate',[Text('A plate groups several children under one numbered frame.'),Row([Stat(9,'files'),Stat(4210,'lines',format='compact'),Stat('TS','main language')])],note='Caption text sits under the frame.',span=6),Tabs(['Grid','Column'],[Grid([Text('one'),Text('two'),Text('three')],'1:2:1'),Column([Text('first'),Text('second','dim')])],span=6),Split(Text('start pane','lead'),Text('end pane','mono'),'1:2',size='s')],'Page, Section, Plate, Grid, Row, Column, Tabs, Split')
+content=Section('Content',[Stats($/g/kpis),Chips(['TypeScript','Go',{label:'PostgreSQL',tone:'info'},{label:'1 cycle',tone:'warn'}]),Markdown('Prose with **bold**, \`code\`, a list:\\n- one\\n- two\\n\\nand a file ref [[${file}#L1]].',title='Markdown',span=6),Column([Text('Lead text introduces a plate.','lead'),Text('Body text with \`inline code\` and [[${file}#L3]].'),Text('Caption text in serif italic.','caption'),FileRef('${file}#L${at(0, 11)}'),Row([Stat(38,'commits (30d)',delta=6,spark=[2,4,3,8,12,9]),Sparkline([3,5,4,9,12,7])])],span=6),Callout('Reads the balance before taking the row lock.','risk',title='Race',file='${file}#L1',span=4),Callout('Tokens are cached for 15 minutes.','note',span=4),Callout('Per-IP or per-user limits?','question',span=4),Steps($/g/plan,2,title='Steps',span=5),KeyValue({Language:'TypeScript',Entry:'${file}',Tests:true,Maintainers:['Mira','Jon'],Size:131072},2,title='KeyValue',span=4),List([{title:'redis',sub:'npm',value:14},{title:'zod',sub:'npm',value:9},{title:'pg',sub:'npm',value:4}],title='List',span=3)])
+data=Section('Data',[DataTable($/g/files,'path:path lang:lang loc:num commits:bar complexity:heat owner:author last:date trend:spark delta:delta ok:bool',sort='-commits',search=true,title='DataTable',size='m'),FileTree($/g/tree,heat='churn',title='FileTree',size='m',span=5),JsonView($/g/config,2,title='JsonView',size='m',span=7),CommitList($/g/commits,title='CommitList')])
+charts=Section('Charts',[SegmentedBar($/g/langs,'lang','loc',title='SegmentedBar',span=12),BarChart($/g/files,'path','commits',title='BarChart',span=6),LineChart($/g/weeks,'week','commits','module',mode='stacked',title='LineChart',span=6),ScatterPlot($/g/files,'commits','complexity',r='loc',label='path',quadrants=true,title='ScatterPlot',span=6),Histogram($/g/files,'loc',title='Histogram',span=6),Heatmap($/g/matrix,'to','from','weight',title='Heatmap',span=4),CalendarHeatmap($/g/days,title='CalendarHeatmap',span=8),Treemap($/g/tree,title='Treemap',size='l',span=7),Icicle($/g/tree,title='Icicle',size='l',span=5)])
+diagrams=Section('Diagrams',[Graph($/g/graph,title='Graph',span=7),Layers([{name:'Interface',items:['ui',{label:'api',file:'src/api/routes.ts'}]},{title:'Domain',items:['auth'],note:'owns sessions'},{label:'Storage',items:['postgres','redis']}],title='Layers',span=5),Flowchart('Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429]); H --> DB[(Postgres)]; H -.-> C((cache))',title='Flowchart',span=6),SequenceDiagram('User->>API: POST /login; API->>Auth: verify(password); Auth->>DB: find user; DB-->>Auth: row; Note over Auth,DB: constant-time compare; Auth-->>API: token; API-->>User: 200',title='SequenceDiagram',span=6),ERDiagram($/g/schema,title='ERDiagram')])
+code=Section('Code',[CodeBlock('export async function take(ip: string) {\\n  const n = await redis.incr(\`rl:\${ip}\`);\\n  return n <= 100;\\n}','ts',mark='2',title='CodeBlock',span=6),SymbolOutline('${file}',title='SymbolOutline',size='m',span=6),CodeView('${file}#L${at(0, 39)}',mark='L${at(0, 2)}',notes=[{line:${at(1)},text:'Notes anchor to lines.',kind:'note'}],title='CodeView',size='m',span=6),DiffView(title='DiffView (working tree)',size='m',span=6),CodeTour([{file:'${file}#L${at(0, 11)}',title:'Start here',note:'A stop shows one range of a file.'},{file:'${file}#L${at(12, 29)}',note:'The next stop scrolls to its own range.'}],title='CodeTour',size='l')])
+input=Section('Input',[Button('Queue an event',Event('demo_pressed',{from:'gallery'}),'primary',span=3),Button('Quiet',Event('demo_quiet'),'quiet',span=3),Ask('Which store backs the limiter?',['Redis','In-memory'],'store',span=6)])`;
+}
+
+/** The whole gallery spec: fixture data, then the layout (see GalleryOptions). */
+export function gallerySpec(options: GalleryOptions = {}): string {
+  return GALLERY_DATA + '\n' + galleryRoot(options);
+}
+
+export const GALLERY_ROOT = galleryRoot();
+export const GALLERY_SPEC = gallerySpec();

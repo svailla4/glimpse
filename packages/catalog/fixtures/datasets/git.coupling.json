@@ -1,0 +1,51 @@
+{
+  "$ds": "git_coupling",
+  "kind": "rows",
+  "status": "ready",
+  "source": "git.coupling",
+  "data": [
+    {
+      "a": "src/auth/service.ts",
+      "b": "src/auth/cache.ts",
+      "shared": 14,
+      "degree": 63.6
+    },
+    {
+      "a": "src/api/routes.ts",
+      "b": "src/auth/service.ts",
+      "shared": 11,
+      "degree": 33.3
+    },
+    {
+      "a": "src/ui/App.tsx",
+      "b": "src/ui/app.css",
+      "shared": 5,
+      "degree": 71.4
+    }
+  ],
+  "fields": [
+    {
+      "key": "a",
+      "kind": "path",
+      "label": "File",
+      "priority": 1
+    },
+    {
+      "key": "b",
+      "kind": "path",
+      "label": "Changes with",
+      "priority": 1
+    },
+    {
+      "key": "shared",
+      "kind": "num"
+    },
+    {
+      "key": "degree",
+      "kind": "pct"
+    }
+  ],
+  "total": 3,
+  "cache": "miss",
+  "elapsedMs": 12
+}

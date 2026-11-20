@@ -1,0 +1,15 @@
+{
+  "name": "glimpse",
+  "description": "Glimpse: generative UI for codebases, as a Claude Code plugin.",
+  "owner": {
+    "name": "Glimpse"
+  },
+  "plugins": [
+    {
+      "name": "glimpse",
+      "source": "./plugin",
+      "description": "Render interactive views of a repository (overview, dependency graph, hotspots, diffs, code tours) in a local browser viewer.",
+      "license": "PolyForm-Noncommercial-1.0.0"
+    }
+  ]
+}

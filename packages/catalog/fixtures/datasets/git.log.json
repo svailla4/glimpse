@@ -1,0 +1,105 @@
+{
+  "$ds": "git_log",
+  "kind": "rows",
+  "status": "ready",
+  "source": "git.log",
+  "data": [
+    {
+      "sha": "4f2a91c0d1",
+      "subject": "Add sliding-window limiter",
+      "author": "Ade",
+      "date": "2026-11-17T10:12:00Z",
+      "add": 400,
+      "del": 0,
+      "files": 3,
+      "refs": [
+        "HEAD",
+        "main"
+      ]
+    },
+    {
+      "sha": "9be01d2a77",
+      "subject": "Cache tokens with TTL",
+      "author": "Mira",
+      "date": "2026-11-14T16:40:00Z",
+      "add": 120,
+      "del": 44,
+      "files": 2
+    },
+    {
+      "sha": "77c0a3e145",
+      "subject": "Fix login redirect loop",
+      "author": "Jon",
+      "date": "2026-11-10T09:03:00Z",
+      "add": 9,
+      "del": 12,
+      "files": 1
+    },
+    {
+      "sha": "c31f08ab9e",
+      "subject": "Split routes by resource",
+      "author": "Jon",
+      "date": "2026-11-06T14:21:00Z",
+      "add": 210,
+      "del": 180,
+      "files": 4
+    },
+    {
+      "sha": "0d94e7b216",
+      "subject": "Constant-time password compare",
+      "author": "Mira",
+      "date": "2026-11-03T11:55:00Z",
+      "add": 18,
+      "del": 6,
+      "files": 1,
+      "refs": [
+        "v1.4.0"
+      ]
+    },
+    {
+      "sha": "a8e5521f03",
+      "subject": "Restyle the session list",
+      "author": "Jon",
+      "date": "2026-10-28T08:30:00Z",
+      "add": 64,
+      "del": 31,
+      "files": 2
+    }
+  ],
+  "fields": [
+    {
+      "key": "sha",
+      "kind": "commit",
+      "priority": 1
+    },
+    {
+      "key": "subject",
+      "kind": "text",
+      "priority": 1
+    },
+    {
+      "key": "author",
+      "kind": "author"
+    },
+    {
+      "key": "date",
+      "kind": "date",
+      "priority": 1
+    },
+    {
+      "key": "files",
+      "kind": "num",
+      "priority": 3
+    }
+  ],
+  "total": 212,
+  "pageable": true,
+  "cache": "miss",
+  "elapsedMs": 12,
+  "truncated": {
+    "total": 212,
+    "returned": 6,
+    "strategy": "topN",
+    "by": "date"
+  }
+}

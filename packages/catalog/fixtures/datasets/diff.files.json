@@ -1,0 +1,75 @@
+{
+  "$ds": "diff_files",
+  "kind": "rows",
+  "status": "ready",
+  "source": "diff.files wt",
+  "data": [
+    {
+      "path": "src/api/limiter.ts",
+      "status": "A",
+      "add": 118,
+      "del": 0,
+      "delta": {
+        "add": 118,
+        "del": 0
+      },
+      "lang": "TypeScript",
+      "isTest": false
+    },
+    {
+      "path": "src/auth/service.ts",
+      "status": "M",
+      "add": 9,
+      "del": 4,
+      "delta": {
+        "add": 9,
+        "del": 4
+      },
+      "lang": "TypeScript",
+      "isTest": false
+    },
+    {
+      "path": "test/limiter.test.ts",
+      "status": "A",
+      "add": 5,
+      "del": 0,
+      "delta": {
+        "add": 5,
+        "del": 0
+      },
+      "lang": "TypeScript",
+      "isTest": true
+    }
+  ],
+  "fields": [
+    {
+      "key": "path",
+      "kind": "path",
+      "label": "File",
+      "priority": 1
+    },
+    {
+      "key": "status",
+      "kind": "chip"
+    },
+    {
+      "key": "delta",
+      "kind": "delta",
+      "label": "+/-",
+      "priority": 1
+    },
+    {
+      "key": "lang",
+      "kind": "lang",
+      "priority": 3
+    }
+  ],
+  "roles": {
+    "label": "path",
+    "value": "add"
+  },
+  "total": 3,
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}

@@ -1,0 +1,25 @@
+@layer gl.components {
+  .text {
+    margin: 0;
+    color: var(--gl-ink);
+    font: 400 13px/20px var(--gl-font-ui);
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+  }
+  .text[data-tone='lead'] {
+    font-size: 14px;
+    line-height: 22px;
+  }
+  .text[data-tone='dim'] {
+    color: var(--gl-ink-3);
+  }
+  .text[data-tone='caption'] {
+    color: var(--gl-ink-2);
+    font: italic 400 14px/20px var(--gl-font-display);
+  }
+  .text[data-tone='mono'] {
+    font: 400 12px/20px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    white-space: pre-wrap;
+  }
+}

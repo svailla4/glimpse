@@ -1,0 +1,30 @@
+@layer gl.components {
+  /* Hairlines between cells only. The component sets the column count (rows of equal length) and tells every cell
+     its column and row, so each cell, blank ones included, draws the rule on its left unless it is in the first
+     column and the rule above it unless it is in the first row: the grid of rules is always complete. */
+  .stats {
+    display: flow-root;
+    min-width: 0;
+  }
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(var(--stats-cols, 1), minmax(0, 1fr));
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .cell {
+    min-width: 0;
+    padding: 12px 16px;
+    border-top: 1px solid var(--gl-rule);
+    border-left: 1px solid var(--gl-rule);
+  }
+  .cell[data-col='0'] { padding-left: 0; border-left: 0; }
+  .cell[data-row='0'] { padding-top: 0; border-top: 0; }
+  .cell[data-last-row] { padding-bottom: 0; }
+  .more {
+    margin: 8px 0 0;
+    color: var(--gl-ink-3);
+    font: 400 11px/16px var(--gl-font-mono);
+  }
+}

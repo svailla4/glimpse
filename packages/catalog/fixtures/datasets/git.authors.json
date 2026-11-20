@@ -1,0 +1,57 @@
+{
+  "$ds": "git_authors",
+  "kind": "rows",
+  "status": "ready",
+  "source": "git.authors",
+  "data": [
+    {
+      "author": "Mira",
+      "commits": 96,
+      "files": 7,
+      "last": "2026-11-17"
+    },
+    {
+      "author": "Jon",
+      "commits": 81,
+      "files": 8,
+      "last": "2026-11-16"
+    },
+    {
+      "author": "Ade",
+      "commits": 35,
+      "files": 4,
+      "last": "2026-11-17"
+    }
+  ],
+  "fields": [
+    {
+      "key": "author",
+      "kind": "author",
+      "priority": 1
+    },
+    {
+      "key": "commits",
+      "kind": "bar",
+      "priority": 1
+    },
+    {
+      "key": "files",
+      "kind": "num"
+    },
+    {
+      "key": "last",
+      "kind": "date"
+    }
+  ],
+  "roles": {
+    "label": "author",
+    "value": "commits",
+    "x": "author",
+    "y": [
+      "commits"
+    ]
+  },
+  "total": 3,
+  "cache": "miss",
+  "elapsedMs": 12
+}

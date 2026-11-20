@@ -1,0 +1,8 @@
+@layer gl.components {
+  /* Cells side by side in rows: one without a size step keeps the height of what it shows (styles/base.css). */
+  .grid { display: grid; grid-template-columns: var(--cols); gap: var(--gap); min-width: 0; --gl-cell-fit: 1; }
+  /* One column: a stack, so the cells no longer read the track placement. */
+  @container page (max-width: 719px) {
+    .grid { display: flex; flex-direction: column; --gl-cell-flex: 0 0 auto; }
+  }
+}

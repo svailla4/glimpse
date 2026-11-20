@@ -1,0 +1,73 @@
+{
+  "$ds": "code_symbols",
+  "kind": "rows",
+  "status": "ready",
+  "source": "code.symbols src/auth/service.ts",
+  "data": [
+    {
+      "name": "TTL_SECONDS",
+      "kind": "const",
+      "line": 5,
+      "depth": 0,
+      "exported": false
+    },
+    {
+      "name": "login",
+      "kind": "fn",
+      "line": 8,
+      "endLine": 14,
+      "depth": 0,
+      "exported": true
+    },
+    {
+      "name": "issueToken",
+      "kind": "fn",
+      "line": 16,
+      "endLine": 20,
+      "depth": 0,
+      "exported": true
+    },
+    {
+      "name": "verify",
+      "kind": "fn",
+      "line": 22,
+      "endLine": 25,
+      "depth": 0,
+      "exported": false
+    },
+    {
+      "name": "AuthError",
+      "kind": "class",
+      "line": 27,
+      "endLine": 29,
+      "depth": 0,
+      "exported": true
+    },
+    {
+      "name": "status",
+      "kind": "var",
+      "line": 28,
+      "depth": 1,
+      "exported": false
+    }
+  ],
+  "fields": [
+    {
+      "key": "name",
+      "kind": "symbol",
+      "priority": 1
+    },
+    {
+      "key": "kind",
+      "kind": "chip"
+    },
+    {
+      "key": "line",
+      "kind": "num"
+    }
+  ],
+  "total": 6,
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}

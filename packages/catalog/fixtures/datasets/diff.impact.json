@@ -1,0 +1,65 @@
+{
+  "$ds": "diff_impact",
+  "kind": "graph",
+  "status": "ready",
+  "source": "diff.impact wt",
+  "data": {
+    "level": "file",
+    "nodes": [
+      {
+        "id": "src/api/limiter.ts",
+        "label": "limiter.ts",
+        "sub": "src/api",
+        "kind": "file",
+        "slotKey": "api",
+        "status": "added",
+        "file": "src/api/limiter.ts"
+      },
+      {
+        "id": "src/auth/service.ts",
+        "label": "service.ts",
+        "sub": "src/auth",
+        "kind": "file",
+        "slotKey": "auth",
+        "status": "modified",
+        "file": "src/auth/service.ts"
+      },
+      {
+        "id": "src/api/routes.ts",
+        "label": "routes.ts",
+        "sub": "src/api",
+        "kind": "file",
+        "slotKey": "api",
+        "status": "affected",
+        "file": "src/api/routes.ts"
+      },
+      {
+        "id": "src/ui/App.tsx",
+        "label": "App.tsx",
+        "sub": "src/ui",
+        "kind": "file",
+        "slotKey": "ui",
+        "status": "affected",
+        "file": "src/ui/App.tsx"
+      }
+    ],
+    "edges": [
+      {
+        "from": "src/api/routes.ts",
+        "to": "src/auth/service.ts"
+      },
+      {
+        "from": "src/api/routes.ts",
+        "to": "src/api/limiter.ts"
+      },
+      {
+        "from": "src/ui/App.tsx",
+        "to": "src/auth/service.ts"
+      }
+    ]
+  },
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12,
+  "total": 4
+}

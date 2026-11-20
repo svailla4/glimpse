@@ -1,0 +1,81 @@
+/* ERDiagram tables: sunken header, 22 px column rows, key glyphs. */
+@layer gl.components {
+  .box {
+    fill: var(--gl-surface);
+    stroke: var(--gl-ink);
+    stroke-width: 1;
+    transition: stroke var(--gl-t-hover) var(--gl-ease);
+  }
+  .body:hover .box {
+    stroke-width: 1.5;
+  }
+  .body[data-selected] .box {
+    stroke: var(--gl-accent);
+    stroke-width: 1.5;
+  }
+  .head {
+    fill: var(--gl-sunken);
+    pointer-events: none;
+  }
+  .headRule {
+    stroke: var(--gl-ink);
+    stroke-width: 1;
+    pointer-events: none;
+  }
+  .body[data-selected] .headRule {
+    stroke: var(--gl-accent);
+  }
+  .rowRule {
+    stroke: var(--gl-rule);
+    stroke-width: 1;
+    pointer-events: none;
+  }
+  .title {
+    font: 500 12px var(--gl-font-ui);
+    fill: var(--gl-ink);
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .column {
+    font: 12px var(--gl-font-mono);
+    fill: var(--gl-ink);
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .type {
+    font: 11px var(--gl-font-mono);
+    fill: var(--gl-ink-3);
+    text-anchor: end;
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .key {
+    fill: none;
+    stroke: var(--gl-ink-3);
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    pointer-events: none;
+  }
+  .key[data-key='pk'] {
+    fill: var(--gl-ink);
+    stroke: var(--gl-ink);
+  }
+  .more {
+    font: italic 11px var(--gl-font-mono);
+    fill: var(--gl-ink-3);
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .moreHit {
+    fill: transparent;
+    cursor: pointer;
+  }
+  .moreHit:hover {
+    fill: var(--gl-sunken);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .box {
+      transition: none;
+    }
+  }
+}
