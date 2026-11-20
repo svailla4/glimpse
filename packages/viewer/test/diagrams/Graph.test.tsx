@@ -13,7 +13,8 @@ const SPEC = `root=Page('T',[g])\ng=Graph(title='Deps',size='l')`;
 const INLINE = `root=Page('T',[g])\ng=Graph($/g,title='Deps',size='l')`;
 const ready = async (spec = SPEC, options: Parameters<typeof renderExpress>[1] = {}) => {
   const view = renderExpress(spec, {datasets: 'ready', ...options});
-  await screen.findAllByRole('img', {name: /^Graph/});
+  // ELK runs in this thread under test: a large graph can take seconds on a slow CI runner
+  await screen.findAllByRole('img', {name: /^Graph/}, {timeout: 20_000});
   await drawn(view, 'g');
   return view;
 };
@@ -182,7 +183,7 @@ describe('Graph: bindings', () => {
     expect(view.cell('g').querySelector('[data-gl-note]')!.textContent).toContain('50 light edges hidden');
     // a dense graph shares the ends of its edges and runs them closer
     expect(elk.requests.at(-1)!.graph.layoutOptions!['elk.layered.mergeEdges']).toBe('true');
-  }, 30_000);
+  }, 120_000); // 600 edges through in-thread ELK: about 11 s here, about 40 s on a CI runner
 
   it('follows a dataset update and a patched prop', async () => {
     const base = buildSurface('test', INLINE, {datasets: 'ready', data: {g: {nodes: [{id: 'a', label: 'A'}, {id: 'b', label: 'B'}], edges: [{from: 'a', to: 'b'}]}}});
@@ -639,7 +640,7 @@ describe('Graph: a readable opening view', () => {
     for (let i = 0; i < 8; i++) press(view, 'Zoom in');
     expect(viewOf(stage).k).toBeGreaterThan(1);
     expect(nodesOf(view).some(node => touches(view, node))).toBe(true);
-  });
+  }, 60_000); // a 48-node, 122-edge layout through in-thread ELK
 
   it('fits 150 nodes below the 20% the zoom buttons stop at', async () => {
     const view = renderExpress(`root=Page('T',[g])\ng=Graph($/g,title='Deps',size='m')`, {datasets: 'ready', data: {'/g': bigGraph(150, 220)}, size: {width: 600, height: 600}});
