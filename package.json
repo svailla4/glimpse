@@ -21,7 +21,8 @@
     "build": "node scripts/task.mjs build",
     "dev": "vite packages/viewer",
     "e2e": "node scripts/task.mjs e2e",
-    "demo": "node scripts/task.mjs demo"
+    "demo": "node scripts/task.mjs demo",
+    "budgets": "node scripts/budgets.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.8",

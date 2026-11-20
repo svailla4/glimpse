@@ -1,0 +1,84 @@
+# Check, unit tests, build, budgets and the end-to-end suite (Chromium).
+# macOS is the platform Glimpse has been verified on and is the gate. The Linux job exists to find out what breaks
+# there; it does not fail the run until it has been seen green.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            experimental: false
+          - os: ubuntu-latest
+            experimental: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The suite analyses this repository's own history (hotspots, activity, diff ranges).
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+
+      # .npmrc sets ignore-scripts=true: no dependency runs code at install time.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint and typecheck
+        run: npm run check
+
+      - name: Unit and component tests
+        run: npm test
+
+      - name: Build the plugin (viewer, server bundle, skill)
+        run: npm run build
+
+      - name: The generated skill is committed up to date
+        run: git diff --exit-code -- plugin/skills
+
+      - name: Budgets
+        run: npm run budgets
+
+      - name: Install Chromium
+        run: npx playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium
+
+      - name: End-to-end tests
+        run: npm run e2e
+        env:
+          # The bundle was built two steps up; fail instead of silently rebuilding it.
+          GLIMPSE_E2E_NO_BUILD: '1'
+
+      - name: Demo smoke test
+        run: npm run demo -- --no-open --exit
+        env:
+          GLIMPSE_PORT: '0'
+
+      - name: Upload screenshots, timings and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.os }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
