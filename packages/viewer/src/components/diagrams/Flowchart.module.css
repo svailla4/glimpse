@@ -1,0 +1,35 @@
+/* Flowchart shapes: box, diamond, pill, cylinder and circle in 1 px ink. */
+@layer gl.components {
+  .shape {
+    fill: var(--gl-surface);
+    stroke: var(--gl-ink);
+    stroke-width: 1;
+    transition: stroke var(--gl-t-hover) var(--gl-ease);
+  }
+  .lid {
+    fill: none;
+    stroke: var(--gl-ink);
+    stroke-width: 1;
+    pointer-events: none;
+  }
+  .body:hover .shape {
+    stroke-width: 1.5;
+  }
+  .body[data-selected] .shape,
+  .body[data-selected] .lid {
+    stroke: var(--gl-accent);
+    stroke-width: 1.5;
+  }
+  .text {
+    font: 500 12px var(--gl-font-ui);
+    fill: var(--gl-ink);
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .shape {
+      transition: none;
+    }
+  }
+}

@@ -1,0 +1,19 @@
+@layer gl.components {
+  .bare {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .aside {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 16px;
+  }
+  .note {
+    margin: 0;
+    color: var(--gl-ink-2);
+    font: italic 400 14px/20px var(--gl-font-display);
+  }
+}

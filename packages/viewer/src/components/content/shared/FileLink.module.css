@@ -1,0 +1,19 @@
+@layer gl.components {
+  .link {
+    text-decoration: underline dotted transparent;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    transition: text-decoration-color var(--gl-t-hover) var(--gl-ease);
+  }
+  .link:hover {
+    text-decoration-color: var(--gl-ink-3);
+  }
+  .link[data-within] {
+    background: var(--gl-accent-wash);
+  }
+  .link[data-missing] {
+    color: var(--gl-ink-3);
+    text-decoration: line-through;
+    text-decoration-color: var(--gl-ink-3);
+  }
+}

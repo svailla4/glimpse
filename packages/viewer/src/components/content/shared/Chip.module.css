@@ -1,0 +1,28 @@
+@layer gl.components {
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    box-sizing: border-box;
+    height: 18px;
+    max-width: 100%;
+    padding: 0 6px;
+    border: 1px solid var(--gl-rule-strong);
+    border-radius: var(--gl-r-1);
+    color: var(--gl-ink);
+    font: 500 10.5px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .dot {
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+  }
+  .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

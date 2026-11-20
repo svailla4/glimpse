@@ -1,0 +1,3 @@
+@layer gl.components {
+  .bar { shape-rendering: geometricPrecision; }
+}

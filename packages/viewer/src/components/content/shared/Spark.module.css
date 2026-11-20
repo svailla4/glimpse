@@ -1,0 +1,36 @@
+@layer gl.components {
+  .spark {
+    display: block;
+    flex: none;
+    overflow: visible;
+  }
+  .line {
+    fill: none;
+    stroke: var(--gl-cat-1);
+    stroke-width: 1.25;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+    animation: draw var(--gl-t-draw) var(--gl-ease) 1 backwards;
+  }
+  .area {
+    fill: color-mix(in oklab, var(--gl-cat-1) 16%, transparent);
+    stroke: none;
+  }
+  .bar {
+    fill: var(--gl-cat-1);
+  }
+  .dot {
+    fill: var(--gl-cat-1);
+    stroke: var(--gl-surface);
+    stroke-width: 1;
+    paint-order: stroke;
+  }
+  @keyframes draw {
+    from { stroke-dashoffset: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .line { animation: none; }
+  }
+}

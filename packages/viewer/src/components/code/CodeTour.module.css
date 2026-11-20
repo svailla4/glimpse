@@ -1,0 +1,47 @@
+@layer gl.components {
+  .tour {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 34fr) minmax(0, 66fr);
+    outline: none;
+  }
+  .tour[data-fit='cap'] { height: 420px; }
+  .tour[data-stack] { grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); grid-template-columns: minmax(0, 1fr); }
+  .tour:focus-visible { outline: 2px solid var(--gl-accent); outline-offset: 2px; }
+  .stops { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--gl-rule); }
+  .tour[data-stack] .stops { border-right: 0; border-bottom: 1px solid var(--gl-rule); }
+  .list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px 14px; font: 400 13px/20px var(--gl-font-ui); }
+  .code { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .tour .back { transform: scaleX(-1); }
+  .tour button:disabled { color: var(--gl-rule-strong); cursor: default; }
+
+  /* ---- the local stop list */
+  .steps { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
+  .step { display: block; }
+  .stepButton {
+    all: unset;
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    cursor: pointer;
+  }
+  .stepButton:focus-visible { outline: 2px solid var(--gl-accent); outline-offset: 2px; }
+  .numeral {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    border: 1px solid var(--gl-ink-3);
+    color: var(--gl-ink-2);
+    font: 400 11px/1 var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+  }
+  .step[data-current] .numeral { border-color: var(--gl-ink); background: var(--gl-ink); color: var(--gl-surface); }
+  .stepBody { display: flex; flex-direction: column; min-width: 0; }
+  .stepTitle { color: var(--gl-ink-2); font-weight: 600; overflow-wrap: anywhere; }
+  .step[data-current] .stepTitle { color: var(--gl-ink); }
+  .stepNote { color: var(--gl-ink-2); overflow-wrap: anywhere; }
+}

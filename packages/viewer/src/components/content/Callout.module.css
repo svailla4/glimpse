@@ -1,0 +1,50 @@
+@layer gl.components {
+  .callout {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding-left: 14px;
+  }
+  /* The dot sits on the tag's line; the rule hangs from it. */
+  .callout::before {
+    content: '';
+    position: absolute;
+    top: 5px;
+    left: 0;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--callout-ink);
+  }
+  .callout::after {
+    content: '';
+    position: absolute;
+    top: 7px;
+    bottom: 0;
+    left: 2px;
+    width: 1px;
+    background: var(--callout-ink);
+  }
+  .tag {
+    color: var(--gl-ink-2);
+    font: 500 10.5px/16px var(--gl-font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .body {
+    margin: 0;
+    color: var(--gl-ink);
+    font: 400 13px/20px var(--gl-font-ui);
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+  }
+  .title {
+    font-weight: 600;
+  }
+  .file {
+    line-height: 20px;
+    overflow-wrap: anywhere;
+  }
+}

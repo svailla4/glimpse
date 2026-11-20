@@ -1,0 +1,108 @@
+@layer gl.components {
+  .root {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .bar {
+    display: flex;
+    gap: 2px;
+    height: 16px;
+  }
+  .segment {
+    flex: 0 1 0;
+    min-width: 2px;
+    transition: opacity var(--gl-t-state) var(--gl-ease);
+    animation: grow 280ms var(--gl-ease) 1 backwards;
+    transform-origin: left center;
+  }
+  .segment[data-entity] {
+    cursor: pointer;
+  }
+  .segment[data-dimmed] {
+    opacity: 0.35;
+  }
+  .segment[data-selected] {
+    outline: 1.5px solid var(--gl-accent);
+    outline-offset: 1px;
+  }
+  @keyframes grow {
+    from { transform: scaleX(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .segment { animation: none; }
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .entry {
+    display: flex;
+    min-width: 0;
+  }
+  .key {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--gl-ink);
+    font: 400 12px/20px var(--gl-font-ui);
+    cursor: pointer;
+    transition: opacity var(--gl-t-state) var(--gl-ease);
+  }
+  .key:focus-visible {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: 2px;
+  }
+  .key[data-dimmed] {
+    opacity: 0.35;
+  }
+  .swatch {
+    flex: none;
+    width: 8px;
+    height: 8px;
+  }
+  .label {
+    overflow: hidden;
+    max-width: 28ch;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .key[data-selected] .swatch {
+    outline: 1.5px solid var(--gl-accent);
+    outline-offset: 1px;
+  }
+  .key:hover .label {
+    text-decoration: underline dotted var(--gl-ink-3);
+    text-underline-offset: 3px;
+  }
+  .share {
+    color: var(--gl-ink-2);
+    font: 400 11px/20px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+  }
+  .dropped {
+    margin: 0;
+    color: var(--gl-ink-3);
+    font: 400 11px/16px var(--gl-font-mono);
+  }
+  .tip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .tipValue {
+    color: var(--gl-ink-2);
+    font: 400 11px/16px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+  }
+}

@@ -1,0 +1,9 @@
+@layer gl.components {
+  .sparkline {
+    display: flex;
+    align-items: center;
+    min-width: 72px;
+    height: 20px;
+    overflow: hidden;
+  }
+}

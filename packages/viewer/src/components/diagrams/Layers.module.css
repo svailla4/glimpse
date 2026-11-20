@@ -1,0 +1,123 @@
+/* Layers: horizontal bands separated by hairlines; a 140 px band label, boxes in a wrapping row, an italic note. */
+@layer gl.components {
+  .root {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    container: layers / inline-size;
+  }
+  .root[data-sized] {
+    height: 100%;
+    overflow: auto;
+  }
+  .band {
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr) minmax(0, auto);
+    align-items: center;
+    gap: 16px;
+    padding: 14px;
+    border-top: 1px solid var(--gl-rule);
+  }
+  .band[data-first] {
+    border-top: 0;
+  }
+  .root[data-sized] .band {
+    flex: 1 0 auto;
+  }
+  .name {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 500 11px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--gl-ink-3);
+  }
+  .items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    min-width: 0;
+  }
+  .item {
+    display: flex;
+    min-width: 0;
+    max-width: 100%;
+    transition: opacity var(--gl-t-state) var(--gl-ease);
+  }
+  .item[data-dim] {
+    opacity: 0.35;
+  }
+  .box {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 88px;
+    max-width: 240px;
+    min-height: 28px;
+    padding: 3px 12px;
+    border: 1px solid var(--gl-ink);
+    background: var(--gl-surface);
+    transition: box-shadow var(--gl-t-hover) var(--gl-ease);
+  }
+  .item[data-entity] .box:hover {
+    box-shadow: inset 0 0 0 0.5px var(--gl-ink);
+  }
+  .item[data-selected] .box {
+    border-color: var(--gl-accent);
+    box-shadow: inset 0 0 0 0.5px var(--gl-accent);
+  }
+  .item[data-more] .box {
+    border-style: dashed;
+    border-color: var(--gl-rule-strong);
+  }
+  .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 500 12px/20px var(--gl-font-ui);
+    color: var(--gl-ink);
+  }
+  .sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 11px/14px var(--gl-font-mono);
+    color: var(--gl-ink-2);
+  }
+  .note {
+    margin: 0;
+    max-width: 28ch;
+    font: italic 14px/20px var(--gl-font-display);
+    color: var(--gl-ink-2);
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .marginal {
+    font: 11px/16px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    color: var(--gl-ink-3);
+    white-space: nowrap;
+  }
+  @container layers (max-width: 419px) {
+    .band {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+    .note {
+      max-width: none;
+      text-align: left;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .item,
+    .box {
+      transition: none;
+    }
+  }
+}

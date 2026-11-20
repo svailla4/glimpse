@@ -1,16 +1,36 @@
-// packages/viewer/src/components/content/index.ts  (stub by WP0; owned by WP4)
-// Exports exactly `views`: component name -> view, one file per component next to this one, for example
-//   import {DataTableView} from './DataTable.tsx';
-//   export const views: Record<string, GlView<any>> = {DataTable: DataTableView};
-// Components of this chunk (`chunk: 'content'` in @glimpse/catalog):
-//   Text, Markdown, Callout, KeyValue, Chips, FileRef, Steps, Stat, Stats, List, Sparkline, SegmentedBar, Button, Ask
-// A name missing here renders the "not implemented" redline (E_NOT_IMPLEMENTED) instead of the component.
-// Rules for views are in the header of ../../kit/implement.tsx. Three concern this file: add a view here only
-// after its file exists (a broken import here breaks every component of this chunk); reuse a view of another chunk
-// only through borrowView(() => import('../<chunk>/index.ts'), name, Fallback), never by importing its file; and
-// every Name.module.css wraps its content in `@layer gl.components { ... }` (the build fails otherwise).
-// List accepts ListItem[] or any rows dataset; the mapping for rows is written above `List` in
-// packages/catalog/src/components.ts (roles.label / roles.value first, then the first text and numeric fields).
+// packages/viewer/src/components/content/index.ts
+// The `content` chunk (eager): the content family, the two input components and the two charts small enough to
+// ship in the first bundle. One file per component next to this one; pieces they share are in ./shared.
+// Rules for views are in the header of ../../kit/implement.tsx.
 import type {GlView} from '../../kit/index.ts';
+import {AskView} from './Ask.tsx';
+import {ButtonView} from './Button.tsx';
+import {CalloutView} from './Callout.tsx';
+import {ChipsView} from './Chips.tsx';
+import {FileRefView} from './FileRef.tsx';
+import {KeyValueView} from './KeyValue.tsx';
+import {ListView} from './List.tsx';
+import {MarkdownView} from './Markdown.tsx';
+import {SegmentedBarView} from './SegmentedBar.tsx';
+import {SparklineView} from './Sparkline.tsx';
+import {StatView} from './Stat.tsx';
+import {StatsView} from './Stats.tsx';
+import {StepsView} from './Steps.tsx';
+import {TextView} from './Text.tsx';
 
-export const views: Record<string, GlView<any>> = {};
+export const views: Record<string, GlView<any>> = {
+  Text: TextView,
+  Markdown: MarkdownView,
+  Callout: CalloutView,
+  KeyValue: KeyValueView,
+  Chips: ChipsView,
+  FileRef: FileRefView,
+  Steps: StepsView,
+  Stat: StatView,
+  Stats: StatsView,
+  List: ListView,
+  Sparkline: SparklineView,
+  SegmentedBar: SegmentedBarView,
+  Button: ButtonView,
+  Ask: AskView,
+};

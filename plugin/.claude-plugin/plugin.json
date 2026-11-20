@@ -1,0 +1,21 @@
+{
+  "name": "glimpse",
+  "displayName": "Glimpse",
+  "version": "0.1.0",
+  "description": "Generative UI for codebases: render overviews, dependency graphs, hotspots, diffs and code tours of any repository in a local browser viewer.",
+  "author": {
+    "name": "Glimpse"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "visualization",
+    "codebase",
+    "a2ui",
+    "mcp",
+    "diagrams",
+    "code-review"
+  ],
+  "network": {
+    "hosts": []
+  }
+}

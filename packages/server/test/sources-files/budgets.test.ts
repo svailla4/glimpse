@@ -1,0 +1,202 @@
+// Budgets on a generated repository of several thousand files: nothing unbounded leaves a source.
+import {mkdirSync, writeFileSync} from 'node:fs';
+import {mkdtemp, realpath, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {dirname, join} from 'node:path';
+import type {DirNode, GraphData} from '@glimpse/catalog';
+import {afterAll, beforeAll, describe, expect, it} from 'vitest';
+import {MAX_MODULES} from '../../src/analyze/cluster.ts';
+import {repoModel} from '../../src/analyze/index.ts';
+import type {RepoContext} from '../../src/contracts.ts';
+import {checkResult, makeContext, run} from './helpers.ts';
+
+const PACKAGES = 50;
+const DIRS_PER_PACKAGE = 4;
+const FILES_PER_DIR = 20;
+const RING_FILES = PACKAGES * DIRS_PER_PACKAGE * FILES_PER_DIR;
+const FLAT_FILES = 600;
+const MANIFESTS = 520;
+const PAIRS = 60;
+
+function generate(root: string): number {
+  let written = 0;
+  const write = (path: string, text: string) => {
+    mkdirSync(dirname(join(root, path)), {recursive: true});
+    writeFileSync(join(root, path), text);
+    written++;
+  };
+  const pad = (n: number, width = 2) => String(n).padStart(width, '0');
+  // 50 packages x 4 directories x 20 files; each file imports its neighbour, the next package (one long ring) and a package
+  for (let p = 0; p < PACKAGES; p++) {
+    for (let d = 0; d < DIRS_PER_PACKAGE; d++) {
+      for (let f = 0; f < FILES_PER_DIR; f++) {
+        const n = (p * DIRS_PER_PACKAGE + d) * FILES_PER_DIR + f;
+        const next = `../../pkg${pad((p + 1) % PACKAGES)}/dir${d}/file${pad(f)}`;
+        const lines = [
+          `import {value as neighbour} from './file${pad((f + 1) % FILES_PER_DIR)}';`,
+          `import {value as far} from '${next}';`,
+          `import ext from 'ext-${n % 700}';`,
+          "import {shared} from '../../flat/hub';",
+          `// TODO: tidy ${n}`,
+          `export const value = ${n} + Number(neighbour) + Number(far) + Number(ext) + Number(shared);`,
+          ...Array.from({length: n % 40}, (_, i) => `export const pad${i} = ${i};`),
+        ];
+        write(`pkg${pad(p)}/dir${d}/file${pad(f)}.ts`, `${lines.join('\n')}\n`);
+      }
+    }
+  }
+  // one flat directory: a hub everything imports, and files that import the hub
+  write('flat/hub.ts', `export const shared = 1;\n${Array.from({length: 3000}, (_, i) => `export function fn${i}() { return ${i}; }`).join('\n')}\n`);
+  for (let f = 0; f < FLAT_FILES; f++) write(`flat/leaf${pad(f, 3)}.ts`, `import {shared} from './hub';\nexport const leaf${f} = shared;\n`);
+  // many manifests with scripts, and many two-file cycles
+  for (let m = 0; m < MANIFESTS; m++) write(`many/p${pad(m, 3)}/package.json`, JSON.stringify({name: `p${pad(m, 3)}`, version: '1.0.0', scripts: {build: 'tsc', test: 'vitest'}}));
+  for (let c = 0; c < PAIRS; c++) {
+    write(`pairs/a${pad(c)}.ts`, `import {b} from './b${pad(c)}';\nexport const a = b;\n`);
+    write(`pairs/b${pad(c)}.ts`, `import {a} from './a${pad(c)}';\nexport const b = a;\n`);
+  }
+  return written;
+}
+
+let root: string;
+let ctx: RepoContext;
+let written: number;
+beforeAll(async () => {
+  root = await realpath(await mkdtemp(join(tmpdir(), 'glimpse-budget-')));
+  written = generate(root);
+  ctx = makeContext(root, {git: false});
+}, 60_000);
+afterAll(async () => { await rm(root, {recursive: true, force: true}); });
+
+describe('a generated repository of more than 5,000 files', () => {
+  it('is generated as planned', async () => {
+    expect(written).toBe(RING_FILES + 1 + FLAT_FILES + MANIFESTS + 2 * PAIRS);
+    expect(written).toBeGreaterThan(5000);
+    expect(await ctx.index.files()).toHaveLength(written);
+  });
+
+  it('files.tree stays at 1,500 nodes, rolls the rest up and keeps every total exact', async () => {
+    const result = await run(ctx, 'files.tree');
+    const nodes = checkResult('files.tree', result);
+    expect(nodes).toBe(1500);
+    const tree = result.data as DirNode;
+    expect(tree.files).toBe(written);
+    expect(result.truncated).toEqual({total: result.total, returned: 1500, strategy: 'treecut', by: 'loc'});
+    expect(result.total).toBeGreaterThan(written);
+    let rollups = 0;
+    let widest = 0;
+    const walk = (node: DirNode) => {
+      if (node.more) rollups++;
+      widest = Math.max(widest, node.children?.length ?? 0);
+      for (const child of node.children ?? []) walk(child);
+    };
+    walk(tree);
+    expect(widest).toBeLessThanOrEqual(40);
+    expect(rollups).toBeGreaterThan(10);
+    expect(result.summary).toMatch(/^5,241 files, [\d.]+k loc, \d+ rollups \(1500 of [\d,]+ nodes\)$/);
+    // the flat directory shows its 40 largest files and counts the rest
+    const flat = tree.children?.find(child => child.path === 'flat');
+    expect(flat?.children).toHaveLength(40);
+    expect(flat?.more).toEqual({files: FLAT_FILES + 1 - 40, loc: (FLAT_FILES + 1 - 40) * 2});
+  });
+
+  it('files.tree <dir> shows more of the directory asked for, so a rollup can be opened', async () => {
+    const result = await run(ctx, 'files.tree flat');
+    checkResult('files.tree', result);
+    const flat = result.data as DirNode;
+    expect(flat.children).toHaveLength(200);
+    expect(flat.more?.files).toBe(FLAT_FILES + 1 - 200);
+    expect(flat.children?.[0]?.path).toBe('flat/hub.ts');
+  });
+
+  it('files.list binds 500 rows and keeps the full set for paging', async () => {
+    const result = await run(ctx, 'files.list');
+    expect(checkResult('files.list', result)).toBe(500);
+    expect(result).toMatchObject({total: written, truncated: {total: written, returned: 500, strategy: 'topN', by: 'loc'}});
+    expect(result.allRows).toHaveLength(written);
+    expect(result.summary.startsWith(`500/${written} rows; fields path lang loc bytes complexity; top flat/hub.ts 3001 loc`)).toBe(true);
+    const capped = await run(ctx, 'files.list top=600');
+    expect(capped.data).toHaveLength(500);
+    expect(capped.allRows).toHaveLength(600);
+  });
+
+  it('clustering never exceeds 40 modules, and every file belongs to one of them', async () => {
+    const model = await repoModel(ctx);
+    expect(model.cut.ids).toHaveLength(MAX_MODULES);
+    const used = new Set<string>();
+    for (const file of model.files) if (file.path.endsWith('.ts')) used.add(model.cut.moduleOf(file.path));
+    expect([...used].sort()).toEqual([...model.cut.ids].sort());
+    const kpis = (await run(ctx, 'repo.kpis')).data as Array<{label: string; value: number}>;
+    expect(kpis.find(stat => stat.label === 'Modules')?.value).toBe(MAX_MODULES);
+  });
+
+  it('deps.modules stays within 150 nodes and 400 edges', async () => {
+    const result = await run(ctx, 'deps.modules');
+    checkResult('deps.modules', result);
+    const graph = result.data as GraphData;
+    expect(graph.level).toBe('module');
+    expect(graph.nodes.filter(node => node.kind === 'cluster')).toHaveLength(MAX_MODULES);
+    expect(graph.nodes.filter(node => node.kind === 'external')).toHaveLength(8);
+    expect(graph.edges.length).toBeLessThanOrEqual(400);
+    // the ring of packages is one cycle at module level
+    expect(graph.nodes.filter(node => node.cycle).length).toBeGreaterThan(30);
+  });
+
+  it('a flat directory of hundreds of files is drawn as its 150 best connected files', async () => {
+    const result = await run(ctx, 'deps.modules flat');
+    checkResult('deps.modules', result);
+    const graph = result.data as GraphData;
+    expect(graph.level).toBe('file');
+    expect(graph.nodes).toHaveLength(150);
+    expect(graph.nodes.some(node => node.id === 'flat/hub.ts')).toBe(true);
+    expect(result.truncated).toMatchObject({strategy: 'topN', by: 'degree', returned: 150});
+  });
+
+  it('deps.files of a file imported 4,600 times keeps a neighbourhood of 150', async () => {
+    const result = await run(ctx, 'deps.files flat/hub.ts');
+    checkResult('deps.files', result);
+    const graph = result.data as GraphData;
+    expect(graph.nodes[0]?.id).toBe('flat/hub.ts');
+    expect(graph.nodes.length).toBeLessThanOrEqual(150);
+    expect(graph.nodes.length).toBeGreaterThan(100);
+    expect(result.truncated).toMatchObject({strategy: 'neighborhood', by: 'flat/hub.ts', total: RING_FILES + FLAT_FILES + 1});
+  });
+
+  it('deps.cycles lists 50 cycles with at most 20 members each', async () => {
+    const result = await run(ctx, 'deps.cycles');
+    expect(checkResult('deps.cycles', result)).toBe(50);
+    // each directory index is one ring through all fifty packages
+    expect(result.total).toBe(PAIRS + DIRS_PER_PACKAGE);
+    const rows = result.data as Array<{size: number; members: string}>;
+    expect(rows[0]?.size).toBe(PACKAGES * FILES_PER_DIR);
+    expect(rows[0]?.members.split(', ')).toHaveLength(21);
+    expect(rows[0]?.members.endsWith(`, +${PACKAGES * FILES_PER_DIR - 20} more`)).toBe(true);
+    expect(result.truncated).toMatchObject({total: result.total, returned: 50, strategy: 'topN', by: 'size'});
+  });
+
+  it('deps.external, deps.matrix, code.todos, code.symbols, code.refs, repo.packages and repo.scripts stay within their budgets', async () => {
+    const expected: Array<[string, number, number]> = [
+      ['deps.external', 500, 700],
+      ['code.todos', 500, RING_FILES],
+      ['code.symbols flat/hub.ts', 2000, 2000],
+      ['code.refs shared', 500, 2 * RING_FILES + 1 + 2 * FLAT_FILES],
+      ['repo.packages', 500, MANIFESTS],
+      ['repo.scripts', 200, 2 * MANIFESTS],
+    ];
+    for (const [ref, rows, total] of expected) {
+      const result = await run(ctx, ref);
+      expect(checkResult(ref.split(' ')[0]!, result), ref).toBe(rows);
+      expect(result.total, ref).toBe(total);
+      if (total > rows) expect(result.truncated, ref).toMatchObject({total, returned: rows});
+    }
+    const matrix = await run(ctx, 'deps.matrix');
+    expect(checkResult('deps.matrix', matrix)).toBeLessThanOrEqual(1600);
+    expect((matrix.data as unknown[]).length).toBeGreaterThan(40);
+  });
+
+  it('answers in seconds, not minutes', async () => {
+    const fresh = makeContext(root, {git: false});
+    const started = performance.now();
+    await Promise.all(['files.tree', 'deps.modules', 'deps.cycles', 'repo.kpis', 'files.list'].map(ref => run(fresh, ref)));
+    expect(performance.now() - started).toBeLessThan(5000);
+  });
+});

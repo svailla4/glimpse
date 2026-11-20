@@ -1,44 +1,53 @@
-// packages/viewer/src/main.tsx - THROWAWAY by WP0. WP4 replaces this file with the real entry (shell, transports).
-// It renders the gallery fixture through the real catalog so the build can be checked before any component exists:
-// every component without a view shows the "not implemented" redline, and its children still render.
+// packages/viewer/src/main.tsx - the viewer's entry.
 //
-// Two things the real entry keeps:
+// Two rules for this file:
 // 1. './styles/tokens.css' is the FIRST import, before anything that can reach a component. It declares the layer
 //    order (gl.tokens, gl.base, gl.kit, gl.components); CSS is emitted in import order, and a layer that is seen
 //    first sorts first. The build repeats the declaration at the top of every CSS file (vite.config.ts), but the
 //    dev server relies on this import order alone.
-// 2. Fixture data is loaded with a dynamic import, so it stays out of the eager bundle (budget: 200 kB gzip).
+// 2. Fixture data is loaded with a dynamic import, and only in dev builds, so it stays out of the eager bundle
+//    (budget: 200 kB gzip) and out of the bundle the host serves.
 import './styles/tokens.css';
+import './styles/fonts.css';
 import './styles/base.css';
-import {A2uiSurface, type ReactCatalogComponent} from '@a2ui/react';
-import {MessageProcessor} from '@a2ui/web_core/v1_0';
-import type {A2uiMessage} from '@glimpse/catalog';
+import './styles/kit.css';
+import './styles/syntax.css';
+import type {Transport} from '@glimpse/catalog';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import {createGlimpseCatalog} from './catalog.ts';
-import {KitProvider, kitSlots} from './kit/index.ts';
+import {App} from './App.tsx';
+import {Notice} from './shell/Notice.tsx';
+import {applyPrefs, loadPrefs} from './shell/prefs.ts';
+import {createViewerSession} from './shell/session.ts';
+import {createHubTransport} from './transport/hub.ts';
+import {launchFromLocation} from './transport/launch.ts';
+
+/** `?fixture=gallery` in a dev build: canned surfaces, no host. */
+async function fixtureTransport(): Promise<Transport | undefined> {
+  if (!import.meta.env.DEV) return undefined;
+  const name = new URLSearchParams(window.location.search).get('fixture');
+  if (name === null) return undefined;
+  const {createFixtureTransport, isFixtureName} = await import('./transport/fixture.ts');
+  return createFixtureTransport(isFixtureName(name) ? name : 'gallery');
+}
 
 async function main() {
-  const [{createFixtureHost}, gallery] = await Promise.all([import('@glimpse/catalog/fixtures'), import('@glimpse/catalog/fixtures/gallery.wire.json')]);
-  const processor = new MessageProcessor<ReactCatalogComponent>([createGlimpseCatalog(kitSlots)], undefined, {
-    // The viewer is lenient (design 2.6); strictness lives in the server.
-    validationConfig: {allowUnknownElements: false, allowDanglingReferences: true, allowOrphanComponents: true, allowMissingRoot: true},
-  });
-  const messages = structuredClone(gallery.default) as A2uiMessage[];
-  for (const error of processor.processMessagesWithErrors(messages)) console.error('glimpse: invalid fixture message', error);
-
-  const surface = processor.model.getSurface('gallery');
+  // Before the first render, so a remembered theme is on screen from the first frame React paints.
+  applyPrefs(loadPrefs());
   const root = document.getElementById('root');
-  if (!root || !surface) return;
+  if (!root) return;
+  const launch = launchFromLocation();
+  const transport = (await fixtureTransport()) ?? (launch.token === null ? undefined : createHubTransport({token: launch.token}));
   createRoot(root).render(
     <StrictMode>
-      <KitProvider host={createFixtureHost()}>
-        <div className="gl-page">
-          <div className="gl-grid12">
-            <A2uiSurface surface={surface} />
-          </div>
-        </div>
-      </KitProvider>
+      {transport ? (
+        <App session={createViewerSession(transport, {route: launch.route})} />
+      ) : (
+        <Notice title="No session">
+          This tab was opened without a session token. Ask your agent to show a view, then open the link it prints (it ends in <code>#t=…</code>).
+          {import.meta.env.DEV ? <> In a dev build, <a href="?fixture=gallery">open the gallery fixture</a>.</> : null}
+        </Notice>
+      )}
     </StrictMode>,
   );
 }

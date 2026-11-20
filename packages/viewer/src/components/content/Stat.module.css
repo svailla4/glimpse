@@ -1,0 +1,5 @@
+@layer gl.components {
+  .stat {
+    min-width: 0;
+  }
+}

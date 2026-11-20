@@ -1,0 +1,49 @@
+@layer gl.components {
+  .outline { position: relative; }
+  .row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    height: 24px;
+    padding: 0 12px 0 calc(12px + var(--gl-depth, 0) * 14px);
+    cursor: pointer;
+    transition: background var(--gl-t-hover) var(--gl-ease);
+  }
+  .row:hover { background: var(--gl-sunken); }
+  .row[data-selected] { background: var(--gl-accent-wash); box-shadow: inset 2px 0 0 var(--gl-accent); }
+  .outline :focus-visible .row[data-active] { outline: 1px solid var(--gl-ink-2); outline-offset: -1px; }
+  .kind {
+    justify-self: start;
+    box-sizing: border-box;
+    height: 16px;
+    padding: 0 4px;
+    border: 1px solid var(--gl-rule-strong);
+    border-radius: var(--gl-r-1);
+    color: var(--gl-ink-2);
+    font: 500 10.5px/14px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+  }
+  .name { min-width: 0; overflow: hidden; color: var(--gl-ink-2); text-overflow: ellipsis; white-space: nowrap; }
+  .row[data-exported] .name { color: var(--gl-ink); font-weight: 500; }
+  .at { color: var(--gl-ink-3); font-size: 11px; }
+  .filter {
+    all: unset;
+    flex: none;
+    box-sizing: border-box;
+    max-width: 14ch;
+    height: 16px;
+    padding: 0 5px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--gl-ink);
+    color: var(--gl-ink);
+    cursor: pointer;
+    font: 400 12px/15px var(--gl-font-mono);
+    text-overflow: ellipsis;
+    white-space: pre;
+  }
+  .filter::before { content: '/'; margin-right: 2px; color: var(--gl-ink-3); }
+  .filter:focus-visible { outline: 2px solid var(--gl-accent); outline-offset: 2px; }
+  .none { flex: none; padding: 10px 12px; color: var(--gl-ink-3); font-size: 11px; line-height: 16px; }
+}

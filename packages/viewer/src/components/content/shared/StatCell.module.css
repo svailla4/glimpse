@@ -1,0 +1,86 @@
+@layer gl.components {
+  .stat {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    color: var(--gl-ink-3);
+    font: 400 11px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tone {
+    flex: none;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+  }
+  .value {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    min-width: 0;
+    margin-top: 2px;
+    color: var(--gl-ink);
+  }
+  .numeral {
+    font: 400 34px/38px var(--gl-font-display);
+    font-variant-numeric: lining-nums tabular-nums;
+    font-feature-settings: 'tnum' 1, 'lnum' 1;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+  }
+  .word {
+    overflow: hidden;
+    padding: 5px 0;
+    font: 500 22px/28px var(--gl-font-display);
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .unit {
+    flex: none;
+    color: var(--gl-ink-3);
+    font: 400 17px/22px var(--gl-font-display);
+  }
+  .foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 20px;
+    margin-top: 4px;
+    color: var(--gl-ink-2);
+    font: 400 11px/16px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+  }
+  .delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+  .glyph {
+    flex: none;
+    fill: currentColor;
+  }
+  .flat {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1;
+  }
+  .spoken {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

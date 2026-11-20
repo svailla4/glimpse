@@ -1,0 +1,7 @@
+@layer gl.components {
+  .blank { fill: var(--gl-grid); }
+  .hatch { stroke: var(--gl-rule-strong); stroke-width: 1; }
+  .onStrong, .onLight { pointer-events: none; }
+  .onStrong { fill: var(--gl-surface); }
+  .onLight { fill: var(--gl-ink); }
+}

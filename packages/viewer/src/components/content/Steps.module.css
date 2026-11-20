@@ -1,0 +1,192 @@
+@layer gl.components {
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .count {
+    color: var(--gl-ink-3);
+    font: 400 11px/16px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .progress {
+    display: flex;
+    gap: 2px;
+    height: 3px;
+  }
+  .segment {
+    flex: 1 1 0;
+    min-width: 1px;
+    background: var(--gl-rule);
+  }
+  .segment[data-status='done'] {
+    background: var(--gl-ink);
+  }
+  .segment[data-status='doing'] {
+    background: repeating-linear-gradient(135deg, var(--gl-ink) 0 1.5px, transparent 1.5px 4px);
+    box-shadow: inset 0 0 0 0.5px var(--gl-ink-3);
+  }
+  .segment[data-status='blocked'] {
+    background: var(--gl-critical);
+  }
+  .segment[data-status='skipped'] {
+    background: repeating-linear-gradient(90deg, var(--gl-rule-strong) 0 3px, transparent 3px 6px);
+  }
+
+  .list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 12px;
+    padding-bottom: 14px;
+    outline: none;
+  }
+  .step:last-child {
+    padding-bottom: 0;
+  }
+  /* The rail: one ink hairline from each numeral box down to the next. */
+  .step::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    bottom: 0;
+    left: 10px;
+    width: 1px;
+    background: var(--gl-ink);
+  }
+  .step:last-child::before {
+    display: none;
+  }
+  .step[data-entity] {
+    cursor: pointer;
+  }
+
+  .num {
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    border: 1px solid var(--gl-ink);
+    background: var(--gl-surface);
+    color: var(--gl-ink);
+    font: 500 11px/1 var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1;
+  }
+  .step:focus-visible .num {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: 2px;
+  }
+  .step[data-current] .num {
+    background: var(--gl-ink);
+    color: var(--gl-surface);
+  }
+  .step[data-selected] .num {
+    border-color: var(--gl-accent);
+    box-shadow: 0 0 0 0.5px var(--gl-accent);
+  }
+
+  .main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    min-width: 0;
+  }
+  .title {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--gl-ink);
+    font: 600 13px/20px var(--gl-font-ui);
+    overflow-wrap: anywhere;
+  }
+  .step[data-status='done'] .title,
+  .step[data-status='skipped'] .title {
+    color: var(--gl-ink-2);
+    font-weight: 500;
+  }
+  .step[data-status='skipped'] .title {
+    text-decoration: line-through;
+    text-decoration-color: var(--gl-ink-3);
+  }
+  .status {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    color: var(--gl-ink-3);
+    font: 500 10.5px/20px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .glyph {
+    flex: none;
+    fill: none;
+    stroke: var(--gl-ink);
+    stroke-width: 1;
+  }
+  .glyph[data-status='done'] path {
+    stroke-width: 1.5;
+  }
+  .glyph[data-status='blocked'] path {
+    stroke: var(--gl-critical);
+    stroke-width: 1.5;
+  }
+  .note {
+    margin: 0;
+    color: var(--gl-ink-2);
+    font: 400 13px/20px var(--gl-font-ui);
+    overflow-wrap: anywhere;
+  }
+  .file {
+    align-self: flex-start;
+    min-width: 0;
+    max-width: 100%;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+  }
+  .step[data-selected] .file {
+    background: var(--gl-accent-wash);
+  }
+  .step[data-entity]:hover .file {
+    text-decoration: underline dotted var(--gl-ink-3);
+    text-underline-offset: 3px;
+  }
+
+  .more {
+    align-self: flex-start;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--gl-ink-2);
+    font: 500 11px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .more:hover {
+    color: var(--gl-ink);
+  }
+  .more:focus-visible {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: 2px;
+  }
+}

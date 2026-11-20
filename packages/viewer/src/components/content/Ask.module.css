@@ -1,0 +1,64 @@
+@layer gl.components {
+  .ask {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--gl-rule);
+    background: var(--gl-surface);
+  }
+  .prompt {
+    margin: 0;
+    color: var(--gl-ink);
+    font: 500 14px/22px var(--gl-font-ui);
+    overflow-wrap: anywhere;
+  }
+  .options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-sizing: border-box;
+    max-width: 100%;
+    min-height: var(--gl-control);
+    padding: 3px 12px;
+    border: 1px solid var(--gl-ink);
+    border-radius: var(--gl-r-1);
+    background: transparent;
+    color: var(--gl-ink);
+    font: 500 12.5px/18px var(--gl-font-ui);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background var(--gl-t-hover) var(--gl-ease),
+      color var(--gl-t-hover) var(--gl-ease);
+  }
+  .option:hover {
+    background: var(--gl-sunken);
+  }
+  .option:focus-visible {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: 2px;
+  }
+  /* The pick is marked in ink with a tick: vermilion is kept for the selection. */
+  .option[data-chosen] {
+    background: var(--gl-ink);
+    color: var(--gl-surface);
+  }
+  .option[data-chosen] svg {
+    color: var(--gl-surface);
+  }
+  .optionLabel {
+    overflow-wrap: anywhere;
+  }
+  .none {
+    margin: 0;
+    color: var(--gl-ink-3);
+    font: 400 11px/16px var(--gl-font-mono);
+  }
+}

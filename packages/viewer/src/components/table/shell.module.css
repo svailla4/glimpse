@@ -1,0 +1,4 @@
+@layer gl.components {
+  .shell { display: flex; flex-direction: column; min-width: 0; }
+  .shell[data-sized] { height: 100%; }
+}

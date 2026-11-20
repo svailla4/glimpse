@@ -1,9 +1,9 @@
-// packages/viewer/src/kit/icons.tsx  (first version by WP0; owned by WP4; exported signatures are frozen)
+// packages/viewer/src/kit/icons.tsx  (owned by WP4; exported signatures are frozen)
 // Curated Lucide registry: one import site, so the bundle holds only the icons listed here. Icons are functional,
 // drawn in currentColor at stroke 1.5, 14 px inline and 16 px in controls. Add a name here before using it.
 import {
   ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Copy, ExternalLink, File, Folder, GitCommitHorizontal, GripVertical, Info,
-  Maximize2, Minus, Moon, Plus, RefreshCw, RotateCcw, Scan, Search, Sun, TriangleAlert, X, ZoomIn, ZoomOut,
+  Maximize2, Minus, Moon, Plus, RefreshCw, RotateCcw, Rows3, Rows4, Scan, Search, Sun, TriangleAlert, X, ZoomIn, ZoomOut,
   type LucideIcon,
 } from 'lucide-react';
 import type {JSX} from 'react';
@@ -16,6 +16,8 @@ const ICONS = {
   'chevron-right': ChevronRight,
   close: X,
   commit: GitCommitHorizontal,
+  comfortable: Rows3,
+  compact: Rows4,
   copy: Copy,
   dark: Moon,
   expand: Maximize2,

@@ -1,0 +1,11 @@
+/* packages/viewer/src/styles/syntax.css - syntax colour is CSS only (design 5.7). The server sends token classes;
+   a token of class i renders as <span class="gl-tok-<TOKEN_CLASSES[i]>">, so a theme switch needs no re-tokenising. */
+@layer gl.base {
+  .gl-tok-kw { color: var(--gl-syn-keyword); }
+  .gl-tok-str { color: var(--gl-syn-string); }
+  .gl-tok-fn { color: var(--gl-syn-fn); }
+  .gl-tok-type { color: var(--gl-syn-type); }
+  .gl-tok-num { color: var(--gl-syn-number); }
+  .gl-tok-const { color: var(--gl-syn-constant); }
+  .gl-tok-com { color: var(--gl-syn-comment); font-style: italic; }
+}

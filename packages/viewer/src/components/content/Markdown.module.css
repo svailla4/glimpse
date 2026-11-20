@@ -1,0 +1,151 @@
+@layer gl.components {
+  .markdown {
+    min-width: 0;
+    color: var(--gl-ink);
+    font: 400 14px/22px var(--gl-font-ui);
+  }
+  .plain {
+    max-width: 72ch;
+    color: var(--gl-ink);
+    font: 400 14px/22px var(--gl-font-ui);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .prose {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .p, .h1, .h2, .h3, .list, .quote, .footnotes {
+    max-width: 72ch;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .h1 {
+    margin-top: 6px;
+    font: 500 22px/28px var(--gl-font-display);
+    letter-spacing: -0.01em;
+  }
+  .h2 {
+    margin-top: 4px;
+    font: 500 17px/22px var(--gl-font-display);
+  }
+  .h3 {
+    margin-top: 2px;
+    font: 600 13px/20px var(--gl-font-ui);
+  }
+
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 20px;
+  }
+  .item {
+    padding-left: 2px;
+  }
+  .item::marker {
+    color: var(--gl-ink-3);
+    font-family: var(--gl-font-mono);
+    font-size: 12px;
+  }
+  .task {
+    margin-right: 6px;
+    fill: none;
+    stroke: var(--gl-ink);
+    stroke-width: 1;
+    vertical-align: -1px;
+  }
+
+  .quote {
+    padding-left: 12px;
+    border-left: 1px solid var(--gl-rule-strong);
+    color: var(--gl-ink-2);
+  }
+  .rule {
+    width: 100%;
+    height: 0;
+    margin: 4px 0;
+    border: 0;
+    border-top: 1px solid var(--gl-rule);
+  }
+
+  .link {
+    color: var(--gl-ink);
+    text-decoration: underline;
+    text-decoration-color: var(--gl-rule-strong);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+  .link:hover {
+    text-decoration-color: var(--gl-ink);
+  }
+  .link:focus-visible {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: 2px;
+  }
+  .dead {
+    text-decoration: none;
+  }
+  .image {
+    display: inline-flex;
+    max-width: 100%;
+    vertical-align: middle;
+  }
+
+  .tableWrap {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .table {
+    border-collapse: collapse;
+    font-size: 12.5px;
+    line-height: 20px;
+  }
+  .th {
+    padding: 3px 14px 3px 0;
+    border-bottom: 1px solid var(--gl-rule-strong);
+    color: var(--gl-ink-3);
+    font: 500 11px/20px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .td {
+    padding: 3px 14px 3px 0;
+    border-bottom: 1px solid var(--gl-rule);
+    vertical-align: top;
+  }
+
+  .code {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .pre {
+    margin: 0;
+    padding: 8px 12px;
+    overflow: auto;
+    max-height: 400px;
+    border: 1px solid var(--gl-rule);
+    background: var(--gl-sunken);
+    color: var(--gl-ink);
+    font: 400 12px/20px var(--gl-font-mono);
+    tab-size: 2;
+    white-space: pre;
+  }
+
+  .footnotes {
+    padding-top: 6px;
+    border-top: 1px solid var(--gl-rule);
+    color: var(--gl-ink-2);
+    font-size: 12.5px;
+  }
+  .cut {
+    margin: 8px 0 0;
+    color: var(--gl-ink-3);
+    font: 400 11px/16px var(--gl-font-mono);
+  }
+}

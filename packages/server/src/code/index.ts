@@ -1,16 +1,30 @@
-// packages/server/src/code/index.ts  (stub by WP0; owned by WP3)
-// WP3 replaces this file. Frozen signature:
-//   createCodeService(ctx: RepoContext): CodeService
-// The stub's methods reject with SourceError('E_INTERNAL', 'not implemented'); the host answers those requests with
-// an error and the viewer shows a redline in the component that asked.
-import {SourceError, type CodeService, type RepoContext} from '../contracts.ts';
+// packages/server/src/code/index.ts
+// The code service behind /api/file, /api/highlight and /api/outline.
+import {realpath} from 'node:fs/promises';
+import type {HighlightResult} from '@glimpse/catalog';
+import type {CodeService, RepoContext} from '../contracts.ts';
+import {createFileReader} from './file.ts';
+import {plainLines, prepareLang, splitLines, tokenizeLines} from './highlight.ts';
+import {PLAIN_LANG} from './langs.ts';
+import {outlineOf} from './outline.ts';
 
-const notImplemented = (what: string) => Promise.reject(new SourceError('E_INTERNAL', `not implemented: ${what}`));
+/** Snippets above this size are returned as plain text. */
+const MAX_HIGHLIGHT_CHARS = 500_000;
 
-export function createCodeService(_ctx: RepoContext): CodeService {
+export function createCodeService(ctx: RepoContext): CodeService {
+  // ctx.root is documented as a real path; resolving it again costs one call and keeps containment honest if it is not.
+  const root = realpath(ctx.root).catch(() => ctx.root);
+
   return {
-    file: () => notImplemented('CodeService.file'),
-    highlight: () => notImplemented('CodeService.highlight'),
-    outline: () => notImplemented('CodeService.outline'),
+    file: createFileReader(ctx, root),
+
+    async highlight(code, lang): Promise<HighlightResult> {
+      const lines = splitLines(typeof code === 'string' ? code : '');
+      const grammar = typeof code === 'string' && code.length <= MAX_HIGHLIGHT_CHARS ? await prepareLang(lang, ctx.log) : undefined;
+      if (!grammar) return {lang: PLAIN_LANG, lines: plainLines(lines)};
+      return {lang: grammar, lines: (await tokenizeLines(lines, grammar)).lines};
+    },
+
+    outline: path => outlineOf(ctx, path),
   };
 }

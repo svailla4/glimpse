@@ -1,0 +1,60 @@
+@layer gl.components {
+  .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-width: 0;
+  }
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    max-width: 100%;
+    height: var(--gl-control);
+    padding: 0 12px;
+    border: 1px solid var(--gl-ink);
+    border-radius: var(--gl-r-1);
+    background: transparent;
+    color: var(--gl-ink);
+    font: 500 12.5px/1 var(--gl-font-ui);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition:
+      background var(--gl-t-hover) var(--gl-ease),
+      color var(--gl-t-hover) var(--gl-ease),
+      border-color var(--gl-t-hover) var(--gl-ease);
+  }
+  .button:hover {
+    background: var(--gl-sunken);
+  }
+  .button:active {
+    background: var(--gl-rule);
+  }
+  .button:focus-visible {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: 2px;
+  }
+  .button[data-tone='primary'] {
+    background: var(--gl-ink);
+    color: var(--gl-surface);
+  }
+  .button[data-tone='primary']:hover {
+    background: var(--gl-ink-2);
+    border-color: var(--gl-ink-2);
+  }
+  .button[data-tone='primary']:active {
+    background: var(--gl-ink-3);
+    border-color: var(--gl-ink-3);
+  }
+  .button[data-tone='quiet'] {
+    border-color: var(--gl-rule-strong);
+    color: var(--gl-ink-2);
+  }
+  .button[data-tone='quiet']:hover {
+    color: var(--gl-ink);
+  }
+}

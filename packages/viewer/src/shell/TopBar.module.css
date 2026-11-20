@@ -1,0 +1,102 @@
+@layer gl.kit {
+  .bar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    height: 32px;
+    padding: 0 12px 0 32px;
+    border-bottom: 1px solid var(--gl-rule);
+    background: var(--gl-bg);
+  }
+  @media (max-width: 719px) { .bar { padding-left: 16px; } }
+
+  .tabs { display: flex; flex: 1 1 auto; gap: 18px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .tab { display: flex; flex: none; align-items: center; gap: 2px; max-width: 280px; border-bottom: 2px solid transparent; }
+  .tab[data-active] { border-bottom-color: var(--gl-ink); }
+  .tabButton {
+    min-width: 0;
+    height: 30px;
+    margin: 0;
+    padding: 2px 0 0;
+    border: 0;
+    background: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 500 11px/16px var(--gl-font-mono);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--gl-ink-3);
+    cursor: pointer;
+    transition: color var(--gl-t-hover) var(--gl-ease);
+  }
+  .tabButton:hover, .tab[data-active] > .tabButton { color: var(--gl-ink); }
+  .tabButton:focus-visible, .close:focus-visible, .icon:focus-visible, .text:focus-visible { outline-offset: -2px; }
+  .close {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--gl-r-1);
+    background: none;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity var(--gl-t-hover) var(--gl-ease);
+  }
+  .tab:hover > .close, .tab[data-active] > .close, .close:focus-visible { opacity: 1; }
+  .close:hover { background: var(--gl-sunken); }
+
+  .controls { display: flex; flex: none; align-items: center; gap: 4px; }
+  .icon, .text {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 24px;
+    margin: 0;
+    border: 0;
+    border-radius: var(--gl-r-1);
+    background: none;
+    cursor: pointer;
+    transition: background var(--gl-t-hover) var(--gl-ease);
+  }
+  .icon { width: 28px; padding: 0; }
+  .text {
+    margin-right: 8px;
+    padding: 0 8px;
+    box-shadow: inset 0 0 0 1px var(--gl-rule-strong);
+    font: 500 11px/16px var(--gl-font-mono);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--gl-ink-2);
+  }
+  .icon:hover, .text:hover { background: var(--gl-sunken); }
+
+  /* Connection: the dot has a shape as well as a colour, and the state is always spelled out. */
+  .link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 8px;
+    font: 400 11px/16px var(--gl-font-mono);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--gl-ink-3);
+  }
+  .repo { color: var(--gl-ink-2); }
+  .repo::after { content: ' ·'; color: var(--gl-ink-3); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gl-good); }
+  .link[data-status='connecting'] > .dot { background: var(--gl-warning); animation: pulse 1.2s var(--gl-ease) infinite alternate; }
+  .link[data-status='ended'] > .dot { background: none; box-shadow: inset 0 0 0 1.5px var(--gl-ink-3); }
+  @keyframes pulse { to { opacity: .25; } }
+  @media (max-width: 719px) { .repo { display: none; } }
+}

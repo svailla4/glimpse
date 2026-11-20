@@ -1,14 +1,23 @@
-// packages/viewer/src/components/charts/index.ts  (stub by WP0; owned by WP6)
-// Exports exactly `views`: component name -> view, one file per component next to this one, for example
-//   import {DataTableView} from './DataTable.tsx';
-//   export const views: Record<string, GlView<any>> = {DataTable: DataTableView};
-// Components of this chunk (`chunk: 'charts'` in @glimpse/catalog):
-//   BarChart, LineChart, ScatterPlot, Histogram, Heatmap, CalendarHeatmap, Treemap, Icicle
-// A name missing here renders the "not implemented" redline (E_NOT_IMPLEMENTED) instead of the component.
-// Rules for views are in the header of ../../kit/implement.tsx. Three concern this file: add a view here only
-// after its file exists (a broken import here breaks every component of this chunk); reuse a view of another chunk
-// only through borrowView(() => import('../<chunk>/index.ts'), name, Fallback), never by importing its file; and
-// every Name.module.css wraps its content in `@layer gl.components { ... }` (the build fails otherwise).
+// packages/viewer/src/components/charts/index.ts
+// The `charts` chunk (`chunk: 'charts'` in @glimpse/catalog): one view per component, each in the file of its name,
+// all drawn as SVG on the shared chartkit/. Exports exactly `views`.
 import type {GlView} from '../../kit/index.ts';
+import {BarChartView} from './BarChart.tsx';
+import {CalendarHeatmapView} from './CalendarHeatmap.tsx';
+import {HeatmapView} from './Heatmap.tsx';
+import {HistogramView} from './Histogram.tsx';
+import {IcicleView} from './Icicle.tsx';
+import {LineChartView} from './LineChart.tsx';
+import {ScatterPlotView} from './ScatterPlot.tsx';
+import {TreemapView} from './Treemap.tsx';
 
-export const views: Record<string, GlView<any>> = {};
+export const views: Record<string, GlView<any>> = {
+  BarChart: BarChartView,
+  LineChart: LineChartView,
+  ScatterPlot: ScatterPlotView,
+  Histogram: HistogramView,
+  Heatmap: HeatmapView,
+  CalendarHeatmap: CalendarHeatmapView,
+  Treemap: TreemapView,
+  Icicle: IcicleView,
+};

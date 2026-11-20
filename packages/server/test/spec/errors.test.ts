@@ -1,0 +1,176 @@
+// Pins the Express compiler's message texts (design 6.6) and their mapping to Glimpse error codes. A failure here
+// after an @a2ui/agent upgrade means the patterns in src/spec/errors.ts need updating, not these expectations.
+import {normalizeSpec} from '@glimpse/catalog';
+import {beforeAll, describe, expect, it} from 'vitest';
+import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
+import {classifyCompileError, closeMatch, compilerText, editDistance, formatProblems, nearest, NOTHING_RENDERED, problem, SpecError} from '../../src/spec/errors.ts';
+
+let tools: Toolchain;
+beforeAll(async () => {
+  tools = await loadToolchain();
+});
+
+/** The error the compiler itself throws for a spec that creates surface "s". */
+function raw(spec: string): unknown {
+  try {
+    tools.newTwin(undefined, 's')(`surface("s")\n${normalizeSpec(spec)}`);
+  } catch (error) {
+    return error;
+  }
+  throw new Error(`expected the compiler to reject: ${spec}`);
+}
+
+const ctx = {surfaceId: 's', exists: false, surfaces: ['overview']};
+
+describe('compiler message patterns', () => {
+  it.each([
+    ['E_SYNTAX', `root=Page('x',[Markdown('x')]`, /^Failed to parse expression: Syntax error at line 2:\d+: .*<EOF>/],
+    ['E_SYNTAX', `root=Page('x',[a-b])`, /^Syntax error at line 2:16: token recognition error/],
+    ['E_UNKNOWN', `root=Page('x',[DataTabel('git.churn')])`, /^Function 'DataTabel' is not defined in the catalog\.$/],
+    ['E_UNKNOWN', `root=page('x',[])`, /^Component 'page' is not defined in the catalog\.$/],
+    ['E_PROP', `root=Page('x',[DataTable('git.churn',colums='path')])`, /^Property 'colums' is not a valid property of component 'DataTable'\.$/],
+    ['E_ENUM', `root=Page('x',[Callout('y','danger')])`, /^Value 'danger' is not a valid enum choice for property 'kind' of component 'Callout'\./],
+    ['E_REQUIRED', `root=Page('x',[Flowchart()])`, /^Component 'Flowchart' is missing required property 'src'\.$/],
+    ['E_TYPE', `root=Page('x',[Text('a',span=13)])`, /^Validation failed for component 'Text' \(root_children_0\): span: Number must be less than or equal to 12$/],
+    ['E_TYPE', `root=Page('x',[Tabs('A',[Text('a')])])`, /^Validation failed for component 'Tabs' \(root_children_0\): labels: Expected array, received string$/],
+    ['E_REF', `root=Page('x',[Split(a,b)])\na=Text('a')`, /^Component 'root_children_0' references non-existent component 'b' in field 'end'/],
+    ['E_REF', `root=Page('x',[Text('a')])\nextra=Callout('x')`, /^Component 'extra' is not reachable from 'root'/],
+    ['E_REF', `a=Text('a')`, /^Surface not found for message: s$/],
+    ['E_REF', ``, /^Root target 'root' is not defined\.$/],
+    ['E_PARENT', `root=Page('x',[Page('y',[])])`, /^Component 'root_children_0' \(Page\) cannot be placed under parent 'root' \(Page\)\. Allowed parents: \["Surface"\]\.$/],
+    ['E_SPEC', `root=Page('x',[Text('a','dim',tone='lead')])`, /^Property 'tone' of component 'Text' was provided multiple times\.$/],
+    ['E_SPEC', `root=Page('x',[Text('a','dim',3,4,5)])`, /^Text takes at most 3 positional arguments/],
+  ])('%s: %s', (code, spec, pattern) => {
+    const error = raw(spec);
+    expect(compilerText(error)).toMatch(pattern);
+    expect(compilerText(error)).not.toMatch(/Help:/);
+    expect(classifyCompileError(error, ctx).code).toBe(code);
+  });
+
+  it('carries UNALLOWED_PARENT in details, which is what E_PARENT keys on', () => {
+    const error = raw(`root=Page('x',[Page('y',[])])`) as {code?: string; details?: Array<{code: string}>};
+    expect(error.details?.[0]?.code ?? error.code).toBe('UNALLOWED_PARENT');
+  });
+});
+
+describe('problem texts', () => {
+  const text = (spec: string, context = ctx) => {
+    const found = classifyCompileError(raw(spec), context);
+    return `${found.code} ${found.message}`;
+  };
+
+  it('E_SYNTAX reports the line the author wrote (the header line is not counted)', () => {
+    expect(text(`root=Page('x',[Markdown('x')]`)).toMatch(/^E_SYNTAX line 1 col \d+: .*'<EOF>'/);
+    expect(text(`root=Page('x',[a])\na=Text('ok')\nb=Text('a'`)).toMatch(/^E_SYNTAX line 3 col /);
+  });
+
+  it('E_UNKNOWN lists the three nearest components', () => {
+    expect(text(`root=Page('x',[DataTabel('git.churn')])`)).toMatch(/^E_UNKNOWN "DataTabel" is not a component\. Nearest: DataTable \w+ \w+$/);
+  });
+
+  it('E_PROP lists the props in positional order', () => {
+    expect(text(`root=Page('x',[DataTable('git.churn',colums='path')])`)).toBe('E_PROP DataTable: unknown prop "colums". Props: data columns sort search group title note size span');
+  });
+
+  it('E_ENUM lists the allowed values', () => {
+    expect(text(`root=Page('x',[Callout('y','danger')])`)).toBe('E_ENUM Callout.kind: "danger" is not allowed. Use: note tip warn risk decision question');
+  });
+
+  it('E_REQUIRED names the prop', () => {
+    expect(text(`root=Page('x',[Flowchart()])`)).toBe('E_REQUIRED Flowchart: missing required prop "src".');
+  });
+
+  it('E_TYPE keeps only the first zod issue', () => {
+    const line = text(`root=Page('x',[Text(12)])`);
+    expect(line).toBe('E_TYPE Text#root_children_0 text: Expected string, received number');
+  });
+
+  it('E_REF tells an unreachable part how to become reachable, and a dangling child what is missing', () => {
+    expect(text(`root=Page('x',[Text('a')])\nextra=Callout('x')`)).toBe('E_REF "extra" is not reachable from root: resend its parent with the new child.');
+    expect(text(`root=Page('x',[Split(a,b)])\na=Text('a')`)).toMatch(/^E_REF "b" is used by root_children_0 \(end\) but never defined\./);
+  });
+
+  it('E_REF explains a patch of a view that does not exist, naming the views that do', () => {
+    expect(text(`a=Text('a')`)).toBe('E_REF there is no view "s" to patch, and the spec defines no root. Start with root=Page(...) or pass the id of an existing view. Existing views: overview.');
+  });
+
+  it('E_PARENT states both components and the allowed parents', () => {
+    expect(text(`root=Page('x',[Page('y',[])])`)).toBe('E_PARENT Page (root_children_0) cannot sit inside Page (root). Allowed parents: Surface. Page is the root: use it once, as root=Page(...).');
+  });
+
+  it('unrecognised messages pass through as E_SPEC without the SDK help text', () => {
+    expect(text(`root=Page('x',[Text('a','dim',tone='lead')])`)).toBe("E_SPEC Property 'tone' of component 'Text' was provided multiple times.");
+    expect(classifyCompileError(new Error('Something new happened. - Help: Please correct the syntax error in your Express DSL.'), ctx))
+      .toEqual({code: 'E_SPEC', message: 'Something new happened.'});
+  });
+});
+
+describe('formatProblems', () => {
+  it('prints the problem, the signature of the offending component and the fixed last line', () => {
+    const error = classifyCompileError(raw(`root=Page('x',[DataTable('git.churn',colums='path')])`), ctx);
+    expect(formatProblems([error])).toBe([
+      'E_PROP DataTable: unknown prop "colums". Props: data columns sort search group title note size span',
+      'sig DataTable(data, columns?, sort?, search?, group?)',
+      NOTHING_RENDERED,
+    ].join('\n'));
+  });
+
+  it('prints at most five problem lines and counts the rest', () => {
+    const many = Array.from({length: 8}, (_, i) => problem('E_SOURCE', `problem ${i}`));
+    const lines = formatProblems(many).split('\n');
+    expect(lines).toHaveLength(6);
+    expect(lines[4]).toBe('E_SOURCE problem 4 (+3 more)');
+    expect(lines[5]).toBe(NOTHING_RENDERED);
+  });
+
+  it('keeps every problem on one line and omits the last line on request', () => {
+    expect(formatProblems([problem('E_SPEC', 'two\nlines\tand tabs')], null)).toBe('E_SPEC two lines and tabs');
+  });
+});
+
+describe('compileSpec errors', () => {
+  it('throws a SpecError with one precise problem', () => {
+    const attempt = () => compileSpec(tools, {surfaceId: 's', sources: [`root=Page('x',[Callout('y','danger')])`], surfaces: []});
+    expect(attempt).toThrow(SpecError);
+    try {
+      attempt();
+    } catch (error) {
+      expect((error as SpecError).problems).toEqual([{code: 'E_ENUM', message: 'Callout.kind: "danger" is not allowed. Use: note tip warn risk decision question', component: 'Callout'}]);
+    }
+  });
+
+  it('refuses a spec that addresses another surface or deletes one', () => {
+    for (const spec of [`root=Page('x',[])\nsurface("other")\nroot=Page('y',[])`, `root=Page('x',[])\ndeleteSurface("s")`]) {
+      expect(() => compileSpec(tools, {surfaceId: 's', sources: [spec], surfaces: []})).toThrow(/E_SPEC a spec describes one view/);
+    }
+    // ... also from a patch of an existing surface
+    const seed = {components: [{id: 'root', component: 'Page', title: 'x', children: []}], data: {}};
+    for (const spec of [`$/notes='x'\ndeleteSurface("overview")`, `$/notes='x'\ndeleteSurface("s")`, `surface("other", update=true)\n$/notes='x'`]) {
+      expect(() => compileSpec(tools, {surfaceId: 's', seed, sources: [spec], surfaces: ['s', 'overview']})).toThrow(SpecError);
+    }
+  });
+});
+
+describe('name matching', () => {
+  it('editDistance', () => {
+    expect(editDistance('DataTabel', 'DataTable')).toBe(2);
+    expect(editDistance('', 'abc')).toBe(3);
+    expect(editDistance('same', 'same')).toBe(0);
+  });
+
+  it('nearest ranks by distance, case-insensitively, and treats a prefix as close', () => {
+    expect(nearest('datatable', ['Text', 'DataTable', 'Table'], 1)).toEqual(['DataTable']);
+    expect(nearest('git.chrun', ['git.log', 'git.churn', 'files.tree'], 2)).toEqual(['git.churn', 'git.log']);
+    expect(nearest('Seq', ['Text', 'SequenceDiagram', 'Steps'], 1)).toEqual(['SequenceDiagram']);
+  });
+
+  it('closeMatch needs a unique candidate within two edits (one for short names)', () => {
+    expect(closeMatch('DataTabel', ['DataTable', 'Text'])).toBe('DataTable');
+    expect(closeMatch('page', ['Page', 'Plate'])).toBe('Page');
+    expect(closeMatch('Rwo', ['Row', 'Grid'])).toBeUndefined();
+    expect(closeMatch('Tex', ['Text', 'Tabs'])).toBe('Text');
+    expect(closeMatch('colour', ['color', 'cols'])).toBe('color');
+    expect(closeMatch('x', ['y', 'z'])).toBeUndefined();
+    expect(closeMatch('Chart', ['BarChart', 'LineChart'])).toBeUndefined();
+  });
+});

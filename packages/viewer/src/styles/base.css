@@ -1,74 +1,100 @@
-/* packages/viewer/src/styles/base.css - PLACEHOLDER by WP0. WP4 replaces this file with the Linework base styles
-   (design 8.3 and 8.4). It only makes the cell grid, the plate frame and the three states legible so the gallery
-   fixture can be read while components are missing. Selectors and class names follow design 8.4.
+/* packages/viewer/src/styles/base.css - Linework base: page, the 12-column grid and the cell every component is
+   rendered in (design 8.3, 8.4). Kit looks (plate frame, states, entity text, tooltip) are in kit.css.
 
    Sizing contract with kit/implement.tsx: the direct child of a .gl-cell is the plate frame (.gl-frame) or, without
-   a title, a plain .gl-body. The rule `.gl-cell[data-size] > :is(.gl-frame, .gl-body)` below gives that child the
-   height of the size step, and the frame passes the rest under its header on to its own .gl-body. A view root with
-   `height: 100%` therefore fills the box in both cases. Keep that rule and keep .gl-frame-body a flex child that
-   can shrink (min-height: 0).
+   a title, a plain .gl-body. `.gl-cell[data-size] > :is(.gl-frame, .gl-body)` gives that child the height of the
+   size step, and the frame passes the rest under its header on to its own .gl-body. A view root with `height: 100%`
+   therefore fills the box in both cases.
+
+   Cells and their container. @a2ui/react puts a `display: contents` host element with an unstable tag name between
+   a container and the cells of its children, so a container never selects its children. It talks to them through
+   inherited custom properties instead, which the cell reads and then clears for whatever is nested inside it:
+     --gl-span        set by implement() from `span`; flex share in a Row
+     --gl-cell-flex   whole `flex` value for the cells of a container (Column, a stacked Grid: `0 0 auto`)
+     --gl-cell-min    min-width of the cells of a wrapping Row
+     --gl-c0          grid-column of a cell without `span` (Grid: `span 1`); the default is the full row
+     --gl-c1 .. 12    grid-column of a cell with that `span` (Grid clamps the span to its track count)
 
    Layers: every stylesheet of the viewer puts its rules in a layer declared by tokens.css. Component CSS Modules
    (Name.module.css) wrap their whole content in `@layer gl.components { ... }`; kit modules use `@layer gl.kit`.
    The build fails on a module without a gl.* layer (vite.config.ts). */
 @layer gl.base {
+  *, *::before, *::after { box-sizing: border-box; }
+  * { scrollbar-width: thin; }
+  html { scrollbar-color: var(--gl-rule-strong) transparent; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   body {
     margin: 0;
     background: var(--gl-bg);
     color: var(--gl-ink);
-    font: 13px/20px var(--gl-font-ui);
+    font: 400 13px/20px var(--gl-font-ui);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    -webkit-font-smoothing: antialiased;
+    counter-reset: plate;
   }
-  .gl-page { container: page / inline-size; padding: 28px 32px; counter-reset: plate; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  ::selection { background: var(--gl-seq-2); }
+  :focus-visible { outline: 2px solid var(--gl-accent); outline-offset: 2px; }
+
+  /* Visible to assistive technology only. */
+  .gl-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+  .gl-page { container: page / inline-size; margin: 0 auto; padding: 28px 32px 48px; max-width: 1320px; }
+  .gl-page[data-width='wide'] { max-width: 1680px; }
+  .gl-page[data-width='full'] { max-width: none; }
+  @media (max-width: 719px) { .gl-page { padding: 20px 16px 32px; } }
   .gl-grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 20px; }
-  .gl-cell { min-width: 0; grid-column: span 12; flex: var(--gl-span, 1) 1 0; }
-  .gl-cell[data-span='1'] { grid-column: span 1; }
-  .gl-cell[data-span='2'] { grid-column: span 2; }
-  .gl-cell[data-span='3'] { grid-column: span 3; }
-  .gl-cell[data-span='4'] { grid-column: span 4; }
-  .gl-cell[data-span='5'] { grid-column: span 5; }
-  .gl-cell[data-span='6'] { grid-column: span 6; }
-  .gl-cell[data-span='7'] { grid-column: span 7; }
-  .gl-cell[data-span='8'] { grid-column: span 8; }
-  .gl-cell[data-span='9'] { grid-column: span 9; }
-  .gl-cell[data-span='10'] { grid-column: span 10; }
-  .gl-cell[data-span='11'] { grid-column: span 11; }
+  /* A query container contains style, so the plate counter of a page starts inside it, on the page's own grid. */
+  .gl-page > .gl-grid12 { counter-reset: plate; }
+
+  .gl-cell {
+    display: flex;
+    flex-direction: column;
+    min-width: var(--gl-cell-min, 0);
+    grid-column: var(--gl-c0, 1 / -1);
+    flex: var(--gl-cell-flex, var(--gl-span, 1) 1 0);
+  }
+  .gl-cell[data-span='1'] { grid-column: var(--gl-c1, span 1); }
+  .gl-cell[data-span='2'] { grid-column: var(--gl-c2, span 2); }
+  .gl-cell[data-span='3'] { grid-column: var(--gl-c3, span 3); }
+  .gl-cell[data-span='4'] { grid-column: var(--gl-c4, span 4); }
+  .gl-cell[data-span='5'] { grid-column: var(--gl-c5, span 5); }
+  .gl-cell[data-span='6'] { grid-column: var(--gl-c6, span 6); }
+  .gl-cell[data-span='7'] { grid-column: var(--gl-c7, span 7); }
+  .gl-cell[data-span='8'] { grid-column: var(--gl-c8, span 8); }
+  .gl-cell[data-span='9'] { grid-column: var(--gl-c9, span 9); }
+  .gl-cell[data-span='10'] { grid-column: var(--gl-c10, span 10); }
+  .gl-cell[data-span='11'] { grid-column: var(--gl-c11, span 11); }
+  .gl-cell[data-span='12'] { grid-column: var(--gl-c12, 1 / -1); }
+  .gl-cell > :is(.gl-frame, .gl-body) {
+    flex: 1 1 auto;
+    min-width: 0;
+    --gl-span: initial; --gl-cell-flex: initial; --gl-cell-min: initial;
+    --gl-c0: initial; --gl-c1: initial; --gl-c2: initial; --gl-c3: initial; --gl-c4: initial; --gl-c5: initial; --gl-c6: initial;
+    --gl-c7: initial; --gl-c8: initial; --gl-c9: initial; --gl-c10: initial; --gl-c11: initial; --gl-c12: initial;
+  }
   .gl-cell[data-size] > :is(.gl-frame, .gl-body) { height: var(--gl-h); }
+
+  /* Below 1100 px of page width a plate is half or full width; below 720 px everything is one column. */
   @container page (max-width: 1099px) {
-    .gl-cell[data-span] { grid-column: span 12; }
-    .gl-cell:is([data-span='1'], [data-span='2'], [data-span='3'], [data-span='4'], [data-span='5'], [data-span='6']) { grid-column: span 6; }
+    .gl-cell[data-span='1'] { grid-column: var(--gl-c1, span 6); }
+    .gl-cell[data-span='2'] { grid-column: var(--gl-c2, span 6); }
+    .gl-cell[data-span='3'] { grid-column: var(--gl-c3, span 6); }
+    .gl-cell[data-span='4'] { grid-column: var(--gl-c4, span 6); }
+    .gl-cell[data-span='5'] { grid-column: var(--gl-c5, span 6); }
+    .gl-cell[data-span='6'] { grid-column: var(--gl-c6, span 6); }
+    .gl-cell[data-span='7'] { grid-column: var(--gl-c7, 1 / -1); }
+    .gl-cell[data-span='8'] { grid-column: var(--gl-c8, 1 / -1); }
+    .gl-cell[data-span='9'] { grid-column: var(--gl-c9, 1 / -1); }
+    .gl-cell[data-span='10'] { grid-column: var(--gl-c10, 1 / -1); }
+    .gl-cell[data-span='11'] { grid-column: var(--gl-c11, 1 / -1); }
   }
   @container page (max-width: 719px) {
-    .gl-cell[data-span] { grid-column: span 12; }
+    .gl-cell[data-span] { grid-column: 1 / -1; }
   }
-}
-@layer gl.kit {
-  .gl-frame { display: flex; flex-direction: column; border: 1px solid var(--gl-rule); background: var(--gl-surface); }
-  .gl-frame-head { display: flex; align-items: baseline; gap: 12px; min-height: 40px; padding: 0 14px; border-bottom: 1px solid var(--gl-rule); }
-  .gl-frame-head::before {
-    counter-increment: plate;
-    content: 'PL. ' counter(plate, decimal-leading-zero);
-    font: 11px/40px var(--gl-font-mono);
-    color: var(--gl-accent-ink);
+
+  /* Reduced motion removes draw-in and movement everywhere, whatever a component layered above declares. */
+  @media (prefers-reduced-motion: reduce) {
+    /* biome-ignore lint/complexity/noImportantStyles: must win over every component layer */
+    *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
   }
-  .gl-frame-title { margin: 0; font: 500 17px/40px var(--gl-font-display); }
-  .gl-frame-aside { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-  .gl-aside { display: flex; align-items: center; gap: 8px; min-height: 24px; }
-  .gl-frame-body { flex: 1; min-height: 0; overflow: auto; }
-  .gl-frame-note { padding: 6px 14px; border-top: 1px solid var(--gl-rule); font: italic 14px/20px var(--gl-font-display); color: var(--gl-ink-2); }
-  .gl-state { position: relative; box-sizing: border-box; min-height: 40px; height: 100%; padding: 10px 12px; font: 11px/16px var(--gl-font-mono); color: var(--gl-ink-2); }
-  .gl-drafting { border: 1px dashed var(--gl-rule-strong); display: flex; align-items: flex-end; }
-  .gl-drafting-lines { position: absolute; inset: 0; width: 100%; height: 100%; stroke: var(--gl-rule); stroke-width: 1; fill: none; }
-  .gl-empty { border: 1px solid var(--gl-rule); display: grid; place-items: center; text-align: center; }
-  .gl-redline { height: auto; border-left: 2px solid var(--gl-critical); }
-  .gl-redline-code { color: var(--gl-critical); }
-  .gl-redline-id { color: var(--gl-ink); }
-  .gl-marginal { font: 11px/16px var(--gl-font-mono); color: var(--gl-ink-3); }
-  .gl-tooltip { z-index: 10; padding: 6px 8px; border-radius: var(--gl-r-3); background: var(--gl-raised); box-shadow: 0 0 0 1px var(--gl-rule-strong), 0 12px 32px -12px rgb(0 0 0 / .28); font: 12px/16px var(--gl-font-ui); }
-  .gl-entity { all: unset; cursor: pointer; }
-  .gl-entity:focus-visible { outline: 2px solid var(--gl-accent); outline-offset: 2px; }
-  .gl-entity[data-selected] { background: var(--gl-accent-wash); }
-  .gl-path { font-family: var(--gl-font-mono); font-size: 12px; }
-  .gl-path-dir, .gl-path-line { color: var(--gl-ink-3); }
-  .gl-path-ext { margin-left: 6px; font-size: 10.5px; color: var(--gl-ink-3); }
-  .gl-icon { vertical-align: -2px; color: var(--gl-ink-2); }
 }
