@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Generative UI for codebases: an A2UI component catalog, a local viewer and an MCP server.",
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "FSL-1.1-ALv2",
   "type": "module",
   "engines": {
     "node": ">=22.18"

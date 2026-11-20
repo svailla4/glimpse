@@ -104,6 +104,13 @@ describe('README: what it lists is what exists', () => {
     expect(graphs).toHaveLength(3);
   });
 
+  it('names the licence in force, its Apache 2.0 future licence, and that v0.1.0 stays under PolyForm Noncommercial', () => {
+    for (const text of [section(readme, 'Licence'), section(pluginReadme, 'Licence')]) {
+      for (const needle of ['FSL-1.1-ALv2', 'Competing Use', 'Apache License, Version 2.0', 'second anniversary', 'v0.1.0', 'PolyForm Noncommercial License 1.0.0']) expect(text, needle).toContain(needle);
+      expect(text).not.toMatch(/\bis open source\b/);
+    }
+  });
+
   it('carries no absolute local path, user name or token', () => {
     for (const text of [readme, pluginReadme]) expect(text).not.toMatch(/\/Users\/|\/home\/[a-z]|[A-Za-z0-9._-]+@[A-Za-z0-9-]+\.[a-z]{2,}\b(?!\/)/);
   });

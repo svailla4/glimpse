@@ -5,11 +5,14 @@ they are what allows Glimpse to accept it.
 
 ## Terms for contributions
 
-Glimpse is published under the PolyForm Noncommercial License 1.0.0 (`LICENSE.md`). That licence lets other people
-use Glimpse for noncommercial purposes only. The copyright holder, svailla4 (https://github.com/svailla4), also uses
-Glimpse commercially and may license it to others for commercial use. That is only possible for material the copyright
-holder has the rights to, and the PolyForm licence alone would not give the copyright holder those rights in your
-contribution. So contributions are accepted only on these terms.
+Glimpse is published under the Functional Source License, Version 1.1, ALv2 Future License (FSL-1.1-ALv2,
+`LICENSE.md`). That licence lets other people use Glimpse for any purpose other than a Competing Use as it defines the
+term, and makes each version available under the Apache License, Version 2.0 two years after it is made available. The
+copyright holder, svailla4 (https://github.com/svailla4), also uses Glimpse's code in other products, including
+separate proprietary ones, and may license it to others on other terms, for example for a Competing Use, or change
+the licence of later versions. That is only possible for material the copyright holder has the rights to. The FSL
+grants rights from the licensor to its users, not from contributors to the licensor, so it would not give the
+copyright holder those rights in your contribution. So contributions are accepted only on these terms.
 
 By submitting a contribution (a pull request, a patch, or any code, documentation or other material that you intend
 to be included in Glimpse), you agree to the following.
@@ -32,7 +35,9 @@ to be included in Glimpse), you agree to the following.
 5. **No obligation, no warranty.** The copyright holder does not have to use your contribution. Apart from point 3,
    you provide it as is, without warranties or conditions of any kind.
 6. **What the public receives.** Once included, your contribution is distributed to the public as part of Glimpse,
-   under Glimpse's licence at the time.
+   under Glimpse's licence at the time. Under FSL-1.1-ALv2 that includes its Grant of Future License: each version
+   that contains your contribution also becomes available under the Apache License, Version 2.0 two years after it
+   is made available.
 
 To confirm, put this line in the description of your pull request:
 

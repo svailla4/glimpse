@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "The Glimpse viewer: a React SPA that renders A2UI v1.0 surfaces with the Glimpse component library.",
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "FSL-1.1-ALv2",
   "type": "module",
   "exports": {
     ".": "./src/kit/index.ts"

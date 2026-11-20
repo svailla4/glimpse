@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "The Glimpse A2UI component catalog: schemas, datasets, sources, presets and generated docs. DOM-free.",
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "FSL-1.1-ALv2",
   "type": "module",
   "sideEffects": false,
   "exports": {

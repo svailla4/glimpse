@@ -345,7 +345,8 @@ function fence(text: string, info = 'text'): string {
   return `${marks}${info}\n${text.trimEnd()}\n${marks}`;
 }
 
-const REQUIRED_NOTICE = 'Required Notice: Copyright 2026 svailla4 (https://github.com/svailla4)';
+/** The Notice line of Glimpse's FSL-1.1-ALv2 `LICENSE.md` (the template's `Copyright ${year} ${licensor name}`). */
+const COPYRIGHT_NOTICE = 'Copyright 2026 svailla4';
 
 /** The notices file and the licence files that go next to the fonts and the ELK worker (paths relative to dist). */
 export function render(collection: Collection): {notices: string; files: Record<string, string>} {
@@ -361,14 +362,17 @@ export function render(collection: Collection): {notices: string; files: Record<
     '',
     '## Glimpse',
     '',
-    "Glimpse's own code is licensed under the PolyForm Noncommercial License 1.0.0",
-    '(https://polyformproject.org/licenses/noncommercial/1.0.0); see `LICENSE.md` and `NOTICE.md`.',
+    "Glimpse's own code is licensed under the Functional Source License, Version 1.1, ALv2 Future License",
+    '(FSL-1.1-ALv2, https://fsl.software/); see `LICENSE.md` and `NOTICE.md`. Under its Grant of Future License, each',
+    'version is also licensed under the Apache License, Version 2.0 from the second anniversary of the date it was',
+    'made available.',
     '',
-    REQUIRED_NOTICE,
+    COPYRIGHT_NOTICE,
     '',
-    'Those terms cover only the code whose copyright the licensor holds. Every component listed below is a',
-    'separate work by other authors, distributed with Glimpse under its own licence, reproduced here. Nothing in',
-    "Glimpse's licence limits the rights that a component's licence gives you in that component.",
+    'Those terms, including the Apache License 2.0 future licence they grant, cover only the code whose copyright the',
+    'licensor holds. Every component listed below is a separate work by other authors, distributed with Glimpse under',
+    "its own licence, reproduced here. Nothing in Glimpse's licence limits the rights that a component's licence gives",
+    'you in that component, and neither FSL-1.1-ALv2 nor its Apache License 2.0 future licence applies to it.',
     '',
     'Paths are relative to the plugin directory (`plugin/` in the repository).',
     collection.complete ? '' : '\n**This build has no viewer: only the server bundle is covered.**\n',
