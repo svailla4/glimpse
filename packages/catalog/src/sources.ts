@@ -95,7 +95,7 @@ export const SOURCES: readonly SourceMeta[] = [
   {name: 'git.timeline', kind: 'rows', shape: 'Rows', budget: 1600, target: 'path', wt: true, args: {since: 'default 365d'},
     doc: "Commits per week per module; a commit counts once, under the module most of its files are in. Series may include '(root)' (top-level files) and '(removed)' (directories gone since). 200 buckets max, else months.",
     fields: [f('week', 'date'), f('module', 'module', 'Main module'), f('commits', 'num', 'Commits by main module')], roles: {x: 'week', y: ['commits'], series: 'module'}},
-  {name: 'git.churn', kind: 'rows', shape: 'ChurnRow[]', budget: 500, pageable: true, target: 'path', args: {top: 'row limit', since: 'e.g. 90d'},
+  {name: 'git.churn', kind: 'rows', shape: 'ChurnRow[]', budget: 500, pageable: true, target: 'path', args: {top: 'row limit', since: 'e.g. 90d', by: 'file (default) or module: one row per module of deps.modules'},
     doc: 'Commits, authors and ownership per file; first and last are ISO commit times.',
     fields: [f('path', 'path', 'File', 1), f('commits', 'bar', undefined, 1), f('authors', 'num'), f('owner', 'author'), f('ownership', 'pct', undefined, 3), f('last', 'date')],
     roles: {label: 'path', value: 'commits', x: 'path', y: ['commits']}},

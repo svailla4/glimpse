@@ -26,6 +26,21 @@ export type RendererMessage =
   | {version: '1.0'; action: ActionPayload}
   | {version: '1.0'; error: {code: string; message: string; surfaceId?: string; path?: string}};
 
+// ---- render reports: renderer `error` messages a Glimpse tab posts about one component ----
+// message is `Name#id: text`. A report is the component's CURRENT state, not an event: the tab re-sends it whenever
+// the component is (re)defined by an update, and withdraws it with REPORT_OK once the component draws normally.
+//   I_*  a truthful empty or waiting state (no import cycles, no uncommitted changes, waiting for a selection):
+//        never told to the model as a problem.
+//   W_*  the component could not draw what the spec asked (W_EMPTY: bound or inline data is missing or empty,
+//        W_FIELD: a named field is not in the data, W_SHAPE, W_FOCUS, ...): the model is told.
+//   E_*  a redline: the model is told.
+export const REPORT_OK = 'OK';
+export type ReportCode = typeof REPORT_OK | `I_${string}` | `W_${string}` | `E_${string}`;
+/** True for a report the model must hear about (W_* and E_*). */
+export function isProblemReport(code: string): boolean {
+  return code.startsWith('W_') || code.startsWith('E_');
+}
+
 // ---- host actions: names starting with gl_ are handled by the server and never reach the model ----
 export const HOST_ACTION_PREFIX = 'gl_';
 export interface HostActionContext {
