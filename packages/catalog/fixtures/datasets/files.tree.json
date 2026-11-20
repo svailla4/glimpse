@@ -1,0 +1,198 @@
+{
+  "$ds": "files_tree",
+  "kind": "tree",
+  "status": "ready",
+  "source": "files.tree",
+  "data": {
+    "name": "",
+    "path": "",
+    "dir": true,
+    "files": 9,
+    "loc": 4210,
+    "bytes": 131072,
+    "lang": "TypeScript",
+    "commits": 212,
+    "age": 2,
+    "complexity": 310,
+    "children": [
+      {
+        "name": "src",
+        "path": "src",
+        "dir": true,
+        "files": 7,
+        "loc": 3900,
+        "bytes": 120000,
+        "lang": "TypeScript",
+        "commits": 140,
+        "age": 2,
+        "complexity": 310,
+        "children": [
+          {
+            "name": "auth",
+            "path": "src/auth",
+            "dir": true,
+            "files": 3,
+            "loc": 1500,
+            "bytes": 52000,
+            "lang": "TypeScript",
+            "commits": 80,
+            "age": 2,
+            "complexity": 160,
+            "children": [
+              {
+                "name": "service.ts",
+                "path": "src/auth/service.ts",
+                "dir": false,
+                "files": 1,
+                "loc": 820,
+                "bytes": 30000,
+                "lang": "TypeScript",
+                "commits": 51,
+                "age": 2,
+                "complexity": 96
+              },
+              {
+                "name": "cache.ts",
+                "path": "src/auth/cache.ts",
+                "dir": false,
+                "files": 1,
+                "loc": 410,
+                "bytes": 14000,
+                "lang": "TypeScript",
+                "commits": 22,
+                "age": 9,
+                "complexity": 41
+              },
+              {
+                "name": "schema.sql",
+                "path": "src/auth/schema.sql",
+                "dir": false,
+                "files": 1,
+                "loc": 270,
+                "bytes": 8000,
+                "lang": "SQL",
+                "commits": 7,
+                "age": 120,
+                "complexity": 4
+              }
+            ]
+          },
+          {
+            "name": "api",
+            "path": "src/api",
+            "dir": true,
+            "files": 2,
+            "loc": 1300,
+            "bytes": 40000,
+            "lang": "TypeScript",
+            "commits": 44,
+            "age": 5,
+            "complexity": 90,
+            "children": [
+              {
+                "name": "routes.ts",
+                "path": "src/api/routes.ts",
+                "dir": false,
+                "files": 1,
+                "loc": 900,
+                "bytes": 28000,
+                "lang": "TypeScript",
+                "commits": 33,
+                "age": 5,
+                "complexity": 70
+              },
+              {
+                "name": "limiter.go",
+                "path": "src/api/limiter.go",
+                "dir": false,
+                "files": 1,
+                "loc": 400,
+                "bytes": 12000,
+                "lang": "Go",
+                "commits": 11,
+                "age": 30,
+                "complexity": 20
+              }
+            ]
+          },
+          {
+            "name": "ui",
+            "path": "src/ui",
+            "dir": true,
+            "files": 2,
+            "loc": 1100,
+            "bytes": 28000,
+            "lang": "CSS",
+            "commits": 16,
+            "age": 40,
+            "complexity": 60,
+            "more": {
+              "files": 12,
+              "loc": 800
+            },
+            "children": [
+              {
+                "name": "app.css",
+                "path": "src/ui/app.css",
+                "dir": false,
+                "files": 1,
+                "loc": 700,
+                "bytes": 18000,
+                "lang": "CSS",
+                "commits": 9,
+                "age": 40,
+                "complexity": 0
+              },
+              {
+                "name": "App.tsx",
+                "path": "src/ui/App.tsx",
+                "dir": false,
+                "files": 1,
+                "loc": 400,
+                "bytes": 10000,
+                "lang": "TypeScript",
+                "commits": 7,
+                "age": 60,
+                "complexity": 60
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "README.md",
+        "path": "README.md",
+        "dir": false,
+        "files": 1,
+        "loc": 210,
+        "bytes": 7000,
+        "lang": "Markdown",
+        "commits": 12,
+        "age": 14,
+        "complexity": 0
+      },
+      {
+        "name": "package.json",
+        "path": "package.json",
+        "dir": false,
+        "files": 1,
+        "loc": 100,
+        "bytes": 4072,
+        "lang": "JSON",
+        "commits": 30,
+        "age": 3,
+        "complexity": 0
+      }
+    ]
+  },
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12,
+  "total": 21,
+  "truncated": {
+    "total": 21,
+    "returned": 9,
+    "strategy": "treecut",
+    "by": "loc"
+  }
+}

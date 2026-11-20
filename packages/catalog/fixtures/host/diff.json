@@ -1,0 +1,607 @@
+{
+  "range": "wt",
+  "head": "4f2a91c",
+  "files": [
+    {
+      "path": "src/api/limiter.ts",
+      "status": "A",
+      "add": 10,
+      "del": 0,
+      "lang": "typescript",
+      "hunks": [
+        {
+          "oldStart": 0,
+          "oldLines": 0,
+          "newStart": 1,
+          "newLines": 10,
+          "header": "@@ -0,0 +1,10 @@",
+          "lines": [
+            {
+              "t": "+",
+              "n": 1,
+              "tokens": [
+                [
+                  "import",
+                  1
+                ],
+                [
+                  " {cache} ",
+                  0
+                ],
+                [
+                  "from",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "'../auth/cache'",
+                  2
+                ],
+                [
+                  ";",
+                  0
+                ]
+              ]
+            },
+            {
+              "t": "+",
+              "n": 2,
+              "tokens": []
+            },
+            {
+              "t": "+",
+              "n": 3,
+              "tokens": [
+                [
+                  "const",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "WINDOW_SECONDS",
+                  4
+                ],
+                [
+                  " = ",
+                  0
+                ],
+                [
+                  "60",
+                  5
+                ],
+                [
+                  ";",
+                  0
+                ]
+              ]
+            },
+            {
+              "t": "+",
+              "n": 4,
+              "tokens": [
+                [
+                  "const",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "LIMIT",
+                  4
+                ],
+                [
+                  " = ",
+                  0
+                ],
+                [
+                  "100",
+                  5
+                ],
+                [
+                  ";",
+                  0
+                ]
+              ]
+            },
+            {
+              "t": "+",
+              "n": 5,
+              "tokens": []
+            },
+            {
+              "t": "+",
+              "n": 6,
+              "tokens": [
+                [
+                  "// Sliding-window limiter keyed by client address.",
+                  7
+                ]
+              ]
+            },
+            {
+              "t": "+",
+              "n": 7,
+              "tokens": [
+                [
+                  "export",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "async",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "function",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "take",
+                  3
+                ],
+                [
+                  "(ip: string): ",
+                  0
+                ],
+                [
+                  "Promise",
+                  4
+                ],
+                [
+                  "<boolean> {",
+                  0
+                ]
+              ]
+            },
+            {
+              "t": "+",
+              "n": 8,
+              "tokens": [
+                [
+                  "  ",
+                  0
+                ],
+                [
+                  "const",
+                  1
+                ],
+                [
+                  " hits = ",
+                  0
+                ],
+                [
+                  "await",
+                  1
+                ],
+                [
+                  " cache.",
+                  0
+                ],
+                [
+                  "incr",
+                  3
+                ],
+                [
+                  "(",
+                  0
+                ],
+                [
+                  "`rl:${ip}`",
+                  2
+                ],
+                [
+                  ", ",
+                  0
+                ],
+                [
+                  "WINDOW_SECONDS",
+                  4
+                ],
+                [
+                  ");",
+                  0
+                ]
+              ]
+            },
+            {
+              "t": "+",
+              "n": 9,
+              "tokens": [
+                [
+                  "  ",
+                  0
+                ],
+                [
+                  "return",
+                  1
+                ],
+                [
+                  " hits <= ",
+                  0
+                ],
+                [
+                  "LIMIT",
+                  4
+                ],
+                [
+                  ";",
+                  0
+                ]
+              ]
+            },
+            {
+              "t": "+",
+              "n": 10,
+              "tokens": [
+                [
+                  "}",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "src/auth/service.ts",
+      "status": "M",
+      "add": 3,
+      "del": 2,
+      "lang": "typescript",
+      "hunks": [
+        {
+          "oldStart": 3,
+          "oldLines": 5,
+          "newStart": 3,
+          "newLines": 5,
+          "header": "@@ -3,5 +3,5 @@ import {db} from '../lib/db';",
+          "lines": [
+            {
+              "t": " ",
+              "o": 3,
+              "n": 3,
+              "tokens": [
+                [
+                  "import",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "type",
+                  1
+                ],
+                [
+                  " {",
+                  0
+                ],
+                [
+                  "Session",
+                  4
+                ],
+                [
+                  ", ",
+                  0
+                ],
+                [
+                  "User",
+                  4
+                ],
+                [
+                  "} ",
+                  0
+                ],
+                [
+                  "from",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "'./types'",
+                  2
+                ],
+                [
+                  ";",
+                  0
+                ]
+              ]
+            },
+            {
+              "t": " ",
+              "o": 4,
+              "n": 4,
+              "tokens": []
+            },
+            {
+              "t": "-",
+              "o": 5,
+              "tokens": [
+                [
+                  "const",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "TTL_SECONDS",
+                  4
+                ],
+                [
+                  " = ",
+                  0
+                ],
+                [
+                  "600",
+                  5
+                ],
+                [
+                  ";",
+                  0
+                ]
+              ],
+              "marks": [
+                [
+                  20,
+                  23
+                ]
+              ]
+            },
+            {
+              "t": "+",
+              "n": 5,
+              "tokens": [
+                [
+                  "const",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "TTL_SECONDS",
+                  4
+                ],
+                [
+                  " = ",
+                  0
+                ],
+                [
+                  "900",
+                  5
+                ],
+                [
+                  ";",
+                  0
+                ]
+              ],
+              "marks": [
+                [
+                  20,
+                  23
+                ]
+              ]
+            },
+            {
+              "t": " ",
+              "o": 6,
+              "n": 6,
+              "tokens": []
+            },
+            {
+              "t": " ",
+              "o": 7,
+              "n": 7,
+              "tokens": [
+                [
+                  "// Issues a session token after checking the password.",
+                  7
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "oldStart": 22,
+          "oldLines": 4,
+          "newStart": 22,
+          "newLines": 5,
+          "header": "@@ -22,4 +22,5 @@ export async function issueToken(user: User): Promise<Session> {",
+          "lines": [
+            {
+              "t": " ",
+              "o": 22,
+              "n": 22,
+              "tokens": [
+                [
+                  "async",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "function",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "verify",
+                  3
+                ],
+                [
+                  "(password: string, hash: string): ",
+                  0
+                ],
+                [
+                  "Promise",
+                  4
+                ],
+                [
+                  "<boolean> {",
+                  0
+                ]
+              ]
+            },
+            {
+              "t": "-",
+              "o": 23,
+              "tokens": [
+                [
+                  "  ",
+                  0
+                ],
+                [
+                  "return",
+                  1
+                ],
+                [
+                  " (",
+                  0
+                ],
+                [
+                  "await",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "digest",
+                  3
+                ],
+                [
+                  "(password)) === hash;",
+                  0
+                ]
+              ],
+              "marks": [
+                [
+                  9,
+                  42
+                ]
+              ]
+            },
+            {
+              "t": "+",
+              "n": 23,
+              "tokens": [
+                [
+                  "  ",
+                  0
+                ],
+                [
+                  "// TODO: move to argon2id",
+                  7
+                ]
+              ]
+            },
+            {
+              "t": "+",
+              "n": 24,
+              "tokens": [
+                [
+                  "  ",
+                  0
+                ],
+                [
+                  "return",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "timingSafeEqual",
+                  3
+                ],
+                [
+                  "(",
+                  0
+                ],
+                [
+                  "await",
+                  1
+                ],
+                [
+                  " ",
+                  0
+                ],
+                [
+                  "digest",
+                  3
+                ],
+                [
+                  "(password), hash);",
+                  0
+                ]
+              ],
+              "marks": [
+                [
+                  9,
+                  54
+                ]
+              ]
+            },
+            {
+              "t": " ",
+              "o": 24,
+              "n": 25,
+              "tokens": [
+                [
+                  "}",
+                  0
+                ]
+              ]
+            },
+            {
+              "t": " ",
+              "o": 25,
+              "n": 26,
+              "tokens": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "files": 2,
+    "add": 13,
+    "del": 2
+  },
+  "rev": 1
+}

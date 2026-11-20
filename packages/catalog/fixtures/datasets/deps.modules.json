@@ -1,0 +1,108 @@
+{
+  "$ds": "deps_modules",
+  "kind": "graph",
+  "status": "ready",
+  "source": "deps.modules",
+  "data": {
+    "level": "module",
+    "groups": [
+      {
+        "id": "srv",
+        "label": "server"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "api",
+        "label": "api",
+        "sub": "2 files, 1.3k loc",
+        "kind": "cluster",
+        "group": "srv",
+        "slotKey": "api",
+        "files": 2,
+        "loc": 1300,
+        "fanIn": 2,
+        "fanOut": 1,
+        "cycle": true,
+        "file": "src/api/routes.ts"
+      },
+      {
+        "id": "auth",
+        "label": "auth",
+        "sub": "3 files, 1.5k loc",
+        "kind": "cluster",
+        "group": "srv",
+        "slotKey": "auth",
+        "files": 3,
+        "loc": 1500,
+        "fanIn": 2,
+        "fanOut": 2,
+        "cycle": true,
+        "file": "src/auth/service.ts"
+      },
+      {
+        "id": "ui",
+        "label": "ui",
+        "sub": "2 files, 1.1k loc",
+        "kind": "cluster",
+        "slotKey": "ui",
+        "files": 2,
+        "loc": 1100,
+        "fanIn": 0,
+        "fanOut": 2
+      },
+      {
+        "id": "ext:redis",
+        "label": "redis",
+        "kind": "external",
+        "fanIn": 1,
+        "fanOut": 0
+      },
+      {
+        "id": "ext:pg",
+        "label": "pg",
+        "kind": "external",
+        "fanIn": 1,
+        "fanOut": 0
+      }
+    ],
+    "edges": [
+      {
+        "from": "api",
+        "to": "auth",
+        "weight": 9,
+        "cycle": true
+      },
+      {
+        "from": "auth",
+        "to": "api",
+        "weight": 2,
+        "cycle": true
+      },
+      {
+        "from": "ui",
+        "to": "api",
+        "weight": 6
+      },
+      {
+        "from": "ui",
+        "to": "auth",
+        "weight": 1,
+        "kind": "dashed"
+      },
+      {
+        "from": "auth",
+        "to": "ext:redis",
+        "weight": 3
+      },
+      {
+        "from": "auth",
+        "to": "ext:pg",
+        "weight": 2
+      }
+    ]
+  },
+  "cache": "miss",
+  "elapsedMs": 12,
+  "total": 5
+}

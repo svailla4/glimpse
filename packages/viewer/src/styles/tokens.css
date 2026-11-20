@@ -1,0 +1,79 @@
+/* packages/viewer/src/styles/tokens.css - Linework tokens (Vellum | Cyanotype). Token names are frozen. */
+@layer gl.tokens, gl.base, gl.kit, gl.components;
+:root { color-scheme: light dark; }
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark']  { color-scheme: dark; }
+@layer gl.tokens { :root {
+  /* surfaces: Vellum | Cyanotype */
+  --gl-bg:          light-dark(#f7f4ee, #081322);
+  --gl-surface:     light-dark(#fdfbf7, #0e1b2d);
+  --gl-sunken:      light-dark(#f1ede6, #050d19);
+  --gl-raised:      light-dark(#fffdfa, #17273c);
+  /* ink */
+  --gl-ink:         light-dark(#181d26, #e3ebf1);
+  --gl-ink-2:       light-dark(#474d58, #aebdca);
+  --gl-ink-3:       light-dark(#636974, #8594a4);
+  /* rules */
+  --gl-rule:        light-dark(#d8d4cb, #26364c);
+  --gl-rule-strong: light-dark(#afaaa0, #465974);
+  --gl-grid:        light-dark(#e9e6de, #182638);
+  /* the red pencil */
+  --gl-accent:      light-dark(#d63b00, #fe773d);
+  --gl-accent-ink:  light-dark(#b93200, #ff8e59);
+  --gl-accent-wash: light-dark(#ffeadf, #3c1f12);
+  /* categorical inks, fixed order: Prussian, viridian, umber, violet, madder, ochre, cerulean, sap */
+  --gl-cat-1: light-dark(#1657a1, #3775c1);
+  --gl-cat-2: light-dark(#249b86, #3aaa95);
+  --gl-cat-3: light-dark(#86431c, #a6603a);
+  --gl-cat-4: light-dark(#8961c7, #a57ce5);
+  --gl-cat-5: light-dark(#9a1d58, #d75a8c);
+  --gl-cat-6: light-dark(#b47819, #9f6700);
+  --gl-cat-7: light-dark(#0088a7, #0081a0);
+  --gl-cat-8: light-dark(#366610, #538433);
+  --gl-cat-other: var(--gl-ink-3);
+  /* sequential, low to high */
+  --gl-seq-1: light-dark(#dbe9fc, #0f2f50);
+  --gl-seq-2: light-dark(#b4d0f5, #104375);
+  --gl-seq-3: light-dark(#8ab4ea, #14599b);
+  --gl-seq-4: light-dark(#5d94da, #2773c0);
+  --gl-seq-5: light-dark(#3775c1, #4c8fd8);
+  --gl-seq-6: light-dark(#1657a1, #7cafe8);
+  --gl-seq-7: light-dark(#033c77, #b0d1f8);
+  /* diverging: Prussian, neutral, umber */
+  --gl-div-n3: light-dark(#02468b, #6aaaea);
+  --gl-div-n2: light-dark(#437cc3, #3e7cc5);
+  --gl-div-n1: light-dark(#94b7e4, #244d82);
+  --gl-div-0:  light-dark(#e2dfda, #303945);
+  --gl-div-p1: light-dark(#e1b391, #734629);
+  --gl-div-p2: light-dark(#c37746, #b26d3b);
+  --gl-div-p3: light-dark(#88411a, #e1a269);
+  /* status: always with a glyph and a label; warning is never text */
+  --gl-good:     light-dark(#0a7e3a, #53be70);
+  --gl-warning:  light-dark(#cf9c00, #e3b842);
+  --gl-serious:  light-dark(#ca6800, #e98a35);
+  --gl-critical: light-dark(#b7162d, #f75c61);
+  --gl-info:     light-dark(#006c97, #61afda);
+  /* code */
+  --gl-add-wash: light-dark(#ddf4e1, #0f2e1b);
+  --gl-del-wash: light-dark(#ffe4e2, #3f191a);
+  --gl-syn-keyword:  light-dark(#663e9e, #c4a3ff);
+  --gl-syn-string:   light-dark(#2d6121, #98cf8b);
+  --gl-syn-fn:       light-dark(#135298, #85baff);
+  --gl-syn-type:     light-dark(#006169, #65d0dc);
+  --gl-syn-number:   light-dark(#8b3e09, #fda578);
+  --gl-syn-constant: light-dark(#952858, #ff8fb7);
+  --gl-syn-comment:  light-dark(#636974, #8c929e);
+  /* type */
+  --gl-font-ui: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --gl-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --gl-font-display: 'Newsreader Variable', 'Iowan Old Style', Georgia, serif;
+  /* space, shape */
+  --gl-s-1: 2px; --gl-s-2: 4px; --gl-s-3: 8px; --gl-s-4: 12px;
+  --gl-s-5: 16px; --gl-s-6: 24px; --gl-s-7: 32px; --gl-s-8: 48px;
+  --gl-row: 28px; --gl-control: 28px;
+  --gl-r-0: 0; --gl-r-1: 2px; --gl-r-2: 4px; --gl-r-3: 6px;
+  /* motion */
+  --gl-ease: cubic-bezier(.2, 0, 0, 1);
+  --gl-t-hover: 90ms; --gl-t-state: 160ms; --gl-t-layout: 280ms; --gl-t-draw: 480ms;
+} }
+:root[data-density='comfortable'] { --gl-row: 34px; --gl-control: 32px; }

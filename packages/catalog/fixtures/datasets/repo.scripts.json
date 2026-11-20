@@ -1,0 +1,42 @@
+{
+  "$ds": "repo_scripts",
+  "kind": "rows",
+  "status": "ready",
+  "source": "repo.scripts",
+  "data": [
+    {
+      "package": "demo",
+      "script": "dev",
+      "command": "vite"
+    },
+    {
+      "package": "demo",
+      "script": "build",
+      "command": "tsc -b && vite build"
+    },
+    {
+      "package": "demo",
+      "script": "test",
+      "command": "vitest run"
+    }
+  ],
+  "fields": [
+    {
+      "key": "package",
+      "kind": "text"
+    },
+    {
+      "key": "script",
+      "kind": "code",
+      "priority": 1
+    },
+    {
+      "key": "command",
+      "kind": "code",
+      "priority": 1
+    }
+  ],
+  "total": 3,
+  "cache": "miss",
+  "elapsedMs": 12
+}

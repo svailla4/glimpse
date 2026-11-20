@@ -1,0 +1,98 @@
+{
+  "$ds": "git_hotspots",
+  "kind": "rows",
+  "status": "ready",
+  "source": "git.hotspots",
+  "data": [
+    {
+      "path": "src/auth/service.ts",
+      "commits": 51,
+      "complexity": 96,
+      "sloc": 690,
+      "score": 1,
+      "owner": "Mira",
+      "isTest": false
+    },
+    {
+      "path": "src/api/routes.ts",
+      "commits": 33,
+      "complexity": 70,
+      "sloc": 760,
+      "score": 0.47,
+      "owner": "Jon",
+      "isTest": false
+    },
+    {
+      "path": "src/auth/cache.ts",
+      "commits": 22,
+      "complexity": 41,
+      "sloc": 350,
+      "score": 0.18,
+      "owner": "Mira",
+      "isTest": false
+    },
+    {
+      "path": "src/ui/App.tsx",
+      "commits": 7,
+      "complexity": 60,
+      "sloc": 340,
+      "score": 0.09,
+      "owner": "Jon",
+      "isTest": false
+    },
+    {
+      "path": "src/api/limiter.go",
+      "commits": 11,
+      "complexity": 20,
+      "sloc": 330,
+      "score": 0.04,
+      "owner": "Ade",
+      "isTest": false
+    }
+  ],
+  "fields": [
+    {
+      "key": "path",
+      "kind": "path",
+      "label": "File",
+      "priority": 1
+    },
+    {
+      "key": "commits",
+      "kind": "bar",
+      "priority": 1
+    },
+    {
+      "key": "complexity",
+      "kind": "bar",
+      "priority": 1
+    },
+    {
+      "key": "sloc",
+      "kind": "num",
+      "label": "SLOC",
+      "priority": 3
+    },
+    {
+      "key": "score",
+      "kind": "heat"
+    },
+    {
+      "key": "owner",
+      "kind": "author"
+    }
+  ],
+  "roles": {
+    "label": "path",
+    "value": "score",
+    "x": "commits",
+    "y": [
+      "complexity"
+    ],
+    "size": "sloc"
+  },
+  "total": 7,
+  "pageable": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}

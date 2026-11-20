@@ -1,0 +1,30 @@
+{
+  "name": "@glimpse/catalog",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Glimpse A2UI component catalog: schemas, datasets, sources, presets and generated docs. DOM-free.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./testing/index.ts",
+    "./fixtures": "./fixtures/index.ts",
+    "./fixtures/*": "./fixtures/*",
+    "./generated/*": "./generated/*",
+    "./spec/*": "./spec/*"
+  },
+  "scripts": {
+    "check": "biome check --error-on-warnings . && tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --root ../.. --project catalog"
+  },
+  "dependencies": {
+    "@a2ui/web_core": "0.15.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@a2ui/agent": "0.1.0",
+    "ajv": "8.20.0"
+  }
+}

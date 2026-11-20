@@ -1,0 +1,79 @@
+{
+  "$ds": "files_langs",
+  "kind": "rows",
+  "status": "ready",
+  "source": "files.langs",
+  "data": [
+    {
+      "lang": "TypeScript",
+      "files": 4,
+      "loc": 2530,
+      "pct": 60.1
+    },
+    {
+      "lang": "CSS",
+      "files": 1,
+      "loc": 700,
+      "pct": 16.6
+    },
+    {
+      "lang": "Go",
+      "files": 1,
+      "loc": 400,
+      "pct": 9.5
+    },
+    {
+      "lang": "SQL",
+      "files": 1,
+      "loc": 270,
+      "pct": 6.4
+    },
+    {
+      "lang": "Markdown",
+      "files": 1,
+      "loc": 210,
+      "pct": 5
+    },
+    {
+      "lang": "JSON",
+      "files": 1,
+      "loc": 100,
+      "pct": 2.4
+    }
+  ],
+  "fields": [
+    {
+      "key": "lang",
+      "kind": "lang",
+      "label": "Language",
+      "priority": 1
+    },
+    {
+      "key": "files",
+      "kind": "num"
+    },
+    {
+      "key": "loc",
+      "kind": "num",
+      "label": "LOC",
+      "priority": 1
+    },
+    {
+      "key": "pct",
+      "kind": "pct",
+      "label": "%"
+    }
+  ],
+  "roles": {
+    "label": "lang",
+    "value": "loc",
+    "x": "lang",
+    "y": [
+      "loc"
+    ]
+  },
+  "total": 6,
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}

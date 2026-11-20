@@ -1,0 +1,2150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:glimpse:catalog:v1",
+  "protocolVersion": "1.0",
+  "title": "Glimpse",
+  "description": "Generative UI for codebases.",
+  "catalogId": "urn:glimpse:catalog:v1",
+  "instructions": "Root is Page(title, children). Children flow on a 12-column grid; every component takes span=1..12.\nData props take a /ds binding (server dataset), any other binding, or an inline value. Datasets are self-describing: tables and charts need no column or axis props.\nData, chart, diagram and code components draw their own plate frame when given title=.\nCode and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.\nThe current selection is at /ui/sel ({type,id,path?,line?}); the selected file is at /ui/file (\"path#L10-20\").",
+  "components": {
+    "Page": {
+      "type": "object",
+      "description": "View root: masthead (title, subtitle, repo provenance) over a 12-column grid.",
+      "properties": {
+        "component": {
+          "const": "Page"
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "View title."
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "Plates and other content, top to bottom."
+        },
+        "subtitle": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "One line next to the title."
+        },
+        "width": {
+          "type": "string",
+          "enum": [
+            "page",
+            "wide",
+            "full"
+          ],
+          "description": "Max width 1320px, 1680px or 100%. One of: page|wide|full."
+        }
+      },
+      "required": [
+        "component",
+        "title",
+        "children"
+      ],
+      "allowedParents": [
+        "Surface"
+      ]
+    },
+    "Plate": {
+      "type": "object",
+      "description": "Numbered hairline frame around several children.",
+      "properties": {
+        "component": {
+          "const": "Plate"
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title."
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "Body, stacked vertically."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "collapsed": {
+          "type": "boolean",
+          "description": "Start collapsed."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "title",
+        "children"
+      ]
+    },
+    "Section": {
+      "type": "object",
+      "description": "Heading with a rule; children sit on a nested 12-column grid.",
+      "properties": {
+        "component": {
+          "const": "Section"
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Section heading."
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "Section content."
+        },
+        "subtitle": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "One line under the heading."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "title",
+        "children"
+      ]
+    },
+    "Grid": {
+      "type": "object",
+      "description": "Columns: equal by default, or a ratio like '2:1'. Wraps on narrow screens.",
+      "properties": {
+        "component": {
+          "const": "Grid"
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "Cells, left to right."
+        },
+        "cols": {
+          "type": "string",
+          "description": "Column count '3' or ratio '2:1'. Default: one column per child (max 4)."
+        },
+        "gap": {
+          "type": "string",
+          "enum": [
+            "none",
+            "s",
+            "m",
+            "l"
+          ],
+          "description": "Gap 0/8/20/32px. One of: none|s|m|l."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "children"
+      ]
+    },
+    "Row": {
+      "type": "object",
+      "description": "Horizontal flex row; children share the width.",
+      "properties": {
+        "component": {
+          "const": "Row"
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "Items."
+        },
+        "gap": {
+          "type": "string",
+          "enum": [
+            "none",
+            "s",
+            "m",
+            "l"
+          ],
+          "description": "Gap 0/8/20/32px. One of: none|s|m|l."
+        },
+        "align": {
+          "type": "string",
+          "enum": [
+            "start",
+            "center",
+            "end",
+            "stretch",
+            "baseline"
+          ],
+          "description": "Cross-axis alignment. One of: start|center|end|stretch|baseline."
+        },
+        "wrap": {
+          "type": "boolean",
+          "description": "Allow wrapping. Default true."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "children"
+      ]
+    },
+    "Column": {
+      "type": "object",
+      "description": "Vertical stack.",
+      "properties": {
+        "component": {
+          "const": "Column"
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "Items."
+        },
+        "gap": {
+          "type": "string",
+          "enum": [
+            "none",
+            "s",
+            "m",
+            "l"
+          ],
+          "description": "Gap 0/8/20/32px. One of: none|s|m|l."
+        },
+        "align": {
+          "type": "string",
+          "enum": [
+            "start",
+            "center",
+            "end",
+            "stretch"
+          ],
+          "description": "Cross-axis alignment. One of: start|center|end|stretch."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "children"
+      ]
+    },
+    "Tabs": {
+      "type": "object",
+      "description": "Tab strip; one child per label, mounted on first activation.",
+      "properties": {
+        "component": {
+          "const": "Tabs"
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Tab labels, one per child."
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "One child per tab."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "labels",
+        "children"
+      ]
+    },
+    "Split": {
+      "type": "object",
+      "description": "Two resizable panes.",
+      "properties": {
+        "component": {
+          "const": "Split"
+        },
+        "start": {
+          "$ref": "common_types.json#/$defs/ComponentId",
+          "description": "Left/top pane."
+        },
+        "end": {
+          "$ref": "common_types.json#/$defs/ComponentId",
+          "description": "Right/bottom pane."
+        },
+        "ratio": {
+          "type": "string",
+          "description": "Initial ratio like '1:2'. Default '1:1'."
+        },
+        "dir": {
+          "type": "string",
+          "enum": [
+            "row",
+            "col"
+          ],
+          "description": "Side by side or stacked. One of: row|col."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "start",
+        "end"
+      ]
+    },
+    "Text": {
+      "type": "object",
+      "description": "Short text with inline `code`, *em*, **strong** and [[path#L10]] file refs.",
+      "properties": {
+        "component": {
+          "const": "Text"
+        },
+        "text": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Text with inline micro-markup. No HTML."
+        },
+        "tone": {
+          "type": "string",
+          "enum": [
+            "body",
+            "lead",
+            "dim",
+            "caption",
+            "mono"
+          ],
+          "description": "Style. One of: body|lead|dim|caption|mono."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "text"
+      ]
+    },
+    "Markdown": {
+      "type": "object",
+      "description": "Prose in Markdown (GFM tables, fenced code, [[path#L10]] refs). Raw HTML is ignored.",
+      "properties": {
+        "component": {
+          "const": "Markdown"
+        },
+        "text": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Markdown source."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "text"
+      ]
+    },
+    "Callout": {
+      "type": "object",
+      "description": "Marginal note with a coloured rule and tag.",
+      "properties": {
+        "component": {
+          "const": "Callout"
+        },
+        "text": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Body (inline micro-markup)."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "note",
+            "tip",
+            "warn",
+            "risk",
+            "decision",
+            "question"
+          ],
+          "description": "Tag and colour. Default note. One of: note|tip|warn|risk|decision|question."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Bold lead-in."
+        },
+        "file": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "File anchor 'path#L10-20'."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "text"
+      ]
+    },
+    "KeyValue": {
+      "type": "object",
+      "description": "Definition grid; paths, numbers, lists and booleans format themselves.",
+      "properties": {
+        "component": {
+          "const": "KeyValue"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Object or [{k,v}]."
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Columns 1-3. Default 1."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "Chips": {
+      "type": "object",
+      "description": "Row of mono chips with a colour dot.",
+      "properties": {
+        "component": {
+          "const": "Chips"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Strings or [{label,tone?}]."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "FileRef": {
+      "type": "object",
+      "description": "Clickable path:line; click selects, Cmd-click opens the editor.",
+      "properties": {
+        "component": {
+          "const": "FileRef"
+        },
+        "file": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "'path' or 'path#L10-20'."
+        },
+        "label": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Text shown instead of the path."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "file"
+      ]
+    },
+    "Steps": {
+      "type": "object",
+      "description": "Numbered plan or walkthrough with status marks and a progress rule.",
+      "properties": {
+        "component": {
+          "const": "Steps"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "[{title,note?,status?,file?}]; status todo|doing|done|blocked|skipped."
+        },
+        "current": {
+          "$ref": "common_types.json#/$defs/DynamicNumber",
+          "description": "Index of the active step."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "Stat": {
+      "type": "object",
+      "description": "Hero numeral with label, delta and sparkline.",
+      "properties": {
+        "component": {
+          "const": "Stat"
+        },
+        "value": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Number or short string."
+        },
+        "label": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption."
+        },
+        "delta": {
+          "$ref": "common_types.json#/$defs/DynamicNumber",
+          "description": "Signed change."
+        },
+        "unit": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Unit after the value."
+        },
+        "spark": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Numbers for a sparkline."
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "num",
+            "compact",
+            "bytes",
+            "pct",
+            "duration"
+          ],
+          "description": "Number format. Default compact. One of: num|compact|bytes|pct|duration."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "value"
+      ]
+    },
+    "Stats": {
+      "type": "object",
+      "description": "KPI strip: hairline-separated Stat cells.",
+      "properties": {
+        "component": {
+          "const": "Stats"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "[{label,value,unit?,delta?,spark?,format?}]."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "List": {
+      "type": "object",
+      "description": "Ranked dense rows: title, dim subtitle, trailing value with a bar.",
+      "properties": {
+        "component": {
+          "const": "List"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "[{title,sub?,value?,file?}] or any rows dataset."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Rows shown. Default 10."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "DataTable": {
+      "type": "object",
+      "description": "Virtualized sortable table; columns come from the dataset unless given.",
+      "properties": {
+        "component": {
+          "const": "DataTable"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Rows: source ref, $/path or inline list of objects."
+        },
+        "columns": {
+          "type": "string",
+          "description": "Shorthand 'key[:kind][=Label] ...'. Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool."
+        },
+        "sort": {
+          "type": "string",
+          "description": "'field' or '-field'."
+        },
+        "search": {
+          "type": "boolean",
+          "description": "Show the search box. Default: when more than 20 rows."
+        },
+        "group": {
+          "type": "string",
+          "description": "Group rows by this field."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "FileTree": {
+      "type": "object",
+      "description": "Directory tree with size bars, heat strip and extension badges.",
+      "properties": {
+        "component": {
+          "const": "FileTree"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Tree dataset."
+        },
+        "metric": {
+          "type": "string",
+          "enum": [
+            "loc",
+            "bytes",
+            "files",
+            "commits",
+            "changes",
+            "none"
+          ],
+          "description": "Bar metric. Default loc. One of: loc|bytes|files|commits|changes|none."
+        },
+        "heat": {
+          "type": "string",
+          "enum": [
+            "none",
+            "churn",
+            "age",
+            "complexity"
+          ],
+          "description": "Heat strip. Default none. One of: none|churn|age|complexity."
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12,
+          "description": "Levels expanded initially. Default 2."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "CommitList": {
+      "type": "object",
+      "description": "Git log rows: sha, subject, author, relative date, +/- bars.",
+      "properties": {
+        "component": {
+          "const": "CommitList"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Commit rows."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "JsonView": {
+      "type": "object",
+      "description": "Collapsible JSON/config tree.",
+      "properties": {
+        "component": {
+          "const": "JsonView"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Any JSON value."
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12,
+          "description": "Levels expanded initially. Default 1."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "Sparkline": {
+      "type": "object",
+      "description": "Inline trend line with an end dot.",
+      "properties": {
+        "component": {
+          "const": "Sparkline"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Numbers."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "line",
+            "bar",
+            "area"
+          ],
+          "description": "Default line. One of: line|bar|area."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "SegmentedBar": {
+      "type": "object",
+      "description": "Part-to-whole in one bar with a legend (use instead of a pie).",
+      "properties": {
+        "component": {
+          "const": "SegmentedBar"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Rows."
+        },
+        "label": {
+          "type": "string",
+          "description": "Segment field."
+        },
+        "value": {
+          "type": "string",
+          "description": "Value field."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "BarChart": {
+      "type": "object",
+      "description": "Bars by category; horizontal when there are many or long labels.",
+      "properties": {
+        "component": {
+          "const": "BarChart"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Rows."
+        },
+        "x": {
+          "type": "string",
+          "description": "Category field."
+        },
+        "y": {
+          "type": "string",
+          "description": "Value field(s), space separated."
+        },
+        "series": {
+          "type": "string",
+          "description": "Field that splits bars into series."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "grouped",
+            "stacked",
+            "pct"
+          ],
+          "description": "Default grouped. One of: grouped|stacked|pct."
+        },
+        "dir": {
+          "type": "string",
+          "enum": [
+            "h",
+            "v"
+          ],
+          "description": "Orientation. Default automatic. One of: h|v."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Bars kept; the rest fold into Other. Default 20."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "LineChart": {
+      "type": "object",
+      "description": "Lines or stacked areas over time or an ordered x, labelled at the line ends.",
+      "properties": {
+        "component": {
+          "const": "LineChart"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Rows."
+        },
+        "x": {
+          "type": "string",
+          "description": "X field (date or number)."
+        },
+        "y": {
+          "type": "string",
+          "description": "Value field(s), space separated."
+        },
+        "series": {
+          "type": "string",
+          "description": "Field that splits rows into series."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "line",
+            "area",
+            "stacked",
+            "pct"
+          ],
+          "description": "Default line. One of: line|area|stacked|pct."
+        },
+        "scale": {
+          "type": "string",
+          "enum": [
+            "linear",
+            "log"
+          ],
+          "description": "Y scale. One of: linear|log."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "ScatterPlot": {
+      "type": "object",
+      "description": "Points for two measures; optional radius, colour and outlier labels.",
+      "properties": {
+        "component": {
+          "const": "ScatterPlot"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Rows."
+        },
+        "x": {
+          "type": "string",
+          "description": "X field."
+        },
+        "y": {
+          "type": "string",
+          "description": "Y field."
+        },
+        "r": {
+          "type": "string",
+          "description": "Radius field."
+        },
+        "color": {
+          "type": "string",
+          "description": "Category field for colour."
+        },
+        "label": {
+          "type": "string",
+          "description": "Label field (outliers are labelled)."
+        },
+        "scale": {
+          "type": "string",
+          "enum": [
+            "linear",
+            "logx",
+            "logy",
+            "loglog"
+          ],
+          "description": "Axis scales. One of: linear|logx|logy|loglog."
+        },
+        "quadrants": {
+          "type": "boolean",
+          "description": "Draw median lines."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "Histogram": {
+      "type": "object",
+      "description": "Distribution of one numeric field with median and p90 marks.",
+      "properties": {
+        "component": {
+          "const": "Histogram"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Rows or numbers."
+        },
+        "value": {
+          "type": "string",
+          "description": "Numeric field."
+        },
+        "bins": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 80,
+          "description": "Bin count. Default automatic."
+        },
+        "log": {
+          "type": "boolean",
+          "description": "Log-scale counts."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "Heatmap": {
+      "type": "object",
+      "description": "Matrix of cells on a sequential or diverging ramp (also a dependency matrix).",
+      "properties": {
+        "component": {
+          "const": "Heatmap"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Rows."
+        },
+        "x": {
+          "type": "string",
+          "description": "Column field."
+        },
+        "y": {
+          "type": "string",
+          "description": "Row field."
+        },
+        "value": {
+          "type": "string",
+          "description": "Cell field."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "seq",
+            "div"
+          ],
+          "description": "Ramp. Default seq. One of: seq|div."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "CalendarHeatmap": {
+      "type": "object",
+      "description": "Daily activity as week columns of day cells.",
+      "properties": {
+        "component": {
+          "const": "CalendarHeatmap"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Rows."
+        },
+        "date": {
+          "type": "string",
+          "description": "Date field."
+        },
+        "value": {
+          "type": "string",
+          "description": "Value field."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "Treemap": {
+      "type": "object",
+      "description": "Zoomable nested rectangles sized by a metric.",
+      "properties": {
+        "component": {
+          "const": "Treemap"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Tree dataset."
+        },
+        "value": {
+          "type": "string",
+          "enum": [
+            "loc",
+            "bytes",
+            "files",
+            "commits"
+          ],
+          "description": "Size metric. Default loc. One of: loc|bytes|files|commits."
+        },
+        "color": {
+          "type": "string",
+          "enum": [
+            "lang",
+            "churn",
+            "age",
+            "complexity",
+            "depth",
+            "none"
+          ],
+          "description": "Fill. Default lang. One of: lang|churn|age|complexity|depth|none."
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6,
+          "description": "Levels shown. Default 2."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "Icicle": {
+      "type": "object",
+      "description": "Hierarchy as stacked rows; click zooms a subtree.",
+      "properties": {
+        "component": {
+          "const": "Icicle"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Tree dataset."
+        },
+        "value": {
+          "type": "string",
+          "enum": [
+            "loc",
+            "bytes",
+            "files",
+            "commits"
+          ],
+          "description": "Size metric. Default loc. One of: loc|bytes|files|commits."
+        },
+        "color": {
+          "type": "string",
+          "enum": [
+            "lang",
+            "churn",
+            "age",
+            "complexity",
+            "depth",
+            "none"
+          ],
+          "description": "Fill. Default lang. One of: lang|churn|age|complexity|depth|none."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "Graph": {
+      "type": "object",
+      "description": "Node-link diagram on a dot grid: clusters, cycle marks, pan/zoom, focus on a node.",
+      "properties": {
+        "component": {
+          "const": "Graph"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "{nodes,edges,groups?}."
+        },
+        "dir": {
+          "type": "string",
+          "enum": [
+            "LR",
+            "TB"
+          ],
+          "description": "Flow direction. Default LR. One of: LR|TB."
+        },
+        "focus": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Node id to centre; its neighbourhood is emphasised."
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "description": "Hops shown around the focus. Default 1."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "Flowchart": {
+      "type": "object",
+      "description": "Flowchart or state machine from Mermaid-style arrow notation.",
+      "properties": {
+        "component": {
+          "const": "Flowchart"
+        },
+        "src": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Statements split by ';' or newline: 'A[Label] --> B{Decision}', '-->|label|', '-.->' dashed. Shapes: [box] {diamond} ([pill]) [(store)] ((circle))."
+        },
+        "dir": {
+          "type": "string",
+          "enum": [
+            "TB",
+            "LR"
+          ],
+          "description": "Flow direction. Default TB. One of: TB|LR."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "src"
+      ]
+    },
+    "SequenceDiagram": {
+      "type": "object",
+      "description": "Lifelines and messages from Mermaid-style sequence notation.",
+      "properties": {
+        "component": {
+          "const": "SequenceDiagram"
+        },
+        "src": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Statements split by ';' or newline: 'A->>B: call', 'B-->>A: reply', 'A-)B: async', 'Note over A,B: text'."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "src"
+      ]
+    },
+    "Layers": {
+      "type": "object",
+      "description": "Architecture tiers: horizontal bands of boxes, top tier first.",
+      "properties": {
+        "component": {
+          "const": "Layers"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "[{name,items:[label|{label,file?,note?}],note?}]."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "ERDiagram": {
+      "type": "object",
+      "description": "Tables with column rows and key marks, joined by relation edges.",
+      "properties": {
+        "component": {
+          "const": "ERDiagram"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "{tables:[{name,columns:[{name,type?,pk?,fk?}]}],relations?:[{from,to,label?}]}."
+        },
+        "dir": {
+          "type": "string",
+          "enum": [
+            "LR",
+            "TB"
+          ],
+          "description": "Layout direction. Default LR. One of: LR|TB."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "CodeBlock": {
+      "type": "object",
+      "description": "Highlighted snippet you write yourself (short; for files on disk use CodeView).",
+      "properties": {
+        "component": {
+          "const": "CodeBlock"
+        },
+        "code": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Source text."
+        },
+        "lang": {
+          "type": "string",
+          "description": "Language id (ts, py, go, rust, sql, json, sh ...)."
+        },
+        "mark": {
+          "type": "string",
+          "description": "Lines to highlight: '3,7-9'."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Header label."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "code"
+      ]
+    },
+    "CodeView": {
+      "type": "object",
+      "description": "A file read from disk: gutter, highlights, notes. Follows the selection when file is omitted.",
+      "properties": {
+        "component": {
+          "const": "CodeView"
+        },
+        "file": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "'path' or 'path#L10-40'. Omit to follow the selected file."
+        },
+        "mark": {
+          "type": "string",
+          "description": "Lines to highlight: '12-18,30'."
+        },
+        "notes": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "[{line,text,kind?}] callouts anchored to lines."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "DiffView": {
+      "type": "object",
+      "description": "Git diff read by the server: file list, hunks, word-level marks. Live for the working tree.",
+      "properties": {
+        "component": {
+          "const": "DiffView"
+        },
+        "range": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "'wt' (working tree vs HEAD, default), 'staged', or a git range 'main..HEAD'."
+        },
+        "file": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Limit to one path."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "unified",
+            "split"
+          ],
+          "description": "Layout. Default auto. One of: auto|unified|split."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "CodeTour": {
+      "type": "object",
+      "description": "Walkthrough: numbered notes on the left, the referenced code on the right.",
+      "properties": {
+        "component": {
+          "const": "CodeTour"
+        },
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "[{file:'path#L1-20',title?,note}] in reading order."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "data"
+      ]
+    },
+    "SymbolOutline": {
+      "type": "object",
+      "description": "Symbols of a file with kind badges and line numbers. Follows the selection when file is omitted.",
+      "properties": {
+        "component": {
+          "const": "SymbolOutline"
+        },
+        "file": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Path. Omit to follow the selected file."
+        },
+        "title": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Plate title; draws the numbered frame."
+        },
+        "note": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption under the plate."
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l",
+            "xl",
+            "fill"
+          ],
+          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "Button": {
+      "type": "object",
+      "description": "Queues an event for the agent (delivered with its next Glimpse result or prompt).",
+      "properties": {
+        "component": {
+          "const": "Button"
+        },
+        "label": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Button text."
+        },
+        "action": {
+          "$ref": "common_types.json#/$defs/Action",
+          "description": "Event('name',{context})."
+        },
+        "tone": {
+          "type": "string",
+          "enum": [
+            "default",
+            "primary",
+            "quiet"
+          ],
+          "description": "Style. One of: default|primary|quiet."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "label",
+        "action"
+      ]
+    },
+    "Ask": {
+      "type": "object",
+      "description": "Decision card: the user picks one option; the pick is queued for the agent.",
+      "properties": {
+        "component": {
+          "const": "Ask"
+        },
+        "prompt": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Question (inline micro-markup)."
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Choices."
+        },
+        "name": {
+          "type": "string",
+          "description": "Event name. Default 'answer'."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "prompt",
+        "options"
+      ]
+    }
+  },
+  "$defs": {
+    "anyComponent": {
+      "oneOf": [
+        {
+          "$ref": "#/components/Page"
+        },
+        {
+          "$ref": "#/components/Plate"
+        },
+        {
+          "$ref": "#/components/Section"
+        },
+        {
+          "$ref": "#/components/Grid"
+        },
+        {
+          "$ref": "#/components/Row"
+        },
+        {
+          "$ref": "#/components/Column"
+        },
+        {
+          "$ref": "#/components/Tabs"
+        },
+        {
+          "$ref": "#/components/Split"
+        },
+        {
+          "$ref": "#/components/Text"
+        },
+        {
+          "$ref": "#/components/Markdown"
+        },
+        {
+          "$ref": "#/components/Callout"
+        },
+        {
+          "$ref": "#/components/KeyValue"
+        },
+        {
+          "$ref": "#/components/Chips"
+        },
+        {
+          "$ref": "#/components/FileRef"
+        },
+        {
+          "$ref": "#/components/Steps"
+        },
+        {
+          "$ref": "#/components/Stat"
+        },
+        {
+          "$ref": "#/components/Stats"
+        },
+        {
+          "$ref": "#/components/List"
+        },
+        {
+          "$ref": "#/components/DataTable"
+        },
+        {
+          "$ref": "#/components/FileTree"
+        },
+        {
+          "$ref": "#/components/CommitList"
+        },
+        {
+          "$ref": "#/components/JsonView"
+        },
+        {
+          "$ref": "#/components/Sparkline"
+        },
+        {
+          "$ref": "#/components/SegmentedBar"
+        },
+        {
+          "$ref": "#/components/BarChart"
+        },
+        {
+          "$ref": "#/components/LineChart"
+        },
+        {
+          "$ref": "#/components/ScatterPlot"
+        },
+        {
+          "$ref": "#/components/Histogram"
+        },
+        {
+          "$ref": "#/components/Heatmap"
+        },
+        {
+          "$ref": "#/components/CalendarHeatmap"
+        },
+        {
+          "$ref": "#/components/Treemap"
+        },
+        {
+          "$ref": "#/components/Icicle"
+        },
+        {
+          "$ref": "#/components/Graph"
+        },
+        {
+          "$ref": "#/components/Flowchart"
+        },
+        {
+          "$ref": "#/components/SequenceDiagram"
+        },
+        {
+          "$ref": "#/components/Layers"
+        },
+        {
+          "$ref": "#/components/ERDiagram"
+        },
+        {
+          "$ref": "#/components/CodeBlock"
+        },
+        {
+          "$ref": "#/components/CodeView"
+        },
+        {
+          "$ref": "#/components/DiffView"
+        },
+        {
+          "$ref": "#/components/CodeTour"
+        },
+        {
+          "$ref": "#/components/SymbolOutline"
+        },
+        {
+          "$ref": "#/components/Button"
+        },
+        {
+          "$ref": "#/components/Ask"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "component"
+      }
+    },
+    "anyFunction": {
+      "not": {}
+    }
+  }
+}

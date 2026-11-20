@@ -1,0 +1,122 @@
+{
+  "$ds": "git_timeline",
+  "kind": "rows",
+  "status": "ready",
+  "source": "git.timeline",
+  "data": [
+    {
+      "week": "2026-10-05",
+      "module": "auth",
+      "commits": 4
+    },
+    {
+      "week": "2026-10-05",
+      "module": "api",
+      "commits": 2
+    },
+    {
+      "week": "2026-10-05",
+      "module": "ui",
+      "commits": 1
+    },
+    {
+      "week": "2026-10-12",
+      "module": "auth",
+      "commits": 7
+    },
+    {
+      "week": "2026-10-12",
+      "module": "api",
+      "commits": 5
+    },
+    {
+      "week": "2026-10-12",
+      "module": "ui",
+      "commits": 0
+    },
+    {
+      "week": "2026-10-19",
+      "module": "auth",
+      "commits": 3
+    },
+    {
+      "week": "2026-10-19",
+      "module": "api",
+      "commits": 6
+    },
+    {
+      "week": "2026-10-19",
+      "module": "ui",
+      "commits": 2
+    },
+    {
+      "week": "2026-10-26",
+      "module": "auth",
+      "commits": 9
+    },
+    {
+      "week": "2026-10-26",
+      "module": "api",
+      "commits": 1
+    },
+    {
+      "week": "2026-10-26",
+      "module": "ui",
+      "commits": 3
+    },
+    {
+      "week": "2026-11-02",
+      "module": "auth",
+      "commits": 12
+    },
+    {
+      "week": "2026-11-02",
+      "module": "api",
+      "commits": 4
+    },
+    {
+      "week": "2026-11-02",
+      "module": "ui",
+      "commits": 0
+    },
+    {
+      "week": "2026-11-09",
+      "module": "auth",
+      "commits": 8
+    },
+    {
+      "week": "2026-11-09",
+      "module": "api",
+      "commits": 7
+    },
+    {
+      "week": "2026-11-09",
+      "module": "ui",
+      "commits": 1
+    }
+  ],
+  "fields": [
+    {
+      "key": "week",
+      "kind": "date"
+    },
+    {
+      "key": "module",
+      "kind": "module"
+    },
+    {
+      "key": "commits",
+      "kind": "num"
+    }
+  ],
+  "roles": {
+    "x": "week",
+    "y": [
+      "commits"
+    ],
+    "series": "module"
+  },
+  "total": 18,
+  "cache": "miss",
+  "elapsedMs": 12
+}

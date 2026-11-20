@@ -1,0 +1,47 @@
+{
+  "$ds": "code_todos",
+  "kind": "rows",
+  "status": "ready",
+  "source": "code.todos",
+  "data": [
+    {
+      "tag": "TODO",
+      "file": "src/auth/service.ts#L23",
+      "text": "move to argon2id"
+    },
+    {
+      "tag": "FIXME",
+      "file": "src/api/routes.ts#L88",
+      "text": "pagination ignores the cursor"
+    },
+    {
+      "tag": "HACK",
+      "file": "src/ui/App.tsx#L12",
+      "text": "force a re-render after login"
+    }
+  ],
+  "fields": [
+    {
+      "key": "tag",
+      "kind": "chip"
+    },
+    {
+      "key": "file",
+      "kind": "path",
+      "label": "Where",
+      "priority": 1
+    },
+    {
+      "key": "text",
+      "kind": "text",
+      "priority": 1
+    }
+  ],
+  "roles": {
+    "label": "text"
+  },
+  "total": 3,
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}

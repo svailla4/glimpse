@@ -1,0 +1,52 @@
+{
+  "$ds": "deps_matrix",
+  "kind": "rows",
+  "status": "ready",
+  "source": "deps.matrix",
+  "data": [
+    {
+      "from": "api",
+      "to": "auth",
+      "weight": 9
+    },
+    {
+      "from": "auth",
+      "to": "api",
+      "weight": 2
+    },
+    {
+      "from": "ui",
+      "to": "api",
+      "weight": 6
+    },
+    {
+      "from": "ui",
+      "to": "auth",
+      "weight": 1
+    }
+  ],
+  "fields": [
+    {
+      "key": "from",
+      "kind": "module"
+    },
+    {
+      "key": "to",
+      "kind": "module"
+    },
+    {
+      "key": "weight",
+      "kind": "num"
+    }
+  ],
+  "roles": {
+    "x": "to",
+    "y": [
+      "from"
+    ],
+    "value": "weight"
+  },
+  "total": 4,
+  "cache": "miss",
+  "elapsedMs": 12
+}

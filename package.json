@@ -1,0 +1,39 @@
+{
+  "name": "glimpse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generative UI for codebases: an A2UI component catalog, a local viewer and an MCP server.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "check": "npm run lint && npm run typecheck",
+    "check:paths": "node scripts/check-paths.mjs",
+    "lint": "biome check --error-on-warnings .",
+    "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspaces",
+    "test": "vitest run",
+    "generate": "node scripts/generate.ts",
+    "build": "node scripts/task.mjs build",
+    "dev": "vite packages/viewer",
+    "e2e": "node scripts/task.mjs e2e",
+    "demo": "node scripts/task.mjs demo"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.8",
+    "@playwright/test": "1.65.1",
+    "@types/node": "26.6.6",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "5.1.1"
+  },
+  "overrides": {
+    "@a2ui/markdown-it": {
+      "@a2ui/web_core": "0.15.0"
+    }
+  }
+}

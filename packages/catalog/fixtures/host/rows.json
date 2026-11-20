@@ -1,0 +1,78 @@
+{
+  "rows": [
+    {
+      "path": "src/api/routes.ts",
+      "lang": "TypeScript",
+      "loc": 900,
+      "bytes": 28000,
+      "commits": 33,
+      "complexity": 70
+    },
+    {
+      "path": "src/auth/service.ts",
+      "lang": "TypeScript",
+      "loc": 820,
+      "bytes": 30000,
+      "commits": 51,
+      "complexity": 96
+    },
+    {
+      "path": "src/ui/app.css",
+      "lang": "CSS",
+      "loc": 700,
+      "bytes": 18000,
+      "commits": 9,
+      "complexity": 0
+    },
+    {
+      "path": "src/auth/cache.ts",
+      "lang": "TypeScript",
+      "loc": 410,
+      "bytes": 14000,
+      "commits": 22,
+      "complexity": 41
+    },
+    {
+      "path": "src/api/limiter.go",
+      "lang": "Go",
+      "loc": 400,
+      "bytes": 12000,
+      "commits": 11,
+      "complexity": 20
+    },
+    {
+      "path": "src/ui/App.tsx",
+      "lang": "TypeScript",
+      "loc": 400,
+      "bytes": 10000,
+      "commits": 7,
+      "complexity": 60
+    },
+    {
+      "path": "src/auth/schema.sql",
+      "lang": "SQL",
+      "loc": 270,
+      "bytes": 8000,
+      "commits": 7,
+      "complexity": 4
+    },
+    {
+      "path": "README.md",
+      "lang": "Markdown",
+      "loc": 210,
+      "bytes": 7000,
+      "commits": 12,
+      "complexity": 0
+    },
+    {
+      "path": "package.json",
+      "lang": "JSON",
+      "loc": 100,
+      "bytes": 4072,
+      "commits": 30,
+      "complexity": 0
+    }
+  ],
+  "total": 9,
+  "offset": 0
+}

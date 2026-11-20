@@ -1,0 +1,34 @@
+{
+  "$ds": "diff_stats",
+  "kind": "rows",
+  "status": "ready",
+  "source": "diff.stats wt",
+  "data": [
+    {
+      "label": "Files changed",
+      "value": 3
+    },
+    {
+      "label": "Added",
+      "value": 132,
+      "tone": "good"
+    },
+    {
+      "label": "Removed",
+      "value": 4,
+      "tone": "bad"
+    },
+    {
+      "label": "Commits",
+      "value": 0
+    },
+    {
+      "label": "Tests touched",
+      "value": 1
+    }
+  ],
+  "total": 5,
+  "wt": true,
+  "cache": "miss",
+  "elapsedMs": 12
+}
