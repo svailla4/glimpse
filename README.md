@@ -39,6 +39,8 @@ npm install          # .npmrc sets ignore-scripts: no dependency runs code at in
 npm run build        # writes plugin/dist/server.mjs, plugin/dist/viewer/ and plugin/skills/glimpse/SKILL.md
 ```
 
+The build also writes the third-party notices, `plugin/dist/THIRD_PARTY_NOTICES.md`, and the licence files that the fonts and the ELK layout engine need next to them (see [Licence](#licence)).
+
 `npm run build` ends by starting the bundle from an empty directory to check that it runs with no `node_modules`. After it, `plugin/` is a complete Claude Code plugin and `plugin/dist/server.mjs` is a self-contained MCP server.
 
 ### As a Claude Code plugin
@@ -236,7 +238,7 @@ Requires Node 22.18 or newer (developed on Node 26) and npm 11.
 npm install         # .npmrc sets ignore-scripts: no dependency runs code at install time
 npm run check       # Biome lint, then tsc --noEmit for the root and each package
 npm test            # unit and component tests (vitest)
-npm run build       # viewer + server bundle + skill into plugin/
+npm run build       # viewer + server bundle + skill + third-party notices into plugin/
 npm run budgets     # size budgets, measured on the build
 npm run e2e         # Playwright (Chromium) against the bundled server; needs `npx playwright install chromium` once
 npm run demo        # the bundled server and viewer on this repository
@@ -252,7 +254,7 @@ packages/
   server/    the MCP server, the loopback viewer host, the repository analyzers
 plugin/      the Claude Code plugin: manifest, skill, hook, and dist/ (build output, not committed)
 e2e/         the end-to-end suite; e2e/README.md lists what it covers and its known failures
-scripts/     build, budgets, demo, generate, check-paths
+scripts/     build, budgets, demo, generate, check-paths, and the third-party notices (notices.ts, notices/)
 ```
 
 Working on one area:
@@ -264,7 +266,7 @@ npm run e2e -- security                      # one end-to-end spec
 GLIMPSE_DIST=/tmp/glimpse-dist npm run e2e   # test a build made with: node scripts/build.mjs --out /tmp/glimpse-dist
 ```
 
-Lint warnings fail the check. After changing anything under `packages/catalog/src` or `packages/catalog/fixtures`, run `npm run generate` and commit the result; a test fails when the generated files are stale. Do not reinstall dependencies while checks or tests are running in the same working tree.
+Lint warnings fail the check. After changing anything under `packages/catalog/src` or `packages/catalog/fixtures`, run `npm run generate` and commit the result; a test fails when the generated files are stale. In the same way, after adding, removing or upgrading a dependency that ships, run `npm run build` and commit `THIRD_PARTY_NOTICES.md`: a viewer build test fails when it is stale, and the build fails when a shipped package has a licence outside the allowed list or no licence text (`scripts/notices.ts` says what to do). Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Do not reinstall dependencies while checks or tests are running in the same working tree.
 
 ### Budgets
 
@@ -296,4 +298,19 @@ Be aware of the following:
 
 ## Licence
 
-Licence to be decided. The A2UI JSON Schema files under `packages/catalog/spec` are third-party files under the Apache License 2.0; see the `NOTICE` in that directory.
+Glimpse is **source-available, not open source**. Its own code is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) (`LICENSE.md`). The licence is not approved by the Open Source Initiative: it allows noncommercial purposes only. In short, and the licence text is what counts:
+
+- **Allowed:** any noncommercial purpose. The licence states that these two kinds of use count as permitted purposes:
+  - personal use for research, experiment and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits or religious observance, "without any anticipated commercial application";
+  - use by a charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization or government institution, whatever its source of funding.
+- Within those purposes you may use, change and share Glimpse. Anyone you give a copy to must also get the licence terms (or their URL) and the `Required Notice:` line at the top of `LICENSE.md`.
+- **Commercial use needs a separate licence** from the copyright holder. The licence does not define "commercial", but using Glimpse in paid work for a business (your employer or a client) is likely to count as commercial; use by the organizations listed above is permitted. Ask through GitHub: [github.com/svailla4](https://github.com/svailla4), for example by opening an issue here.
+
+Third-party components keep their own licences, and Glimpse's licence does not apply to them (`NOTICE.md` says exactly what is excluded):
+
+- The packages bundled into `plugin/dist` are listed with their licence texts in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), which `npm run build` generates from what the bundlers actually include (`scripts/notices.ts`), and copies into `plugin/dist`. They are under MIT, ISC, BSD, 0BSD and Apache 2.0 licences, except:
+  - elkjs, the diagram layout engine, which Glimpse distributes under the Eclipse Public License 2.0. Its licence and where to get its source are in `plugin/dist/viewer/assets/elkjs-LICENSE.txt`;
+  - the IBM Plex and Newsreader fonts, under the SIL Open Font License 1.1, with an `OFL-*.txt` file next to them.
+- The A2UI JSON Schema files under `packages/catalog/spec` are under the Apache License 2.0; see the `NOTICE` in that directory.
+
+Contributions are welcome under the terms in [`CONTRIBUTING.md`](CONTRIBUTING.md).

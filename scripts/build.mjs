@@ -11,6 +11,10 @@
 //                                     with no node_modules (the check starts it from an empty directory)
 //   plugin/dist/viewer/               a copy of packages/viewer/dist; the server serves it from next to the bundle
 //   plugin/skills/glimpse/SKILL.md    generated from the catalog (skillMarkdown() in packages/catalog/src/docs.ts)
+//   plugin/dist/THIRD_PARTY_NOTICES.md  the licences of every third-party component in the bundle and the viewer
+//                                     (scripts/notices.ts), with the licence files the fonts and the ELK worker need
+//                                     next to them in plugin/dist/viewer/assets; the same notices are kept in
+//                                     THIRD_PARTY_NOTICES.md at the repository root, which is committed
 //
 // The steps are independent. When the viewer does not build, the server bundle and the skill are still written, the
 // previous plugin/dist/viewer (if any) is left in place, and the script says which parts are current and exits 1.
@@ -21,6 +25,9 @@ import {tmpdir} from 'node:os';
 import {dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {build} from 'esbuild';
+// Node strips the types of these TypeScript modules itself (22.18 or newer, as package.json requires).
+import {collect, MODULE_RECORD, NOTICES_FILE, render} from './notices.ts';
+import {serverBuildOptions} from './server-bundle.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const plugin = join(root, 'plugin');
@@ -71,7 +78,9 @@ async function buildViewer() {
   const staging = join(dist, `viewer.new-${process.pid}`);
   await rm(staging, {recursive: true, force: true});
   await mkdir(dist, {recursive: true});
-  await cp(viewerDist, staging, {recursive: true});
+  // The module record is for the notices (below); it does not ship.
+  viewerRecord = JSON.parse(await readFile(join(viewerDist, MODULE_RECORD), 'utf8'));
+  await cp(viewerDist, staging, {recursive: true, filter: source => relative(viewerDist, source).split(/[\\/]/)[0] !== '.vite'});
   await rm(join(dist, 'viewer'), {recursive: true, force: true});
   await rename(staging, join(dist, 'viewer'));
   note('viewer', 'ok', `${rel(join(dist, 'viewer'))} (copied from ${rel(viewerDist)})`);
@@ -82,19 +91,8 @@ async function buildServer() {
   console.log('build: server bundle (esbuild)');
   try {
     await mkdir(dist, {recursive: true});
-    const result = await build({
-      entryPoints: [join(root, 'packages', 'server', 'src', 'main.ts')],
-      outfile: bundle,
-      bundle: true,
-      platform: 'node',
-      format: 'esm',
-      target: 'node20',
-      // Some dependencies still call require() for Node built-ins; an ESM bundle has to provide it.
-      banner: {js: "import {createRequire as __cr} from 'node:module'; const require = __cr(import.meta.url);"},
-      legalComments: 'external',
-      logLevel: 'warning',
-      metafile: true,
-    });
+    const result = await build(serverBuildOptions(root, bundle));
+    serverMetafile = result.metafile;
     const byPackage = new Map();
     for (const [file, info] of Object.entries(result.metafile.inputs)) {
       const name = /node_modules\/((?:@[^/]+\/)?[^/]+)/.exec(file)?.[1] ?? '(glimpse)';
@@ -191,6 +189,48 @@ async function verifyBundle() {
   }
 }
 
+/**
+ * Writes dist/THIRD_PARTY_NOTICES.md and the licence files next to the fonts and the ELK worker, and keeps the
+ * committed THIRD_PARTY_NOTICES.md at the repository root equal to it. The parts not built in this run are read back:
+ * the server is bundled again in memory, the viewer's module record comes from packages/viewer/dist. Fails when a
+ * shipped component has no acceptable licence or no licence text (scripts/notices.ts says which and what to do).
+ */
+async function writeNotices() {
+  try {
+    if (!serverMetafile) serverMetafile = (await build({...serverBuildOptions(root, bundle), write: false, logLevel: 'silent'})).metafile;
+    const record = join(root, 'packages', 'viewer', 'dist', MODULE_RECORD);
+    if (!viewerRecord && existsSync(join(dist, 'viewer', 'index.html')) && existsSync(record)) viewerRecord = JSON.parse(await readFile(record, 'utf8'));
+    const collection = collect(root, serverMetafile, viewerRecord);
+    if (collection.problems.length > 0) {
+      for (const problem of collection.problems) console.error(`build: notices: ${problem}`);
+      note('notices', 'FAILED', `${collection.problems.length} third-party licence problem${collection.problems.length === 1 ? '' : 's'} (listed above)`);
+      return false;
+    }
+    const {notices, files} = render(collection);
+    await mkdir(dist, {recursive: true});
+    await writeFile(join(dist, NOTICES_FILE), notices);
+    for (const [path, text] of Object.entries(files)) {
+      if (path.startsWith('viewer/') && !existsSync(join(dist, 'viewer'))) continue;
+      await writeFile(join(dist, path), text);
+    }
+    let committed = 'not updated: this build has no viewer';
+    if (collection.complete) {
+      const file = join(root, NOTICES_FILE);
+      const before = await readFile(file, 'utf8').catch(() => undefined);
+      if (before !== notices) await writeFile(file, notices);
+      committed = `${rel(file)} ${before === notices ? 'unchanged' : 'written'}`;
+    }
+    note('notices', 'ok', `${rel(join(dist, NOTICES_FILE))} (${collection.components.length} components, ${Object.keys(files).length} licence files next to them; ${committed})`);
+    return true;
+  } catch (error) {
+    note('notices', 'FAILED', `could not write the third-party notices: ${String(error?.message ?? error).split('\n')[0]}`);
+    return false;
+  }
+}
+
+/** The esbuild metafile of the server bundle and the viewer's module record, when built in this run (for the notices). */
+let serverMetafile;
+let viewerRecord;
 const results = [];
 if (wantViewer) results.push(await buildViewer());
 if (wantServer) {
@@ -198,6 +238,7 @@ if (wantServer) {
   results.push(bundled, await writeSkill());
   if (bundled && !flags.has('--no-verify')) results.push(await verifyBundle());
 }
+results.push(await writeNotices());
 
 console.log('');
 for (const {step, status, detail} of report) console.log(`build: ${step.padEnd(7)} ${status.padEnd(7)} ${detail}`);

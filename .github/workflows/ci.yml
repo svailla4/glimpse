@@ -51,11 +51,11 @@ jobs:
       - name: Unit and component tests
         run: npm test
 
-      - name: Build the plugin (viewer, server bundle, skill)
+      - name: Build the plugin (viewer, server bundle, skill, third-party notices)
         run: npm run build
 
-      - name: The generated skill is committed up to date
-        run: git diff --exit-code -- plugin/skills
+      - name: The generated skill and third-party notices are committed up to date
+        run: git diff --exit-code -- plugin/skills THIRD_PARTY_NOTICES.md
 
       - name: Budgets
         run: npm run budgets

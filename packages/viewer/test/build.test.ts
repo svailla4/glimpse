@@ -3,15 +3,22 @@
 // Shared gate: builds the viewer in memory (nothing is written to dist) and checks what the host's
 // Content-Security-Policy and the cascade-layer contract need from the output. It fails when any part of the viewer
 // fails to build, so it can go red because of any component package.
+// It also bundles the server in memory and regenerates the third-party notices from both (scripts/notices.ts): the
+// committed THIRD_PARTY_NOTICES.md must be what the build would write.
 import {readFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {gzipSync} from 'node:zlib';
+import {build as esbuild} from 'esbuild';
 import {build, type Rollup} from 'vite';
 import {beforeAll, describe, expect, it} from 'vitest';
+import {collect, ELK_LICENSE_FILE, type Metafile, MODULE_RECORD, NOTICES_FILE, render, type ViewerRecord} from '../../../scripts/notices.ts';
+import {serverBuildOptions} from '../../../scripts/server-bundle.ts';
 import {LAYER_ORDER, SHIMS, XYFLOW_CHUNK} from '../vite.config.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const repo = join(root, '..', '..');
+let serverMetafile: Metafile;
 let files: Array<Rollup.OutputAsset | Rollup.OutputChunk> = [];
 const text = (file: Rollup.OutputAsset | Rollup.OutputChunk) => (file.type === 'chunk' ? file.code : typeof file.source === 'string' ? file.source : new TextDecoder().decode(file.source));
 
@@ -25,6 +32,7 @@ beforeAll(async () => {
   } finally {
     process.env.NODE_ENV = before;
   }
+  serverMetafile = (await esbuild({...serverBuildOptions(repo, join(repo, 'plugin', 'dist', 'server.mjs')), write: false, logLevel: 'silent'})).metafile;
 }, 120_000);
 
 describe('viewer build', () => {
@@ -40,8 +48,8 @@ describe('viewer build', () => {
     for (const [, url] of html.matchAll(/\s(?:src|href)="([^"]+)"/g)) expect(url).toMatch(/^(\/assets\/|data:,$)/);
   });
 
-  it('every file is the shell or lives under assets/', () => {
-    expect(files.map(file => file.fileName).filter(name => name !== 'index.html' && !name.startsWith('assets/'))).toEqual([]);
+  it('every file is the shell or lives under assets/ (the module record for the notices aside, which does not ship)', () => {
+    expect(files.map(file => file.fileName).filter(name => name !== 'index.html' && name !== MODULE_RECORD && !name.startsWith('assets/'))).toEqual([]);
   });
 
   // ---- the eager script (design rule D13) ------------------------------------------------------------------
@@ -184,3 +192,67 @@ function topLevelBlocks(css: string): string[] {
   }
   return [...preludes];
 }
+
+describe('third-party notices', () => {
+  const record = (): ViewerRecord => JSON.parse(text(files.find(file => file.fileName === MODULE_RECORD)!));
+  const generated = () => render(collect(repo, serverMetafile, record()));
+
+  it('the module record covers the main build and the ELK worker, and traces every font to its package', () => {
+    const {main, worker} = record();
+    // everything but the shell, which Vite writes after the record and which holds no third-party code
+    expect(main.map(output => output.file).sort()).toEqual(files.map(file => file.fileName).filter(name => name !== MODULE_RECORD && name !== 'index.html').sort());
+    expect(worker.flatMap(output => output.modules ?? [])).toContain('node_modules/elkjs/lib/elk.bundled.js');
+    const fonts = main.filter(output => /\.woff2?$/.test(output.file));
+    expect(fonts.length).toBeGreaterThan(0);
+    for (const font of fonts) expect(font.originalFileNames?.[0], font.file).toMatch(/^node_modules\/@fontsource(?:-variable)?\/[\w-]+\/files\//);
+  });
+
+  it('every shipped component has an allowed licence and a licence text', () => {
+    expect(collect(repo, serverMetafile, record()).problems).toEqual([]);
+  });
+
+  it('the committed THIRD_PARTY_NOTICES.md is current (after a dependency change: npm run build, then commit it)', async () => {
+    const committed = await readFile(join(repo, NOTICES_FILE), 'utf8');
+    expect(committed === generated().notices, `${NOTICES_FILE} is stale: run npm run build and commit it`).toBe(true);
+  });
+
+  it('every third-party package in a script, the worker or the server bundle is in the notices', () => {
+    const {notices} = generated();
+    const {main, worker} = record();
+    const ids = [...main, ...worker].flatMap(output => [...(output.modules ?? []), ...(output.originalFileNames ?? [])]);
+    ids.push(...Object.keys(Object.values(serverMetafile.outputs).find(output => output.entryPoint)!.inputs));
+    const names = new Set(ids.flatMap(id => {
+      const at = id.lastIndexOf('node_modules/');
+      return at < 0 ? [] : [/^((?:@[^/]+\/)?[^/]+)/.exec(id.slice(at + 'node_modules/'.length))![1]!];
+    }));
+    expect(names.size).toBeGreaterThan(60);
+    for (const name of names) expect(notices, name).toMatch(new RegExp(`^### ${name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')} \\d`, 'm'));
+  });
+
+  it('every font file has its family\'s SIL Open Font License next to it', () => {
+    const {files: extra} = generated();
+    const fonts = record().main.filter(output => /\.woff2?$/.test(output.file));
+    for (const font of fonts) {
+      const family = /@fontsource(?:-variable)?\/([\w-]+)\//.exec(font.originalFileNames![0]!)![1]!;
+      const ofl = extra[`viewer/assets/OFL-${family}.txt`];
+      expect(ofl, `OFL-${family}.txt for ${font.file}`).toBeDefined();
+      expect(ofl).toMatch(/^Copyright /);
+      expect(ofl).toContain('SIL OPEN FONT LICENSE Version 1.1');
+    }
+  });
+
+  it('the ELK worker starts with elkjs\'s copyright notices, and the EPL-2.0 and where to get the source are next to it', () => {
+    const worker = text(files.find(file => /^assets\/elk\.worker-[\w-]{8}\.js$/.test(file.fileName))!);
+    expect(worker.startsWith(`/*! elkjs `)).toBe(true);
+    const head = worker.slice(0, 2000);
+    expect(head).toContain(ELK_LICENSE_FILE);
+    expect(head).toContain(' * Copyright (c) 2017 Kiel University and others.');
+    expect(head).toContain(' * Copyright (c) 2021 Kiel University and others.');
+    expect(head).toContain('SPDX-License-Identifier: EPL-2.0 OR GPL-3.0-or-later');
+    const license = generated().files[`viewer/assets/${ELK_LICENSE_FILE}`]!;
+    expect(license).toContain('under the Eclipse Public License 2.0');
+    expect(license).toMatch(/https:\/\/github\.com\/kieler\/elkjs\/tree\/\d+\.\d+\.\d+/);
+    expect(license).toContain('# Eclipse Public License - v 2.0');
+    expect(license).toContain('Apache License');
+  });
+});

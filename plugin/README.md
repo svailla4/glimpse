@@ -12,6 +12,8 @@ Glimpse lets Claude show you a codebase instead of describing it. Ask for an ove
 | `hooks/hooks.json` | A `UserPromptSubmit` hook. It asks the server what you did in the tab since the last prompt (a selection, a button, an answer) and passes that to Claude, so "click, then type" works without an extra tool call. |
 | `dist/server.mjs` | The server, bundled into one file with no dependencies to install. Build output. |
 | `dist/viewer/` | The viewer, a static single-page app served by the server. Build output. |
+| `dist/THIRD_PARTY_NOTICES.md` | The licences of the third-party components bundled into `dist/`. Build output. |
+| `LICENSE.md`, `NOTICE.md` | Glimpse's licence, and what it covers. See [Licence](#licence). |
 
 `dist/` is not committed: it is produced by `npm run build` at the repository root. Until a release commits it, the plugin works only from a checkout that has been built.
 
@@ -72,3 +74,11 @@ Environment variables read by the server:
 | `query` | Run a data source and get a few rows back as text. |
 | `events` | What you did in the tab since the last call; can wait for the next interaction. |
 | `pending_context` | Used by the hook above; hidden from the model. |
+
+## Licence
+
+Glimpse is source-available, not open source. Its own code is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) (`LICENSE.md`), which allows noncommercial purposes only: among them personal study, hobby projects and research for public knowledge without any anticipated commercial application, and use by charities, educational institutions, public research, safety, health and environmental organizations and government institutions. If you pass the plugin on, include `LICENSE.md` (or the licence URL) with its `Required Notice:` line.
+
+Commercial use, which is likely to include using the plugin in paid work for a business (your employer or a client), needs a separate licence from the copyright holder. Ask through GitHub: [github.com/svailla4](https://github.com/svailla4).
+
+The third-party components bundled into `dist/` keep their own licences, listed with their texts in `dist/THIRD_PARTY_NOTICES.md`. elkjs (in the ELK layout worker) is distributed under the Eclipse Public License 2.0 (`dist/viewer/assets/elkjs-LICENSE.txt`); the fonts are under the SIL Open Font License 1.1 (`dist/viewer/assets/OFL-*.txt`). `NOTICE.md` lists exactly what Glimpse's licence does not cover.

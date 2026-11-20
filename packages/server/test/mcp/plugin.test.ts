@@ -1,6 +1,7 @@
 // The plugin scaffold (design 6.9): manifests that agree with the server, a generated skill that is not stale, and a
 // build script whose bundle starts from an empty directory.
 import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {existsSync} from 'node:fs';
 import {readFile, stat} from 'node:fs/promises';
 import {isBuiltin} from 'node:module';
@@ -13,12 +14,15 @@ import {VERSION} from '../../src/mcp/version.ts';
 import {tempRoot} from '../session/fakes.ts';
 
 const repo = fileURLToPath(new URL('../../../../', import.meta.url));
+const LICENSE_ID = 'PolyForm-Noncommercial-1.0.0';
+const REQUIRED_NOTICE = 'Required Notice: Copyright 2026 svailla4 (https://github.com/svailla4)';
+const POLYFORM_NC_SHA256 = 'c0ea4a896d2c8c394b29f9427589996db826cd501c512279ff0ed3ef48fabbe5';
 const readJson = async (path: string) => JSON.parse(await readFile(join(repo, path), 'utf8')) as Record<string, any>;
 
 describe('plugin manifests', () => {
-  it('plugin.json names the plugin, carries the server version and no licence claim', async () => {
+  it('plugin.json names the plugin, carries the server version and the licence', async () => {
     const manifest = await readJson('plugin/.claude-plugin/plugin.json');
-    expect(manifest).toMatchObject({name: 'glimpse', version: VERSION, license: 'UNLICENSED', network: {hosts: []}});
+    expect(manifest).toMatchObject({name: 'glimpse', version: VERSION, license: LICENSE_ID, network: {hosts: []}});
     expect(manifest.description.length).toBeGreaterThan(40);
   });
 
@@ -36,7 +40,7 @@ describe('plugin manifests', () => {
 
   it('the repository is its own marketplace, pointing at ./plugin', async () => {
     const marketplace = await readJson('.claude-plugin/marketplace.json');
-    expect(marketplace.plugins).toEqual([expect.objectContaining({name: 'glimpse', source: './plugin'})]);
+    expect(marketplace.plugins).toEqual([expect.objectContaining({name: 'glimpse', source: './plugin', license: LICENSE_ID})]);
     expect(typeof marketplace.owner.name).toBe('string');
   });
 
@@ -53,9 +57,33 @@ describe('plugin manifests', () => {
   });
 
   it('no plugin file contains a local path, an address or a token', async () => {
-    for (const file of ['plugin/.claude-plugin/plugin.json', 'plugin/.mcp.json', 'plugin/hooks/hooks.json', 'plugin/README.md', 'plugin/skills/glimpse/SKILL.md', '.claude-plugin/marketplace.json']) {
+    for (const file of ['plugin/.claude-plugin/plugin.json', 'plugin/.mcp.json', 'plugin/hooks/hooks.json', 'plugin/README.md', 'plugin/skills/glimpse/SKILL.md', '.claude-plugin/marketplace.json', 'plugin/LICENSE.md', 'plugin/NOTICE.md']) {
       const text = await readFile(join(repo, file), 'utf8');
       expect(text, file).not.toMatch(/\/Users\/|\/home\/[a-z]|[\w.+-]+@[\w-]+\.[a-z]{2,}\b(?!\/)/i);
+    }
+  });
+});
+
+describe('licence', () => {
+  it('LICENSE.md is the Required Notice line, then the PolyForm Noncommercial 1.0.0 text unmodified', async () => {
+    const text = await readFile(join(repo, 'LICENSE.md'), 'utf8');
+    const [notice, blank, ...rest] = text.split('\n');
+    // A plain-text line that begins with "Required Notice:" (the licence's Notices section), naming no one but the handle.
+    expect(notice).toBe(REQUIRED_NOTICE);
+    expect(blank).toBe('');
+    // The text published at https://polyformproject.org/licenses/noncommercial/1.0.0 (PolyForm's GitHub markdown),
+    // byte for byte: a changed licence text would have to drop the PolyForm name.
+    expect(createHash('sha256').update(rest.join('\n')).digest('hex')).toBe(POLYFORM_NC_SHA256);
+  });
+
+  it('the plugin directory, which is what users install, carries the same LICENSE.md and NOTICE.md', async () => {
+    for (const file of ['LICENSE.md', 'NOTICE.md']) expect(await readFile(join(repo, 'plugin', file), 'utf8'), file).toBe(await readFile(join(repo, file), 'utf8'));
+    expect(await readFile(join(repo, 'NOTICE.md'), 'utf8')).toContain(`\n${REQUIRED_NOTICE}\n`);
+  });
+
+  it('every package.json declares it', async () => {
+    for (const file of ['package.json', 'packages/catalog/package.json', 'packages/server/package.json', 'packages/viewer/package.json']) {
+      expect((await readJson(file)).license, file).toBe(LICENSE_ID);
     }
   });
 });
@@ -77,7 +105,19 @@ describe('scripts/build.mjs', () => {
     expect(result.status).toBe(0);
     expect(existsSync(join(out, 'server.mjs'))).toBe(true);
     expect(existsSync(join(out, 'viewer'))).toBe(false);
+    // Without a viewer, the notices cover the server only and say so; the committed notices are left alone.
+    expect(result.stdout).toMatch(/build: notices\s+ok\s.*not updated: this build has no viewer/);
+    expect(existsSync(join(out, 'THIRD_PARTY_NOTICES.md'))).toBe(true);
   }, 120_000);
+
+  it('the server bundle leaves out the GLSL grammar, for which no licence could be found', async () => {
+    const text = await readFile(join(dir.root, 'dist', 'server.mjs'), 'utf8');
+    expect(text).toContain('"displayName":"C++"');
+    expect(text).not.toContain('"displayName":"GLSL"');
+    const notices = await readFile(join(dir.root, 'dist', 'THIRD_PARTY_NOTICES.md'), 'utf8');
+    expect(notices).toContain('**This build has no viewer: only the server bundle is covered.**');
+    expect(notices).toContain(REQUIRED_NOTICE);
+  });
 
   it('the bundle has no bare imports left and embeds no absolute path of this machine', async () => {
     const file = join(dir.root, 'dist', 'server.mjs');
