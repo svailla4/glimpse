@@ -69,15 +69,16 @@ describe('README: what it lists is what exists', () => {
     expect(section(readme, 'Components')).toMatch(new RegExp(`^${COMPONENTS.length} components in seven families`, 'm'));
   });
 
-  it('gives the build-from-source route for the plugin and for a plain MCP server, and says dist is not committed', () => {
+  it('gives the hosted install, the build-from-source route and a plain MCP server, and says where dist comes from', () => {
     const install = section(readme, 'Install');
-    expect(install).toMatch(/`plugin\/dist`[^.]*\. It is \*\*not committed\*\*/);
-    for (const command of ['npm install', 'npm run build', 'claude --plugin-dir /path/to/glimpse/plugin', 'claude plugin marketplace add /path/to/glimpse', 'claude plugin install glimpse@glimpse']) {
+    for (const command of ['claude plugin marketplace add svailla4/glimpse', 'claude plugin install glimpse@glimpse', 'claude plugin update glimpse@glimpse', 'npm install', 'npm run build', 'claude --plugin-dir /path/to/glimpse/plugin']) {
       expect(install, command).toContain(command);
     }
+    expect(install).toMatch(/`plugin\/dist`[^.]*is not committed on `main`/);
+    expect(install).toContain('release.yml');
     expect(install).toContain('"args": ["/path/to/glimpse/plugin/dist/server.mjs", "--root", "/path/to/your/project"]');
-    expect(pluginReadme).toMatch(/not committed/);
-    for (const command of ['npm install', 'npm run build', 'claude --plugin-dir']) expect(pluginReadme, command).toContain(command);
+    expect(pluginReadme).toMatch(/not committed on `main`/);
+    for (const command of ['claude plugin marketplace add svailla4/glimpse', 'claude plugin install glimpse@glimpse', 'npm install', 'npm run build', 'claude --plugin-dir']) expect(pluginReadme, command).toContain(command);
   });
 
   it('has the sections a reader needs: status, tools, security model, limitations', () => {

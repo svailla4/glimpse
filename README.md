@@ -28,9 +28,24 @@ The whole up-front cost for the agent is the server instructions (about 3,700 ch
 
 ## Install
 
-Requirements: Node 22.18 or newer, npm, and `git` on the PATH.
+Requirements: Node 22.18 or newer and `git` on the PATH.
 
-`plugin/dist` (the bundled server and the built viewer) is build output. It is **not committed**, so there is nothing to install straight from the hosted repository yet: every route starts from a checkout and one build.
+### As a Claude Code plugin
+
+```sh
+claude plugin marketplace add svailla4/glimpse
+claude plugin install glimpse@glimpse
+```
+
+Then start Claude Code in any project and ask for something: "show me an overview of this repo", "what does this branch change?", "walk me through `src/auth/service.ts`". The first view opens a browser tab.
+
+The plugin brings the MCP server, a skill that tells Claude when and how to use Glimpse, and a `UserPromptSubmit` hook that passes along what you clicked in the tab since your last prompt. Nothing is built on your machine: the install comes from the `release` branch, which the release workflow builds from each version tag.
+
+To update: `claude plugin update glimpse@glimpse` (or turn on auto-update for the marketplace under `/plugin`), then `/reload-plugins` in an open session.
+
+### From source
+
+`plugin/dist` (the bundled server and the built viewer) is build output and is not committed on `main`. To run your own build:
 
 ```sh
 git clone <this repository> glimpse
@@ -43,25 +58,18 @@ The build also writes the third-party notices, `plugin/dist/THIRD_PARTY_NOTICES.
 
 `npm run build` ends by starting the bundle from an empty directory to check that it runs with no `node_modules`. After it, `plugin/` is a complete Claude Code plugin and `plugin/dist/server.mjs` is a self-contained MCP server.
 
-### As a Claude Code plugin
-
-Start Claude Code in the project you want to look at, pointing it at the built plugin:
+To use your build with Claude Code, start it in the project you want to look at, pointing at the built plugin (the marketplace entry always installs the published release, not your checkout):
 
 ```sh
 cd /path/to/your/project
 claude --plugin-dir /path/to/glimpse/plugin
 ```
 
-Or register the checkout as a local marketplace once and install from it:
+Rebuild (`npm run build`) after pulling changes.
 
-```sh
-claude plugin marketplace add /path/to/glimpse
-claude plugin install glimpse@glimpse
-```
+### Releasing
 
-The plugin brings the MCP server, a skill that tells Claude when and how to use Glimpse, and a `UserPromptSubmit` hook that passes along what you clicked in the tab since your last prompt. Then ask for something: "show me an overview of this repo", "what does this branch change?", "walk me through `src/auth/service.ts`".
-
-Rebuild (`npm run build`) after pulling changes. Installing with `claude plugin marketplace add <owner>/<repo>` will work only once a release commits `plugin/dist`; until then a plugin installed that way has no server to start.
+Push a version tag from `main`: `git tag v0.1.1 && git push origin v0.1.1`. The release workflow (`.github/workflows/release.yml`) runs the check, the unit tests and the build on macOS, sets the plugin's version from the tag, and pushes the built plugin to the `release` branch, where installs and updates come from.
 
 ### As a plain MCP server
 

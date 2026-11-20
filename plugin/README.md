@@ -15,34 +15,29 @@ Glimpse lets Claude show you a codebase instead of describing it. Ask for an ove
 | `dist/THIRD_PARTY_NOTICES.md` | The licences of the third-party components bundled into `dist/`. Build output. |
 | `LICENSE.md`, `NOTICE.md` | Glimpse's licence, and what it covers. See [Licence](#licence). |
 
-`dist/` is not committed: it is produced by `npm run build` at the repository root. Until a release commits it, the plugin works only from a checkout that has been built.
+`dist/` is not committed on `main`: it is produced by `npm run build` at the repository root, and the release workflow builds it onto the `release` branch, which is what installs come from.
 
 ## Using it
 
-From a checkout of the repository (Node 22.18 or newer):
+Install (Node 22.18 or newer):
+
+```sh
+claude plugin marketplace add svailla4/glimpse
+claude plugin install glimpse@glimpse
+```
+
+Then ask, for example, "show me an overview of this repo" or "review my working tree in Glimpse". Update with `claude plugin update glimpse@glimpse`.
+
+To run your own build from a checkout instead:
 
 ```sh
 npm install          # .npmrc sets ignore-scripts
 npm run build        # writes plugin/dist/server.mjs, plugin/dist/viewer/ and plugin/skills/glimpse/SKILL.md
-```
-
-Then start Claude Code in the project you want to look at:
-
-```sh
 cd /path/to/your/project
 claude --plugin-dir /path/to/glimpse/plugin
 ```
 
-Or register the checkout as a local marketplace once and install from it:
-
-```sh
-claude plugin marketplace add /path/to/glimpse
-claude plugin install glimpse@glimpse
-```
-
-Then ask, for example, "show me an overview of this repo" or "review my working tree in Glimpse". Run `npm run build` again after pulling changes.
-
-Once a release commits `dist/`, installing from the hosted repository will work the same way with `<owner>/<repo>` in place of the path.
+Run `npm run build` again after pulling changes.
 
 ## What the server does on your machine
 

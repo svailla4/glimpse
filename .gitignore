@@ -1,6 +1,6 @@
 node_modules/
 # Build output, everywhere: packages/viewer/dist and also plugin/dist (the bundled server and viewer).
-# plugin/dist is committed only for a release; add `!plugin/dist/` in that commit, not before.
+# plugin/dist is never committed on main: .github/workflows/release.yml builds it onto the `release` branch.
 dist/
 build/
 .vite/
