@@ -7,7 +7,12 @@
   "plugins": [
     {
       "name": "glimpse",
-      "source": "./plugin",
+      "source": {
+        "source": "git-subdir",
+        "url": "svailla4/glimpse",
+        "path": "plugin",
+        "ref": "release"
+      },
       "description": "Render interactive views of a repository (overview, dependency graph, hotspots, diffs, code tours) in a local browser viewer.",
       "license": "PolyForm-Noncommercial-1.0.0"
     }

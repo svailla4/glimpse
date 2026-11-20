@@ -38,9 +38,11 @@ describe('plugin manifests', () => {
     expect(PENDING_CONTEXT_DESCRIPTION).toMatch(/hook/);
   });
 
-  it('the repository is its own marketplace, pointing at ./plugin', async () => {
+  it('the repository is its own marketplace, installing the built plugin from the release branch', async () => {
     const marketplace = await readJson('.claude-plugin/marketplace.json');
-    expect(marketplace.plugins).toEqual([expect.objectContaining({name: 'glimpse', source: './plugin', license: LICENSE_ID})]);
+    // main does not commit plugin/dist; the release workflow builds it onto the `release` branch.
+    const source = {source: 'git-subdir', url: 'svailla4/glimpse', path: 'plugin', ref: 'release'};
+    expect(marketplace.plugins).toEqual([expect.objectContaining({name: 'glimpse', source, license: LICENSE_ID})]);
     expect(typeof marketplace.owner.name).toBe('string');
   });
 

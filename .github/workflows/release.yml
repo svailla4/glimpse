@@ -1,0 +1,112 @@
+# Publishes an installable plugin when a version tag is pushed (git tag v0.1.0 && git push origin v0.1.0).
+#
+# Claude Code never builds a plugin on install: the files it copies must already contain plugin/dist. main keeps build
+# output out of git, so this workflow builds the tagged commit, sets the plugin's version from the tag and pushes the
+# result to the `release` branch. The marketplace entry on main points there (git-subdir, path plugin, ref release), so
+#   claude plugin marketplace add svailla4/glimpse
+#   claude plugin install glimpse@glimpse
+# installs a ready-to-run plugin, and `claude plugin update glimpse@glimpse` picks up the next tag.
+name: release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # macOS is the platform Glimpse is verified on, and the gate in ci.yml.
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+
+      # .npmrc sets ignore-scripts=true: no dependency runs code at install time.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint and typecheck
+        run: npm run check
+
+      - name: Unit and component tests
+        run: npm test
+
+      - name: Build the plugin (viewer, server bundle, skill, third-party notices)
+        run: npm run build
+
+      - name: Set the plugin version from the tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          node -e '
+            const fs = require("node:fs");
+            const file = "plugin/.claude-plugin/plugin.json";
+            const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+            manifest.version = process.argv[1];
+            fs.writeFileSync(file, JSON.stringify(manifest, null, 2) + "\n");
+          ' "$VERSION"
+          grep -n '"version"' plugin/.claude-plugin/plugin.json
+
+      - name: The built plugin is complete
+        run: |
+          test -s plugin/dist/server.mjs
+          test -s plugin/dist/viewer/index.html
+          test -s plugin/dist/THIRD_PARTY_NOTICES.md
+          test -s plugin/skills/glimpse/SKILL.md
+          test -s plugin/LICENSE.md
+
+      - name: Push the built plugin to the release branch
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          OUT="$RUNNER_TEMP/release"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin release >/dev/null; then
+            git fetch --no-tags origin release
+            git worktree add --detach "$OUT" FETCH_HEAD
+            git -C "$OUT" checkout -B release
+          else
+            git worktree add --detach "$OUT"
+            git -C "$OUT" checkout --orphan release
+            git -C "$OUT" rm -rfq .
+          fi
+
+          # The branch holds only what an install needs: the plugin (dist included) and the licence files.
+          find "$OUT" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -R plugin "$OUT/plugin"
+          cp LICENSE.md NOTICE.md THIRD_PARTY_NOTICES.md "$OUT/"
+          cat > "$OUT/README.md" <<EOF
+          # Glimpse $VERSION (release build)
+
+          This branch is written by the release workflow and holds the built Claude Code plugin. Do not edit it.
+          Source, documentation and issues: https://github.com/${GITHUB_REPOSITORY}
+
+          Install:
+
+              claude plugin marketplace add ${GITHUB_REPOSITORY}
+              claude plugin install glimpse@glimpse
+
+          Licence: PolyForm Noncommercial 1.0.0 (LICENSE.md). Third-party components: THIRD_PARTY_NOTICES.md.
+          EOF
+
+          git -C "$OUT" add -A -f
+          if git -C "$OUT" diff --cached --quiet; then
+            echo "release branch already matches this build"
+            exit 0
+          fi
+          git -C "$OUT" commit -q -m "Release v$VERSION (built from ${GITHUB_SHA::7})"
+          git -C "$OUT" push origin release
