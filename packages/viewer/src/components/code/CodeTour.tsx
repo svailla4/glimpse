@@ -2,7 +2,7 @@ import type * as C from '@glimpse/catalog';
 import {formatFileLoc, parseFileLoc, type StepItem, type TourStop} from '@glimpse/catalog';
 import {useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode} from 'react';
 import {
-  DataGate, Empty, Icon, PathText, Redline, borrowView, fileEntity, fmtNum, useDataset, useFollowedFile, useSelection, useSize, type GlView,
+  DataGate, Empty, Icon, PathText, Redline, Subpart, borrowView, fileEntity, fmtNum, useDataset, useFollowedFile, useSelection, useSize, type GlView,
 } from '../../kit/index.ts';
 import s from './CodeTour.module.css';
 import {CodeFile} from './CodeView.tsx';
@@ -85,7 +85,7 @@ function Tour({id, data, fill, framed}: {id: string; data: unknown[]; fill: bool
 
   const items = useMemo<StepItem[]>(() => stops.map(({file, title, note}) => ({title, file, ...(note ? {note} : {})})), [stops]);
   // The measured element is mounted in both branches, so the tour knows its width when stops arrive later.
-  if (!stop) return <div ref={root}><Empty message={`no stop names a file (${fmtNum(dropped)} dropped)`} /></div>;
+  if (!stop) return <div ref={root}><Empty message={`no stop names a file (${fmtNum(dropped)} dropped): CodeTour takes [{file, note}]`} code="W_SHAPE" /></div>;
 
   const go = (to: number) => {
     const index = Math.min(stops.length - 1, Math.max(0, to));
@@ -133,7 +133,10 @@ function Tour({id, data, fill, framed}: {id: string; data: unknown[]; fill: bool
         </div>
       </div>
       <div className={s.code}>
-        <CodeFile id={id} file={stop.file} fit="fill" chrome="bare" />
+        {/* One stop's file is a part of the tour: a stop whose file cannot be shown is not the tour's state (D14). */}
+        <Subpart>
+          <CodeFile id={id} file={stop.file} fit="fill" chrome="bare" />
+        </Subpart>
       </div>
     </div>
   );

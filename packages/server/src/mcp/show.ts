@@ -155,6 +155,21 @@ async function report(session: Session, request: ShowRequest, outcome: ShowOutco
   });
 }
 
+/**
+ * Finding V071: a preset's path target under the inventory's spelling, said as a fix. `file readme.md` then titles,
+ * binds and lists README.md, as the data it shows already does; a target spelled as on disk is kept as it is.
+ */
+async function canonicalView(session: Session, args: ShowArgs, request: ShowRequest, fixes: string[]): Promise<ShowRequest> {
+  if (!request.fresh || !request.view) return request;
+  const {view, target, args: rest} = parseViewRef(request.view);
+  if (!target || VIEW_BY_NAME.get(view)?.target !== 'path') return request;
+  const named = await session.canonicalName(target);
+  if (named === target) return request;
+  fixes.push(`path '${oneLine(target, 80)}' -> '${oneLine(named, 80)}'`);
+  const call = [view, named, ...Object.entries(rest).map(([key, value]) => `${key}=${value}`)].join(' ');
+  return showRequest({...(args.spec !== undefined ? {spec: args.spec} : {}), ...(args.id !== undefined ? {id: args.id} : {}), view: call});
+}
+
 /** Runs `show` and formats its result. Never throws: every failure is an error result. */
 export async function showTool(session: Session, args: ShowArgs, settleMs = DEFAULT_SETTLE_MS, now: () => number = Date.now): Promise<ToolResult> {
   const started = now();
@@ -166,6 +181,7 @@ export async function showTool(session: Session, args: ShowArgs, settleMs = DEFA
     request = showRequest(args, fixes);
     // Decision D8: HEAD, the revision and the file index are looked at before anything is computed.
     await session.revalidate();
+    request = await canonicalView(session, args, request, fixes);
     if (request.view === GALLERY) {
       // The Code section reads a file of this repository: one with an outline, so no plate is empty (finding F092).
       const file = await session.galleryFile();

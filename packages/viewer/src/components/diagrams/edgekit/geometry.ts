@@ -210,19 +210,69 @@ export function routeAround(a: Box, b: Box, options: RouteOptions, obstacles: re
   return best;
 }
 
-/** An edge from a node to itself: a small loop off the far corner. */
-export function routeLoop(box: Box, dir: Dir): Point[] {
-  const b = dir === 'LR' ? box : flipBox(box);
-  const c = centerOf(b);
-  const reach = Math.min(16, b.w / 2 - 4);
-  const points: Point[] = [
-    {x: b.x + b.w, y: c.y - Math.min(6, b.h / 2 - 2)},
-    {x: b.x + b.w + 18, y: c.y - Math.min(6, b.h / 2 - 2)},
-    {x: b.x + b.w + 18, y: b.y - 14},
-    {x: c.x + reach, y: b.y - 14},
-    {x: c.x + reach, y: b.y},
-  ];
-  return dir === 'LR' ? points : points.map(flipPoint);
+/**
+ * How far inside its box the outline of a shape is on a side across the flow (the top or the bottom of a left-to-right
+ * box), at `dx` from the middle along the flow. `flip`: the box is a transposed top-to-bottom one, where a pill's
+ * round ends face across.
+ */
+export function sideInset(box: Box, shape: Shape | undefined, dx: number, flip: boolean): number {
+  const t = Math.min(1, Math.abs(dx) / Math.max(1, box.w / 2));
+  if (shape === 'diamond') return (box.h / 2) * t;
+  if (shape === 'circle') return (box.h / 2) * (1 - Math.sqrt(1 - t * t));
+  if (shape === 'pill' && flip) {
+    const r = box.w / 2;
+    return r - Math.sqrt(Math.max(0, r * r - dx * dx));
+  }
+  return 0;
+}
+
+/** How far a self-loop reaches out from the side of its node. */
+export const LOOP_REACH = 14;
+/** Half the width of a self-loop along its node's side. */
+export const LOOP_HALF = 12;
+/** Between a self-loop and its label. */
+const LOOP_LABEL_GAP = 3;
+
+export interface LoopOptions {
+  shape?: Shape;
+  /**
+   * The side across the flow it stands on: -1 the top of a left-to-right node (the left of a top-to-bottom one), 1 the
+   * bottom (the right). Default: above a left-to-right node, right of a top-to-bottom one.
+   */
+  side?: -1 | 1;
+  /** Along the flow, from the middle of the side to the middle of the loop. Default 0. */
+  shift?: number;
+}
+
+/**
+ * An edge from a node to itself: a handle on one side of the node across the flow, out of that side and back into
+ * it. It stays beside its node, where the layout keeps room for it, and never enters the gaps between ranks, where
+ * the other edges turn (V005).
+ */
+export function routeLoop(box: Box, dir: Dir, options: LoopOptions = {}): Point[] {
+  const flip = dir === 'TB';
+  const b = flip ? flipBox(box) : box;
+  const side = options.side ?? (flip ? 1 : -1);
+  const half = Math.max(3, Math.min(LOOP_HALF, b.w / 2 - 6));
+  const slack = Math.max(0, b.w / 2 - half - 3);
+  const mid = b.x + b.w / 2 + Math.max(-slack, Math.min(slack, options.shift ?? 0));
+  const edge = side < 0 ? b.y : b.y + b.h;
+  const on = (x: number) => edge - side * sideInset(b, options.shape, x - (b.x + b.w / 2), flip);
+  const out = edge + side * LOOP_REACH;
+  // Out of the side downstream, back into it upstream: the arrow points into the node.
+  const points: Point[] = [{x: mid + half, y: on(mid + half)}, {x: mid + half, y: out}, {x: mid - half, y: out}, {x: mid - half, y: on(mid - half)}];
+  return flip ? points.map(flipPoint) : points;
+}
+
+/** The centre of a self-loop's label plate (`size`): beyond the loop, clear of it. */
+export function loopLabel(points: readonly Point[], size: {w: number; h: number}): Point {
+  const [a, b, c] = [points[0], points[1], points[2]];
+  if (!a || !b || !c) return a ?? {x: 0, y: 0};
+  const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const ux = (b.x - a.x) / length;
+  const uy = (b.y - a.y) / length;
+  const reach = (Math.abs(ux) * size.w + Math.abs(uy) * size.h) / 2 + LOOP_LABEL_GAP;
+  return {x: (b.x + c.x) / 2 + ux * reach, y: (b.y + c.y) / 2 + uy * reach};
 }
 
 // ---------------------------------------------------------------- ranks

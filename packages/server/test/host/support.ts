@@ -39,6 +39,7 @@ export async function startFixture(root: string, options: {env?: NodeJS.ProcessE
     startHost: session => startHost({
       session, env, log: message => void logged.push(message), viewerDir: options.viewerDir,
       launcher: (command, args) => void launched.push([command, args]),
+      which: name => `/usr/bin/${name}`,
       ...(options.now ? {now: options.now} : {}),
     }),
   });

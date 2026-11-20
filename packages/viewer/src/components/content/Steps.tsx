@@ -5,7 +5,7 @@ import {Steps as StepsDef, type EntityRef, type StepItem, type StepStatus} from 
 import type * as C from '@glimpse/catalog';
 import {useMemo, useState, type JSX} from 'react';
 import {Empty, PathText, Redline, fmtNum, toNumber, useDataset, type GlView} from '../../kit/index.ts';
-import {cellText, fileEntity, isRecord, shapeMessage} from './shared/data.ts';
+import {cellText, fileEntity, isRecord, shapeHint, shapeMessage} from './shared/data.ts';
 import {useEntityRows} from './shared/entityRow.ts';
 import {Inline, textOf} from './shared/inline.tsx';
 import {DataPlate} from './shared/Plate.tsx';
@@ -100,7 +100,7 @@ export const StepsView: GlView<typeof C.Steps> = ({id, props}) => {
     <DataPlate id={id} def={StepsDef} title={textOf(props.title).trim() || undefined} note={textOf(props.note).trim() || undefined} state={state} aside={state.status === 'ready' ? count : undefined}>
       {data => {
         if (!Array.isArray(data)) return <Redline code="E_SHAPE" id={`Steps#${id}`} message={shapeMessage('a list of {title, note?, status?, file?}', data)} />;
-        if (steps.length === 0) return <Empty message="no steps to show" />;
+        if (steps.length === 0) return <Empty message={`no steps: Steps takes [{title, status?, note?, file?}] or strings, got ${shapeHint(data)}`} code="W_SHAPE" />;
         return (
           <div className={styles.steps}>
             {tracked ? <Progress steps={steps} /> : null}

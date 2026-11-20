@@ -2,25 +2,26 @@ import type * as C from '@glimpse/catalog';
 import {parseFileLoc, type DataRow, type Dataset, type Rows} from '@glimpse/catalog';
 import {memo, useDeferredValue, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode} from 'react';
 import {
-  DataGate, Empty, Icon, PathText, PlateAside, Redline, fmtNum, useCatSlots, useDataset, useHostActions, useSelection, useSize,
+  DataGate, Empty, Icon, PathText, PlateAside, REPORT_CODES, Redline, fmtNum, useCatSlots, useDataset, useHostActions, useReportState, useSelection, useSize,
   type DataState, type GlView, type GlViewProps,
 } from '../../kit/index.ts';
-import {CellContent, MAX_CHIPS, chipHasTone, chipLabel, contentChars, isContentSized, isFlexible, isRightAligned, minWidthOf, trackOf, type CellContext} from './cells.tsx';
+import {CellContent, MAX_CHIPS, chipHasTone, chipLabel, isRightAligned, type CellContext} from './cells.tsx';
 import s from './DataTable.module.css';
 import {useListNav, useRowHeight, useScrollFade, visibleRange} from './nav.ts';
 import {useRemoteRows} from './remote.ts';
 import {Shell} from './shell.tsx';
 import {
-  NUMERIC_KINDS, clipText, copyText, describeType, filterRows, formatSort, groupItems, normalizeRows, num, parseSort, resolveColumns,
+  NUMERIC_KINDS, checkColumns, clipText, copyText, describeType, fieldList, filterRows, formatSort, groupItems, knownFields, normalizeRows, num, parseSort,
   rowEntity, rowFile, selectionMark, sortRows,
   type Column, type NormalRows, type SelectionMark, type SortSpec, type TableItem,
 } from './rows.ts';
+import {columnBox, columnTracks, columnWidths, floorWidth, measureColumns, typicalKey, type ColumnBox} from './widths.ts';
 
 type Props = GlViewProps<typeof C.DataTable>['props'];
 
-const COLUMN_GAP = 12;
-const SIDE_PADDING = 14;
 const LINE_TRACK = 64;
+/** The line column inside a group: a fixed track. */
+const LINE_BOX: ColumnBox = {floor: LINE_TRACK, typical: LINE_TRACK, want: LINE_TRACK, grow: 0, fixed: true, textual: false};
 const SEARCH_ABOVE = 20;
 const EMPTY_MAX: ReadonlyMap<string, number> = new Map();
 
@@ -60,26 +61,21 @@ function useDebounced<T>(value: T, ms: number): T {
   return settled;
 }
 
-/** Where columnStats keeps the longest text of a content-sized column (the plain key holds a bar's largest value). */
+/** Where columnStats keeps what a column's cells need (characters or px, see widths.ts); the plain key holds a bar's largest value. */
 const widthKey = (key: string) => `\u0001w\u0001${key}`;
 
-/** Per column: the largest value of a bar / heat column, and the longest text (in characters) of a content-sized one. */
+/** Per column: the largest value of a bar / heat column, and the width its cells need. */
 function columnStats(rows: readonly DataRow[], columns: readonly Column[], into: Map<string, number> = new Map()): Map<string, number> {
   for (const column of columns) {
-    if (column.kind === 'bar' || column.kind === 'heat') {
-      let max = into.get(column.key) ?? 0;
-      for (const row of rows) {
-        const n = num(row[column.key]);
-        if (n !== undefined && n > max) max = n;
-      }
-      into.set(column.key, max);
-    } else if (isContentSized(column)) {
-      const key = widthKey(column.key);
-      let chars = into.get(key) ?? 0;
-      for (const row of rows) chars = Math.max(chars, contentChars(row[column.key], column));
-      into.set(key, chars);
+    if (column.kind !== 'bar' && column.kind !== 'heat') continue;
+    let max = into.get(column.key) ?? 0;
+    for (const row of rows) {
+      const n = num(row[column.key]);
+      if (n !== undefined && n > max) max = n;
     }
+    into.set(column.key, max);
   }
+  for (const [key, need] of measureColumns(rows, columns)) into.set(widthKey(key), Math.max(into.get(widthKey(key)) ?? 0, need));
   return into;
 }
 
@@ -113,10 +109,12 @@ function categoryKeys(rows: readonly DataRow[], columns: readonly Column[], afte
   return out;
 }
 
+const boxOf = (column: Column, lineKey: string | undefined, stats: ReadonlyMap<string, number>): ColumnBox =>
+  column.key === lineKey ? LINE_BOX : columnBox(column, stats.get(widthKey(column.key)), stats.get(widthKey(typicalKey(column.key))));
+
 /** Priority-3 columns give way, right to left, while the plate is too narrow for every column's floor. */
 function fitColumns(columns: readonly Column[], width: number, lineKey: string | undefined, stats: ReadonlyMap<string, number>): Column[] {
-  const floor = (column: Column) => (column.key === lineKey ? LINE_TRACK : minWidthOf(column, stats.get(widthKey(column.key))));
-  const needed = (list: readonly Column[]) => list.reduce((sum, column) => sum + floor(column), 0) + COLUMN_GAP * Math.max(0, list.length - 1) + SIDE_PADDING * 2;
+  const needed = (list: readonly Column[]) => floorWidth(list.map(column => boxOf(column, lineKey, stats)));
   const kept = [...columns];
   for (let i = kept.length - 1; i > 0 && width > 0 && needed(kept) > width; i--) {
     if (kept[i]?.priority === 3) kept.splice(i, 1);
@@ -224,14 +222,26 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
   const remoteQuery = useDebounced(query.trim(), 200);
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
 
-  const allColumns = useMemo(() => resolveColumns(props.columns, state.fields, rows), [props.columns, state.fields, rows]);
+  // A field the spec names that the data lacks is left out and told to the agent (decisions D14, D15): a column of
+  // dashes, a sort that does nothing or one group of everything would say nothing true.
+  const checked = useMemo(() => checkColumns(props.columns, state.fields, rows), [props.columns, state.fields, rows]);
+  const allColumns = checked.columns;
+  const known = useMemo(() => knownFields(state.fields, rows), [state.fields, rows]);
+  const sortKey = parseSort(props.sort)?.key;
+  const unknown = (key: string | undefined) => key !== undefined && key !== '' && rows.length > 0 && !known.includes(key);
+  const fieldProblems = [
+    ...(checked.missing.length > 0 ? [`columns ${checked.missing.join(' ')}`] : []),
+    ...(unknown(sortKey) ? [`sort ${sortKey}`] : []),
+    ...(unknown(props.group) ? [`group ${props.group}`] : []),
+  ];
+  useReportState(fieldProblems.length > 0 ? REPORT_CODES.field : undefined, `${fieldProblems.join(', ')} not in the data (${fieldList(known)})`);
   const kindOf = useMemo(() => {
     const kinds = new Map(allColumns.map(column => [column.key, column.kind]));
     for (const field of state.fields ?? []) if (field.kind && !kinds.has(field.key)) kinds.set(field.key, field.kind);
     return (key: string) => kinds.get(key);
   }, [allColumns, state.fields]);
 
-  const group = props.group || undefined;
+  const group = props.group && !unknown(props.group) ? props.group : undefined;
   const groupKind = group ? kindOf(group) : undefined;
   // Inside a group its column repeats the header; it is dropped, or cut down to the line for file locations.
   const lineKey = useMemo(() => {
@@ -255,11 +265,11 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
     () => fitColumns(group ? allColumns.filter(column => column.key !== group || column.key === lineKey) : allColumns, width, lineKey, max),
     [allColumns, group, lineKey, width, max],
   );
-  // Short tabular columns take the width of their text; the spare width goes to the columns that can use it.
-  const flexible = columns.some(column => column.key !== lineKey && isFlexible(column));
-  const widthOf = (column: Column) => (column.key === lineKey ? LINE_TRACK : minWidthOf(column, max.get(widthKey(column.key))));
-  const template = columns.map(column => (column.key === lineKey ? `${LINE_TRACK}px` : trackOf(column, max.get(widthKey(column.key)), flexible))).join(' ');
-  const minWidth = columns.reduce((sum, column) => sum + widthOf(column), 0) + COLUMN_GAP * Math.max(0, columns.length - 1) + SIDE_PADDING * 2;
+  // Short tabular columns take the width of their text; the spare width goes to the text a reader needs whole first
+  // (names, paths, commands, messages), then to chips and bars (widths.ts).
+  const boxes = columns.map(column => boxOf(column, lineKey, max));
+  const template = columnTracks(boxes, columnWidths(boxes, width)).join(' ');
+  const minWidth = floorWidth(boxes);
 
   const local = useMemo(() => {
     if (remote) return undefined;
@@ -411,13 +421,17 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
   if (searching) notes.push(`${fmtNum(matched)} of ${fmtNum(remote ? ds?.total : rows.length)} match`);
   else if (remote) notes.push(`${fmtNum(pager.total)} rows`);
   if (skipped > 0) notes.push(`${fmtNum(skipped)} malformed ${skipped === 1 ? 'row' : 'rows'} skipped`);
+  // Finding V049: a cut dataset sorted by another field reorders only the rows it has ('top 15 by score', sorted by
+  // commits, is not the 15 with the most commits). Said beside the gate's 'showing 15 of 320 · top by score'.
+  const cut = !remote && (state.truncated !== undefined || (typeof state.total === 'number' && state.total > rows.length));
+  if (cut && sort && sort.key !== state.truncated?.by && !searching) notes.push(`sorted: ${sort.key} (${fmtNum(rows.length)} shown)`);
   const label = props.title || 'Table';
 
   // The root is always mounted, so its width is measured from the first render whatever the rows turn out to hold.
   if (allColumns.length === 0) {
     return (
       <div className={s.root} ref={rootRef} data-sized={props.size ? '' : undefined} data-gl-table="">
-        <Empty message="rows have no fields" />
+        <Empty message="rows have no fields: DataTable takes a list of {field: value} rows" code="W_SHAPE" />
       </div>
     );
   }

@@ -86,10 +86,11 @@ describe('BarChart', () => {
     expect(long.svg.getAttribute('aria-label')!.length).toBeLessThan(200);
   });
 
-  it('folds bars beyond the limit into one other bar and more than eight series into other', async () => {
-    const many = Array.from({length: 30}, (_, i) => ({name: `item-${i}`, n: 100 - i}));
+  it('folds bars of a measure that adds up beyond the limit into one other bar and more than eight stacked series into other', async () => {
+    const many = Array.from({length: 30}, (_, i) => ({name: `item-${i}`, loc: 100 - i}));
     const view = await chart(`BarChart($/d,limit=5)`, {rows: many});
     expect(view.all('[data-bar-label]').map(el => el.textContent)).toEqual(['item-0', 'item-1', 'item-2', 'item-3', 'item-4', 'other (25)']);
+    expect(view.root.querySelector('[data-chart-note]')?.textContent).toBe('25 folded into other');
     view.unmount();
     const series = Array.from({length: 12}, (_, i) => ({team: 'core', who: `dev-${i}`, n: 12 - i}));
     const stacked = await chart(`BarChart($/d,'team','n','who',mode='stacked')`, {rows: series});
@@ -97,6 +98,44 @@ describe('BarChart', () => {
     expect(legend).toHaveLength(8);
     expect(legend.at(-1)).toBe('other');
     expect(stacked.svg.getAttribute('aria-label')).toContain('8 series');
+  });
+
+  it('never sums a measure that does not add up into an other bar: per-file commits keep their top bars (V004)', async () => {
+    // 433 files of a 6-commit repository: each has 1 to 4 commits, and their sum (676) is no count any row has
+    const files = Array.from({length: 453}, (_, i) => ({path: `src/f${i}.ts`, commits: i < 20 ? 4 - (i % 3) : 1 + (i % 2)}));
+    const view = await chart(`BarChart($/d,'path','commits')`, {rows: files});
+    const labels = view.all('[data-bar-label]').map(el => el.textContent ?? '');
+    expect(labels).toHaveLength(20);
+    expect(labels.some(text => text.startsWith('other'))).toBe(false);
+    expect(view.root.querySelector('[data-chart-note]')?.textContent).toBe('top 20 of 453 files');
+    // the axis is the scale of the real bars, not of a 676-commit remainder
+    const ticks = view.all('svg text').map(el => el.textContent ?? '').filter(text => /^\d+$/.test(text)).map(Number);
+    expect(Math.max(...ticks)).toBeLessThanOrEqual(5);
+    view.unmount();
+    // grouped series of such a measure: the eight largest, the rest counted, no `other` series
+    const rows = Array.from({length: 12}, (_, s) => ({file: 'a.ts', who: `dev-${s}`, commits: 12 - s}));
+    const grouped = await chart(`BarChart($/d,'file','commits','who')`, {rows});
+    const legend = grouped.all('[data-chart-legend] [data-series]').map(el => el.getAttribute('data-series'));
+    expect(legend).toEqual(['dev-0', 'dev-1', 'dev-2', 'dev-3', 'dev-4', 'dev-5', 'dev-6', 'dev-7']);
+    expect(grouped.root.querySelector('[data-chart-note]')?.textContent).toBe('4 more series not drawn');
+  });
+
+  it('does not claim the rows a source cut away: a cut dataset keeps its top bars even for a measure that adds up (V004)', async () => {
+    const rows = Array.from({length: 30}, (_, i) => ({path: `src/f${i}.ts`, loc: 300 - i}));
+    const cut = {$ds: 'files_list', kind: 'rows', status: 'ready', source: 'files.list', data: rows, total: 4696, truncated: {total: 4696, returned: 30, strategy: 'topN', by: 'loc'}};
+    const view = await chart(`BarChart($/d,'path','loc',limit=5)`, {rows: cut});
+    const labels = view.all('[data-bar-label]').map(el => el.textContent ?? '');
+    expect(labels).toHaveLength(5);
+    expect(labels.some(text => text.startsWith('other'))).toBe(false);
+    const header = view.all('[data-chart-note], [data-gl-marginal]').map(el => el.textContent).join(' | ');
+    expect(header).toContain('showing 30 of 4,696');
+    expect(header).toContain('top 5 of 30 files');
+  });
+
+  it('draws a catch-all category of the data as a bar of its own, apart from the fold (D16)', async () => {
+    const langs = [{lang: 'TypeScript', loc: 900}, {lang: 'Unclassified', loc: 40}, ...Array.from({length: 6}, (_, i) => ({lang: `L${i}`, loc: 10 - i}))];
+    const view = await chart(`BarChart($/d,'lang','loc',limit=3)`, {rows: langs});
+    expect(view.all('[data-bar-label]').map(el => el.textContent)).toEqual(['TypeScript', 'Unclassified', 'L0', 'other (5)']);
   });
 
   it('gives a series the ink the server assigned to that entity', async () => {

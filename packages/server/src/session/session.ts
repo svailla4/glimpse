@@ -1,20 +1,23 @@
 // The session: all state of one server process (design 2.1, 2.6). It owns the stores, the repository context and
 // the pipeline that turns a `show` call into pixels (design 2.2). Analyzer, git and code services arrive through
 // ServerDeps, so everything here runs on fakes in tests; the HTTP host is started through `startHost` on first use.
-import {lstat} from 'node:fs/promises';
-import {basename} from 'node:path';
+import {createHash} from 'node:crypto';
+import {lstat, readFile} from 'node:fs/promises';
+import {basename, join} from 'node:path';
 import {
   COMPONENT_BY_NAME, formatFileLoc, formatRef, parseFileLoc, PROTOCOL_VERSION, SOURCE_BY_NAME,
   type A2uiMessage, type Dataset, type EntityRef, type GraphData, type Prop, type RowsPage, type SessionInfo, type SourceRef, type SurfaceInfo,
   type SurfaceMeta, type WireComponent,
 } from '@glimpse/catalog';
-import type {CodeService, DiffService, GitInfo, RepoContext, RepoIndex, RunGit, TreeWatcher} from '../contracts.ts';
-import {canOpen, detachedLauncher, editorCommand, NO_EDITOR, type Launcher} from '../host/open.ts';
+import {canonicalPath, type CodeService, type DiffService, type GitInfo, type RepoContext, type RepoIndex, type RunGit, type TreeWatcher} from '../contracts.ts';
+import {canOpen, detachedLauncher, editorCommand, launchOptions, NO_EDITOR, type Launcher} from '../host/open.ts';
+import {inScope, scopeOf} from '../sources/files/shared.ts';
 import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
+import {canonicalTarget, isCaseVariant} from '../sources/targets.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../spec/compile.ts';
-import {editDistance, nearest, problem, SpecError, type Problem} from '../spec/errors.ts';
-import {checkRef, componentsOf, expandMessages, unboundPaths, type Expansion} from '../spec/expand.ts';
-import {DatasetStore, envelopeOf, pageRows, pendingEnvelope, rowsOf, type Drill, type Outcome, type PageQuery} from './datasets.ts';
+import {editDistance, nearest, oneLine, problem, SpecError, type Problem} from '../spec/errors.ts';
+import {boundKeys, checkRef, componentsOf, expandMessages, unboundPaths, type Expansion, type PathNames} from '../spec/expand.ts';
+import {DatasetStore, envelopeOf, pageRows, pendingEnvelope, readsRefs, rowsOf, type Drill, type Outcome, type PageQuery} from './datasets.ts';
 import {ownEnv} from './env.ts';
 import {EventQueue, selectLine} from './events.ts';
 import {treeStamp} from './freshness.ts';
@@ -81,8 +84,9 @@ export interface ShowRequest {
 export interface ShowOutcome {
   id: string;
   mode: CommitMode;
+  /** The view's route in the tab, `#/<id>`: a label, not a link (it opens nothing without the token). */
   url: string;
-  /** With tab "none": the URL that carries the token, for the user to open. */
+  /** The URL that carries the token and opens the live session, for the user to open when no tab is connected. */
   openUrl: string;
   tab: TabState;
   fixes: string[];
@@ -107,12 +111,12 @@ export type Servable = 'ok' | 'missing' | 'refused';
 
 const SLOT_COUNT = 8;
 const TREE_DEBOUNCE_MS = 500;
-/** Without git and without a watcher that can look for itself, a connected tab is kept fresh by looking this often. */
+/** Without git, a connected tab is kept fresh by looking this often (for everything, or for a new .git only). */
 const NO_GIT_POLL_MS = 3000;
 const MAX_CHECK_WARNINGS = 6;
 /** How long `show{view:"gallery"}` waits for the analysis to pick a file for its Code section. */
 const GALLERY_PICK_MS = 3000;
-const PROSE = /\.(?:md|mdx|markdown|txt|rst|adoc)$/i;
+const PROSE = /\.(?:md|mdx|markdown|txt|rst|adoc|ipynb)$/i;
 type SlotKind = keyof SurfaceMeta['slots'];
 const SLOT_SOURCES: Record<SlotKind, string> = {lang: 'files.langs', module: 'deps.modules', author: 'git.authors'};
 
@@ -134,6 +138,110 @@ const describe = (error: unknown): string => (error instanceof Error ? error.mes
 /** Ids assigned at the start of a statement: the named parts of a spec. Callers keep those that are components. */
 function namedParts(text: string): string[] {
   return [...text.matchAll(/(?:^|[;\n])[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=(?!=)/g)].map(m => m[1]!).filter(name => name !== 'root');
+}
+
+/** Best-scored gallery candidates whose first lines are read to find one that opens on code. */
+const GALLERY_CANDIDATES = 12;
+const FIRST_SCREEN = 30;
+
+/**
+ * The share of code among the non-blank lines of the first screen of a file: lines that are not comments (line
+ * comments in the usual spellings, and the inside of block comments and docstrings). 0 for an empty text.
+ */
+export function codeShare(text: string): number {
+  let code = 0;
+  let other = 0;
+  for (const kind of lineKinds(text.split('\n').slice(0, FIRST_SCREEN))) {
+    if (kind === 'code') code++;
+    else if (kind === 'comment') other++;
+  }
+  return code + other === 0 ? 0 : code / (code + other);
+}
+
+/** Each line as code, comment (line comments, and the inside of block comments and docstrings) or blank. */
+function lineKinds(lines: readonly string[]): Array<'code' | 'comment' | 'blank'> {
+  const kinds: Array<'code' | 'comment' | 'blank'> = [];
+  let block: string | undefined;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line === '') { kinds.push('blank'); continue; }
+    if (block !== undefined) {
+      kinds.push('comment');
+      if (line.includes(block)) block = undefined;
+      continue;
+    }
+    const opener = ['/*', '"""', "'''", '<!--', '{-', '=begin'].find(open => line.startsWith(open));
+    if (opener) {
+      kinds.push('comment');
+      const closer = {'/*': '*/', '"""': '"""', "'''": "'''", '<!--': '-->', '{-': '-}', '=begin': '=end'}[opener]!;
+      if (!line.slice(opener.length).includes(closer)) block = closer;
+      continue;
+    }
+    kinds.push(/^(?:\/\/|#(?!include|import|define|if|pragma|\[)|--|;|%|\*)/.test(line) ? 'comment' : 'code');
+  }
+  return kinds;
+}
+
+/**
+ * The 1-based line the code of a file starts on, past a licence header or a long leading comment: the first code
+ * line. 1 when the text starts with code or has none in its first 400 lines.
+ */
+export function firstCodeLine(text: string): number {
+  const index = lineKinds(text.split('\n').slice(0, 400)).indexOf('code');
+  return index < 0 ? 1 : index + 1;
+}
+
+/** Files of a directory listed whole in a "does not exist" hint, at most. */
+const SMALL_DIR = 12;
+
+/**
+ * What a path that names no file most plausibly meant (finding V013), as ` Nearest: ...` or ` In <dir>: ...`, or ''.
+ * Spelling alone sent the model from spec/parse.ts to spec/guard.ts, so it comes last: the same file name elsewhere,
+ * then the whole directory when it exists and is small, then files whose name stem matches (parse, parser), then a
+ * path a few edits away.
+ */
+export function missingFileHint(path: string, candidates: readonly string[]): string {
+  const name = basename(path);
+  const sameName = candidates.filter(candidate => basename(candidate) === name);
+  if (sameName.length > 0) return ` Nearest: ${sameName.slice(0, 2).join(' ')}`;
+  const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+  const siblings = candidates.filter(candidate => (candidate.includes('/') ? candidate.slice(0, candidate.lastIndexOf('/')) : '') === dir);
+  if (dir !== '' && siblings.length > 0 && siblings.length <= SMALL_DIR) return ` In ${dir}: ${siblings.map(sibling => basename(sibling)).join(' ')}`;
+  const stem = name.replace(/\.[^.]*$/, '').toLowerCase();
+  if (stem.length >= 3) {
+    const stems = candidates.filter(candidate => {
+      const other = basename(candidate).replace(/\.[^.]*$/, '').toLowerCase();
+      return other.length >= 3 && (other.startsWith(stem) || stem.startsWith(other));
+    });
+    if (stems.length > 0) return ` Nearest: ${nearest(path, stems, 2).join(' ')}`;
+  }
+  // A suggestion is offered only when it is plausibly what was meant: a path a few edits away.
+  const close = (candidate: string) => editDistance(path.toLowerCase(), candidate.toLowerCase()) <= Math.max(3, Math.floor(path.length / 4));
+  const near = nearest(path, candidates, 2).filter(close);
+  return near.length > 0 ? ` Nearest: ${near.join(' ')}` : '';
+}
+
+/** Whether the root holds a .git entry (a directory, or the file of a linked worktree). */
+const hasDotGit = (root: string): Promise<boolean> => lstat(join(root, '.git')).then(() => true, () => false);
+
+/** `/plan/1/status` -> `plan` */
+const topSegment = (path: string | undefined): string => (path ?? '').split('/').filter(Boolean)[0]?.replace(/~1/g, '/').replace(/~0/g, '~') ?? '';
+
+/**
+ * The data slots worth naming in a result: those this call wrote and those a component of the view reads. A slot
+ * left behind by an earlier spec that nothing reads any more is not one of them.
+ */
+function liveSlots(record: SurfaceRecord, written: ReadonlySet<string>): string[] {
+  const read = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) { for (const item of value) visit(item); return; }
+    if (typeof value !== 'object' || value === null) return;
+    const path = (value as {'@path'?: unknown})['@path'];
+    if (typeof path === 'string') read.add(topSegment(path));
+    for (const item of Object.values(value)) visit(item);
+  };
+  for (const comp of record.components.values()) visit(comp);
+  return Object.keys(record.data).filter(key => key !== 'ui' && (written.has(key) || read.has(key)));
 }
 
 /** Keys of a slot kind, heaviest first, from the result of its source. Malformed data yields no keys. */
@@ -191,11 +299,20 @@ export class Session {
   private treePending = false;
   private pollTimer: NodeJS.Timeout | undefined;
   private refreshing: Promise<void> = Promise.resolve();
+  /** The surfaces of a gl_refresh that is queued and has not started; later requests join it. */
+  private refreshWaiting: Set<string> | undefined;
   private looking: Promise<void> | undefined;
   private lookNext: Promise<void> | undefined;
   private tabCount = 0;
   /** The tree as last seen by the fallback look (freshness.ts); unused when the watcher can check for itself. */
   private stamp: string | undefined;
+  /** Whether the root held a .git entry at the last look. */
+  private dotGit: boolean | undefined;
+  /** Digest of every ref at the last look, and a counter that moves with it (part of the cache key of range sources). */
+  private refsStamp: string | undefined;
+  private refsRev = 0;
+  /** refsRev when the last refresh ran, so a refresh knows the refs moved since. */
+  private refsRefreshed = 0;
   private inventory: {rev: number; paths: Promise<Set<string>>} | undefined;
   private noEditorSaid = false;
   private disposed = false;
@@ -237,11 +354,18 @@ export class Session {
       const ctx: RepoContext = {root: this.root, name: this.name, git, runGit, index: deps.createRepoIndex(this.root, runGit, this.log), rev: () => this.rev, log: this.log};
       const code = deps.createCodeService(ctx);
       const services: Services = {deps, ctx, code, diff: deps.createDiffService(ctx, code), watcher: deps.createTreeWatcher(ctx)};
-      this.datasets = new DatasetStore({registry: deps.registry, context: () => ctx, log: this.log, now: this.now});
-      // Both before anything is served, so the first look after this compares against what the first answers saw.
-      const [dirty, stamp] = await Promise.all([this.readDirty(ctx), services.watcher.check ? undefined : treeStamp(this.root, runGit, git !== null).catch(() => undefined)]);
+      this.datasets = new DatasetStore({registry: deps.registry, context: () => ctx, log: this.log, now: this.now, refs: () => this.refsRev});
+      // All before anything is served, so the first look after this compares against what the first answers saw.
+      const [dirty, stamp, dotGit, refs] = await Promise.all([
+        this.readDirty(ctx),
+        services.watcher.check ? undefined : treeStamp(this.root, runGit, git !== null).catch(() => undefined),
+        hasDotGit(this.root),
+        this.readRefs(ctx),
+      ]);
       this.dirty = dirty;
       this.stamp = stamp;
+      this.dotGit = dotGit;
+      this.refsStamp = refs;
       this.loaded = services;
       return services;
     })().catch(error => {
@@ -306,17 +430,27 @@ export class Session {
     const {ctx} = await this.services();
     return quickly((async () => {
       const [files, facts] = await Promise.all([ctx.index.files(), ctx.index.facts()]);
-      let best: {path: string; score: number} | undefined;
+      const ranked: Array<{path: string; score: number}> = [];
       for (const file of files) {
         // Prose has an outline too (its headings), but the Code section is there to show code.
         if (file.binary || file.generated || file.isTest || file.loc < 30 || PROSE.test(file.path)) continue;
         const symbols = facts.get(file.path)?.symbols.length ?? 0;
         if (symbols < 3) continue;
         // Many symbols (up to a dozen count), about 150 lines, near the root; ties go to the first path by name.
-        const score = Math.min(symbols, 12) * 4 - Math.abs(Math.log2(file.loc / 150)) * 3 - file.path.split('/').length;
-        if (!best || score > best.score || (score === best.score && file.path < best.path)) best = {path: file.path, score};
+        ranked.push({path: file.path, score: Math.min(symbols, 12) * 4 - Math.abs(Math.log2(file.loc / 150)) * 3 - file.path.split('/').length});
       }
-      return best?.path;
+      ranked.sort((a, b) => b.score - a.score || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      // The first screen of the Code section should be code, not a licence or a long doc comment. Where every file
+      // opens on a licence (common in large projects), the one with the most code on its first screen.
+      let most: {path: string; share: number; start: number} | undefined;
+      for (const {path} of ranked.slice(0, GALLERY_CANDIDATES)) {
+        const head = await readFile(join(this.root, path), 'utf8').then(text => text.slice(0, 16_384), () => '');
+        const share = codeShare(head);
+        if (share >= 0.6) return path;
+        if (!most || share > most.share) most = {path, share, start: firstCodeLine(head)};
+      }
+      // That file opens on its header: the gallery starts its line-reading plates where the code starts (`#L<n>`).
+      return most ? (most.start > 1 ? `${most.path}#L${most.start}` : most.path) : ranked[0]?.path;
     })(), GALLERY_PICK_MS);
   }
 
@@ -332,14 +466,30 @@ export class Session {
     return quickly((async () => {
       const files = await ctx.index.files();
       if (view === 'symbol') {
-        const name = (target ?? '').trim();
+        // `symbol <name> [path]`, as code.refs reads it: an identifier has no spaces, so what follows is a path scope
+        // (final confirm s21: 'MessageProcessor typescript/renderers' was looked up as one name and opened nothing).
+        const [name = '', ...rest] = (target ?? '').trim().split(/\s+/);
         if (!name) return undefined;
+        let scope = '';
+        try {
+          scope = rest.length > 0 ? scopeOf({source: 'code.refs', target: rest.join(' '), args: {}}) : '';
+        } catch {
+          return undefined;
+        }
         const facts = await ctx.index.facts();
+        // Finding V035: a definition is in code, never in prose (a class quoted in a Markdown fence is not one), and
+        // when several languages define the name, the repository's main language comes first.
+        const weight = new Map<string, number>();
+        const langOf = (file: (typeof files)[number]) => file.lang ?? '';
+        for (const file of files) if (!file.generated && !file.binary) weight.set(langOf(file), (weight.get(langOf(file)) ?? 0) + file.loc);
         const declared = files
-          .filter(file => !file.generated && !file.binary)
+          .filter(file => !file.generated && !file.binary && !PROSE.test(file.path) && inScope(file.path, scope))
           .map(file => ({file, symbol: facts.get(file.path)?.symbols.find(symbol => symbol.name === name && symbol.kind !== 'heading')}))
           .filter(found => found.symbol !== undefined)
-          .sort((a, b) => Number(a.file.isTest) - Number(b.file.isTest) || (a.file.path < b.file.path ? -1 : a.file.path > b.file.path ? 1 : 0));
+          // The order code.refs lists its definitions in (main language, then non-tests, then path), so the preset
+          // opens the file its 'defined in' names first.
+          .sort((a, b) => (weight.get(langOf(b.file)) ?? 0) - (weight.get(langOf(a.file)) ?? 0) || Number(a.file.isTest) - Number(b.file.isTest)
+            || (a.file.path < b.file.path ? -1 : a.file.path > b.file.path ? 1 : 0));
         const first = declared[0];
         return first ? formatFileLoc({path: first.file.path, line: first.symbol!.line}) : undefined;
       }
@@ -408,9 +558,15 @@ export class Session {
     clearInterval(this.pollTimer);
     this.pollTimer = undefined;
     if (want) {
-      this.loaded.watcher.start(() => this.treeChanged());
-      if (!this.loaded.watcher.check && !this.loaded.ctx.git) {
-        this.pollTimer = setInterval(() => void this.revalidate(), NO_GIT_POLL_MS);
+      const {watcher, ctx} = this.loaded;
+      watcher.start(() => this.treeChanged());
+      if (!ctx.git) {
+        // Without git a connected tab is kept fresh by looking: in full when the watcher cannot look for itself, else
+        // only for a .git appearing (`git init`), which no file the watcher lists shows.
+        this.pollTimer = setInterval(() => {
+          if (!watcher.check) void this.revalidate();
+          else void hasDotGit(this.root).then(found => { if (found !== this.dotGit) void this.revalidate(); });
+        }, NO_GIT_POLL_MS);
         this.pollTimer.unref();
       }
     } else {
@@ -419,25 +575,33 @@ export class Session {
   }
 
   // ---------------------------------------------------------------- show
-  private prepare(request: ShowRequest, tools: Toolchain, registry: SourceRegistry): {draft: Draft; fixes: string[]; warnings: string[]; expansion: Expansion} {
+  private prepare(request: ShowRequest, tools: Toolchain, registry: SourceRegistry, names?: PathNames): {draft: Draft; fixes: string[]; warnings: string[]; expansion: Expansion; compiledData: Set<string>} {
     const current = request.fresh ? undefined : this.surfaces.get(request.id);
     const compiled = compileSpec(tools, {
       surfaceId: request.id,
       ...(current ? {seed: {components: [...current.components.values()], data: current.data}} : {}),
       sources: request.sources,
       surfaces: this.surfaces.ids(),
+      log: this.log,
     });
-    const expansion = expandMessages(compiled.messages, registry);
+    const expansion = expandMessages(compiled.messages, registry, names);
     if (expansion.problems.length > 0) throw new SpecError(expansion.problems);
+    // Which components the preset's own text defined (the first source of a preset call) and which the model wrote.
+    const idsOf = (from: (step: number) => boolean) =>
+      new Set(compiled.messages.flatMap((message, i) => (from(compiled.steps[i] ?? 0) ? componentsOf(message).map(comp => comp.id) : [])));
     const draft = this.surfaces.draft(request.id, compiled.messages, {
       fresh: request.fresh,
       ...(request.view ? {view: request.view} : {}),
       refs: expansion.refs,
       parts: compiled.texts.flatMap(namedParts),
+      presetIds: request.fresh ? idsOf(step => step === 0) : new Set(),
+      modelIds: idsOf(step => !request.fresh || step > 0),
       now: this.now(),
     });
     const unbound = [...unboundPaths(compiled.messages.flatMap(componentsOf), draft.record.data), ...draft.unknownKeys.map(key => `$/ds/${key}`)];
-    return {draft, fixes: compiled.fixes, warnings: [...compiled.warnings, ...expansion.warnings, ...unbound.map(path => `unbound ${path}`)], expansion};
+    const compiledData = new Set(compiled.messages.flatMap(message => ('updateDataModel' in message ? [topSegment(message.updateDataModel.path)]
+      : 'createSurface' in message ? Object.keys(message.createSurface.dataModel ?? {}) : [])));
+    return {draft, fixes: [...compiled.fixes, ...expansion.fixes], warnings: [...compiled.warnings, ...expansion.warnings, ...unbound.map(path => `unbound ${path}`)], expansion, compiledData};
   }
 
   /**
@@ -451,10 +615,18 @@ export class Session {
     const registry = services.deps.registry;
     // Validate first, so an invalid first call does not start the host; then again after the await, on current state.
     let prepared = this.prepare(request, tools, registry);
-    if (!this.host) {
-      await this.ensureHost();
-      prepared = this.prepare(request, tools, registry);
+    // Finding V071: a path the spec wrote in another case than the one on disk ('readme.md') is shown, bound and
+    // checked under the inventory's name (README.md), said as a fix. The file system tells synchronously which paths
+    // are such variants; only then is the index asked, and the call expanded again with the names it gave.
+    const variants = prepared.expansion.paths.filter(path => isCaseVariant(this.root, path));
+    let names: Map<string, string> | undefined;
+    if (variants.length > 0) {
+      names = new Map();
+      for (const path of variants) names.set(path, await canonicalTarget(services.ctx, path));
     }
+    const starting = !this.host;
+    if (starting) await this.ensureHost();
+    if (starting || names) prepared = this.prepare(request, tools, registry, names);
     const host = this.host;
     if (!host) throw new Error('the session has ended');
     const {draft, fixes, warnings, expansion} = prepared;
@@ -464,9 +636,13 @@ export class Session {
     let datasets: ShowOutcome['datasets'] = [];
     let tab: TabState = 'none';
     try {
-      // Decision D3: reports belong to what the tab drew. A replace in place keeps those of unchanged components.
-      if (draft.inPlace) this.events.dropReports(record.id, draft.inPlace.changed);
-      else if (draft.mode !== 'patch') this.events.dropReports(record.id);
+      // Decision D14: the state of every component this call defines again is forgotten, and the tab reports it afresh
+      // while this call waits: a fix that leaves a component as broken as before is told as such. A patch redefines
+      // the components it sends, a replace in place those its text defines (identical or not) and any whose
+      // definition changed, any other replace all of them.
+      if (draft.mode === 'patch') this.events.reports.forget(record.id, draft.delta.flatMap(componentsOf).map(comp => comp.id));
+      else if (draft.inPlace) this.events.reports.forget(record.id, draft.inPlace.changed);
+      else this.events.reports.forget(record.id);
       for (const id of evicted) this.forget(id);
 
       const fresh = new Set(draft.newKeys);
@@ -492,13 +668,13 @@ export class Session {
     const outcome: ShowOutcome = {
       id: record.id,
       mode: draft.mode,
-      url: `${host.origin}/#/${encodeURIComponent(record.id)}`,
+      url: `#/${encodeURIComponent(record.id)}`,
       openUrl: `${host.origin}/#t=${host.token}`,
       tab, fixes, warnings, datasets,
       checks: Promise.resolve(),
       fields: expansion.fields,
       parts: draft.mode === 'patch' ? [] : record.parts,
-      slots: draft.mode === 'patch' ? [] : Object.keys(record.data).filter(key => key !== 'ui').map(key => `$/${key}`),
+      slots: draft.mode === 'patch' ? [] : liveSlots(record, prepared.compiledData).map(key => `$/${key}`),
       first,
     };
     outcome.checks = this.checkNamed(services, expansion).then(found => void outcome.warnings.push(...found), error => this.log(`glimpse: checking the files a view names failed: ${describe(error)}`));
@@ -520,12 +696,7 @@ export class Session {
       if (state === 'ok') continue;
       if (state === 'refused') { out.push(`${where}: "${path.slice(0, 120)}" is not a file of this project (outside it, ignored, or not a regular file).`); continue; }
       candidates ??= (await ctx.index.files().catch(() => [])).map(entry => entry.path);
-      const name = basename(path);
-      const sameName = candidates.filter(candidate => basename(candidate) === name);
-      // A suggestion is offered only when it is plausibly what was meant: the same file name, or a path a few edits away.
-      const close = (candidate: string) => editDistance(path.toLowerCase(), candidate.toLowerCase()) <= Math.max(3, Math.floor(path.length / 4));
-      const near = (sameName.length > 0 ? sameName : nearest(path, candidates, 2).filter(close)).slice(0, 2);
-      out.push(`${where}: file "${path.slice(0, 120)}" does not exist.${near.length > 0 ? ` Nearest: ${near.join(' ')}` : ''}`);
+      out.push(`${where}: file "${path.slice(0, 120)}" does not exist.${missingFileHint(path, candidates)}`);
     }
     for (const {where, range} of expansion.ranges) {
       if (out.length >= MAX_CHECK_WARNINGS) break;
@@ -557,28 +728,32 @@ export class Session {
       if (known.size > 0 && missing.length > 0) out.push(`${check.where}: no field ${missing.slice(0, 4).map(name => `"${name.slice(0, 40)}"`).join(', ')} in ${envelope.source}. Fields: ${[...known].join(' ')}`);
     }
     // A component the call already has a warning about (a missing file, a wrong kind, a missing field) is not
-    // reported twice: what the tab drew there is the same problem in other words.
+    // reported twice: what the tab drew there is the same problem in other words, and it is not delivered later.
     const said = new Set([...(outcome.warnings ?? []), ...out].map(warning => /^([A-Za-z][A-Za-z0-9]*#[^\s:]+):/.exec(warning)?.[1]).filter(name => name !== undefined));
-    return [...out, ...this.events.takeReports(outcome.id).filter(report => !said.has(report.slice(0, report.indexOf(':'))))];
+    // Finding V006: a component bound to a dataset that failed draws that failure; the result's dataset line says it,
+    // so the tab's report of the same thing is not a second warning.
+    const failed = new Set(Object.entries(record.ds).filter(([, envelope]) => envelope?.status === 'error').map(([key]) => key));
+    if (failed.size > 0) {
+      for (const comp of record.components.values()) {
+        if ([...boundKeys([comp])].some(key => failed.has(key))) said.add(`${comp.component}#${comp.id}`);
+      }
+    }
+    return [...out, ...this.events.reports.take(outcome.id, said)];
   }
 
   /**
-   * Decision D3, the viewer half: a tab says it drew `code` (a redline code, or W_EMPTY) in place of component
-   * `name#id`. The latest report per component is kept; a repeat of the same one is ignored; a new one is queued
-   * for the model. Returns false for a surface or component that does not exist.
+   * Decision D14, the viewer half: a tab reports the current state of component `name#id`: OK, a truthful empty or
+   * waiting state (I_*), or a problem (W_*, E_*). The store keeps the latest one; the model hears of a problem once.
+   * Returns false for a surface or component that does not exist.
    */
   viewerReport(surfaceId: string, name: string, id: string, code: string, message: string): boolean {
     const record = this.surfaces.get(surfaceId);
-    if (!record || record.components.get(id)?.component !== name) return false;
-    const key = `${name}#${id}`;
-    const text = message.replace(/\s+/g, ' ').trim().slice(0, 300);
-    const previous = record.reports.get(key);
-    if (previous?.code === code && previous.message === text) return true;
-    record.reports.set(key, {code, message: text});
-    // A CodeView or SymbolOutline that follows the selection is empty until the user selects a file: that is the
-    // start state of every tree and file preset, not something for the model to fix. It is kept, not queued.
-    if (code === 'W_EMPTY' && this.waitsForSelection(record, record.components.get(id)!)) return true;
-    this.events.report(surfaceId, key, code, text);
+    const comp = record?.components.get(id);
+    if (!record || comp?.component !== name) return false;
+    // An empty part of a preset is the preset's state, not something the model wrote; a code view that follows the
+    // selection is empty until the user selects a file. Both are kept as told: neither is the model's to fix.
+    const quiet = code === 'W_EMPTY' && (record.preset.has(id) || this.waitsForSelection(record, comp));
+    this.events.reports.set(surfaceId, `${name}#${id}`, code, oneLine(message, 300), quiet);
     return true;
   }
 
@@ -744,13 +919,34 @@ export class Session {
     return this.refreshTree(undefined);
   }
 
-  /** True when HEAD or the working tree is not what it was at the last look; that state then becomes the reference. */
+  /** Every ref of the repository with its commit, as one digest: a base ref can move while HEAD stays (finding V052). */
+  private async readRefs(ctx: RepoContext): Promise<string> {
+    if (!ctx.git) return '';
+    const out = await ctx.runGit(['for-each-ref', '--format=%(objectname) %(refname)']).catch(() => Buffer.alloc(0));
+    // No refs at all (no commit yet, or git failed) reads the same as no git, so neither is a change on its own.
+    return out.length === 0 ? '' : createHash('sha1').update(out).digest('hex');
+  }
+
+  /**
+   * True when HEAD, the working tree, a ref, or the presence of the repository itself is not what it was at the last
+   * look; that state then becomes the reference. `git init` in a plain directory changes no file the watcher lists,
+   * so the .git entry is looked at here, whatever the watcher does (findings V055, V068).
+   */
   private async moved(services: Services): Promise<boolean> {
-    if (services.watcher.check) return services.watcher.check();
-    const stamp = await treeStamp(this.root, services.ctx.runGit, services.ctx.git !== null);
-    const changed = this.stamp !== undefined && stamp !== this.stamp;
-    this.stamp = stamp;
-    return changed;
+    const tree = async () => {
+      if (services.watcher.check) return services.watcher.check();
+      const stamp = await treeStamp(this.root, services.ctx.runGit, services.ctx.git !== null);
+      const changed = this.stamp !== undefined && stamp !== this.stamp;
+      this.stamp = stamp;
+      return changed;
+    };
+    const [changed, dotGit, refs] = await Promise.all([tree(), hasDotGit(this.root), this.readRefs(services.ctx)]);
+    const repository = this.dotGit !== undefined && dotGit !== this.dotGit;
+    const refsMoved = this.refsStamp !== undefined && refs !== this.refsStamp;
+    this.dotGit = dotGit;
+    this.refsStamp = refs;
+    if (refsMoved) this.refsRev++;
+    return changed || repository || refsMoved;
   }
 
   /**
@@ -790,8 +986,9 @@ export class Session {
    * index, and re-run what depends on it. Visible data stays on screen until its replacement arrives. Refreshes
    * run one after another, so a second one cannot read git while the first is half way through.
    */
-  private refreshTree(only: string | undefined): Promise<void> {
+  private refreshTree(only: ReadonlySet<string> | undefined, starting?: () => void): Promise<void> {
     const run = this.refreshing.then(async () => {
+      starting?.();
       const services = this.loaded;
       if (!services || this.disposed) return;
       const {ctx, deps} = services;
@@ -802,18 +999,36 @@ export class Session {
       this.dirty = await this.readDirty(ctx);
       if (this.disposed) return;
       const headChanged = before !== ctx.git?.head;
+      // The refs as they are now, with the repository as it is now (it may have just appeared), so the next look
+      // compares against what this refresh served.
+      const refs = await this.readRefs(ctx);
+      if (this.refsStamp !== undefined && refs !== this.refsStamp) this.refsRev++;
+      this.refsStamp = refs;
+      if (this.disposed) return;
+      const refsChanged = this.refsRev !== this.refsRefreshed;
+      this.refsRefreshed = this.refsRev;
       this.publishMeta();
       for (const record of this.surfaces.all()) {
-        const all = record.id === only;
+        const all = only?.has(record.id) === true;
         const keys = [...record.bindings.keys()].filter(key => {
-          const source = record.bindings.get(key)!.source;
-          return all || headChanged || (resolveSource(source, deps.registry)?.meta ?? SOURCE_BY_NAME.get(source))?.wt === true;
+          const ref = this.effectiveRef(record, key)!;
+          const meta = resolveSource(ref.source, deps.registry)?.meta ?? SOURCE_BY_NAME.get(ref.source);
+          return all || headChanged || meta?.wt === true || (refsChanged && meta !== undefined && readsRefs(meta, ref));
         });
         this.rerun(record, keys, false);
       }
     }).catch(error => this.log(`glimpse: refreshing after a change failed: ${describe(error)}`));
     this.refreshing = run;
     return run;
+  }
+
+  /**
+   * Finding V071: a path the model wrote ('path' or 'path#L10'), under the inventory's spelling: 'readme.md' is
+   * README.md on a case-insensitive file system. As written when it already is that name or names nothing.
+   */
+  async canonicalName(text: string): Promise<string> {
+    const {ctx} = await this.services();
+    return canonicalTarget(ctx, text);
   }
 
   // ---------------------------------------------------------------- files the viewer may ask for
@@ -873,11 +1088,18 @@ export class Session {
    * revision makes the working-tree sources recompute; the others are answered from memory unless HEAD moved.
    */
   refresh(surfaceId: string): void {
-    if (this.surfaces.has(surfaceId)) void this.refreshTree(surfaceId);
+    if (!this.surfaces.has(surfaceId)) return;
+    // Finding V023: requests that arrive while one is waiting for its turn join it, so a burst re-reads the tree once.
+    if (this.refreshWaiting) { this.refreshWaiting.add(surfaceId); return; }
+    const waiting = new Set([surfaceId]);
+    this.refreshWaiting = waiting;
+    void this.refreshTree(waiting, () => {
+      if (this.refreshWaiting === waiting) this.refreshWaiting = undefined;
+    });
   }
 
   private forget(surfaceId: string): void {
-    this.events.dropReports(surfaceId);
+    this.events.reports.forget(surfaceId);
     this.told.delete(surfaceId);
   }
 
@@ -900,14 +1122,19 @@ export class Session {
       return problem('E_PATH', `refused to open ${state === 'missing' ? 'a path that does not exist' : 'a path that is not a file of the project'}: ${JSON.stringify(loc.path.slice(0, 200))}`);
     }
     if (!canOpen(this.env)) return undefined;
-    const target = await resolveInside(this.root, loc.path);
-    const command = target ? editorCommand(target, loc.line, this.env) : undefined;
+    // Finding V071: the editor opens the file under the inventory's spelling ('readme.md' opens README.md), so its
+    // tab, its recent-files list and any later save agree with what every view of the project shows.
+    const resolved = await resolveInside(this.root, loc.path);
+    const {ctx} = await this.services();
+    const named = resolved ? await canonicalPath(ctx.index, repoRelative(this.root, resolved)) : undefined;
+    const target = named ? await resolveInside(this.root, named) : undefined;
+    const command = target ? editorCommand(target, loc.line, this.env, {root: this.root}) : undefined;
     if (!command) {
       if (this.noEditorSaid) return undefined;
       this.noEditorSaid = true;
       return problem('E_PATH', NO_EDITOR);
     }
-    (this.options.launcher ?? detachedLauncher)(command[0], command[1]);
+    (this.options.launcher ?? detachedLauncher)(command[0], command[1], launchOptions(this.env, this.root));
     return undefined;
   }
 

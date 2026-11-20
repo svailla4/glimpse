@@ -46,8 +46,8 @@ describe('DataTable: path cells and column widths (F004, F019, F088, D12)', () =
     const view = renderExpress(page('DataTable($/rows)'), {data: {'/rows': ROWS}});
     await ready(view);
     const [path, commits, loc, last] = tracks(view);
-    // the path column is the flexible one, with the largest share
-    expect(path).toBe('minmax(168px, 4fr)');
+    // the path column is the flexible one: it takes all the spare width
+    expect(path).toMatch(/^minmax\(168px, \d+fr\)$/);
     // numbers and ages are a fixed width in px: no share of the spare width, so none is taken from the path
     for (const track of [commits, loc, last]) expect(track).toMatch(/^\d+px$/);
     // "commits" is wider than "41": the header sets the width; "1,280" is wider than "loc"
@@ -59,7 +59,10 @@ describe('DataTable: path cells and column widths (F004, F019, F088, D12)', () =
     const view = renderExpress(page('DataTable($/rows)'), {data: {'/rows': [{a: 1, b: 22}, {a: 333, b: 4}]}});
     await ready(view);
     expect(tracks(view)).toHaveLength(2);
-    for (const track of tracks(view)) expect(track).toMatch(/^minmax\(\d+px, 0\.8fr\)$/);
+    const [a, b] = tracks(view);
+    for (const track of [a, b]) expect(track).toMatch(/^minmax\(\d+px, \d+fr\)$/);
+    // equal weights: the two columns split the width evenly
+    expect(a!.match(/(\d+)fr/)![1]).toBe(b!.match(/(\d+)fr/)![1]);
   });
 });
 

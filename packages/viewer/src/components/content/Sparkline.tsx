@@ -3,7 +3,7 @@
 import type * as C from '@glimpse/catalog';
 import {useMemo, useRef, type JSX} from 'react';
 import {DataGate, Empty, Redline, toNumber, useDataset, useSize, type DataState, type GlView} from '../../kit/index.ts';
-import {isRecord, shapeMessage} from './shared/data.ts';
+import {isRecord, shapeHint, shapeMessage} from './shared/data.ts';
 import {Spark, describeSpark, sparkValues, type SparkKind} from './shared/Spark.tsx';
 import styles from './Sparkline.module.css';
 
@@ -39,7 +39,7 @@ export const SparklineView: GlView<typeof C.Sparkline> = ({id, props}) => {
     <DataGate state={state} id={`Sparkline#${id}`}>
       {data => {
         if (!Array.isArray(data)) return <Redline code="E_SHAPE" id={`Sparkline#${id}`} message={shapeMessage('a list of numbers', data)} />;
-        if (!values.some(v => v !== undefined)) return <Empty message="no numbers to plot" />;
+        if (!values.some(v => v !== undefined)) return <Empty message={`no numbers to plot: Sparkline takes a list of numbers, got ${shapeHint(data)}`} code="W_SHAPE" />;
         return <Plot values={values} kind={kind} />;
       }}
     </DataGate>

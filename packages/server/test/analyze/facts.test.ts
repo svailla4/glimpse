@@ -331,6 +331,17 @@ describe('Markdown outline', () => {
     expect(scan('notes.md', text).symbols.map(symbol => `${symbol.name} ${symbol.line}`)).toEqual(['Out 6', 'Last 11']);
   });
 
+  it('skips HTML comments, reads setext headings, and takes a leading --- for front matter only when it holds keys (V073)', () => {
+    const outline = (text: string) => scan('README.md', text).symbols.map(symbol => `${symbol.name}@${symbol.line}${symbol.endLine ? `-${symbol.endLine}` : ''}/d${symbol.depth}`);
+    expect(outline('# A\n<!--\n# commented out\n-->\n## B\n')).toEqual(['A@1-5/d0', 'B@5/d1']);
+    expect(outline('# A\n<!-- one line --> text\n## B\n')).toEqual(['A@1-3/d0', 'B@3/d1']);
+    expect(outline('---\n# Title\n\nIntro\n\n---\n\n## Usage\ntext\n')).toEqual(['Title@2-9/d0', 'Usage@8-9/d1']);
+    expect(outline('---\ntitle: x\n# comment\n---\n# Real\n')).toEqual(['Real@5/d0']);
+    expect(outline('Title\n=====\n\nSub\nline two\n---\n# Atx\n')).toEqual(['Title@1-6/d0', 'Sub line two@4-6/d1', 'Atx@7/d0']);
+    // a rule after a blank line, or under a list item, is no heading; neither is an empty closing run
+    expect(outline('# A\n\ntext\n\n---\n- item\n---\n### ###\n')).toEqual(['A@1-8/d0']);
+  });
+
   it('is empty for a file with no headings, and source files keep their own outline', () => {
     expect(scan('NOTES.md', 'just text\n').symbols).toEqual([]);
     expect(scan('a.ts', '# not markdown\nexport function f() {}\n').symbols.map(symbol => symbol.kind)).toEqual(['fn']);
@@ -410,7 +421,7 @@ describe('todos', () => {
     ].join('\n');
     expect(scan('a.ts', text).todos).toEqual([
       {tag: 'TODO', line: 1, text: 'rotate the signing key'},
-      {tag: 'HACK', line: 4, text: 'works around #12'},
+      {tag: 'HACK', line: 4, text: 'works around #12', owner: 'ana'},
       {tag: 'XXX', line: 5, text: 'in a doc block'},
       {tag: 'TODO', line: 6, text: 'TODO twice'},
     ]);
@@ -418,6 +429,14 @@ describe('todos', () => {
     expect(scan('a.sql', '-- TODO index\nselect 1;\n').todos).toEqual([{tag: 'TODO', line: 1, text: 'index'}]);
     expect(scan('a.html', '<!-- TODO: alt text -->\n').todos).toEqual([{tag: 'TODO', line: 1, text: 'alt text'}]);
     expect(scan('README.md', '# TODO\n- TODO: write docs\n').todos).toEqual([]);
+  });
+
+  // Finding V039: the diff preset's Open TODOs showed '(https://github.com/…/issues/1698): remove once…' as the text.
+  it('puts the parenthetical after the tag in owner, however long, and keeps the message as the text', () => {
+    const url = 'https://github.com/example-org/example/issues/1698';
+    expect(scan('a.ts', `// TODO(${url}): remove once the renderer ships\n`).todos).toEqual([{tag: 'TODO', line: 1, text: 'remove once the renderer ships', owner: url}]);
+    expect(scan('a.py', '# FIXME (later) tidy\n').todos).toEqual([{tag: 'FIXME', line: 1, text: '(later) tidy'}]);
+    expect(scan('a.ts', '// TODO(): nothing inside\n').todos).toEqual([{tag: 'TODO', line: 1, text: '(): nothing inside'}]);
   });
 
   it('keeps at most 50 per file', () => {

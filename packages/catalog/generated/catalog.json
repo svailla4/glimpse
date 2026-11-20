@@ -115,7 +115,7 @@
     },
     "Grid": {
       "type": "object",
-      "description": "Columns: equal by default, or a ratio like '2:1'. Wraps on narrow screens.",
+      "description": "Columns: equal, a ratio like '2:1', or the children's span= on 12 columns. Wraps on narrow screens.",
       "properties": {
         "component": {
           "const": "Grid"
@@ -470,7 +470,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "Object {Label:value} or [{k,v}]."
+          "description": "Object {Label:value}, or [{label,value}] ([{key,value}] and [{k,v}] work too)."
         },
         "cols": {
           "type": "integer",
@@ -682,7 +682,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "[{label,value,unit?,delta?,spark?,format?,tone?}]."
+          "description": "[{label,value,unit?,delta?,spark?,format?,tone?}] ([{key,value}] works too), or an object {Label:value}."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -771,7 +771,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "Rows: source ref, $/path or inline list of objects."
+          "description": "Rows: source ref, $/path or inline list of objects. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph."
         },
         "columns": {
           "type": "string",
@@ -1103,7 +1103,7 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 200,
-          "description": "Bars kept; the rest fold into Other. Default 20."
+          "description": "Bars kept (default 20); the rest fold into other when the measure adds up."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -2060,7 +2060,7 @@
         },
         "action": {
           "$ref": "common_types.json#/$defs/Action",
-          "description": "Event('name',{context})."
+          "description": "Event('name',{context}), or a plain 'name' (read as Event('name'))."
         },
         "tone": {
           "type": "string",

@@ -122,22 +122,51 @@ export function stringValue(token: SpecToken): string {
 }
 
 /**
- * Refuses reserved names in the two places a spec can address data: `$/a/b` paths and the keys of object literals.
- * Strings that are values are never looked at, so prose may mention __proto__ freely.
+ * Strings and comments exactly as the Express compiler's preprocessor finds them before its lexer runs
+ * (normalizeExpressSource in @a2ui/agent, which is not exported): raw strings in either case, triple and standard
+ * strings, `#`, `//`, `/* *\/` and `--` comments. Whatever lies between two matches is code. Finding V020: a scan
+ * that read strings differently could be shown a line the compiler treats as code.
+ */
+const COMPILER_STRINGS_AND_COMMENTS = /([rR]"""[\s\S]*?"""|[rR]"[^\r\n"]*"|"""(?:\\[\s\S]|[^\\])*?"""|"(?:\\[\s\S]|[^\\])*?"|(?:#|\/\/)[^\r\n]*|\/\*[\s\S]*?\*\/)|--[^\r\n]*/g;
+
+/** The value of a string the preprocessor found: raw strings as written, the others with their escapes resolved. */
+function compilerString(text: string): string | undefined {
+  if (/^[rR]"""/.test(text)) return text.slice(4, -3);
+  if (/^[rR]"/.test(text)) return text.slice(2, -1);
+  const body = text.startsWith('"""') ? text.slice(3, -3) : text.startsWith('"') ? text.slice(1, -1) : undefined;
+  if (body === undefined) return undefined;
+  return body.replace(/\\(u\{[0-9a-fA-F]{1,6}\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|[\s\S])/g, (_, escaped: string) => {
+    if (escaped.startsWith('u{')) return String.fromCodePoint(Math.min(0x10ffff, Number.parseInt(escaped.slice(2, -1), 16)));
+    if (escaped.length > 1 && (escaped[0] === 'u' || escaped[0] === 'x')) return String.fromCharCode(Number.parseInt(escaped.slice(1), 16));
+    return escaped;
+  });
+}
+
+/**
+ * Refuses reserved names wherever a spec can name data: in the code (a `$/a/b` path, a path split over two lines that
+ * the compiler joins, an object key, a part name), and in a string used as an object key. The text is cut into code,
+ * strings and comments the way the compiler cuts it, and every word of the code is looked at. Strings that are values
+ * are never looked at, so prose may mention __proto__ freely.
  */
 export function scanSpec(text: string): Problem | undefined {
-  const {tokens} = tokenize(text);
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]!;
-    if (token.kind === 'path') {
-      const found = pathProblem(token.text);
-      if (found) return found;
-    } else if ((token.kind === 'ident' || token.kind === 'string') && tokens[i + 1]?.text === ':') {
-      const key = token.kind === 'string' ? stringValue(token) : token.text;
-      if (UNSAFE_KEYS.has(key)) return refusal(key, 'data key');
+  let at = 0;
+  const code = (segment: string): Problem | undefined => {
+    for (const match of segment.matchAll(/[A-Za-z0-9_]+/g)) {
+      if (!UNSAFE_KEYS.has(match[0])) continue;
+      const before = segment.slice(0, match.index).replace(/\s+$/, '');
+      return refusal(match[0], before.endsWith('/') || before.endsWith('$') ? 'data path segment' : /^\s*:/.test(segment.slice(match.index + match[0].length)) ? 'data key' : 'name');
     }
+    return undefined;
+  };
+  for (const match of text.matchAll(COMPILER_STRINGS_AND_COMMENTS)) {
+    const found = code(text.slice(at, match.index));
+    if (found) return found;
+    at = match.index + match[0].length;
+    if (match[1] === undefined || match[1].startsWith('#') || match[1].startsWith('/')) continue;
+    // A string followed by a colon is an object key.
+    if (/^\s*:/.test(text.slice(at)) && UNSAFE_KEYS.has(compilerString(match[1]) ?? '')) return refusal(compilerString(match[1])!, 'data key');
   }
-  return undefined;
+  return code(text.slice(at));
 }
 
 // ---------------------------------------------------------------- the built-in prototypes

@@ -2,10 +2,13 @@
 // selection, keyboard traversal, draggable nodes with remembered positions and the "Re-layout" control. A component
 // turns its data into nodes, edges and groups and supplies the drawing of one node; everything else is here.
 //
-// What opens (design rule D7). The layout is made for the shape of the stage. When all of it can be drawn with
-// readable labels it is fitted and centred, never above 100%. When it cannot, the stage opens at a readable zoom on
-// the focus (or the anchor: the busiest node), an overview inset shows where that is, and "Fit to view" still shows
-// everything. Below a readable zoom nodes that can (NodeFlags.lod) switch to fewer, larger labels.
+// What opens (design rules D7, D18). The layout is made for the shape of the stage. When all of it can be drawn with
+// readable labels it is fitted and centred, never above 100%; an unsized stage first grows (up to GROW_CAP) to show
+// it whole. When it cannot, the stage opens at a readable zoom on the focus (or the anchor: the busiest node), placed
+// so that no node is cut at an edge or under the overview inset, which shows where that is beside "n of m in view"
+// (nodes shown whole); "Fit to view" still shows everything. Readable means 10 px on screen for the smallest text
+// that shrinks with the zoom (`minText`, edge labels); below a readable zoom nodes that can (NodeFlags.lod) switch to
+// fewer, larger labels, and the stage opens no further out than keeps those names telling the nodes apart (`lodZoom`).
 import {formatFileLoc, type EntityRef} from '@glimpse/catalog';
 import {
   memo, useCallback, useEffect, useMemo, useRef, useState,
@@ -14,12 +17,12 @@ import {
 import {Drafting, Icon, PlateAside, Redline, entityClipText, matchSelection, useHostActions, useSelection, useSize, useTooltip} from '../../../kit/index.ts';
 import css from './edgekit.module.css';
 import {
-  boundsOf, centerOf, labelAnchor, markPath, nearestInDirection, roundedPath, routeAround, routeLoop,
+  boundsOf, centerOf, labelAnchor, loopLabel, markPath, nearestInDirection, roundedPath, routeAround, routeLoop,
   type Box, type Dir, type Mark, type Point, type Shape,
 } from './geometry.ts';
 import type {Laid, LayoutSpec, Route} from './layout.ts';
 import {useNodePositions} from './positions.ts';
-import {MONO_11, fitText, textWidth} from './text.ts';
+import {MONO_11, fitText, textWidth, wrapText} from './text.ts';
 import {useLayout} from './useLayout.ts';
 
 export interface DiagramNode<T = unknown> {
@@ -106,6 +109,16 @@ export interface DiagramProps<T> {
   anchor?: string;
   /** True when renderNode draws the levels of detail of NodeFlags.lod; the stage may then open further out. */
   lod?: boolean;
+  /**
+   * With `lod`: the zoom from which every node's 'name' face still says which node it is (a name cut to three letters
+   * does not). The stage opens no further out. Default LOD_ZOOM; at most FULL_ZOOM.
+   */
+  lodZoom?: number;
+  /**
+   * The smallest text the diagram draws at 100%, in px (edge labels are 11). Without levels of detail the stage never
+   * opens further out than the zoom that keeps it at 10 px on screen. Default 11.
+   */
+  minText?: number;
   /** Draws one node in a box of its size with the origin at the top-left corner. Must be a stable function. */
   renderNode: (node: DiagramNode<T>, flags: NodeFlags) => ReactNode;
   onDrill?: (node: DiagramNode<T>) => void;
@@ -135,8 +148,16 @@ export const FULL_ZOOM = 0.91;
 const GROUP_FULL_ZOOM = 0.96;
 /** With levels of detail a node still holds a 10 px name (of eight letters or more) down to here. */
 export const LOD_ZOOM = 0.4;
-/** Without them (flowchart and table text shrinks with the zoom) a diagram opens no further out than this. */
-const PLAIN_ZOOM = 0.7;
+/** A focused diagram is shown whole only down to this zoom; further out it opens on the focus and its neighbours. */
+const FOCUS_WHOLE_ZOOM = 0.7;
+/** On-screen text is never smaller than this when a diagram opens (design rule D18). */
+const MIN_SCREEN_TEXT = 10;
+const DEFAULT_MIN_TEXT = 11;
+/** An unsized diagram grows its plate up to this height to be shown whole at a readable zoom. */
+const GROW_CAP = 640;
+/** Edge labels longer than this wrap onto a second line. */
+const LABEL_WRAP = 112;
+const LABEL_LINE = 13;
 const DRAG_THRESHOLD = 4;
 const NUDGE = 16;
 const PAN_STEP = 48;
@@ -161,9 +182,14 @@ const NO_LAYOUT: Laid = {dir: 'LR', boxes: new Map(), routes: new Map()};
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-function labelPlate(label: string): {text: string; w: number; h: number} {
-  const text = fitText(label, LABEL_MAX_WIDTH, MONO_11);
-  return {text, w: Math.ceil(textWidth(text, MONO_11)) + 10, h: 16};
+/** The zoom at which text of `px` is `MIN_SCREEN_TEXT` on screen, rounded up to a whole percent. */
+export const readableZoom = (px: number) => Math.ceil((MIN_SCREEN_TEXT / px) * 100) / 100;
+
+/** A label plate: one line, or two when the label is long, each cut to fit. */
+export function labelPlate(label: string): {lines: string[]; w: number; h: number} {
+  const lines = textWidth(label, MONO_11) <= LABEL_WRAP ? [fitText(label, LABEL_MAX_WIDTH, MONO_11)] : wrapText(label, LABEL_WRAP, 2, MONO_11);
+  const w = Math.max(...lines.map(line => textWidth(line, MONO_11)));
+  return {lines, w: Math.ceil(w) + 10, h: 16 + (lines.length - 1) * LABEL_LINE};
 }
 
 interface GroupBox { id: string; label: string; drillable: boolean; box: Box }
@@ -238,6 +264,15 @@ function shows(view: View, box: Box, width: number, height: number): boolean {
   return left >= 0 && top >= 0 && left + box.w * view.k <= width && top + box.h * view.k <= height - PAD_BOTTOM;
 }
 
+/** True when the stage shows `box` whole, or as much of it as the stage can hold: not cut off at an edge. */
+export function seen(view: View, box: Box, width: number, height: number): boolean {
+  const left = box.x * view.k + view.x;
+  const top = box.y * view.k + view.y;
+  const w = box.w * view.k;
+  const h = box.h * view.k;
+  return Math.min(left + w, width) - Math.max(left, 0) >= Math.min(w, width) - 1 && Math.min(top + h, height) - Math.max(top, 0) >= Math.min(h, height) - 1;
+}
+
 /** The corner the overview inset takes, with its margin and padding: where the box an opening view is about should not be. */
 function insetOf(width: number, height: number): {w: number; h: number} {
   return {w: Math.min(OVERVIEW_W, width * 0.26) + 18, h: Math.min(OVERVIEW_H, height * 0.3) + 18};
@@ -250,22 +285,76 @@ function showsClear(view: View, box: Box, width: number, height: number): boolea
   return box.x * view.k + view.x >= inset.w || (box.y + box.h) * view.k + view.y <= height - inset.h;
 }
 
+/** How far past the edge of the stage a node is moved when an opening view takes it off rather than cut it. */
+const EDGE_CLEAR = 8;
+
+const areaOf = (a: Box, b: Box) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+
+/**
+ * `view` moved as little as it takes so that no node is cut where the stage stops showing it, at its edges or under
+ * the overview inset (a node half shown reads as the diagram going on there): on each axis, of the moves that take a
+ * cut node wholly into view or wholly out of it, the one that leaves the fewest cut, keeps every node the view showed
+ * whole and the anchor clear of the inset, and moves least.
+ */
+function unslice(view: View, boxes: readonly Box[], anchor: Box, width: number, height: number): View {
+  const stage = {x: 0, y: 0, w: width, h: height};
+  const corner = boxes.length >= OVERVIEW_MIN_NODES ? insetOf(width, height) : undefined;
+  const inset = corner ? {x: 0, y: height - corner.h, w: corner.w, h: corner.h} : undefined;
+  const onScreen = (v: View, box: Box): Box => ({x: box.x * v.k + v.x, y: box.y * v.k + v.y, w: box.w * v.k, h: box.h * v.k});
+  const isCut = (s: Box) => {
+    const visible = areaOf(s, stage) - (inset ? areaOf(s, inset) : 0);
+    return visible > 1 && visible < s.w * s.h - 1;
+  };
+  const cut = (v: View) => boxes.reduce((n, box) => n + (isCut(onScreen(v, box)) ? 1 : 0), 0);
+  const whole = (v: View) => boxes.reduce((n, box) => n + (shows(v, box, width, height) ? 1 : 0), 0);
+  let best = view;
+  for (const axis of ['x', 'y'] as const) {
+    const base = best;
+    const keep = whole(base);
+    const moves = new Set<number>();
+    for (const box of boxes) {
+      const s = onScreen(base, box);
+      if (!isCut(s)) continue;
+      const [a, b] = axis === 'x' ? [s.x, s.x + s.w] : [s.y, s.y + s.h];
+      // The lines where showing stops on this axis: the stage's edges, and the inset's when the node runs under it.
+      const lines = [0, axis === 'x' ? width : height];
+      if (inset && areaOf(s, inset) > 0) lines.push(axis === 'x' ? inset.w : inset.y);
+      for (const line of lines) if (a < line && b > line) moves.add(line + EDGE_CLEAR - a).add(line - EDGE_CLEAR - b);
+    }
+    let fewest = cut(base);
+    let least = 0;
+    for (const d of moves) {
+      const v = {...base, [axis]: base[axis] + d};
+      if (!showsClear(v, anchor, width, height) || whole(v) < keep) continue;
+      const n = cut(v);
+      if (n < fewest || (n === fewest && Math.abs(d) < Math.abs(least))) {
+        best = v;
+        fewest = n;
+        least = d;
+      }
+    }
+  }
+  return best;
+}
+
 /**
  * The view a diagram opens with. `floor` is the zoom below which its labels stop being readable: when everything
  * fits at or above it, everything is shown (never above 100%). Otherwise the stage opens on `region` (a focus and
- * its neighbours) when that is readable whole, between READABLE_ZOOM and 100%; else at READABLE_ZOOM on the stretch
- * of the diagram that shows the most of `boxes` whole with `anchor` among them, so the first view is full of graph.
+ * its neighbours) when that is readable whole, between `readable` and 100%; else at `readable` (READABLE_ZOOM unless
+ * the diagram's text needs more) on the stretch of the diagram that shows the most of `boxes` whole with `anchor`
+ * among them, so the first view is full of graph. A view that is not the whole diagram is then moved so that it cuts
+ * no node at its edges or under the inset, where a move can do that without losing a node it showed (unslice).
  */
 export function openingView(
-  bounds: Box | undefined, width: number, height: number, floor: number, boxes: Iterable<Box>, anchor?: Box, region?: Box,
+  bounds: Box | undefined, width: number, height: number, floor: number, boxes: Iterable<Box>, anchor?: Box, region?: Box, readable = READABLE_ZOOM,
 ): {view: View; whole: boolean} {
   if (!bounds || width <= 0 || height <= 0) return {view: {x: 0, y: 0, k: 1}, whole: true};
   const fit = fitScale(bounds, width, height);
   if (fit >= floor || !anchor) return {view: centred(bounds, width, height, Math.min(1, fit)), whole: true};
-  const around = region ? fitScale(region, width, height) : 0;
-  if (region && around >= READABLE_ZOOM) return {view: settle(centred(region, width, height, Math.min(1, around)), bounds, width, height), whole: false};
-  const k = READABLE_ZOOM;
   const all = [...boxes];
+  const around = region ? fitScale(region, width, height) : 0;
+  if (region && around >= readable) return {view: unslice(settle(centred(region, width, height, Math.min(1, around)), bounds, width, height), all, anchor, width, height), whole: false};
+  const k = Math.min(1, readable);
   const home = centerOf(anchor);
   let best = settle(centred(anchor, width, height, k), bounds, width, height);
   let bestCount = showsClear(best, anchor, width, height) ? all.filter(box => shows(best, box, width, height)).length : -1;
@@ -282,7 +371,7 @@ export function openingView(
       bestDistance = distance;
     }
   }
-  return {view: best, whole: false};
+  return {view: unslice(best, all, anchor, width, height), whole: false};
 }
 
 /** `k` rounded down to a step of 5% (0.7 stays 0.7, which a plain floor of 0.7 * 20 does not). */
@@ -341,11 +430,13 @@ const EdgeShell = memo(function EdgeShell(p: {edge: DiagramEdge; route: Route; h
   );
 });
 
-const EdgeLabel = memo(function EdgeLabel(p: {edgeKey: string; at: Point; text: string; w: number; h: number; hot: boolean; dim: boolean}) {
+const EdgeLabel = memo(function EdgeLabel(p: {edgeKey: string; at: Point; lines: readonly string[]; w: number; h: number; hot: boolean; dim: boolean}) {
   return (
     <g className={css.label} transform={`translate(${Math.round(p.at.x)} ${Math.round(p.at.y)})`} data-edge-label={p.edgeKey} data-hot={p.hot || undefined} data-dim={p.dim || undefined}>
       <rect className={css.labelPlate} x={-p.w / 2} y={-p.h / 2} width={p.w} height={p.h} />
-      <text className={css.labelText} y={0.5}>{p.text}</text>
+      <text className={css.labelText}>
+        {p.lines.map((line, i) => <tspan key={i} x={0} y={0.5 + (i - (p.lines.length - 1) / 2) * LABEL_LINE}>{line}</tspan>)}
+      </text>
     </g>
   );
 });
@@ -425,7 +516,7 @@ export function Diagram<T>(p: DiagramProps<T>): ReactNode {
 
   // ---- layout, for the shape of the stage
   const plates = useMemo(() => {
-    const out = new Map<string, {text: string; w: number; h: number}>();
+    const out = new Map<string, {lines: string[]; w: number; h: number}>();
     for (const edge of edges) if (edge.label) out.set(edge.key, labelPlate(edge.label));
     return out;
   }, [edges]);
@@ -483,34 +574,50 @@ export function Diagram<T>(p: DiagramProps<T>): ReactNode {
       const others: Box[] = [];
       if (!loop) for (const [nodeId, box] of boxes) if (nodeId !== edge.from && nodeId !== edge.to) others.push(box);
       const points = loop
-        ? routeLoop(a, dir)
+        ? routeLoop(a, dir, {shape: byId.get(edge.from)?.shape})
         : routeAround(a, b, {dir, fromShape: byId.get(edge.from)?.shape, toShape: byId.get(edge.to)?.shape, fromPort: edge.fromPort, toPort: edge.toPort}, others);
-      out.set(edge.key, {points, label: edge.label ? (loop ? points[2] : labelAnchor(points, dir)) : undefined});
+      const plate = plates.get(edge.key);
+      out.set(edge.key, {points, label: edge.label ? (loop && plate ? loopLabel(points, plate) : labelAnchor(points, dir)) : undefined});
     }
     return out;
-  }, [laid, moved, boxes, edges, dir, byId]);
+  }, [laid, moved, boxes, edges, dir, byId, plates]);
 
   const frames = useMemo(() => frameGroups(groups, nodes, boxes), [groups, nodes, boxes]);
   const extent = useCallback(
     (nodeBoxes: ReadonlyMap<string, Box>, edgeRoutes: ReadonlyMap<string, Route>, groupFrames: readonly GroupBox[]) => {
       const points: Point[] = [];
-      for (const route of edgeRoutes.values()) for (const point of route.points) points.push(point);
-      return boundsOf([...nodeBoxes.values(), ...groupFrames.map(frame => frame.box)], points);
+      const labels: Box[] = [];
+      for (const [key, route] of edgeRoutes) {
+        for (const point of route.points) points.push(point);
+        // A label may sit beside its line: the whole plate is part of what is drawn.
+        const plate = plates.get(key);
+        if (plate && route.label) labels.push({x: route.label.x - plate.w / 2, y: route.label.y - plate.h / 2, w: plate.w, h: plate.h});
+      }
+      return boundsOf([...nodeBoxes.values(), ...groupFrames.map(frame => frame.box), ...labels], points);
     },
-    [],
+    [plates],
   );
   const autoBounds = useMemo(() => extent(laid.boxes, laid.routes, frameGroups(groups, nodes, laid.boxes)), [extent, laid, groups, nodes]);
   const bounds = useMemo(() => (moved.size === 0 ? autoBounds : extent(boxes, routes, frames)), [moved, autoBounds, extent, boxes, routes, frames]);
 
   // ---- viewport
-  const floor = p.lod ? LOD_ZOOM : PLAIN_ZOOM;
+  // Text that shrinks with the zoom (no levels of detail) is never opened below 10 px on screen (design rule D18).
+  // Levels of detail keep node text readable further out; edge labels have none, so a diagram with any opens no
+  // further out than keeps them at 10 px.
+  const textFloor = readableZoom(p.minText ?? DEFAULT_MIN_TEXT);
+  const scalesText = !p.lod || plates.size > 0;
+  // Names drawn larger when zoomed out still have to fit their nodes well enough to tell them apart.
+  const nameFloor = p.lod ? clamp(p.lodZoom ?? LOD_ZOOM, LOD_ZOOM, FULL_ZOOM) : 0;
+  const floor = Math.max(scalesText ? textFloor : 0, nameFloor);
+  const readable = Math.max(READABLE_ZOOM, floor);
   const naturalHeight = useMemo(() => {
     if (!autoBounds || width <= 0) return MIN_NATURAL_HEIGHT;
     const k = Math.min(1, (width - PAD * 2) / Math.max(1, autoBounds.w));
-    // Too wide to read at the width it has: it opens zoomed in, on the tallest stage an unsized diagram gets.
-    if (k < floor) return MAX_NATURAL_HEIGHT;
-    return clamp(Math.ceil(autoBounds.h * k) + PAD + PAD_BOTTOM, MIN_NATURAL_HEIGHT, MAX_NATURAL_HEIGHT);
-  }, [autoBounds, width, floor]);
+    // Too wide to read at the width it has: it opens zoomed in on a part of it, on a stage as tall as that needs.
+    if (k < floor) return clamp(Math.ceil(autoBounds.h * readable) + PAD + PAD_BOTTOM, MIN_NATURAL_HEIGHT, GROW_CAP);
+    // Otherwise the plate grows to show all of it at the zoom the width allows, up to a cap; past it the stage zooms out.
+    return clamp(Math.ceil(autoBounds.h * k) + PAD + PAD_BOTTOM, MIN_NATURAL_HEIGHT, GROW_CAP);
+  }, [autoBounds, width, floor, readable]);
   const height = p.sized ? size.height : naturalHeight;
   const ready = layout.status === 'ready' && width > 0 && height > 0;
 
@@ -544,8 +651,8 @@ export function Diagram<T>(p: DiagramProps<T>): ReactNode {
       }
       region = boundsOf(near);
     }
-    return openingView(autoBounds, width, height, focusId !== undefined ? Math.max(floor, PLAIN_ZOOM) : floor, laid.boxes.values(), anchor, region);
-  }, [autoBounds, width, height, floor, anchorId, focusId, laid, edges]);
+    return openingView(autoBounds, width, height, focusId !== undefined ? Math.max(floor, FOCUS_WHOLE_ZOOM) : floor, laid.boxes.values(), anchor, region, readable);
+  }, [autoBounds, width, height, floor, readable, anchorId, focusId, laid, edges]);
   // null: follow the opening view (and the size of the cell). A pan, a zoom or a reset pins the view.
   const [pinned, setPinned] = useState<{laid: Laid; view: View} | null>(null);
   const view = pinned && pinned.laid === laid ? pinned.view : opening.view;
@@ -926,7 +1033,7 @@ export function Diagram<T>(p: DiagramProps<T>): ReactNode {
       labels: drawn.flatMap(({edge, route, hot}) => {
         const plate = plates.get(edge.key);
         return plate && route.label
-          ? [<EdgeLabel key={edge.key} edgeKey={edge.key} at={route.label} text={plate.text} w={plate.w} h={plate.h} hot={hot} dim={lit !== null && !hot} />]
+          ? [<EdgeLabel key={edge.key} edgeKey={edge.key} at={route.label} lines={plate.lines} w={plate.w} h={plate.h} hot={hot} dim={lit !== null && !hot} />]
           : [];
       }),
     };
@@ -959,13 +1066,8 @@ export function Diagram<T>(p: DiagramProps<T>): ReactNode {
   if (ready && bounds) {
     whole = bounds.x * view.k + view.x >= -1 && (bounds.x + bounds.w) * view.k + view.x <= width + 1
       && bounds.y * view.k + view.y >= -1 && (bounds.y + bounds.h) * view.k + view.y <= height + 1;
-    if (!whole) {
-      for (const box of boxes.values()) {
-        const left = box.x * view.k + view.x;
-        const top = box.y * view.k + view.y;
-        if (left < width && left + box.w * view.k > 0 && top < height && top + box.h * view.k > 0) inView++;
-      }
-    }
+    // A node counts when the stage shows it whole (or as much of it as fits): one cut off at the edge is not in view.
+    if (!whole) for (const box of boxes.values()) if (seen(view, box, width, height)) inView++;
   }
 
   let grid = 16 * view.k;

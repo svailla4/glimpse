@@ -15,10 +15,18 @@ const HEAD_H = 44;
 const ACTOR_H = 28;
 const MIN_COL = 140;
 const MAX_COL = 280;
+/** A label longer than a gap of MAX_COL may widen it this far per lifeline crossed, to fit on two lines. */
+const MAX_WRAP_COL = 400;
 /** In a cell too narrow for the diagram the gaps between lifelines give way first, down to this share (95 px)... */
 const TIGHT = 0.68;
-/** ...then the whole drawing is scaled down, to this at most (12 px labels are still 9.6 px); after that it scrolls. */
-const MIN_SCALE = 0.8;
+/**
+ * ...then the whole drawing is scaled down, to this at most: its smallest text (11 px step numbers and notes) stays
+ * 10 px on screen (design rule D18). After that it scrolls.
+ */
+const MIN_SCALE = 0.91;
+/** A message label too long for its gap takes a second line before it is cut. */
+const LABEL_LINES = 2;
+const LABEL_LINE = 15;
 const ROW = 36;
 const SELF_ROW = 46;
 const SELF_REACH = 30;
@@ -29,7 +37,7 @@ export const MAX_ACTORS = 40;
 
 interface ActorDraw { id: string; label: string; text: string; x: number; w: number }
 type RowDraw =
-  | {kind: 'message'; index: number; y: number; h: number; n: number; from: number; to: number; arrow: SeqArrow; text: string; full: string; said: string}
+  | {kind: 'message'; index: number; y: number; h: number; n: number; from: number; to: number; arrow: SeqArrow; lines: string[]; full: string; said: string}
   | {kind: 'note'; index: number; y: number; h: number; x: number; w: number; lines: string[]; full: string; said: string};
 interface Plan {
   width: number;
@@ -63,12 +71,14 @@ export function planSequence(ast: SeqAst, containerWidth: number): Plan {
     const to = column.get(step.to);
     if (from === undefined || to === undefined) continue;
     const width = textWidth(step.label, UI_12);
+    // On one line when a gap of MAX_COL holds it; else the gap widens (up to MAX_WRAP_COL) for two lines.
+    const want = (extra: number, span: number) => Math.min(width + extra, Math.max(MAX_COL * span, Math.min(Math.ceil(width / LABEL_LINES) + extra, MAX_WRAP_COL * span)));
     if (from !== to) {
       const lo = Math.min(from, to);
       const hi = Math.max(from, to);
-      wants[hi]!.push([lo, Math.min(width + 44, MAX_COL * (hi - lo))]);
-    } else if (from === last) overhang = Math.max(overhang, Math.min(MAX_COL, width + SELF_REACH + 24));
-    else wants[from + 1]!.push([from, Math.min(MAX_COL, width + SELF_REACH + 28)]);
+      wants[hi]!.push([lo, want(44, hi - lo)]);
+    } else if (from === last) overhang = Math.max(overhang, want(SELF_REACH + 24, 1));
+    else wants[from + 1]!.push([from, want(SELF_REACH + 28, 1)]);
   }
   const at: number[] = [];
   actors.forEach((_, i) => {
@@ -102,10 +112,12 @@ export function planSequence(ast: SeqAst, containerWidth: number): Plan {
       if (from === undefined || to === undefined) return;
       n++;
       const self = from === to;
-      const room = self ? (from === last ? right : x(from + 1) - x(from)) - SELF_REACH - 20 : Math.abs(x(to) - x(from)) - 40;
-      const h = self ? SELF_ROW : ROW;
+      const room = Math.max(24, self ? (from === last ? right : x(from + 1) - x(from)) - SELF_REACH - 20 : Math.abs(x(to) - x(from)) - 40);
+      // Cut only what two lines cannot hold (V014).
+      const lines = textWidth(step.label, UI_12) <= room ? [step.label] : wrapText(step.label, room, LABEL_LINES, UI_12);
+      const h = (self ? SELF_ROW : ROW) + (lines.length - 1) * LABEL_LINE;
       const said = `${n}. ${actors[from]!.label} to ${self ? 'itself' : actors[to]!.label}${step.arrow === 'reply' ? ', reply' : step.arrow === 'async' ? ', async' : ''}: ${step.label}`;
-      rows.push({kind: 'message', index, y, h, n, from: x(from), to: x(to), arrow: step.arrow, text: fitText(step.label, Math.max(24, room), UI_12), full: step.label, said});
+      rows.push({kind: 'message', index, y, h, n, from: x(from), to: x(to), arrow: step.arrow, lines, full: step.label, said});
       y += h;
     } else {
       const over = step.over.map(id => column.get(id)).filter((i): i is number => i !== undefined);
@@ -126,20 +138,23 @@ export function planSequence(ast: SeqAst, containerWidth: number): Plan {
 function messageRow(row: Extract<RowDraw, {kind: 'message'}>): ReactNode {
   const self = row.from === row.to;
   const dashed = row.arrow === 'reply';
+  const more = (row.lines.length - 1) * LABEL_LINE;
   if (self) {
-    const top = row.y + 14;
+    const top = row.y + 14 + more / 2;
     const points = [{x: row.from, y: top}, {x: row.from + SELF_REACH, y: top}, {x: row.from + SELF_REACH, y: top + 18}, {x: row.from, y: top + 18}];
     return (
       <>
         <path className={css.line} d={roundedPath(points)} data-dashed={dashed || undefined} />
         <path className={row.arrow === 'sync' ? css.headSolid : css.headOpen} d={markPath('arrow', points[3], points[2]) + (row.arrow === 'sync' ? 'Z' : '')} />
-        <rect className={css.numberPlate} x={row.from + 1} y={top - 6} width={16} height={12} />
+        <rect className={css.numberPlate} x={row.from} y={top - 7} width={18} height={14} />
         <text className={css.number} x={row.from + 9} y={top + 0.5}>{row.n}</text>
-        <text className={css.label} x={row.from + SELF_REACH + 8} y={top + 9.5} data-self="">{row.text}</text>
+        <text className={css.label} data-self="">
+          {row.lines.map((line, i) => <tspan key={i} x={row.from + SELF_REACH + 8} y={top + 9.5 + (i - (row.lines.length - 1) / 2) * LABEL_LINE}>{line}</tspan>)}
+        </text>
       </>
     );
   }
-  const y = row.y + 24;
+  const y = row.y + 24 + more;
   const dir = row.to > row.from ? 1 : -1;
   const from = {x: row.from, y};
   const to = {x: row.to, y};
@@ -147,9 +162,11 @@ function messageRow(row: Extract<RowDraw, {kind: 'message'}>): ReactNode {
     <>
       <path className={css.line} d={`M${from.x} ${y}H${to.x}`} data-dashed={dashed || undefined} />
       <path className={row.arrow === 'sync' ? css.headSolid : css.headOpen} d={markPath('arrow', to, from) + (row.arrow === 'sync' ? 'Z' : '')} />
-      <rect className={css.numberPlate} x={row.from + dir * 9 - 8} y={y - 6} width={16} height={12} />
+      <rect className={css.numberPlate} x={row.from + dir * 9 - 9} y={y - 7} width={18} height={14} />
       <text className={css.number} x={row.from + dir * 9} y={y + 0.5}>{row.n}</text>
-      <text className={css.label} x={(row.from + row.to) / 2} y={y - 8}>{row.text}</text>
+      <text className={css.label}>
+        {row.lines.map((line, i) => <tspan key={i} x={(row.from + row.to) / 2} y={y - 8 - (row.lines.length - 1 - i) * LABEL_LINE}>{line}</tspan>)}
+      </text>
     </>
   );
 }

@@ -47,6 +47,28 @@ describe('reserved names never reach the compiler', () => {
     expect(({} as Record<string, unknown>).GLIMPSE_EDITOR).toBeUndefined();
   });
 
+  // Finding V020: the scan read text differently from the compiler's preprocessor (an uppercase R raw string, a --
+  // comment, a path split over two lines), so these reached the compiler and were caught only behind it.
+  it.each([
+    ['A: an uppercase R raw string hides no line', `root=Page('x',[])\nx=R"\\"\n$/__proto__/polluted="yes"\n#"`, 'data path segment'],
+    ['B: a -- comment hides no line', `root=Page('x',[])\n-- "\n$/__proto__/polluted="yes"\n-- "`, 'data path segment'],
+    ['C: a data path split over two lines', `root=Page('x',[])\n$/\n__proto__/polluted='yes'`, 'data path segment'],
+    ['D: split after a segment', `root=Page('x',[])\n$/a3/\n__proto__/polluted='yes'`, 'data path segment'],
+    ['E: a raw string hides no map key', `root=Page('x',[])\nx=R"\\"\n$/m={__proto__:{polluted:1}}\n#"`, 'data key'],
+    ['a key written with an escape', `root=Page('x',[])\n$/m={"\\u005f_proto__":{polluted:1}}`, 'data key'],
+    ['a part named after a prototype', `root=Page('x',[constructor])\nconstructor=Text('x')`, 'name'],
+  ])('%s', (_, spec, what) => {
+    let thrown: unknown;
+    try {
+      compile(spec);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(SpecError);
+    expect((thrown as SpecError).problems[0]!.message).toMatch(new RegExp(`^"(?:__proto__|constructor)" cannot be used as a ${what}: `));
+    expect(polluted()).toEqual([]);
+  });
+
   it('the next call compiles as if nothing had happened', () => {
     expect(() => compile(`root=Page('x',[])\n$/__proto__/polluted='yes'`)).toThrow(/^E_PATH/);
     expect(compile(`root=Page('x',[Text('fine')])\n$/notes='ok'`).messages).toHaveLength(1);
@@ -87,6 +109,17 @@ describe('the backstop', () => {
     };
     expect(() => compileSpec(hostile, {surfaceId: 's', sources: [`root=Page('x',[])`], surfaces: []})).toThrow(/^E_PATH the spec reached Object\.prototype\.GLIMPSE_EDITOR/);
     expect(({} as Record<string, unknown>).GLIMPSE_EDITOR).toBeUndefined();
+  });
+
+  // Finding V056: pollution from anything else (an analyzer, a dependency) was erased in silence and blamed on the
+  // next harmless spec.
+  it('built-ins changed before a spec is compiled are put back and logged, and the spec is not blamed', () => {
+    const logged: string[] = [];
+    (Object.prototype as Record<string, unknown>).fromAnalyzer = 1;
+    const {messages} = compileSpec(tools, {surfaceId: 's', sources: [`root=Page('Benign',[Text('hi')])`], surfaces: [], log: message => void logged.push(message)});
+    expect(messages).toHaveLength(1);
+    expect(({} as Record<string, unknown>).fromAnalyzer).toBeUndefined();
+    expect(logged).toEqual(['glimpse: something other than a spec changed Object.prototype.fromAnalyzer; restored']);
   });
 
   it('compiled messages are checked again: a reserved key in a value or a path is refused', () => {

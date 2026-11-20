@@ -2,7 +2,7 @@ import type * as C from '@glimpse/catalog';
 import {formatFileLoc, parseFileLoc, type EntityRef} from '@glimpse/catalog';
 import {useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode} from 'react';
 import {
-  Drafting, Empty, PlateAside, Redline, fmtNum, toNumber, useFollowedFile, useHost, useHostActions, useRev, useSelection, type GlView,
+  Drafting, Empty, PlateAside, REPORT_CODES, Redline, fmtNum, toNumber, useFollowedFile, useHost, useHostActions, useRev, useSelection, type GlView,
 } from '../../kit/index.ts';
 import s from './SymbolOutline.module.css';
 import {Crumbs, cx} from './codekit/lines.tsx';
@@ -61,11 +61,11 @@ export const SymbolOutlineView: GlView<typeof C.SymbolOutline> = ({id, props}) =
     [fetched.data, shownPath],
   );
 
-  if (!path) return <Empty message="no file selected" />;
+  if (!path) return <Empty message="no file selected" code={REPORT_CODES.waiting} />;
   if (fetched.error) return <Redline code="E_OUTLINE" id={`SymbolOutline#${id}`} message={`${path}: ${fetched.error}`} />;
   if (shownPath === undefined) return <Drafting label={`reading the outline of ${path}`} />;
   if (!outline) return <Redline code="E_SHAPE" id={`SymbolOutline#${id}`} message={`expected an outline {symbols: [...]} for ${shownPath}`} />;
-  if (outline.symbols.length === 0) return <Empty message={`no symbols in ${shownPath}`} />;
+  if (outline.symbols.length === 0) return <Empty message={`no symbols in ${shownPath}`} code={REPORT_CODES.truthful} />;
   return (
     <Outline
       id={id}

@@ -70,8 +70,11 @@ describe('with git', () => {
     expect(await failure(ctx, 'code.todos nowhere')).toMatchObject({code: 'E_TARGET'});
     expect(await failure(ctx, 'deps.modules nowhere')).toEqual({code: 'E_TARGET', message: 'deps.modules: no files under "nowhere"'});
     expect(await failure(ctx, 'deps.modules src/index.ts')).toEqual({code: 'E_TARGET', message: 'deps.modules: "src/index.ts" is a file; use deps.files src/index.ts'});
-    expect(await failure(ctx, 'deps.files')).toMatchObject({code: 'E_TARGET', message: 'deps.files needs a file path, e.g. deps.files src/index.ts'});
-    expect(await failure(ctx, 'deps.files src')).toEqual({code: 'E_TARGET', message: 'deps.files: "src" is a directory; use deps.modules src'});
+    expect(await failure(ctx, 'deps.files')).toMatchObject({code: 'E_TARGET', message: 'deps.files needs a file path, e.g. deps.files src/index.ts (for a directory: deps.modules <dir>)'});
+    // A directory is drawn as its module graph, and the summary says so (V006): no E_TARGET round trip.
+    const dir = await run(ctx, 'deps.files src');
+    expect(dir.summary).toMatch(/^a directory: drawn as deps\.modules src; /);
+    expect(dir.data).toEqual((await run(ctx, 'deps.modules src')).data);
     expect(await failure(ctx, 'deps.files src/nope.ts')).toEqual({code: 'E_TARGET', message: 'deps.files: no such file "src/nope.ts"'});
     expect(await failure(ctx, 'code.symbols')).toMatchObject({code: 'E_TARGET'});
     expect(await failure(ctx, 'code.symbols src')).toEqual({code: 'E_TARGET', message: 'code.symbols: no such file "src"'});
@@ -117,7 +120,7 @@ describe('with git', () => {
     expect(later.age).toBe(25);
     const live = production.find(source => source.meta.name === 'repo.kpis')!;
     const stats = (await live.run(ctx, {source: 'repo.kpis', args: {}}, new AbortController().signal)).data as Array<{label: string; value: number}>;
-    expect(stats.map(stat => stat.label)).toEqual(['Files', 'Lines', 'Languages', 'Modules', 'Cycles', 'Commits (30d)', 'Contributors']);
+    expect(stats.map(stat => stat.label)).toEqual(['Files', 'Lines', 'Languages', 'Modules', 'File cycles', 'Commits (30d)', 'Contributors']);
   });
 
   it('a shallow clone says its history is incomplete', async () => {
@@ -148,7 +151,7 @@ describe('without git', () => {
     expect(list.fields?.map(field => field.key)).toEqual(['path', 'lang', 'loc', 'bytes', 'complexity']);
     expect((list.data as Array<Record<string, unknown>>)[0]).toEqual({path: 'src/auth/service.ts', lang: 'TypeScript', loc: 53, bytes: 1432, complexity: 28});
     const kpis = await run(plain, 'repo.kpis');
-    expect((kpis.data as Array<{label: string}>).map(stat => stat.label)).toEqual(['Files', 'Lines', 'Languages', 'Modules', 'Cycles']);
+    expect((kpis.data as Array<{label: string}>).map(stat => stat.label)).toEqual(['Files', 'Lines', 'Languages', 'Modules', 'File cycles']);
     expect(kpis.warnings).toEqual(['no git history: commit and contributor counts are omitted']);
   });
 });
@@ -185,7 +188,7 @@ describe('an empty directory and a repository without commits', () => {
     }
     expect((await run(none, 'deps.modules')).data).toEqual({nodes: [], edges: [], level: 'file'});
     expect((await run(none, 'repo.kpis')).data).toEqual([
-      {label: 'Files', value: 0}, {label: 'Lines', value: 0, format: 'compact'}, {label: 'Languages', value: 0}, {label: 'Modules', value: 0}, {label: 'Cycles', value: 0},
+      {label: 'Files', value: 0}, {label: 'Lines', value: 0, format: 'compact'}, {label: 'Languages', value: 0}, {label: 'Modules', value: 0}, {label: 'File cycles', value: 0},
     ]);
     expect(await failure(none, 'code.refs anything')).toMatchObject({code: 'E_TARGET'});
     expect(await failure(none, 'code.symbols a.ts')).toMatchObject({code: 'E_TARGET'});

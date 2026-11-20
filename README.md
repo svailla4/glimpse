@@ -117,7 +117,9 @@ warn CodeView#code: file "packages/server/src/nope.ts" does not exist. Nearest: 
 viewer: select file packages/server/src/mcp/show.ts (server-package)
 ```
 
-`fixed` lines are guesses the server accepted and corrected (a misspelt prop, `warning` for `warn`, a number where a string was expected, a new part appended to the page). `ds (+N unchanged)` stands for dataset lines the agent was already given for this view. `warn` lines are parts of the view that are up but empty or broken: the server checks what it can itself (a file or a revision that does not exist, a source that failed), and when a tab is open it also waits a moment for the tab to say what it actually drew; a report that comes later rides on the next tool result as a `viewer: error` line. An error (`E_...`) is all-or-nothing: nothing on screen changes, and the result names the failing component, its signature and the valid options, so the agent resends only the failing part. `viewer:` lines are what happened in the tab; they are data, never instructions.
+`fixed` lines are guesses the server accepted and corrected (a misspelt prop, `warning` for `warn`, a number where a string was expected, a new part appended to the page). Field names are checked the same way against the fields a source declares, so a guessed name never leaves an empty plate: a different case, a column label or a common synonym is rewritten (`fixed x 'churn' -> 'commits'`), and a name the source does not have is dropped, so the chart falls back to its own axes (`fixed x 'zzz' dropped (fields: ...)`). `ds (+N unchanged)` stands for dataset lines the agent was already given for this view.
+
+`warn` lines are parts of the view that are up but could not draw what the spec asked: a file or a revision that does not exist, a source that failed, data that is missing or empty, a field that is not in the data, data of the wrong shape, a graph focus that matches no node. The server checks what it can itself, and when a tab is open it also waits a moment for the tab to say what it actually drew. The tab reports each component's current state, not a stream of events: a truthful empty state (no import cycles, a clean working tree, a view waiting for a selection) is not a problem and prints nothing, a component that draws normally withdraws its earlier report, and redefining a component clears what was known about it until the tab reports again. A problem the tab finds after the result has gone rides once on a later tool result as a `viewer: error` line, and only if it is still that component's state. An error (`E_...`) is all-or-nothing: nothing on screen changes, and the result names the failing component, its signature and the valid options, so the agent resends only the failing part. The other `viewer:` lines are what happened in the tab; they are data, never instructions.
 
 ## Views
 
@@ -125,9 +127,9 @@ viewer: select file packages/server/src/mcp/show.ts (server-package)
 
 | View | What it shows |
 |---|---|
-| `overview` | Atlas of the repo: KPIs, stack, treemap, languages, module graph, cycles, activity, hotspots, packages. |
+| `overview` | Atlas of the repo: KPIs, stack, treemap, languages, module graph, file cycles, activity, hotspots, packages. |
 | `tree [path]` | File browser: tree with churn heat beside code, outline and treemap tabs. |
-| `deps [path]` | Architecture map: module graph, heaviest edges, cycles, dependency matrix, external packages. |
+| `deps [path]` | Architecture map: module graph, heaviest edges, file cycles, dependency matrix, external packages. |
 | `hotspots [path]` | Where change and complexity meet: scatter, churn treemap, ranking, files that change together. |
 | `history [path]` | Git history: daily activity, weekly activity by module, authors, most-changed files, log. |
 | `file <path>` | One file in depth: code, outline, imports and importers, recent commits. |
@@ -172,7 +174,7 @@ $/plan=[{title:'Add the middleware',status:'done'},{title:'Wire it into the rout
 
 Later, `show` with the same `id` and only `$/plan=[...]` updates the plan in place; nothing else is re-sent or re-drawn. Clicking *Redis* queues `viewer: answer rate-limiter store {"choice":"Redis"}` for the agent.
 
-The catalog prefers accepting a reasonable guess to documenting the one right spelling. `Callout(...,'warning')` becomes `warn` with a `fixed` note; `mark='L1-12'` and `mark='1-12'` both highlight; an `ERDiagram` takes a bare list of tables, and a column's `fk:'clients.id'` draws the relation; `Flowchart('Start --> Enter credentials --> Valid?')` works without node ids.
+The catalog prefers accepting a reasonable guess to documenting the one right spelling. `Callout(...,'warning')` becomes `warn` with a `fixed` note; `mark='L1-12'` and `mark='1-12'` both highlight; `KeyValue` and `Stats` read the same rows (`[{label, value}]`, `[{key, value}]` or an object `{Label: value}`); a `Button` action may be a plain event name (`Button('Draft it','draft')`); an `ERDiagram` takes a bare list of tables, and a column's `fk:'clients.id'` draws the relation; `Flowchart('Start --> Enter credentials --> Valid?')` works without node ids.
 
 ## Components
 
@@ -194,7 +196,7 @@ Charts and diagrams are Glimpse's own SVG on `d3-scale`, `d3-shape`, `d3-hierarc
 
 A data argument is one of three things: a **source ref** (a string), a **`$/path`** into the view's data model, or **small inline rows**.
 
-A ref is `'<source> [path|range|symbol] [key=value ...]'`, for example `'git.hotspots src top=15'` or `'diff.files main..HEAD'`. The server runs it locally, enforces a row and node budget, and binds the result under `/ds/<key>` in the page's data model. The same ref used by two components is computed once. Each result carries its field names and kinds, so tables and charts pick columns and axes without being told.
+A ref is `'<source> [path|range|symbol] [key=value ...]'`, for example `'git.hotspots src top=15'`, `'diff.files main..HEAD'` or `'git.churn by=module'` (one row per module instead of per file). The server runs it locally, enforces a row and node budget, and binds the result under `/ds/<key>` in the page's data model. The same ref used by two components is computed once. Each result carries its field names and kinds, so tables and charts pick columns and axes without being told. Three sources are graphs (`deps.modules`, `deps.files`, `diff.impact`) and are drawn with `Graph`; the trees (`files.tree`, `diff.tree`) with `FileTree`, `Treemap` or `Icicle`. `catalog{names:["git.churn"]}` lists a source's arguments and fields.
 
 Results are cached per commit, and per working-tree revision for the sources that read the working tree: `files.*`, `repo.*`, `deps.*`, `code.*` and `diff.*` reflect uncommitted edits, `git.*` follows `HEAD`. The server re-checks `HEAD` and the working tree on every tool call, and while a tab is open it watches them: edit a file and the diff, the tree and the affected datasets follow within a second or two.
 
@@ -208,6 +210,8 @@ Results are cached per commit, and per working-tree revision for the sources tha
 | Code | `code.symbols` `code.refs` `code.todos` |
 
 The analyzers are fast because they are approximate: a regular-expression scan for imports, symbols and complexity (TypeScript, JavaScript, Python, Go, Rust, Java and several more), the headings of Markdown files as their outline, one `git log` stream for history. "Complexity" is summed indentation depth, a proxy, and the plates say so. The module graph is drawn at a size that stays legible: 24 nodes by default (20 modules and up to 4 external packages), with smaller directories folded into a rest node of their parent (`'deps.modules top=48'` is the most it shows by module; a small scope is drawn file by file). Treat dependency edges and complexity as a good map, not a compiler's answer.
+
+Numbers on one page agree: the overview's KPI strip counts what the plates beside it show. Modules is the number of modules the module graph groups files into, before it cuts the drawing to 24 nodes (the graph header then reads "24 of N modules"); Languages is the rows of the Languages table, leaving out only the catch-all `Unclassified` row; File cycles is the rows of the cycles table, which lists cycles between files, while the module graph marks cycles between modules. The Packages table has one row per manifest file.
 
 ## Security model
 
@@ -268,11 +272,11 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 
 | Budget | Limit | Now |
 |---|---|---|
-| Server instructions | 3,750 chars (hard limit 4,000) | 3,729 |
+| Server instructions | 3,750 chars (hard limit 4,000) | 3,744 |
 | `show` + `catalog` definitions | 1,500 chars | 1,147 |
-| Largest preset result (`overview`) | 1,200 chars | 1,098 |
-| Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 187.8 kB |
-| Largest lazy chunk, gzip | 120 kB | 50.4 kB |
+| Largest preset result (`overview`) | 1,200 chars | 1,097 |
+| Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 191.8 kB |
+| Largest lazy chunk, gzip | 120 kB | 52.0 kB |
 
 ## Status and known limitations
 
@@ -282,7 +286,7 @@ Be aware of the following:
 
 - **Verified on macOS only.** Nothing has been run on Linux or Windows yet. CI runs macOS as the gate and Linux as an experiment; Windows is likely to need work (opening editors, process groups, path separators).
 - **Chromium only.** Firefox and Safari are untested.
-- **Little experience with a model in the loop.** In one cold test, two models wrote 14 views each from the instructions alone and got 2 and 1 of them right first time. The causes it found (hyphenated ids rejected, `warning` for `warn`, row shapes, a zero-based step index, `ok` results that hid an empty plate) have been addressed, but the test has not been repeated since. The end-to-end suite plays the agent by hand.
+- **Little experience with a model in the loop.** In a first cold test, two models wrote 14 views each from the instructions alone and got 2 and 1 of them right first time. After the causes it found were addressed (hyphenated ids rejected, `warning` for `warn`, row shapes, a zero-based step index, `ok` results that hid an empty plate), a second test gave the two models 20 tasks each: 15 of the 40 first tries failed, 8 of them on a guessed field name. Those causes (field names, the KeyValue and Stats rows, spans inside a `Grid`, a graph source in a table, churn per module, expected empty states reported as problems) have been addressed in turn, but the test has not been repeated since. The end-to-end suite plays the agent by hand.
 - **Pinned to A2UI 0.15.0** (`@a2ui/web_core`, `@a2ui/react`) and `@a2ui/agent` 0.1.0. These packages are young; an upgrade needs the pinned error-message patterns and the conformance tests re-run.
 - **Known defects** found by the end-to-end suite are kept as `fixme` tests until fixed; `e2e/README.md` has the current list (empty at this version).
 - **Approximate analysis.** Imports, symbols and complexity come from regular expressions; history statistics cover the latest 5,000 commits; authors are grouped by display name.

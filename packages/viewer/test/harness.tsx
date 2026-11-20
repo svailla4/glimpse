@@ -5,7 +5,7 @@
 //   const view = renderExpress(`root=Page('T',[t])\nt=DataTable('git.churn',title='Churn')`, {datasets: 'ready'});
 //   const table = await screen.findByRole('table');           // lazy chunks resolve asynchronously: use findBy*
 //   view.send(buildPatch(...)); view.setData('/ui/sel', ...); view.actions; view.host.calls; view.cell('t')
-//   view.reports                       what the viewer would tell the host it drew instead of content (W_EMPTY, redline codes)
+//   view.reports, view.stateOf('t')    the state each component tells the host (D14): I_/W_/E_ codes; states has OK too
 //
 //   renderSpec(messages, options)      messages as the server would send them (fixtures, hand-written wire JSON)
 //   renderExpress(spec, options)       Express source -> the server's snapshot (refs expanded, /ds /ui /meta filled)
@@ -30,7 +30,7 @@ import {buildSurface, type BuildSurfaceOptions} from '@glimpse/catalog/testing';
 import {act, render} from '@testing-library/react';
 import {useSyncExternalStore, type ReactNode} from 'react';
 import {afterEach} from 'vitest';
-import {KitProvider, implement, kitSlots, type ChunkLoaders, type RenderReport, type ViewModule} from '../src/kit/index.ts';
+import {KitProvider, createRedefinitions, implement, kitSlots, type ChunkLoaders, type RenderReport, type ViewModule} from '../src/kit/index.ts';
 
 export {buildPatch, buildSurface} from '@glimpse/catalog/testing';
 export {DATASET_FIXTURES, HOST_FIXTURES, createFixtureHost, datasetFixture, errorDataset, pendingDataset} from '@glimpse/catalog/fixtures';
@@ -103,10 +103,16 @@ export interface RenderedSpec {
   /** Everything reported on the processor's error channel ({code, message, ...}): messages rejected by send() and render-time errors. Usually asserted empty. */
   errors: unknown[];
   /**
-   * Every state a component reported to the host instead of content, in order, as the shell would post it (design
-   * rule D3): {code: 'W_EMPTY' | a redline code, message: 'Name#id: ...', surfaceId}. Not deduplicated.
+   * Every state other than OK a component reported to the host, in order, as the shell would post it (decisions D3,
+   * D14): {code: an I_*, W_* or E_* code, message: 'Name#id: ...', surfaceId, componentId}. A component reports its
+   * state when its cell mounts, when it changes and again when an update names it (send() does that), so the same
+   * state can appear more than once. States arrive at the end of the task: await (findBy, waitFor, settle) first.
    */
   reports: RenderReport[];
+  /** Everything reported, OK included (an OK withdraws what the component said before). */
+  states: RenderReport[];
+  /** The current state of each component that reported one: component id -> 'OK' or the code. */
+  stateOf(componentId: string): string | undefined;
   host: FixtureHost;
   /** Text written to the clipboard so far. */
   clipboard: string[];
@@ -237,7 +243,12 @@ export function renderSpec(messages: A2uiMessage | readonly A2uiMessage[], optio
   const actions: ActionPayload[] = [];
   const errors: unknown[] = [];
   const reports: RenderReport[] = [];
-  const report = (state: RenderReport) => void reports.push(state);
+  const states: RenderReport[] = [];
+  const report = (state: RenderReport) => {
+    states.push(state);
+    if (state.code !== 'OK') reports.push(state);
+  };
+  const redefinitions = createRedefinitions();
   const clipboard: string[] = [];
   installClipboard(clipboard);
   const host = createFixtureHost(options.host);
@@ -263,7 +274,7 @@ export function renderSpec(messages: A2uiMessage | readonly A2uiMessage[], optio
     const tick = useSyncExternalStore(subscribe, () => version);
     const surface = current();
     const node = surface ? <A2uiSurface key={tick} surface={surface} /> : null;
-    return <KitProvider host={host} link={options.link} report={report}>{options.wrapper ? options.wrapper(node) : node}</KitProvider>;
+    return <KitProvider host={host} link={options.link} report={report} watch={redefinitions.watch}>{options.wrapper ? options.wrapper(node) : node}</KitProvider>;
   }
   const rendered = render(<Host />);
 
@@ -279,12 +290,18 @@ export function renderSpec(messages: A2uiMessage | readonly A2uiMessage[], optio
     actions,
     errors,
     reports,
+    states,
+    stateOf: componentId => states.findLast(state => state.componentId === componentId)?.code,
     host,
     clipboard,
     send(more) {
       const batch = structuredClone(Array.isArray(more) ? more : [more]);
-      // Rejections are reported on the processor's error channel, which `errors` already listens to.
-      act(() => void processor.processMessagesWithErrors(batch));
+      // Rejections are reported on the processor's error channel, which `errors` already listens to. The cells of
+      // the components an update names say their state again, as in the shell.
+      act(() => {
+        processor.processMessagesWithErrors(batch);
+        redefinitions.applied(batch);
+      });
     },
     setData(path, value) {
       act(() => void current()?.dataModel.set(path, structuredClone(value)));

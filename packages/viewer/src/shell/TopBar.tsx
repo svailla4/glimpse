@@ -33,10 +33,23 @@ const STATUS_LABEL: Record<LinkStatus, string> = {connecting: 'connecting', live
 /** Longest tab label, in characters, for a title that is a path. */
 const TAB_PATH_CHARS = 28;
 
-/** A title that is a file path keeps its file name: the directories are cut, not the end (design rule D12). */
-export function tabLabel(info: Pick<SurfaceInfo, 'id' | 'title'>): string {
+const PATH_LIKE = /^[^\s/]+(?:\/[^\s/]+)+\/?$/;
+
+/**
+ * The whole title of a view. The host caps a title at 80 characters, which can cut a long path inside its file name;
+ * a preset call (`view`, such as `file a/b/c.ts#L1-9`) still has the whole path, so a title that is the start of the
+ * path the call names is that path.
+ */
+export function fullTitle(info: Pick<SurfaceInfo, 'id' | 'title' | 'view'>): string {
   const title = info.title || info.id;
-  return /^[^\s/]+(?:\/[^\s/]+)+\/?$/.test(title) ? elidePath(title, TAB_PATH_CHARS) : title;
+  const target = info.view?.match(/^\S+\s+(\S.*)$/)?.[1]?.trim().replace(/#L?\d+(?:-L?\d+)?$/, '');
+  return target && target.length > title.length && target.startsWith(title.replace(/…$/, '')) && PATH_LIKE.test(target) ? target : title;
+}
+
+/** A title that is a file path keeps its file name: the directories are cut, not the end (design rule D12). */
+export function tabLabel(info: Pick<SurfaceInfo, 'id' | 'title' | 'view'>): string {
+  const title = fullTitle(info);
+  return PATH_LIKE.test(title) ? elidePath(title, TAB_PATH_CHARS) : title;
 }
 
 interface Clip { start: boolean; end: boolean; hidden: string[] }
@@ -66,14 +79,15 @@ export function TopBar(p: TopBarProps): JSX.Element {
     setClip(previous => (previous.start === next.start && previous.end === next.end && previous.hidden.join('\n') === next.hidden.join('\n') ? previous : next));
   }, []);
 
-  // The view on screen always has its tab on screen.
-  const order = p.surfaces.map(info => info.id).join('\n');
-  // `order` stands for the list of tabs: a new tab can push the active one out of sight.
-  useLayoutEffect(() => {
+  // The view on screen always has its tab on screen: when it changes, when the tabs change (a new tab can push it out
+  // of sight) and when the strip changes width (the window is resized, V044).
+  const focus = useRef(p.focus);
+  focus.current = p.focus;
+  const reveal = useCallback(() => {
     const strip = tabs.current;
     if (!strip) return;
     for (const tab of strip.querySelectorAll<HTMLElement>('[role="tab"]')) {
-      if (tab.dataset.surface !== p.focus) continue;
+      if (tab.dataset.surface !== focus.current) continue;
       const item = tab.parentElement ?? tab;
       const view = strip.getBoundingClientRect();
       const box = item.getBoundingClientRect();
@@ -82,22 +96,33 @@ export function TopBar(p: TopBarProps): JSX.Element {
       else if (box.right > view.right) strip.scrollLeft += box.right - view.right + 24;
     }
     measure();
-  }, [p.focus, order, measure]);
+  }, [measure]);
+  // `order` stands for the list of tabs; p.focus and order are the triggers, reveal reads them.
+  const order = p.surfaces.map(info => info.id).join('\n');
+  useLayoutEffect(reveal, [p.focus, order, reveal]);
   useEffect(() => {
     const strip = tabs.current;
     if (!strip) return;
     strip.addEventListener('scroll', measure, {passive: true});
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(reveal);
     observer?.observe(strip);
     return () => {
       strip.removeEventListener('scroll', measure);
       observer?.disconnect();
     };
-  }, [measure]);
+  }, [measure, reveal]);
+
+  // The menu exists only while some tab is out of sight: when none is, it is closed for good (V064), so it neither
+  // keeps its Escape handler nor comes back by itself when the strip narrows again.
+  const anyHidden = clip.hidden.length > 0;
+  useEffect(() => {
+    if (!anyHidden) setOpen(false);
+  }, [anyHidden]);
+  const menuOpen = open && anyHidden;
 
   // The menu closes on a press outside it and on Escape.
   useEffect(() => {
-    if (!open) return;
+    if (!menuOpen) return;
     const onDown = (event: PointerEvent) => { if (!more.current?.contains(event.target as Node)) setOpen(false); };
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -111,8 +136,7 @@ export function TopBar(p: TopBarProps): JSX.Element {
       window.removeEventListener('pointerdown', onDown);
       window.removeEventListener('keydown', onKey, true);
     };
-  }, [open]);
-  const menuOpen = open && clip.hidden.length > 0;
+  }, [menuOpen]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.altKey || event.metaKey || event.ctrlKey || !(event.target as Element).matches('[role="tab"]')) return;
@@ -143,7 +167,7 @@ export function TopBar(p: TopBarProps): JSX.Element {
       <div className={css.tabs} role="tablist" aria-label="Views" ref={tabs} onKeyDown={onKeyDown} data-clip-start={clip.start || undefined} data-clip-end={clip.end || undefined}>
         {p.surfaces.map(info => {
           const active = info.id === p.focus;
-          const name = info.title || info.id;
+          const name = fullTitle(info);
           return (
             <div className={css.tab} key={info.id} data-active={active || undefined}>
               <button type="button" role="tab" className={css.tabButton} data-surface={info.id} aria-selected={active} aria-controls="gl-view" aria-label={name} tabIndex={active ? 0 : -1} title={info.view ? `${name} · ${info.view}` : name} onClick={() => p.onFocus(info.id)}>
@@ -166,7 +190,7 @@ export function TopBar(p: TopBarProps): JSX.Element {
           {menuOpen ? (
             <div className={css.menu} role="menu" aria-label="More views" onKeyDown={onMenuKeyDown}>
               {p.surfaces.filter(info => clip.hidden.includes(info.id)).map(info => (
-                <button type="button" role="menuitem" className={css.item} key={info.id} title={info.title || info.id} onClick={() => { setOpen(false); p.onFocus(info.id); }}>
+                <button type="button" role="menuitem" className={css.item} key={info.id} title={fullTitle(info)} onClick={() => { setOpen(false); p.onFocus(info.id); }}>
                   {tabLabel(info)}
                 </button>
               ))}

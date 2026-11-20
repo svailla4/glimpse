@@ -115,6 +115,36 @@ describe('createRepoIndex on the fixture repository', () => {
     expect(logged[0]).toMatch(/^glimpse: indexed 37 files in \d+ ms \(git, 35 unchanged\)$/);
   });
 
+  it('has(): a path spelled in another case is judged by the name the file has on disk (V071)', async () => {
+    await mkdir(join(repo.root, '.idea'), {recursive: true});
+    await mkdir(join(repo.root, 'node_modules/pkg'), {recursive: true});
+    await writeFile(join(repo.root, '.idea/workspace.xml'), '<project/>\n');
+    await writeFile(join(repo.root, 'node_modules/pkg/install.sh'), 'echo hi\n');
+    try {
+      const fresh = createRepoIndex(repo.root, createRunGit(repo.root), () => {});
+      // macOS and Windows file systems usually ignore case; Linux ones do not. Both must refuse the skipped trees.
+      const insensitive = existsSync(join(repo.root, 'SRC/AUTH/SERVICE.TS'));
+      for (const path of ['.idea/workspace.xml', '.IDEA/workspace.xml', '.Idea/workspace.xml', 'node_modules/pkg/install.sh', 'NODE_MODULES/pkg/install.sh']) {
+        expect(await fresh.has!(path), path).toBe(false);
+      }
+      expect(await fresh.has!('src/auth/service.ts')).toBe(true);
+      expect(await fresh.has!('SRC/Auth/Service.ts')).toBe(insensitive);
+      // canonical() hands back the name on disk, so a case variant reaches every source under the inventory's name
+      expect(await fresh.canonical!('src/auth/service.ts')).toBe('src/auth/service.ts');
+      expect(await fresh.canonical!('./src/auth/')).toBe('src/auth');
+      expect(await fresh.canonical!('')).toBe('');
+      expect(await fresh.canonical!('SRC/Auth/Service.ts')).toBe(insensitive ? 'src/auth/service.ts' : undefined);
+      expect(await fresh.canonical!('readme.md')).toBe(insensitive ? 'README.md' : undefined);
+      expect(await fresh.canonical!('Src/AUTH')).toBe(insensitive ? 'src/auth' : undefined);
+      for (const path of ['.IDEA/workspace.xml', '.idea', 'NODE_MODULES/pkg/install.sh', 'node_modules', '.GIT/config', '.git', 'src/nope.ts', '../x', '/etc/hosts']) {
+        expect(await fresh.canonical!(path), path).toBeUndefined();
+      }
+    } finally {
+      await rm(join(repo.root, '.idea'), {recursive: true, force: true});
+      await rm(join(repo.root, 'node_modules'), {recursive: true, force: true});
+    }
+  });
+
   it('answers concurrent callers from one scan, and survives invalidate() in the middle of one', async () => {
     logged.length = 0;
     index.invalidate();

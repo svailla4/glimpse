@@ -2,9 +2,9 @@
 // MessageProcessor seeded from the stored snapshot, so a failed call cannot leave compiler state behind.
 // This file and errors.ts are the only server code that touches @a2ui/agent.
 import {CATALOG_ID, COMPONENT_BY_NAME, createApiCatalog, normalizeSpec, PROTOCOL_VERSION, type A2uiMessage, type WireComponent} from '@glimpse/catalog';
-import {classifyCompileError, compilerText, oneLine, problem, SpecError, type Problem} from './errors.ts';
-import {pathProblem, restoreBuiltins, scanSpec, tokenize, valueProblem, type SpecToken} from './guard.ts';
-import {repair} from './repair.ts';
+import {classifyCompileError, compilerText, componentNearest, oneLine, problem, SpecError, type Problem} from './errors.ts';
+import {pathProblem, restoreBuiltins, scanSpec, stringValue, tokenize, valueProblem, type SpecToken} from './guard.ts';
+import {repair, rewrite} from './repair.ts';
 
 const MAX_REPAIR_PASSES = 6;
 /** Parts one patch may have appended to root. */
@@ -56,6 +56,8 @@ export interface CompileRequest {
   sources: string[];
   /** Ids of the existing surfaces, quoted in the "nothing to patch" error. */
   surfaces: readonly string[];
+  /** Where to say what is not the spec's fault (built-ins changed by something else). */
+  log?: (message: string) => void;
 }
 
 export interface CompileResult {
@@ -66,6 +68,8 @@ export interface CompileResult {
   warnings: string[];
   /** The normalized, repaired sources that produced `messages`. */
   texts: string[];
+  /** Per message, the index of the source it was compiled from (0 is a preset's own text when one is first). */
+  steps: number[];
 }
 
 /**
@@ -94,7 +98,7 @@ function checkTargets(messages: A2uiMessage[], surfaceId: string, mayCreate: boo
   });
 }
 
-/** Reserved names that got past the text scan (they cannot, as far as is known) are refused on the compiled form too. */
+/** Reserved names refused on the compiled form too: a backstop behind the text scan, which reads text as the compiler does. */
 function checkValues(messages: A2uiMessage[]): void {
   for (const message of messages) {
     const found = 'updateDataModel' in message
@@ -235,25 +239,70 @@ export function rootLineOf(root: WireComponent | undefined, extra: string): stri
   return `root=${root.component}(${args.join(',')})`;
 }
 
+
+/** The first statement-level call of a component: `Text('hi')` on a line of its own, never assigned to a name. */
+function bareCall(text: string, name: string): SpecToken | undefined {
+  const {tokens} = tokenize(text);
+  let depth = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (isOpen(token)) depth++;
+    else if (isClose(token)) depth = Math.max(0, depth - 1);
+    else if (depth === 0 && token.kind === 'ident' && token.text === name && tokens[i + 1]?.text === '(' && tokens[i - 1]?.text !== '=') return token;
+  }
+  return undefined;
+}
+
 /**
- * Compiles the sources, repairing what Glimpse repairs (a bounded number of passes). Synchronous once the toolchain
- * is loaded, so a caller can compile, expand and commit without another call interleaving.
- * Throws SpecError with one precise problem; nothing is kept on failure.
+ * Finding V040: a string that holds what reads as the next component (`'never ends), Text('` or `'a, Text('`) most
+ * likely lost its closing quote, and swallowed that component into its text. The compiler cannot tell; it is said.
+ */
+export function swallowedCalls(text: string, source: string): string[] {
+  const out: string[] = [];
+  for (const token of tokenize(text).tokens) {
+    if (token.kind !== 'string' || out.length >= 2) continue;
+    const value = stringValue(token);
+    const call = /[)\]]\s*,\s*([A-Z][A-Za-z0-9]*)\s*\(|,\s*([A-Z][A-Za-z0-9]*)\s*\(\s*['"]/.exec(value);
+    const name = call?.[1] ?? call?.[2];
+    if (!name || !COMPONENT_BY_NAME.has(name)) continue;
+    const col = token.start - text.lastIndexOf('\n', token.start - 1);
+    out.push(`line ${originalLine(source, token.line)} col ${col}: this string runs on into ${name}(...), so that part is drawn as text. A ' closes a string only before , ) ] } : = ; or a line end; check its quotes.`);
+  }
+  return out;
+}
+
+/**
+ * Compiles the sources, repairing what Glimpse repairs. Deterministic rewrites (enum aliases, quoting, string actions,
+ * hyphenated names) are made first, in one pass and without limit; repairs driven by a compiler error take a bounded
+ * number of passes. Synchronous once the toolchain is loaded, so a caller can compile, expand and commit without
+ * another call interleaving. Throws SpecError with one precise problem; nothing is kept on failure.
  */
 export function compileSpec(tools: Toolchain, request: CompileRequest): CompileResult {
-  const texts = request.sources.map(normalizeSpec);
-  for (const text of texts) {
-    const refused = scanSpec(text);
-    if (refused) throw new SpecError([refused]);
-  }
+  // Finding V056: built-ins changed by anything else (an analyzer, a dependency) are put back before the spec is
+  // compiled and said in the log, so the after-compile check below blames only what this spec did.
+  const foreign = restoreBuiltins();
+  if (foreign.length > 0) request.log?.(`glimpse: something other than a spec changed ${foreign.slice(0, 5).join(', ')}; restored`);
   const fixes: string[] = [];
+  const texts = request.sources.map(source => {
+    const normalized = normalizeSpec(source);
+    const refused = scanSpec(normalized);
+    if (refused) throw new SpecError([refused]);
+    const rewritten = rewrite(normalized);
+    fixes.push(...rewritten.fixes);
+    const again = rewritten.text === normalized ? undefined : scanSpec(rewritten.text);
+    if (again) throw new SpecError([again]);
+    return rewritten.text;
+  });
   /** Per step: named parts no parent refers to, adopted by root in the order they were found. */
   const adopted = new Map<number, string[]>();
   let adoptions = 0;
+  /** Components renamed by a repair, by the name they were renamed to: a later failure there is the guess's fault. */
+  const renamed = new Map<string, string>();
 
   for (let pass = 0; ; pass++) {
     let compile = tools.newTwin(request.seed, request.surfaceId);
     const messages: A2uiMessage[] = [];
+    const steps: number[] = [];
     let failure: {step: number; error: unknown; root: WireComponent | undefined} | undefined;
     for (let step = 0; step < texts.length && !failure; step++) {
       const exists = request.seed !== undefined || step > 0;
@@ -273,6 +322,7 @@ export function compileSpec(tools: Toolchain, request: CompileRequest): CompileR
       } catch (error) {
         failure = {step, error, root};
       } finally {
+        while (steps.length < messages.length) steps.push(step);
         const polluted = restoreBuiltins();
         if (polluted.length > 0) failure = {step, error: new SpecError([problem('E_PATH', `the spec reached ${polluted.slice(0, 3).join(', ')}: __proto__, constructor and prototype are reserved names.`)]), root};
       }
@@ -280,7 +330,8 @@ export function compileSpec(tools: Toolchain, request: CompileRequest): CompileR
     if (!failure) {
       checkTargets(messages, request.surfaceId, request.seed === undefined);
       checkValues(messages);
-      return {messages, fixes, warnings: texts.flatMap(strayText), texts};
+      const warnings = texts.flatMap((text, step) => [...strayText(text), ...swallowedCalls(text, request.sources[step]!)]);
+      return {messages, fixes, warnings, texts, steps};
     }
     const {step, error, root} = failure;
     if (error instanceof SpecError) throw error;
@@ -289,14 +340,29 @@ export function compileSpec(tools: Toolchain, request: CompileRequest): CompileR
     const patching = (request.seed !== undefined || step > 0) && !definesRoot(texts[step]!);
     const orphanId = patching ? /^Component '([^']+)' is not reachable from 'root'/.exec(compilerText(error))?.[1] : undefined;
     const rootLine = orphanId ? rootLineOf(root, orphanId) : undefined;
-    const found: Problem = classifyCompileError(error, {
+    const lineOf = (line: number) => originalLine(request.sources[step]!, line);
+    let found: Problem = classifyCompileError(error, {
       surfaceId: request.surfaceId,
       exists: request.seed !== undefined || step > 0,
       surfaces: request.surfaces,
-      lineOf: line => originalLine(request.sources[step]!, line),
+      lineOf,
       ...(rootLine ? {rootLine} : {}),
     });
+    // Finding V022: a component written as a statement of its own is a known component that was never named.
+    if (found.code === 'E_UNKNOWN' && found.repair?.kind === 'component' && COMPONENT_BY_NAME.has(found.repair.name)) {
+      const name = found.repair.name;
+      const call = bareCall(texts[step]!, name);
+      found = problem('E_REF', `${call ? `line ${lineOf(call.line)}: ` : ''}${name}(...) is not assigned to a name. Write part=${name}(...) and list part in a parent's children, e.g. root=Page('Title',[...,part]).`, {component: name});
+    }
     const hint = pass < MAX_REPAIR_PASSES + adoptions ? found.repair : undefined;
+    const fail = (): never => {
+      // Finding V041: a renamed component whose arguments then fail was the wrong guess: say what was written. When
+      // the spec also calls that component by its own name, the failure may be that call's, and is said as it is.
+      const original = found.component !== undefined ? renamed.get(found.component) : undefined;
+      const alsoWritten = found.component !== undefined && new RegExp(`(?:^|[^A-Za-z0-9_])${found.component}\\s*\\(`).test(request.sources[step]!);
+      if (original === undefined || alsoWritten || found.code === 'E_SYNTAX') throw new SpecError([found]);
+      throw new SpecError([problem('E_UNKNOWN', `"${original}" is not a component (read as ${found.component}, it fails: ${oneLine(found.message, 160)}). Nearest: ${componentNearest(original).join(' ')}`)]);
+    };
 
     if (hint?.kind === 'orphan') {
       const already = adopted.get(step) ?? [];
@@ -306,7 +372,7 @@ export function compileSpec(tools: Toolchain, request: CompileRequest): CompileR
         fixes.push(`${hint.id} appended to root (resend root=... to place it elsewhere)`);
         continue;
       }
-      throw new SpecError([found]);
+      fail();
     }
     if (hint?.kind === 'eof') {
       // Closing brackets after a string that never ended would render the rest of the spec as text.
@@ -315,14 +381,24 @@ export function compileSpec(tools: Toolchain, request: CompileRequest): CompileR
         throw new SpecError([problem('E_SYNTAX', `line ${open.line} col ${open.col}: this string never ends, so the rest of the spec was read as its text. A ' closes a string only before , ) ] } : = ; or a line end; write an apostrophe inside as \\'.`)]);
       }
       const fix = repair(texts[step]!, hint);
-      if (!fix) throw new SpecError([found]);
-      texts[step] = fix.text;
-      fixes.push(open ? `unterminated string at line ${open.line} col ${open.col}, ${fix.note}` : fix.note);
+      if (!fix) fail();
+      texts[step] = fix!.text;
+      fixes.push(open ? `unterminated string at line ${open.line} col ${open.col}, ${fix!.note}` : fix!.note);
       continue;
     }
     const fix = hint ? repair(texts[step]!, hint) : undefined;
-    if (!fix) throw new SpecError([found]);
-    texts[step] = fix.text;
-    fixes.push(fix.note);
+    if (!fix) fail();
+    if (hint?.kind === 'component') {
+      const target = fix!.note.slice(fix!.note.lastIndexOf(' ') + 1);
+      renamed.set(target, hint.name);
+    }
+    // A call that only now has its right name (Buton -> Button, actoin= -> action=) gets the deterministic rewrites
+    // the right name would have had before the first compile: a plain action name, an enum alias, a quoted number.
+    // The rewrites are idempotent, so nothing written correctly before is touched or reported again.
+    const rewritten = rewrite(fix!.text);
+    const refused = rewritten.text === fix!.text ? undefined : scanSpec(rewritten.text);
+    if (refused) throw new SpecError([refused]);
+    texts[step] = rewritten.text;
+    fixes.push(fix!.note, ...rewritten.fixes);
   }
 }

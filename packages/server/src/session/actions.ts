@@ -49,12 +49,14 @@ export class ActionRouter {
   handle(message: unknown): boolean {
     if (!isRecord(message) || message.version !== '1.0') return false;
     if (isRecord(message.error)) {
-      // Decision D3: a tab says what it drew instead of a component (a redline, an empty state) as an A2UI v1.0
-      // renderer error whose message starts with `Name#id: `. Those reach the model; anything else is only logged.
-      const {code, message: detail, surfaceId} = message.error;
-      const report = text(code) && text(detail) && text(surfaceId) ? /^([A-Za-z][A-Za-z0-9]{0,39})#([^\s:]{1,120}): ([\s\S]*)$/.exec(detail) : null;
+      // Decision D14: a tab reports the state of a component (OK, I_*, W_*, E_*) as an A2UI v1.0 renderer error
+      // whose message starts with `Name#id:`. Those are kept per component; anything else is only logged. A long
+      // message is cut, not refused, so a state is never lost to its length.
+      const {code, surfaceId} = message.error;
+      const detail = typeof message.error.message === 'string' ? message.error.message.slice(0, MAX_TEXT) : undefined;
+      const report = text(code) && text(detail) && text(surfaceId) ? /^([A-Za-z][A-Za-z0-9]{0,39})#([^\s:]{1,120}):(?: ([\s\S]*))?$/.exec(detail) : null;
       if (report && text(code) && text(surfaceId) && /^[A-Z][A-Z0-9_]{1,31}$/.test(code)) {
-        return this.session.viewerReport(surfaceId, report[1]!, report[2]!, code, report[3]!);
+        return this.session.viewerReport(surfaceId, report[1]!, report[2]!, code, report[3] ?? '');
       }
       this.log(`glimpse: viewer error ${text(code) ? code : '?'}${text(surfaceId) ? ` (${surfaceId})` : ''}: ${text(detail) ? detail.replace(/\s+/g, ' ').slice(0, 300) : ''}`);
       return true;

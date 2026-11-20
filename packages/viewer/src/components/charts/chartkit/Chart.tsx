@@ -6,10 +6,11 @@ import {
   type JSX, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject,
 } from 'react';
 import {
-  DataGate, PlateAside, Redline, assignSlots, useDataset, useHostActions, usePath, useSelection, useSize, useTooltip, type DataState,
+  DataGate, Empty, PlateAside, REPORT_CODES, Redline, assignSlots, useDataset, useHostActions, usePath, useReportState, useSelection, useSize,
+  useTooltip, type DataState,
 } from '../../../kit/index.ts';
 import css from './chartkit.module.css';
-import {cleanRows, clipName, clipText, matches, received, say} from './data.ts';
+import {cleanRows, clipName, clipText, matches, missText, received, say, type FieldMiss, type FieldSet, type Unfit} from './data.ts';
 import type {ValueAxis} from './scale.ts';
 
 export interface TipRow {
@@ -489,6 +490,25 @@ export function notes(...parts: Array<string | false | undefined | null>): strin
 /** The redline for a wrong top-level type, stating what was expected and what arrived. */
 export function ShapeError(p: {name: string; id: string; expected: string; value: unknown}): JSX.Element {
   return <Redline code="E_SHAPE" id={`${p.name}#${p.id}`} message={`expected ${p.expected}, received ${received(p.value)}`} />;
+}
+
+/**
+ * A chart that has nothing to draw: the kit's empty look, reported under the code that says why (W_FIELD for a
+ * field the data does not have, W_SHAPE for data with nothing the chart can draw; decision D14) instead of the
+ * kit's W_EMPTY, which is about missing data.
+ */
+export function Unable(p: Unfit): JSX.Element {
+  return <Empty code={p.code} message={p.message} />;
+}
+
+/**
+ * A chart that drew its default encoding for field names the data does not have (decision D15) still tells the
+ * model which names it could not find (W_FIELD, D14); the plate header says it to the person (missNote). It is the
+ * component's state while the chart draws that way, and goes when the spec names fields the data has.
+ */
+export function MissReport(p: {misses: readonly FieldMiss[]; fields: FieldSet; source?: string}): null {
+  useReportState(p.misses.length > 0 ? REPORT_CODES.field : undefined, p.misses.length > 0 ? missText(p.misses, p.fields, p.source) : '');
+  return null;
 }
 
 // ---------------------------------------------------------------- canvas

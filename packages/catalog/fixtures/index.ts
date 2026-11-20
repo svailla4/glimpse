@@ -134,7 +134,7 @@ const KPIS: StatItem[] = [
   {label: 'Lines', value: 4210, format: 'compact', spark: [3100, 3300, 3500, 3900, 4210]},
   {label: 'Languages', value: 6},
   {label: 'Modules', value: 3},
-  {label: 'Cycles', value: 1, tone: 'warn'},
+  {label: 'File cycles', value: 1, tone: 'warn'},
   {label: 'Commits (30d)', value: 38, delta: 6},
   {label: 'Contributors', value: 3},
 ];

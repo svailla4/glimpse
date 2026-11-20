@@ -253,6 +253,15 @@
     background: var(--dg-paper);
     cursor: crosshair;
     touch-action: none;
+    transition: opacity 120ms ease-out;
+  }
+  /* Finding V049: zoomed in, nodes pass under the inset. While the pointer is over the diagram the inset fades so
+     they show through; pointing at the inset brings it back. */
+  .canvas:hover ~ .overview {
+    opacity: 0.3;
+  }
+  .overview:hover {
+    opacity: 1;
   }
   .overviewNode {
     fill: var(--gl-ink-3);

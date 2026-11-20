@@ -12,7 +12,7 @@ import {underSkipped} from '../analyze/skipped.ts';
 import {clipLine, isBinary, MAX_FILE_BYTES, readTextFile, regularFileSize, repoPath} from '../code/file.ts';
 import {splitLines} from '../code/highlight.ts';
 import {langOfPath} from '../code/langs.ts';
-import {SourceError, type CodeService, type DiffService, type RepoContext} from '../contracts.ts';
+import {canonicalPath, SourceError, type CodeService, type DiffService, type RepoContext} from '../contracts.ts';
 import {resolveRange, type ResolvedRange} from './range.ts';
 
 export type ChangeStatus = 'A' | 'M' | 'D' | 'R';
@@ -302,7 +302,13 @@ export function createDiffService(ctx: RepoContext, code: CodeService): DiffServ
       const only = q?.path === undefined || q.path === '' ? undefined : repoPath(q.path);
       if (only === null) throw new SourceError('E_TARGET', 'the path of a diff must be inside the repository');
       if (only !== undefined) {
-        files = files.filter(file => file.path === only);
+        let picked = files.filter(file => file.path === only);
+        // 'readme.md' is README.md on a case-insensitive file system, and git names the change README.md (V071)
+        if (picked.length === 0) {
+          const named = await canonicalPath(ctx.index, only);
+          if (named !== only) picked = files.filter(file => file.path === named);
+        }
+        files = picked;
         totals = {files: files.length, add: files.reduce((sum, f) => sum + f.add, 0), del: files.reduce((sum, f) => sum + f.del, 0)};
       }
 

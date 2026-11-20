@@ -34,7 +34,6 @@
   }
   .bits { display: flex; align-items: center; gap: 10px; min-width: 0; font: 400 12px/16px var(--gl-font-mono); }
   .crumbs { display: flex; flex: 0 1 auto; min-width: 0; white-space: nowrap; }
-  .dir { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--gl-ink-3); }
   .base { flex: none; color: var(--gl-ink); font-weight: 500; }
   .badge {
     flex: none;

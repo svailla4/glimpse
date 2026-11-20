@@ -308,6 +308,19 @@ describe('FileTree: rollups', () => {
     expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'files_tree', target: 'src'}});
   });
 
+  // Finding V049: after '(17 more)' drilled into the selected folder, every row was tinted as inside the selection.
+  it('does not tint every row when the tree is drilled into the selected folder', async () => {
+    const ui: DirNode = {name: 'ui', path: 'src/ui', dir: true, files: 3, loc: 1400, bytes: 42000, children: [file('src/ui/app.css', 700), file('src/ui/App.tsx', 400)]};
+    const view = renderExpress(page("FileTree(title='Files')"), {data: {'/ds/files_tree': {...datasetFixture('files.tree'), source: 'files.tree src/ui', data: ui, truncated: undefined, drill: {target: 'src/ui', up: 'src'}}}});
+    await ready(view);
+    act(() => view.setData('/ui/sel', {type: 'dir', id: 'src/ui', path: 'src/ui'}));
+    await waitFor(() => expect(view.getData('/ui/sel')).toMatchObject({path: 'src/ui'}));
+    expect(rowsOf(view).map(item => item.getAttribute('data-selected'))).toEqual([null, null]);
+    // a folder above the scope still marks what is inside it
+    act(() => view.setData('/ui/sel', {type: 'dir', id: 'src', path: 'src'}));
+    await waitFor(() => expect(rowsOf(view).map(item => item.getAttribute('data-selected'))).toEqual(['within', 'within']));
+  });
+
   it('leaves the rollup of the directory the tree is scoped to inert: drilling there would ask for the same tree', async () => {
     const root: DirNode = {name: '', path: '', dir: true, files: 9, loc: 900, bytes: 27000, children: [file('a.ts', 500), file('b.ts', 300)], more: {files: 3, loc: 100}};
     const view = renderExpress(page('FileTree()'), {data: {'/ds/files_tree': {...datasetFixture('files.tree'), data: root}}});

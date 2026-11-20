@@ -58,6 +58,29 @@ function parseCommit(row: DataRow): Commit | undefined {
   };
 }
 
+/** A line count as the change column prints it: exact below 10,000, compact from there on. */
+const countText = (n: number) => fmtNum(n, n >= 10_000 ? 'compact' : 'num');
+/** Width of one character of the change counts (11 px IBM Plex Mono). */
+const COUNT_CHAR = 6.6;
+/** The widest counts text there can be: '+9,999 −9,999' (larger counts are compact). */
+const MAX_COUNT_CHARS = 13;
+
+/**
+ * Characters of the widest '+add −del' among the rows. Every row reserves that width, so the author and age columns
+ * line up whatever a commit's counts are; a paged log may bring wider counts later, so it reserves the most.
+ */
+function countChars(rows: readonly DataRow[], remote: boolean): number {
+  if (remote) return MAX_COUNT_CHARS;
+  let chars = 0;
+  for (const row of rows) {
+    const add = num(row.add);
+    const del = num(row.del);
+    if (add === undefined && del === undefined) continue;
+    chars = Math.max(chars, countText(add ?? 0).length + countText(del ?? 0).length + 3);
+  }
+  return Math.min(MAX_COUNT_CHARS, Math.max(chars, 6));
+}
+
 function initials(name: string): string {
   const words = name.split(/[\s._-]+/).filter(Boolean);
   const letters = words.length > 1 ? words[0]![0]! + words[1]![0]! : (words[0] ?? '').slice(0, 2);
@@ -134,7 +157,8 @@ const CommitItem = memo(function CommitItem({index, top, commit, loading, slot, 
       <span className={s.subject} title={commit.subject}>{commit.subject || <span className={s.dim}>no subject</span>}</span>
       {commit.refs.length > 0 ? (
         <span className={s.refs}>
-          {commit.refs.slice(0, MAX_REFS).map(ref => <span key={ref} className={s.ref} title={ref}>{ref}</span>)}
+          {/* Elided from the start (finding V050): 'python/a2ui-…' twice told two branches apart by nothing. */}
+          {commit.refs.slice(0, MAX_REFS).map(ref => <span key={ref} className={s.ref} title={ref} data-gl-ref=""><bdi>{ref}</bdi></span>)}
           {commit.refs.length > MAX_REFS ? <span className={s.refMore} title={commit.refs.slice(MAX_REFS).join(', ')}>+{commit.refs.length - MAX_REFS}</span> : null}
         </span>
       ) : null}
@@ -154,7 +178,7 @@ const CommitItem = memo(function CommitItem({index, top, commit, loading, slot, 
                 <span className={s.barDel} style={{width: total > 0 ? `${(share * del * 100) / total}%` : 0}} />
               </span>
               <span className={s.counts}>
-                <span className={add ? s.add : s.zero}>+{fmtNum(add, add >= 10_000 ? 'compact' : 'num')}</span> <span className={del ? s.del : s.zero}>{MINUS}{fmtNum(del, del >= 10_000 ? 'compact' : 'num')}</span>
+                <span className={add ? s.add : s.zero}>+{countText(add)}</span> <span className={del ? s.del : s.zero}>{MINUS}{countText(del)}</span>
               </span>
             </>
           ) : null}
@@ -199,6 +223,7 @@ function List({id, props, rows, skipped, ds, remote}: ListProps): JSX.Element {
   // A long log comes without line counts (one numstat per commit is too slow): then nothing is reserved for them
   // and the subject takes the width.
   const hasChanges = useMemo(() => rows.some(row => num(row.add) !== undefined || num(row.del) !== undefined), [rows]);
+  const countsWidth = useMemo(() => Math.ceil(countChars(rows, remote) * COUNT_CHAR) + 2, [rows, remote]);
   const malformed = useMemo(() => skipped + rows.reduce((n, row) => n + (toCommit(row) ? 0 : 1), 0), [rows, skipped]);
 
   // Authors are coloured by the kit (D6): a session ink where there is one, else the free inks in order of first
@@ -257,7 +282,7 @@ function List({id, props, rows, skipped, ds, remote}: ListProps): JSX.Element {
   if (malformed > 0) notes.push(`${fmtNum(malformed)} malformed ${malformed === 1 ? 'row' : 'rows'}`);
 
   return (
-    <div className={s.root} data-sized={props.size ? '' : undefined} data-gl-commits="">
+    <div className={s.root} data-sized={props.size ? '' : undefined} data-gl-commits="" style={{['--gl-commit-counts' as never]: `${countsWidth}px`}}>
       {notes.length > 0 || pager.error ? (
         <PlateAside>
           {pager.error ? <span className={s.failed} role="alert">commits failed to load: {pager.error}</span> : null}

@@ -17,6 +17,34 @@ function setup(extra: Source[] = []) {
 const ref = (source: string, target?: string, args: Record<string, string> = {}) => ({source, ...(target ? {target} : {}), args});
 const total = (fakes: ReturnType<typeof fakeSources>) => [...fakes.runs.values()].reduce((a, b) => a + b, 0);
 
+// Finding V009: a table bound to a graph source draws the graph's nodes as rows, from the same run as the graph.
+describe('a graph read as rows', () => {
+  it('runs the graph once and answers `as=rows` with its nodes, fields and roles', async () => {
+    let runs = 0;
+    const graphMeta: SourceMeta = {name: 'fake.graph', kind: 'graph', doc: 'A graph.', shape: 'GraphData', budget: 150, target: 'range'};
+    const graph: Source = {
+      meta: graphMeta,
+      run: async () => {
+        runs++;
+        return {data: {nodes: [{id: 'src/a.ts', label: 'a.ts', fanIn: 3, fanOut: 1, status: 'modified'}, {id: 'src/b.ts', label: 'b.ts', fanIn: 0}], edges: [{from: 'src/a.ts', to: 'src/b.ts'}]}, summary: '2 nodes 1 edge'};
+      },
+    };
+    const {store} = setup([graph]);
+    const asRows = await store.run(ref('fake.graph', 'wt', {as: 'rows'}));
+    expect(asRows.ok && asRows.meta.kind).toBe('rows');
+    if (!asRows.ok) throw new Error('expected rows');
+    expect(asRows.result.data).toEqual([{label: 'a.ts', id: 'src/a.ts', status: 'modified', fanIn: 3, fanOut: 1}, {label: 'b.ts', id: 'src/b.ts', fanIn: 0}]);
+    expect(asRows.meta.fields?.map(field => field.key)).toEqual(['label', 'id', 'status', 'fanIn', 'fanOut']);
+    expect(asRows.meta.roles).toMatchObject({label: 'label', value: 'fanIn'});
+    expect(asRows.result.summary).toBe('2 nodes as rows; fields label id status fanIn fanOut');
+    await store.run(ref('fake.graph', 'wt'));
+    expect(store.peek(ref('fake.graph', 'wt', {as: 'rows'}))?.meta.kind).toBe('rows');
+    expect(runs).toBe(1);
+    const envelope = envelopeOf('k', ref('fake.graph', 'wt', {as: 'rows'}), asRows);
+    expect(envelope).toMatchObject({kind: 'rows', status: 'ready', source: 'fake.graph wt as=rows'});
+  });
+});
+
 describe('DatasetStore', () => {
   it('runs a source once per canonical ref and answers later requests from memory', async () => {
     const {store, fakes} = setup();

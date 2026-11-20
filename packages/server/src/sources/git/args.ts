@@ -1,7 +1,7 @@
 // packages/server/src/sources/git/args.ts
 // What the git.* and diff.* sources share: reading `top=`, `since=` and a path target out of a ref, cutting rows to
 // a budget, and writing the one-line summary the model sees.
-import type {Rows, SourceMeta, SourceRef} from '@glimpse/catalog';
+import type {Field, Roles, Rows, SourceMeta, SourceRef} from '@glimpse/catalog';
 import {repoPath} from '../../code/file.ts';
 import {SourceError, type GitInfo, type RepoContext, type SourceResult} from '../../contracts.ts';
 
@@ -67,7 +67,7 @@ export function summarize(text: string): string {
   return line.length > SUMMARY_MAX ? `${line.slice(0, SUMMARY_MAX - 1)}…` : line;
 }
 
-const fieldList = (meta: SourceMeta): string => (meta.fields ? `; fields ${meta.fields.map(field => field.key).join(' ')}` : '');
+const fieldList = (fields: readonly Field[] | undefined): string => (fields ? `; fields ${fields.map(field => field.key).join(' ')}` : '');
 
 export interface CutOptions<T> {
   /** `top=` of the ref. */
@@ -81,6 +81,9 @@ export interface CutOptions<T> {
   /** Detail appended to the summary, given the rows that are returned. */
   detail?: (shown: T[]) => string;
   warnings?: string[];
+  /** Columns and roles when the rows are not the source's default shape (git.churn by=module). */
+  fields?: Field[];
+  roles?: Roles;
 }
 
 /**
@@ -96,14 +99,16 @@ export function cutRows<T extends object>(meta: SourceMeta, all: T[], options: C
   const before = Math.max(options.of ?? 0, all.length);
   const detail = options.detail?.(data);
   const count = data.length === before ? `${before} ${before === 1 ? 'row' : 'rows'}` : `${data.length}/${before} rows`;
+  const fields = options.fields ?? meta.fields;
+  const roles = options.roles ?? meta.roles;
   return {
     data,
     total: reachable.length,
     ...(data.length < before ? {truncated: {total: before, returned: data.length, strategy, ...(options.by ? {by: options.by} : {})}} : {}),
-    ...(meta.fields ? {fields: meta.fields} : {}),
-    ...(meta.roles ? {roles: meta.roles} : {}),
+    ...(fields ? {fields} : {}),
+    ...(roles ? {roles} : {}),
     ...(options.warnings && options.warnings.length > 0 ? {warnings: options.warnings} : {}),
     ...(meta.pageable ? {allRows: reachable as Rows} : {}),
-    summary: summarize(`${count}${fieldList(meta)}${detail ? `; ${detail}` : ''}`),
+    summary: summarize(`${count}${fieldList(fields)}${detail ? `; ${detail}` : ''}`),
   };
 }

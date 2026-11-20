@@ -2,6 +2,7 @@
 // checked against another source and against git itself. These are the regressions of the accuracy review: two log
 // parsers that disagreed, a stacked chart twice too tall, a KPI that was a display cap, importers that were not found.
 import {spawn} from 'node:child_process';
+import {existsSync} from 'node:fs';
 import {mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {devNull, tmpdir} from 'node:os';
 import {basename, dirname, join} from 'node:path';
@@ -95,6 +96,39 @@ describe('one parsed history for files.*, repo.kpis and git.*', () => {
     await expectOneHistory(await context(repo.root), {commits: FIXTURE.commits.main, authors: 3});
   });
 
+  it('a path spelled in another case reads the file under the name it has on disk (V071)', async () => {
+    const ctx = await context(repo.root);
+    // macOS and Windows file systems usually ignore case, Linux ones do not: there the variant names nothing
+    const insensitive = existsSync(join(repo.root, 'readme.md'));
+    const pairs: Array<[string, string]> = [
+      ['code.symbols readme.md', 'code.symbols README.md'],
+      ['git.log readme.md top=10', 'git.log README.md top=10'],
+      ['git.authors Readme.MD', 'git.authors README.md'],
+      ['git.churn SRC/Auth', 'git.churn src/auth'],
+      ['files.list SRC/AUTH', 'files.list src/auth'],
+      ['code.todos Src', 'code.todos src'],
+      ['deps.files SRC/auth/Service.ts', 'deps.files src/auth/service.ts'],
+      ['code.symbols src/auth/SERVICE.ts#L3', 'code.symbols src/auth/service.ts'],
+    ];
+    for (const [variant, named] of pairs) {
+      const truth = await run(ctx, named);
+      expect(truth.data, named).not.toEqual([]);
+      if (!insensitive) {
+        await expect(run(ctx, variant), variant).rejects.toMatchObject({code: 'E_TARGET'});
+        continue;
+      }
+      const asked = await run(ctx, variant);
+      expect(asked.data, variant).toEqual(truth.data);
+      expect(asked.total, variant).toBe(truth.total);
+      // and the summary names the file as the repository does
+      expect(asked.summary, variant).toBe(truth.summary);
+    }
+    // a case variant of a skipped tree is still nothing of the project
+    for (const variant of ['code.symbols .GIT/config', 'code.symbols NODE_MODULES/x/index.js']) {
+      await expect(run(ctx, variant), variant).rejects.toMatchObject({code: 'E_TARGET'});
+    }
+  });
+
   it('counts the commits git drops when it simplifies history for a pathspec', async () => {
     // the trap: the same question, with and without a pathspec, has two answers
     expect(await git(merged, ['rev-list', '--count', '--no-merges', 'HEAD'])).toBe('3');
@@ -126,6 +160,9 @@ describe('one parsed history for files.*, repo.kpis and git.*', () => {
 describe('a history longer than the parsed window', () => {
   const EXTRA = 150;
   const TOTAL = LOG_LIMIT + EXTRA;
+  const RENAMED_COMMITS = 40;
+  /** Commits of a different file that takes the old name mid/before.ts after the rename. */
+  const REUSED_COMMITS = 7;
   let root: string;
   let ctx: RepoContext;
   beforeAll(async () => {
@@ -139,11 +176,16 @@ describe('a history longer than the parsed window', () => {
       const author = old ? 'Old Hand' : ['Ana Lima', 'Ben Okoye', 'Cy Tran'][n % 3]!;
       const who = `${author} <${address(author)}> ${start + n * 600} +0000`;
       const message = `commit ${n}`;
-      const path = old ? `old/o${n % 10}.ts` : `src/s${n % 20}.ts`;
-      const content = `export const v = ${n};\n`;
+      // Inside the window: RENAMED_COMMITS commits of mid/before.ts, then its rename to keep/after.ts, then a different
+      // file that reuses the name mid/before.ts (V067).
+      const renamed = n > EXTRA && n <= EXTRA + RENAMED_COMMITS;
+      const reused = n > EXTRA + RENAMED_COMMITS + 1 && n <= EXTRA + RENAMED_COMMITS + 1 + REUSED_COMMITS;
+      const path = old ? `old/o${n % 10}.ts` : renamed || reused ? 'mid/before.ts' : `src/s${n % 20}.ts`;
+      const content = reused ? `// another file under the old name\nexport const reused = '${'z'.repeat(60)}${n}';\n` : `export const v = ${n};\n`;
       lines.push('commit refs/heads/main', `mark :${n}`, `author ${who}`, `committer ${who}`, `data ${message.length}`, message);
       if (n > 1) lines.push(`from :${n - 1}`);
-      lines.push(`M 100644 inline ${path}`, `data ${content.length}`, content);
+      if (n === EXTRA + RENAMED_COMMITS + 1) lines.push('R mid/before.ts keep/after.ts');
+      else lines.push(`M 100644 inline ${path}`, `data ${content.length}`, content);
     }
     await new Promise<void>((resolve, reject) => {
       const child = spawn('git', ['fast-import', '--quiet'], {cwd: root, env: {PATH: process.env.PATH, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: '1'}, stdio: ['pipe', 'ignore', 'pipe']});
@@ -190,6 +232,41 @@ describe('a history longer than the parsed window', () => {
     expect((await run(ctx, 'git.authors old')).data).toEqual([{author: 'Old Hand', commits: EXTRA, files: 10, last: expect.stringMatching(/^2026-01-0\dT/)}]);
     expect((await run<CommitRow[]>(ctx, 'git.log old')).total).toBe(EXTRA);
   });
+
+  it('a path asked for by name keeps the commits from before its rename (V067)', async () => {
+    // every commit of the file lies inside the window: the whole-repository numbers count them under its new name
+    const commits = RENAMED_COMMITS + 1;
+    const listed = (await run(ctx, 'files.list keep')).allRows as Array<{path: string; commits: number}>;
+    expect(listed.find(row => row.path === 'keep/after.ts')?.commits).toBe(commits);
+    const churnAll = (await run<ChurnRow[]>(ctx, 'git.churn')).allRows as unknown as ChurnRow[];
+    expect(churnAll.find(row => row.path === 'keep/after.ts')?.commits).toBe(commits);
+    // and so do the sources scoped to the file, read from git again past the window
+    for (const target of ['keep/after.ts', 'keep']) {
+      expect((await run<CommitRow[]>(ctx, `git.log ${target}`)).total, `git.log ${target}`).toBe(commits);
+      expect(((await run<ChurnRow[]>(ctx, `git.churn ${target}`)).data).find(row => row.path === 'keep/after.ts')?.commits, `git.churn ${target}`).toBe(commits);
+      const authors = (await run(ctx, `git.authors ${target}`)).data as Array<{author: string; commits: number}>;
+      expect(authors.reduce((sum, row) => sum + row.commits, 0), `git.authors ${target}`).toBe(commits);
+      expect(authors.map(row => row.author).sort()).toEqual(['Ana Lima', 'Ben Okoye', 'Cy Tran']);
+    }
+  });
+
+  it('a renamed file does not take the commits of a later file that reuses its old name (V067)', async () => {
+    // the scoped read names mid/before.ts too, and that name now belongs to another file: its commits are not ours
+    const commits = RENAMED_COMMITS + 1;
+    for (const target of ['keep/after.ts', 'keep']) {
+      const log = await run<CommitRow[]>(ctx, `git.log ${target} top=${commits + REUSED_COMMITS + 5}`);
+      expect(log.total, `git.log ${target}`).toBe(commits);
+      expect(log.data.map(row => row.subject), `git.log ${target}`).not.toContain(`commit ${EXTRA + RENAMED_COMMITS + 2}`);
+      const authors = (await run(ctx, `git.authors ${target}`)).data as Array<{commits: number}>;
+      expect(authors.reduce((sum, row) => sum + row.commits, 0), `git.authors ${target}`).toBe(commits);
+    }
+    // the file that has the name today has only its own commits, by every source alike
+    expect((await run(ctx, 'files.list mid')).data.find(row => row.path === 'mid/before.ts')?.commits).toBe(REUSED_COMMITS);
+    expect((await run<CommitRow[]>(ctx, 'git.log mid/before.ts')).total).toBe(REUSED_COMMITS);
+    expect(((await run<ChurnRow[]>(ctx, 'git.churn mid/before.ts')).data).find(row => row.path === 'mid/before.ts')?.commits).toBe(REUSED_COMMITS);
+    const authors = (await run(ctx, 'git.authors mid/before.ts')).data as Array<{commits: number}>;
+    expect(authors.reduce((sum, row) => sum + row.commits, 0)).toBe(REUSED_COMMITS);
+  });
 });
 
 describe('a shallow clone', () => {
@@ -218,6 +295,15 @@ describe('a shallow clone', () => {
     expect((await run<StatItem[]>(ctx, 'repo.kpis')).warnings).toEqual([SHALLOW_WARNING]);
     await expectOneHistory(ctx, {commits: 2, authors: 2});
   });
+
+  it('draws no rise of commits that is only the depth of the clone, and marks the counts as lower bounds (V033)', async () => {
+    const kpis = await run<StatItem[]>(await context(clone), 'repo.kpis');
+    const commits = kpis.data.find(item => item.label === 'Commits (30d)');
+    expect(commits?.delta).toBeUndefined();
+    expect(commits?.unit).toBe('or more');
+    expect(kpis.data.find(item => item.label === 'Contributors')?.unit).toBe('or more');
+    expect(kpis.summary).toMatch(/Contributors \d+ or more/);
+  });
 });
 
 describe('git.timeline on real history', () => {
@@ -242,12 +328,13 @@ describe('git.timeline on real history', () => {
     const totals: Record<string, number> = {};
     for (const row of result.data) totals[row.module] = (totals[row.module] ?? 0) + row.commits;
     // paths whose directory is gone are '(removed)', files at the top are '(root)', a tie goes to the real module
-    expect(totals).toEqual({'src/core': 2, '(removed)': 2, '(root)': 1});
+    // and the empty commit is a commit too, in a series of its own, so the weeks add up to git.activity (V030)
+    expect(totals).toEqual({'src/core': 2, '(removed)': 2, '(root)': 1, '(no files)': 1});
     const perWeek: Record<string, number> = {};
     for (const row of result.data) perWeek[row.week] = (perWeek[row.week] ?? 0) + row.commits;
-    // five commits changed files (the sixth is empty and belongs to no module): never more than the week really had
-    expect(perWeek).toEqual({'2026-10-05': 2, '2026-10-12': 2, '2026-10-19': 1});
-    expect(result.summary).toContain('5 commits since');
+    // never more than the week really had, and never less
+    expect(perWeek).toEqual({'2026-10-05': 2, '2026-10-12': 2, '2026-10-19': 2});
+    expect(result.summary).toContain('6 commits since');
     expect(result.summary).toContain('each under its main module');
     expect((await run<Array<{commits: number}>>(ctx, 'git.activity')).data.reduce((sum, row) => sum + row.commits, 0)).toBe(6);
   });
@@ -317,12 +404,34 @@ describe('the import graph', () => {
     expect(new Set(edges.map(edge => edge.kind))).toEqual(new Set(['module']));
   });
 
+  it('deps.files counts every importer before the node budget cuts the graph, and says the graph is cut (V024)', async () => {
+    const many = await realpath(await mkdtemp(join(tmpdir(), 'glimpse-importers-')));
+    try {
+      const files: Record<string, string> = {'Package.swift': SWIFT_PACKAGE, 'Sources/Core/Models/Node.swift': 'public struct Node {}\n'};
+      for (let i = 0; i < 200; i++) files[`Sources/App${String(i % 4)}/File${String(i).padStart(3, '0')}.swift`] = 'import Core\n';
+      await write(many, files);
+      const ctx = await context(many);
+      const result = await run<GraphData>(ctx, 'deps.files Sources/Core/Models/Node.swift');
+      const drawn = result.data.edges.filter(edge => edge.to === 'Sources/Core/Models/Node.swift').length;
+      expect(drawn).toBeLessThan(200);
+      // the file's numbers, not the cut graph's: the same importers RepoIndex.edges (and so diff.impact) counts
+      const truth = new Set((await ctx.index.edges()).filter(edge => edge.to === 'Sources/Core/Models/Node.swift').map(edge => edge.from));
+      expect(truth.size).toBe(200);
+      expect(result.summary).toContain(`imported by 200 (${drawn} drawn)`);
+      expect(result.truncated).toEqual({total: 201, returned: result.data.nodes.length, strategy: 'neighborhood', by: 'Sources/Core/Models/Node.swift'});
+      expect(result.warnings).toContain(`graph cut to ${result.data.nodes.length} of 201 nodes, importers by name first`);
+      expect(result.warnings).toContain('200 of 200 importers import the whole package or module Node.swift belongs to, not this file by name');
+    } finally {
+      await rm(many, {recursive: true, force: true});
+    }
+  });
+
   it('does not call a loop that closes through a lazy import() a cycle, in the KPI, the list or the graph', async () => {
     const ctx = await context(lazy);
     const cycles = await run(ctx, 'deps.cycles');
     expect(cycles.data).toEqual([{id: 1, size: 2, members: 'src/tight/a.ts, src/tight/b.ts'}]);
     const kpis = await run<StatItem[]>(ctx, 'repo.kpis');
-    expect(stat(kpis, 'Cycles')).toBe(1);
+    expect(stat(kpis, 'File cycles')).toBe(1);
     expect(kpis.summary).toContain('File cycles 1');
     const graph = (await run<GraphData>(ctx, 'deps.modules')).data;
     expect(graph.nodes.filter(node => node.cycle).map(node => node.id).sort()).toEqual(['src/tight/a.ts', 'src/tight/b.ts']);
@@ -397,5 +506,170 @@ describe('diff.impact', () => {
     const broken = new Set([...breaks('src/auth/tokens.ts'), ...breaks('src/lib/settings.ts')]).size;
     expect(result.warnings).toContain(`${broken} importers still import a file this change deletes or renames`);
     expect(result.summary).toContain(`2 changed, ${broken} affected importers`);
+  });
+});
+
+describe('history counted the same way in every git.* source', () => {
+  let root: string;
+  beforeAll(async () => {
+    root = await scratchRepo('counted');
+    const ts = (n: number) => `export function f${n}() {\n  if (${n}) {\n    return ${n};\n  }\n}\n`;
+    await commit(root, 'Ana Lima', '2026-10-01T10:00:00Z', 'start', {
+      'packages/a/package.json': '{"name": "a"}\n', 'packages/b/package.json': '{"name": "b"}\n', 'packages/server/package.json': '{"name": "server"}\n',
+      'packages/a/src/x.ts': ts(1), 'packages/a/src/y.ts': ts(2), 'packages/b/src/z.ts': ts(3),
+      'README.md': '# Shop\n\n## Usage\n\nRun it.\n', 'CHANGELOG.md': '# Changes\n\n## 1.0\n', 'ci.yaml': '# CI\non: push\n',
+      'packages/server/src/spec/guard.ts': ts(4), 'packages/server/test/guard.test.ts': "import '../src/spec/guard.ts';\n",
+    });
+    await git(root, ['commit', '-q', '--no-gpg-sign', '--allow-empty', '-m', 'empty'], as('Ben Okoye', '2026-10-02T10:00:00Z'));
+    for (let n = 0; n < 4; n++) {
+      await commit(root, 'Ben Okoye', `2026-10-0${3 + n}T10:00:00Z`, `edit ${n}`, {
+        'README.md': `# Shop\n\n## Usage\n\nRun it ${n}.\n`, 'CHANGELOG.md': `# Changes\n\n## 1.${n}\n`, 'ci.yaml': `# CI ${n}\non: push\n`, 'packages/a/src/x.ts': ts(10 + n),
+      });
+    }
+    await commit(root, 'Cy Tran', '2026-10-08T10:00:00Z', 'b', {'packages/b/src/z.ts': ts(20)});
+    // a tracked symbolic link: a path of git, not a file of the inventory
+    await git(root, ['config', 'core.symlinks', 'true']);
+    const {symlink} = await import('node:fs/promises');
+    await symlink('packages/a', join(root, 'link'));
+    await commit(root, 'Cy Tran', '2026-10-09T10:00:00Z', 'link');
+  });
+  afterAll(async () => {
+    await rm(root, {recursive: true, force: true});
+  });
+
+  it('git.timeline counts a commit that changes no file, so its weeks add up to git.activity (V030)', async () => {
+    const ctx = await context(root);
+    const [timeline, activity] = await Promise.all([run<Array<{module: string; commits: number}>>(ctx, 'git.timeline since=5y'), run<Array<{commits: number}>>(ctx, 'git.activity since=5y')]);
+    const total = (rows: Array<{commits: number}>) => rows.reduce((sum, row) => sum + row.commits, 0);
+    expect(total(activity.data)).toBe(8);
+    expect(total(timeline.data)).toBe(8);
+    expect(timeline.data.filter(row => row.module === '(no files)').reduce((sum, row) => sum + row.commits, 0)).toBe(1);
+  });
+
+  it('git.churn and git.hotspots count files of the inventory, and hotspots rank code only (V031, V072)', async () => {
+    const ctx = await context(root);
+    const churn = (await run<ChurnRow[]>(ctx, 'git.churn')).data;
+    const inventory = new Set((await ctx.index.files()).map(file => file.path));
+    expect(churn.map(row => row.path).filter(path => !inventory.has(path))).toEqual([]);
+    expect(churn.some(row => row.path === 'link')).toBe(false);
+    // the README, the changelog and the YAML change most often; none of them says anything about risk
+    const hot = (await run<Array<{path: string}>>(ctx, 'git.hotspots')).data.map(row => row.path);
+    expect(hot[0]).toBe('packages/a/src/x.ts');
+    for (const prose of ['README.md', 'CHANGELOG.md', 'ci.yaml']) expect(hot, prose).not.toContain(prose);
+  });
+
+  it('git.churn by=module: one row per module of the module graph, counted from the same commits (V008)', async () => {
+    const ctx = await context(root);
+    const result = await run<Array<{module: string; commits: number; authors: number; files: number}>>(ctx, 'git.churn by=module');
+    expect(result.fields?.map(field => field.key)).toEqual(['module', 'commits', 'authors', 'files']);
+    expect(result.roles).toMatchObject({label: 'module', value: 'commits'});
+    const graph = (await run<GraphData>(ctx, 'deps.modules')).data;
+    const clusters = new Set(graph.nodes.map(node => node.id));
+    const a = result.data.find(row => row.module === 'packages/a');
+    expect(clusters.has('packages/a')).toBe(true);
+    // the start commit and the four edits touch packages/a; Ana and Ben; x.ts, y.ts and its package.json
+    expect(a).toEqual({module: 'packages/a', commits: 5, authors: 2, files: 3});
+    expect(result.data.find(row => row.module === 'packages/b')).toEqual({module: 'packages/b', commits: 2, authors: 2, files: 2});
+    // every changed file is in exactly one row
+    const perFile = (await run<ChurnRow[]>(ctx, 'git.churn')).data;
+    expect(result.data.reduce((sum, row) => sum + row.files, 0)).toBe(perFile.length);
+    await expect(run(ctx, 'git.churn by=author')).rejects.toMatchObject({code: 'E_ARGS'});
+  });
+
+  it('diff.stats counts the test files a change edits, not the tests that import what it edits (V010)', async () => {
+    const ctx = await context(root);
+    await write(root, {'packages/server/src/spec/guard.ts': 'export const changed = 1;\n'});
+    try {
+      const stats = await run<StatItem[]>(ctx, 'diff.stats');
+      expect(stat(stats, 'Files changed')).toBe(1);
+      expect(stat(stats, 'Tests touched')).toBe(0);
+      expect(stats.summary).toContain('0 test files changed');
+    } finally {
+      await git(root, ['checkout', '-q', '--', 'packages/server/src/spec/guard.ts']);
+    }
+  });
+});
+
+describe('code.refs', () => {
+  let root: string;
+  beforeAll(async () => {
+    root = await realpath(await mkdtemp(join(tmpdir(), 'glimpse-refs-')));
+    await write(root, {
+      // a design note that names the class in a heading and in a fenced example, sorted first by path
+      'blueprints/core.md': '# Core\n\n## MessageProcessor\n\n```ts\nclass MessageProcessor {}\n```\n',
+      'dart/lib/processor.dart': 'class MessageProcessor {\n  void run() {}\n}\n',
+      'ts/src/processor.ts': 'export class MessageProcessor {\n  run(): void {}\n}\n',
+      'ts/src/use.ts': "import {MessageProcessor} from './processor.ts';\nexport const p = new MessageProcessor();\n",
+      'ts/src/more.ts': `${'export const filler = 1;\n'.repeat(40)}`,
+    });
+  });
+  afterAll(async () => {
+    await rm(root, {recursive: true, force: true});
+  });
+
+  it('a definition is code in the main language first, never a Markdown heading; docs come last; a path scopes it (V035)', async () => {
+    const ctx = await context(root);
+    const result = await run(ctx, 'code.refs MessageProcessor');
+    const files = result.data.map(row => String(row.file).replace(/#L\d+$/, ''));
+    expect([...new Set(files)]).toEqual(['ts/src/processor.ts', 'dart/lib/processor.dart', 'ts/src/use.ts', 'blueprints/core.md']);
+    expect(result.summary).toContain('defined in 2 files (.ts .dart), first ts/src/processor.ts');
+    expect(result.summary).not.toContain('blueprints');
+    const scoped = await run(ctx, 'code.refs MessageProcessor dart');
+    expect(scoped.data.map(row => row.file)).toEqual(['dart/lib/processor.dart#L1']);
+    expect(scoped.summary).toContain('under dart; defined in dart/lib/processor.dart');
+    await expect(run(ctx, 'code.refs MessageProcessor nowhere')).rejects.toMatchObject({code: 'E_TARGET'});
+  });
+});
+
+describe('module graphs and the numbers beside them (D16, V059)', () => {
+  let root: string;
+  beforeAll(async () => {
+    // 24 heavy top-level directories keep the repository cut at its 20 clusters, so `lib` stays one of them; the
+    // graph of `lib` alone cuts it finer, into clusters such as the rest cluster 'lib/a/*' the repository cut never has.
+    root = await realpath(await mkdtemp(join(tmpdir(), 'glimpse-scoped-')));
+    const files: Record<string, string> = {};
+    const body = (n: number) => `export const v${n} = ${n};\n${'export const pad = 1;\n'.repeat(5)}`;
+    for (let t = 0; t < 24; t++) for (let f = 0; f < 9; f++) files[`top${String(t).padStart(2, '0')}/f${f}.ts`] = body(f);
+    for (const part of ['a', 'b']) {
+      for (let f = 0; f < 12; f++) files[`lib/${part}/x${f}.ts`] = `import {v1} from './sub1/s1.ts';\n${body(f).repeat(4)}`;
+      for (let s = 1; s <= 3; s++) for (let f = 0; f < 9; f++) files[`lib/${part}/sub${s}/s${f}.ts`] = body(f).repeat(4);
+    }
+    await write(root, files);
+  });
+  afterAll(async () => {
+    await rm(root, {recursive: true, force: true});
+  });
+
+  it('every cluster a scoped module graph draws is a target the graph accepts, rest clusters included (V059)', async () => {
+    const ctx = await context(root);
+    const top = (await run<GraphData>(ctx, 'deps.modules')).data;
+    expect(top.nodes.map(node => node.id)).toContain('lib');
+    const scoped = (await run<GraphData>(ctx, 'deps.modules lib')).data;
+    const clusters = scoped.nodes.filter(node => node.kind === 'cluster');
+    expect(clusters.map(node => node.id)).toContain('lib/a/*');
+    for (const node of clusters) {
+      const drilled = await run<GraphData>(ctx, `deps.modules ${node.id}`);
+      expect(drilled.data.nodes.length, node.id).toBeGreaterThan(0);
+    }
+    // the rest cluster is what the cut of `lib` left in lib/a: its twelve own files, not the whole directory
+    const rest = await run<GraphData>(ctx, 'deps.modules lib/a/*');
+    expect(rest.data.level).toBe('file');
+    expect(rest.data.nodes.filter(node => node.kind === 'file' && node.id.startsWith('lib/a/x')).map(node => node.id).sort())
+      .toEqual(Array.from({length: 12}, (_, f) => `lib/a/x${f}.ts`).sort());
+    expect(rest.data.nodes.some(node => node.kind === 'file' && node.id.startsWith('lib/a/sub'))).toBe(false);
+    // deps.files of a cluster or a directory is its module graph (a drill of a deps.files plate lands here too)
+    expect((await run<GraphData>(ctx, 'deps.files lib/a/*')).data).toEqual(rest.data);
+  });
+
+  it('the KPIs count what the plates beside them show (D16)', async () => {
+    const ctx = await context(root);
+    const [kpis, langs, graph, matrix] = await Promise.all([run<StatItem[]>(ctx, 'repo.kpis'), run(ctx, 'files.langs'), run<GraphData>(ctx, 'deps.modules'), run(ctx, 'deps.matrix')]);
+    expect(stat(kpis, 'Languages')).toBe(langs.data.filter(row => row.lang !== 'Unclassified').length);
+    const modules = Number(stat(kpis, 'Modules'));
+    expect(modules).toBeGreaterThan(20);
+    expect(graph.truncated).toEqual({total: modules, returned: graph.data.nodes.filter(node => node.kind === 'cluster').length, strategy: 'treecut', by: 'loc'});
+    expect(graph.summary).toContain(`20 of ${modules} modules`);
+    expect(matrix.summary).toContain(`20 of ${modules} modules`);
+    expect(kpis.data.map(item => item.label)).toContain('File cycles');
   });
 });

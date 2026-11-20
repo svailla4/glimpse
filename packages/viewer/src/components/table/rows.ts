@@ -120,6 +120,41 @@ export function resolveColumns(spec: string | undefined, fields: readonly Field[
   return keys.map(key => finish({key}));
 }
 
+/** The field names the data has: the dataset's fields and the keys of its first rows. */
+export function knownFields(fields: readonly Field[] | undefined, rows: readonly DataRow[]): string[] {
+  const keys = new Set<string>();
+  for (const field of fields ?? []) if (typeof field?.key === 'string') keys.add(field.key);
+  const limit = Math.min(rows.length, SNIFF_ROWS);
+  for (let i = 0; i < limit; i++) for (const key of Object.keys(rows[i] ?? {})) keys.add(key);
+  return [...keys];
+}
+
+export interface CheckedColumns {
+  columns: Column[];
+  /** Fields the `columns` shorthand names that the data does not have; they are left out. */
+  missing: string[];
+}
+
+/**
+ * resolveColumns, without the columns the data does not have (decisions D14, D15): a guessed field name never draws
+ * a column of dashes. When none of the named columns exists the table falls back to its default columns. The server
+ * already corrects the field names of a bound source; this catches inline data and anything it could not know.
+ */
+export function checkColumns(spec: string | undefined, fields: readonly Field[] | undefined, rows: readonly DataRow[]): CheckedColumns {
+  const columns = resolveColumns(spec, fields, rows);
+  if (!spec || rows.length === 0) return {columns, missing: []};
+  const known = new Set(knownFields(fields, rows));
+  const kept = columns.filter(column => known.has(column.key));
+  const missing = columns.filter(column => !known.has(column.key)).map(column => column.key);
+  if (missing.length === 0) return {columns, missing};
+  return {columns: kept.length > 0 ? kept : resolveColumns(undefined, fields, rows), missing};
+}
+
+/** `fields: a b c` for a message that names a field the data lacks; at most `max` names. */
+export function fieldList(known: readonly string[], max = 12): string {
+  return `fields: ${known.slice(0, max).join(' ')}${known.length > max ? ' …' : ''}`;
+}
+
 export const NUMERIC_KINDS: ReadonlySet<FieldKind> = new Set(['num', 'bytes', 'pct', 'duration', 'bar', 'heat']);
 
 // ---------------------------------------------------------------- sort

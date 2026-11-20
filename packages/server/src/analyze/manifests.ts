@@ -17,6 +17,68 @@ export interface PackageInfo {
   scripts: Array<{name: string; command: string}>;
   /** package.json entry fields, for resolving imports of workspace packages. */
   entry?: {main?: string; module?: string; source?: string; types?: string; exports?: unknown};
+  /**
+   * Package.swift: the modules its targets declare, each with the repo-relative directory that holds its sources
+   * (the `path:` argument, else SwiftPM's default Sources/<name> or Tests/<name>). A module is imported by this name,
+   * which need not be the name of its folder.
+   */
+  targets?: Array<{name: string; dir: string}>;
+}
+
+/** The argument list of each call to one of `names` (`.target(` ...), with nested brackets and strings skipped. */
+function callBodies(source: string, names: readonly string[]): string[] {
+  const bodies: string[] = [];
+  const opener = new RegExp(`\\.(?:${names.join('|')})\\(`, 'g');
+  for (let m = opener.exec(source); m; m = opener.exec(source)) {
+    const start = m.index + m[0].length;
+    let depth = 1;
+    let at = start;
+    for (; at < source.length && depth > 0; at++) {
+      const ch = source[at];
+      if (ch === '"') {
+        for (at++; at < source.length && source[at] !== '"' && source[at] !== '\n'; at++) if (source[at] === '\\') at++;
+      } else if (ch === '/' && source[at + 1] === '/') {
+        const end = source.indexOf('\n', at);
+        at = end === -1 ? source.length : end;
+      } else if (ch === '(' || ch === '[') depth++;
+      else if (ch === ')' || ch === ']') depth--;
+    }
+    bodies.push(source.slice(start, at - 1));
+    opener.lastIndex = at;
+  }
+  return bodies;
+}
+
+/** `key: "value"` at the top level of an argument list (not inside a nested call such as `.product(name:)`). */
+function topLevelString(body: string, key: string): string | undefined {
+  let depth = 0;
+  const pattern = new RegExp(`^${key}:\\s*"([^"\\n]+)"`);
+  for (let at = 0; at < body.length; at++) {
+    const ch = body[at];
+    if (ch === '"') {
+      for (at++; at < body.length && body[at] !== '"' && body[at] !== '\n'; at++) if (body[at] === '\\') at++;
+    } else if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth--;
+    else if (depth === 0 && (at === 0 || /[\s,(]/.test(body[at - 1]!))) {
+      const hit = pattern.exec(body.slice(at, at + 400));
+      if (hit) return hit[1];
+    }
+  }
+  return undefined;
+}
+
+function swiftTargets(source: string, dir: string): NonNullable<PackageInfo['targets']> {
+  const targets: NonNullable<PackageInfo['targets']> = [];
+  for (const kind of ['target', 'executableTarget', 'testTarget', 'macro']) {
+    for (const body of callBodies(source, [kind])) {
+      const name = topLevelString(body, 'name');
+      if (!name || !/^\w+$/.test(name)) continue;
+      const path = topLevelString(body, 'path') ?? `${kind === 'testTarget' ? 'Tests' : 'Sources'}/${name}`;
+      const joined = joinPath(dir, path.replace(/\/+$/, ''));
+      if (joined !== undefined) targets.push({name, dir: joined});
+    }
+  }
+  return targets;
 }
 export interface TsPathRule {
   /** Directory of the tsconfig: the rule applies to files beneath it. */
@@ -201,7 +263,8 @@ function readOne(path: string, source: string, repoName: string, out: Manifests)
     add({ecosystem: 'nuget', name: base.replace(/\.\w+$/, ''), version: /<Version>([^<]+)</.exec(source)?.[1] ?? '', deps: [...new Set(deps)], scripts: []});
   } else if (base === 'Package.swift') {
     const deps = [...source.matchAll(/\.package\(\s*(?:name:\s*"[^"\n]+",\s*)?(?:url|path):\s*"([^"\n]+)"/g)].map(m => baseName(m[1]!.replace(/\.git$/, '').replace(/\/$/, '')));
-    add({ecosystem: 'swiftpm', name: /Package\(\s*name:\s*"([^"\n]+)"/.exec(source)?.[1] ?? dirLabel, version: '', deps: [...new Set(deps)], scripts: []});
+    const targets = swiftTargets(source, dir);
+    add({ecosystem: 'swiftpm', name: /Package\(\s*name:\s*"([^"\n]+)"/.exec(source)?.[1] ?? dirLabel, version: '', deps: [...new Set(deps)], scripts: [], ...(targets.length > 0 ? {targets} : {})});
   } else if (base === 'Makefile' || base === 'makefile' || base === 'GNUmakefile') {
     const phony = new Set([...source.matchAll(/^\.PHONY:[ \t]*([^\n]+)/gm)].flatMap(m => m[1]!.trim().split(/\s+/)));
     const targets = [...source.matchAll(/^([A-Za-z0-9][\w.-]*):(?!=)/gm)].map(m => m[1]!);

@@ -1,10 +1,12 @@
 // Desktop launching: which command is built for the tab and the editor, and when nothing is opened at all.
-import {chmod, writeFile} from 'node:fs/promises';
-import {delimiter, join} from 'node:path';
+import {existsSync, realpathSync} from 'node:fs';
+import {chmod, mkdir, rm, symlink, writeFile} from 'node:fs/promises';
+import {delimiter, isAbsolute, join, relative} from 'node:path';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
 import {portCandidates} from '../../src/host/host.ts';
-import {canOpen, editorCommand, onPath, osOpenCommand} from '../../src/host/open.ts';
+import {canOpen, detachedLauncher, editorCommand, launchOptions, osOpenCommand} from '../../src/host/open.ts';
 import {ownEnv} from '../../src/session/env.ts';
+import {findProgram, trustedPath} from '../../src/session/paths.ts';
 import {tempRoot} from '../session/fakes.ts';
 
 describe('canOpen', () => {
@@ -37,38 +39,49 @@ describe('osOpenCommand', () => {
 });
 
 describe('editorCommand', () => {
-  const none = () => false;
+  const none = {root: '/repo', which: () => undefined};
+  const found = (...names: string[]) => ({root: '/repo', which: (name: string) => (names.includes(name) ? `/usr/local/bin/${name}` : undefined)});
 
-  it('fills the GLIMPSE_EDITOR template inside single arguments', () => {
-    expect(editorCommand('/repo/src/a b.ts', 12, {GLIMPSE_EDITOR: 'code -g {file}:{line}'}, 'darwin', none)).toEqual(['code', ['-g', '/repo/src/a b.ts:12']]);
-    expect(editorCommand('/repo/a.ts', undefined, {GLIMPSE_EDITOR: '  nvim   +{line}   {file} '}, 'linux', none)).toEqual(['nvim', ['+1', '/repo/a.ts']]);
-    expect(editorCommand('/repo/a.ts', 3, {GLIMPSE_EDITOR: 'subl'}, 'linux', none)).toEqual(['subl', ['/repo/a.ts']]);
+  it('fills the GLIMPSE_EDITOR template inside single arguments, with the program by its absolute path', () => {
+    const lookup = found('code', 'nvim', 'subl');
+    expect(editorCommand('/repo/src/a b.ts', 12, {GLIMPSE_EDITOR: 'code -g {file}:{line}'}, lookup)).toEqual(['/usr/local/bin/code', ['-g', '/repo/src/a b.ts:12']]);
+    expect(editorCommand('/repo/a.ts', undefined, {GLIMPSE_EDITOR: '  nvim   +{line}   {file} '}, lookup)).toEqual(['/usr/local/bin/nvim', ['+1', '/repo/a.ts']]);
+    expect(editorCommand('/repo/a.ts', 3, {GLIMPSE_EDITOR: 'subl'}, lookup)).toEqual(['/usr/local/bin/subl', ['/repo/a.ts']]);
+    // an absolute program is the user's own choice and is used as written
+    expect(editorCommand('/repo/a.ts', 3, {GLIMPSE_EDITOR: '/opt/ed/bin/ed {file}'}, none)).toEqual(['/opt/ed/bin/ed', ['/repo/a.ts']]);
   });
 
   it('a hostile file name stays one argument and is never interpreted', () => {
     const file = '/repo/$(touch pwned); `id` && x.ts';
-    expect(editorCommand(file, 1, {GLIMPSE_EDITOR: 'code -g {file}:{line}'}, 'darwin', none)).toEqual(['code', ['-g', `${file}:1`]]);
+    expect(editorCommand(file, 1, {GLIMPSE_EDITOR: 'code -g {file}:{line}'}, found('code'))).toEqual(['/usr/local/bin/code', ['-g', `${file}:1`]]);
   });
 
   it('otherwise picks the first known editor on PATH', () => {
-    expect(editorCommand('/repo/a.ts', 7, {}, 'darwin', name => name === 'cursor' || name === 'zed')).toEqual(['cursor', ['-g', '/repo/a.ts:7']]);
-    expect(editorCommand('/repo/a.ts', 7, {}, 'darwin', name => name === 'zed')).toEqual(['zed', ['/repo/a.ts:7']]);
-    expect(editorCommand('/repo/a.ts', -4, {}, 'darwin', name => name === 'code')).toEqual(['code', ['-g', '/repo/a.ts:1']]);
-    expect(editorCommand('/repo/a.ts', 7, {}, 'linux', name => name === 'subl')).toEqual(['subl', ['/repo/a.ts:7']]);
-    expect(editorCommand('/repo/a.ts', 7, {}, 'linux', name => name === 'idea')).toEqual(['idea', ['--line', '7', '/repo/a.ts']]);
+    expect(editorCommand('/repo/a.ts', 7, {}, found('cursor', 'zed'))).toEqual(['/usr/local/bin/cursor', ['-g', '/repo/a.ts:7']]);
+    expect(editorCommand('/repo/a.ts', 7, {}, found('zed'))).toEqual(['/usr/local/bin/zed', ['/repo/a.ts:7']]);
+    expect(editorCommand('/repo/a.ts', -4, {}, found('code'))).toEqual(['/usr/local/bin/code', ['-g', '/repo/a.ts:1']]);
+    expect(editorCommand('/repo/a.ts', 7, {}, found('subl'))).toEqual(['/usr/local/bin/subl', ['/repo/a.ts:7']]);
+    expect(editorCommand('/repo/a.ts', 7, {}, found('idea'))).toEqual(['/usr/local/bin/idea', ['--line', '7', '/repo/a.ts']]);
   });
 
   // Finding F050: `open run.command` runs the script; the same goes for .app, .jar, .html and their kin elsewhere.
-  it.each(['darwin', 'linux', 'win32'] as const)('with no editor on %s there is no command at all: never the OS opener', platform => {
+  it('with no editor there is no command at all: never the OS opener', () => {
     for (const file of ['/repo/a.ts', '/repo/run.command', '/repo/Evil.app', '/repo/setup.pkg', '/repo/page.html']) {
-      expect(editorCommand(file, 7, {}, platform, none)).toBeUndefined();
+      expect(editorCommand(file, 7, {}, none)).toBeUndefined();
     }
+  });
+
+  // Finding V019: `./code` or `node_modules/.bin/code` would be resolved against the directory the server runs in.
+  it('a GLIMPSE_EDITOR program given as a relative path, or found nowhere on PATH, is not run', () => {
+    expect(editorCommand('/repo/a.ts', 1, {GLIMPSE_EDITOR: './code -g {file}'}, found('code'))).toBeUndefined();
+    expect(editorCommand('/repo/a.ts', 1, {GLIMPSE_EDITOR: 'node_modules/.bin/code {file}'}, found('code'))).toBeUndefined();
+    expect(editorCommand('/repo/a.ts', 1, {GLIMPSE_EDITOR: 'code {file}'}, none)).toBeUndefined();
   });
 
   it('GLIMPSE_EDITOR counts only as an own property of the environment (decision D10)', () => {
     const inherited = Object.create({GLIMPSE_EDITOR: '/bin/sh -c id'}) as NodeJS.ProcessEnv;
-    expect(editorCommand('/repo/a.ts', 1, inherited, 'darwin', none)).toBeUndefined();
-    expect(editorCommand('/repo/a.ts', 1, ownEnv({GLIMPSE_EDITOR: 'code -g {file}:{line}'}), 'darwin', none)).toEqual(['code', ['-g', '/repo/a.ts:1']]);
+    expect(editorCommand('/repo/a.ts', 1, inherited, none)).toBeUndefined();
+    expect(editorCommand('/repo/a.ts', 1, ownEnv({GLIMPSE_EDITOR: 'code -g {file}:{line}'}), found('code'))).toEqual(['/usr/local/bin/code', ['-g', '/repo/a.ts:1']]);
   });
 });
 
@@ -96,26 +109,80 @@ describe('ownEnv', () => {
   });
 });
 
-describe('onPath', () => {
-  let dir: Awaited<ReturnType<typeof tempRoot>>;
+// Finding V019: programs come from absolute PATH directories outside the project, by their absolute path.
+describe('findProgram and trustedPath', () => {
+  let outside: Awaited<ReturnType<typeof tempRoot>>;
+  let project: Awaited<ReturnType<typeof tempRoot>>;
   beforeAll(async () => {
-    dir = await tempRoot();
-    await writeFile(join(dir.root, 'myeditor'), '#!/bin/sh\n');
-    await chmod(join(dir.root, 'myeditor'), 0o755);
-    await writeFile(join(dir.root, 'notexec'), 'x');
-    await chmod(join(dir.root, 'notexec'), 0o644);
+    outside = await tempRoot();
+    project = await tempRoot();
+    for (const dir of [outside.root, join(project.root, 'node_modules', '.bin')]) {
+      await mkdir(dir, {recursive: true});
+      await writeFile(join(dir, 'myeditor'), '#!/bin/sh\n');
+      await chmod(join(dir, 'myeditor'), 0o755);
+    }
+    await writeFile(join(outside.root, 'notexec'), 'x');
+    await chmod(join(outside.root, 'notexec'), 0o644);
+    await symlink(join(project.root, 'node_modules', '.bin'), join(outside.root, 'into-project')).catch(() => {});
   });
-  afterAll(() => dir.cleanup());
+  afterAll(async () => {
+    await outside.cleanup();
+    await project.cleanup();
+  });
 
-  it.skipIf(process.platform === 'win32')('finds executables in PATH directories only', () => {
-    const env = {PATH: ['/nonexistent-dir', dir.root].join(delimiter)};
-    expect(onPath('myeditor', env)).toBe(true);
-    expect(onPath('notexec', env)).toBe(false);
-    expect(onPath('missing', env)).toBe(false);
-    expect(onPath('myeditor', {})).toBe(false);
+  it.skipIf(process.platform === 'win32')('finds executables in absolute PATH directories outside the project only', () => {
+    const env = {PATH: ['/nonexistent-dir', outside.root].join(delimiter)};
+    expect(findProgram('myeditor', env, project.root)).toBe(join(outside.root, 'myeditor'));
+    expect(findProgram('notexec', env, project.root)).toBeUndefined();
+    expect(findProgram('missing', env, project.root)).toBeUndefined();
+    expect(findProgram('myeditor', {}, project.root)).toBeUndefined();
+    expect(findProgram('../myeditor', env, project.root)).toBeUndefined();
+  });
+
+  it.skipIf(process.platform === 'win32')('skips relative entries, directories of the project, and links into it', () => {
+    const env = {PATH: ['node_modules/.bin', '.', join(project.root, 'node_modules', '.bin'), join(outside.root, 'into-project'), '/usr/bin'].join(delimiter)};
+    expect(trustedPath(env, project.root)).toEqual(['/usr/bin']);
+    expect(findProgram('myeditor', env, project.root)).toBeUndefined();
+  });
+
+  it('an inherited PATH is not a PATH (decision D10)', () => {
+    expect(trustedPath(Object.create({PATH: '/usr/bin'}) as NodeJS.ProcessEnv, project.root)).toEqual([]);
+  });
+
+  // Finding V019, re-attack b19: the editor was found by its absolute path, but it starts with `#!/usr/bin/env bash`,
+  // and with PATH=.:… and the server in the project, a repository-committed ./bash ran.
+  it.skipIf(process.platform === 'win32')('a launched program sees the trusted PATH only, and starts outside the project', () => {
+    const env = ownEnv({HOME: '/home/u', DISPLAY: ':0', PATH: ['.', 'node_modules/.bin', join(project.root, 'node_modules', '.bin'), outside.root, '/usr/bin'].join(delimiter)});
+    const {env: child, cwd} = launchOptions(env, project.root);
+    expect(child.PATH).toBe([outside.root, '/usr/bin'].join(delimiter));
+    expect({HOME: child.HOME, DISPLAY: child.DISPLAY}).toEqual({HOME: '/home/u', DISPLAY: ':0'});
+    expect(isAbsolute(cwd)).toBe(true);
+    expect(relative(project.root, realpathSync(cwd)).startsWith('..')).toBe(true);
+    // Windows spells it Path: one entry is left
+    expect(Object.keys(launchOptions({Path: '/usr/bin', A: '1'}, project.root).env).sort()).toEqual(['A', 'PATH']);
+  });
+
+  it.skipIf(process.platform === 'win32')('an editor launcher that looks up its interpreter on PATH never runs one the repository supplies', async () => {
+    const markers = {repo: join(outside.root, 'repo-bash-ran'), user: join(outside.root, 'user-code-ran')};
+    const userbin = join(outside.root, 'userbin');
+    await mkdir(userbin, {recursive: true});
+    await writeFile(join(userbin, 'code'), `#!/usr/bin/env bash\necho "$*" >> '${markers.user}'\n`, {mode: 0o755});
+    await writeFile(join(project.root, 'bash'), `#!/bin/sh\necho "$*" >> '${markers.repo}'\nexec /bin/sh "$@"\n`, {mode: 0o755});
+    const env = ownEnv({...process.env, PATH: ['.', userbin, '/usr/bin', '/bin'].join(delimiter)});
+    const ran = async (marker: string) => {
+      for (let i = 0; i < 60 && !existsSync(marker); i++) await new Promise(resolve => setTimeout(resolve, 50));
+      return existsSync(marker);
+    };
+    // as before the fix: the user's environment and the project as the working directory
+    detachedLauncher(join(userbin, 'code'), ['-g', 'a.ts:1'], {env, cwd: project.root});
+    expect(await ran(markers.repo)).toBe(true);
+    await rm(markers.repo, {force: true});
+    await rm(markers.user, {force: true});
+    detachedLauncher(join(userbin, 'code'), ['-g', 'a.ts:1'], launchOptions(env, project.root));
+    expect(await ran(markers.user)).toBe(true);
+    expect(existsSync(markers.repo)).toBe(false);
   });
 });
-
 describe('portCandidates', () => {
   it('GLIMPSE_PORT or 4517, then the next 19, then an ephemeral port', () => {
     const fallback = portCandidates({});

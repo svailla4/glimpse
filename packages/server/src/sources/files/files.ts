@@ -96,31 +96,102 @@ function rollUp(files: readonly FileEntry[], scope: string, model: RepoModel, hi
 
 const bySize = (a: DirNode, b: DirNode) => b.loc - a.loc || b.bytes - a.bytes || byText(a.name, b.name);
 
+/** A max-heap of tree entries by size (bySize order), for spending the node budget on the largest first. */
+class SizeHeap<T extends {node: DirNode}> {
+  private readonly items: T[] = [];
+  get size(): number {
+    return this.items.length;
+  }
+  push(item: T): void {
+    const items = this.items;
+    items.push(item);
+    for (let at = items.length - 1; at > 0; ) {
+      const up = (at - 1) >> 1;
+      if (bySize(items[up]!.node, items[at]!.node) <= 0) break;
+      [items[up], items[at]] = [items[at]!, items[up]!];
+      at = up;
+    }
+  }
+  pop(): T | undefined {
+    const items = this.items;
+    const top = items[0];
+    const last = items.pop();
+    if (items.length > 0 && last) {
+      items[0] = last;
+      for (let at = 0; ; ) {
+        const left = 2 * at + 1;
+        const right = left + 1;
+        let best = at;
+        if (left < items.length && bySize(items[left]!.node, items[best]!.node) < 0) best = left;
+        if (right < items.length && bySize(items[right]!.node, items[best]!.node) < 0) best = right;
+        if (best === at) break;
+        [items[best], items[at]] = [items[at]!, items[best]!];
+        at = best;
+      }
+    }
+    return top;
+  }
+}
+
 /**
- * Cuts the tree to the node budget, breadth first so the shallow levels always survive: each directory keeps its
- * largest children and reports the rest as `more`.
+ * Cuts the tree to the node budget by size (V038): the largest entries anywhere in the tree are shown first, so the
+ * busiest source folders open however deep they sit, and small files (a .gitignore of six lines) are what rolls up.
+ * The directory asked for keeps up to `rootChildren` of its own entries (it is where a rollup's drill would land);
+ * any other directory keeps at most MAX_CHILDREN. Each directory reports what it does not show as `more`.
  */
 function cutTree(root: Rollup, budget: number, rootChildren: number): {kept: number; rollups: number} {
   let left = budget - 1;
+  const kept = new Map<Rollup, DirNode[]>();
+  const rollupOf = new Map<DirNode, Rollup>();
+  const index = (entry: Rollup) => {
+    for (const dir of entry.dirs) rollupOf.set(dir.node, dir);
+  };
+  type Candidate = {node: DirNode; parent: Rollup};
+  const heap = new SizeHeap<Candidate>();
+  const open = (entry: Rollup) => {
+    index(entry);
+    kept.set(entry, []);
+    for (const node of [...entry.dirs.map(dir => dir.node), ...entry.files]) heap.push({node, parent: entry});
+  };
+  // The scope's own entries come first: all of them (largest first) as far as the budget goes.
+  index(root);
+  kept.set(root, []);
+  const own = [...root.dirs.map(dir => dir.node), ...root.files].sort(bySize).slice(0, Math.min(rootChildren, left));
+  for (const node of own) {
+    kept.get(root)!.push(node);
+    left--;
+  }
+  for (const node of own) {
+    const dir = rollupOf.get(node);
+    if (dir) open(dir);
+  }
+  while (left > 0 && heap.size > 0) {
+    const {node, parent} = heap.pop()!;
+    const siblings = kept.get(parent)!;
+    if (siblings.length >= MAX_CHILDREN) continue;
+    siblings.push(node);
+    left--;
+    const dir = rollupOf.get(node);
+    if (dir) open(dir);
+  }
   let rollups = 0;
-  const queue: Rollup[] = [root];
-  for (let head = 0; head < queue.length; head++) {
-    const entry = queue[head]!;
-    const dirs = new Map(entry.dirs.map(dir => [dir.node, dir]));
-    const children = [...dirs.keys(), ...entry.files].sort(bySize);
-    const keep = Math.min(children.length, entry === root ? rootChildren : MAX_CHILDREN, left);
-    left -= keep;
-    if (keep > 0) entry.node.children = children.slice(0, keep);
-    if (keep < children.length) {
+  const finish = (entry: Rollup) => {
+    const shown = kept.get(entry) ?? [];
+    const all = entry.dirs.length + entry.files.length;
+    shown.sort(bySize);
+    if (shown.length > 0) entry.node.children = shown;
+    if (shown.length < all) {
       rollups++;
-      const cut = children.slice(keep);
+      const visible = new Set(shown);
+      const cut = [...entry.dirs.map(dir => dir.node), ...entry.files].filter(node => !visible.has(node));
       entry.node.more = {files: cut.reduce((sum, child) => sum + child.files, 0), loc: cut.reduce((sum, child) => sum + child.loc, 0)};
     }
-    for (const child of children.slice(0, keep)) {
-      const dir = dirs.get(child);
-      if (dir) queue.push(dir);
+    for (const node of shown) {
+      const dir = rollupOf.get(node);
+      if (dir) finish(dir);
     }
-  }
+  };
+  finish(root);
   return {kept: budget - left, rollups};
 }
 
@@ -181,13 +252,17 @@ export function filesSources(options: SourceOptions): Source[] {
     const model = await repoModel(ctx);
     const rows = languageMix(model);
     const kept: LangRow[] = rows.slice(0, meta.budget);
+    const total = rows.reduce((sum, row) => sum + row.loc, 0);
     if (rows.length > meta.budget) {
-      // Past the budget the tail becomes one row, so the percentages still add up.
+      // Past the budget the tail becomes one row, so the percentages still add up. It is named for what it holds,
+      // so it is told apart from the catch-all of unknown files and from a chart's own "other (N)" fold.
       const tail = rows.slice(meta.budget - 1);
+      const loc = tail.reduce((sum, row) => sum + row.loc, 0);
       kept.length = meta.budget - 1;
-      kept.push({lang: 'Other', files: tail.reduce((sum, row) => sum + row.files, 0), loc: tail.reduce((sum, row) => sum + row.loc, 0), pct: Math.round(tail.reduce((sum, row) => sum + row.pct, 0) * 10) / 10});
+      kept.push({lang: `${tail.length} more languages`, files: tail.reduce((sum, row) => sum + row.files, 0), loc, pct: share(loc, total)});
     }
-    const lead = kept.slice(0, 4).map(row => `${row.lang} ${Math.round(row.pct)}%`).join(' ');
+    // Rounded from the exact ratio, as the repo line of a show result rounds it: 5.47% is 5% in both (V032).
+    const lead = kept.slice(0, 4).map(row => `${row.lang} ${total > 0 ? Math.round((row.loc / total) * 100) : 0}%`).join(' ');
     const result = rowsResult(meta, ref, kept as unknown as Rows, {by: 'loc', lead});
     if (rows.length > kept.length) {
       result.total = rows.length;
@@ -199,14 +274,23 @@ export function filesSources(options: SourceOptions): Source[] {
   return [tree, list, langs];
 }
 
-/** Lines of code per language, largest first: generated and binary files aside, unknown text files as 'Other'. */
+/**
+ * The row of text files whose language is not known. Not 'Other', which a chart writes for the categories it folds
+ * ("other (17)"): this row is no language at all, so the Languages KPI leaves it out and counts every other row.
+ */
+export const UNCLASSIFIED = 'Unclassified';
+
+/** Percent with one decimal, from the exact ratio. */
+const share = (part: number, whole: number): number => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : 0);
+
+/** Lines of code per language, largest first: generated and binary files aside, unknown text files as 'Unclassified'. */
 export function languageMix(model: RepoModel): LangRow[] {
   const byLang = new Map<string, {files: number; loc: number}>();
   let total = 0;
   for (const file of model.files) {
     const loc = codeLines(file);
     if (loc === 0) continue;
-    const lang = file.lang ?? 'Other';
+    const lang = file.lang ?? UNCLASSIFIED;
     const entry = byLang.get(lang) ?? {files: 0, loc: 0};
     entry.files++;
     entry.loc += loc;
@@ -214,6 +298,6 @@ export function languageMix(model: RepoModel): LangRow[] {
     total += loc;
   }
   return [...byLang]
-    .map(([lang, entry]) => ({lang, files: entry.files, loc: entry.loc, pct: Math.round((entry.loc / total) * 1000) / 10}))
+    .map(([lang, entry]) => ({lang, files: entry.files, loc: entry.loc, pct: share(entry.loc, total)}))
     .sort((a, b) => b.loc - a.loc || byText(a.lang, b.lang));
 }

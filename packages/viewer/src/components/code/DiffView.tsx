@@ -2,8 +2,7 @@ import type * as C from '@glimpse/catalog';
 import {formatFileLoc, parseFileLoc, type TokenLine} from '@glimpse/catalog';
 import {useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode} from 'react';
 import {
-  Drafting, Empty, Icon, PathText, Redline, fmtNum, toNumber, useFollowedFile, useHost, useHostActions, useRev, useSelection, useSize,
-  type GlView,
+  Drafting, Empty, Icon, PathText, REPORT_CODES, Redline, fmtNum, toNumber, useFollowedFile, useHost, useHostActions, useRev, useSelection, useSize, type GlView,
 } from '../../kit/index.ts';
 import s from './DiffView.module.css';
 import {coerceLine, cx, textCols, TokenSpans, type CharMarks} from './codekit/lines.tsx';
@@ -169,7 +168,8 @@ export const DiffViewView: GlView<typeof C.DiffView> = ({id, props}) => {
   if (fetched.error) return <Redline code="E_DIFF" id={`DiffView#${id}`} message={`${range}: ${fetched.error}`} />;
   if (fetched.data === undefined) return <Drafting label={`reading diff ${range}`} />;
   if (!diff) return <Redline code="E_SHAPE" id={`DiffView#${id}`} message={`expected a diff {files: [...]}, received ${fetched.data === null ? 'null' : typeof fetched.data}`} />;
-  if (diff.files.length === 0) return <Empty message={emptyText(range, only)} />;
+  // A clean working tree or an empty range is the truth, not a fault of the spec (decision D14).
+  if (diff.files.length === 0) return <Empty message={emptyText(range, only)} code={REPORT_CODES.truthful} />;
   return (
     <DiffPanel
       id={id}
@@ -373,11 +373,12 @@ function DiffPanel({id, range, files, dropped, given, fill, boxed, busy}: DiffPa
   const multi = files.length > 1;
   const totals = files.reduce((sum, entry) => ({add: sum.add + entry.add, del: sum.del + entry.del}), {add: 0, del: 0});
   const body = file.binary ? (
-    <Empty message={`${file.path} is a binary file`} />
+    // One file of the diff: its state is a part of the view, never the DiffView's own (decision D14, V062).
+    <Empty message={`${file.path} is a binary file`} part />
   ) : !hunks ? (
-    extra.error ? <Redline code="E_DIFF" id={`DiffView#${id}`} message={`${file.path}: ${extra.error}`} /> : extra.loading ? <Drafting label={`reading ${file.path}`} /> : <Empty message={`no hunks for ${file.path}`} />
+    extra.error ? <Redline code="E_DIFF" id={`DiffView#${id}`} message={`${file.path}: ${extra.error}`} part /> : extra.loading ? <Drafting label={`reading ${file.path}`} part /> : <Empty message={`no hunks for ${file.path}`} part />
   ) : rows.length === 0 ? (
-    <Empty message={`no line changes in ${file.path}`} />
+    <Empty message={`no line changes in ${file.path}`} part />
   ) : (
     <VirtualRows
       handle={view}

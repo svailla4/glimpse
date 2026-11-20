@@ -4,12 +4,13 @@ import type {EntityRef, Field, Roles, Rows, SurfaceMeta} from '@glimpse/catalog'
 import type * as C from '@glimpse/catalog';
 import {median} from 'd3-array';
 import {useEffect, useMemo, useRef, type JSX} from 'react';
-import {Empty, catVar, fmtNum, type DataState, type GlView} from '../../kit/index.ts';
+import {catVar, fmtNum, type DataState, type GlView} from '../../kit/index.ts';
 import css from './ScatterPlot.module.css';
 import {
-  CanvasLayer, DEFAULT_HEIGHT, Figure, Legend, Note, OTHER, RowsGate, ValueGrid, clip, clipPath, count, entityOf, fmtValue,
-  foldSeries, formatOf, inspect, kit, label, linearAxis, logAxis, notes, num, pick, prepareCanvas, roleY, say, slotKind, spatialStep,
-  textWidth, tickFormat, useChartBox, useDrawIn, useInks, useMarkNav, useSlots, useSlotter, widest, type FieldInfo, type Mark, type Slotter, type ValueAxis,
+  CanvasLayer, DEFAULT_HEIGHT, Figure, Legend, MissReport, Note, OTHER, RowsGate, Unable, ValueGrid, asWhole, checkField, clip, clipPath, count,
+  entityOf, fmtValue, foldSeries, formatOf, inspect, kit, label, linearAxis, logAxis, missNote, notes, num, pick, prepareCanvas, roleY, say, slotKind,
+  spatialStep, textWidth, tickFormat, unfit, useChartBox, useDrawIn, useInks, useMarkNav, useSlots, useSlotter, widest, type FieldInfo,
+  type FieldMiss, type FieldSet, type Mark, type Slotter, type Unfit, type ValueAxis,
 } from './chartkit/index.ts';
 
 const CANVAS_ABOVE = 3000;
@@ -36,17 +37,30 @@ interface Model {
   rInfo?: FieldInfo;
   colorInfo?: FieldInfo;
   skipped: number;
+  /** Field names of the spec that the data does not have (drawn with the defaults instead). */
+  misses: FieldMiss[];
+  fields: FieldSet;
 }
 
-function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: {x?: string; y?: string; r?: string; color?: string; label?: string}, slots: SurfaceMeta['slots'] | undefined, assign: Slotter): Model | string {
+type Wanted = {x?: string; y?: string; r?: string; color?: string; label?: string; source?: string};
+
+function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: Wanted, slots: SurfaceMeta['slots'] | undefined, assign: Slotter): Model | Unfit {
   const fields = inspect(rows, fieldList);
+  const misses: FieldMiss[] = [];
+  const want = {
+    x: checkField(fields, 'x', opts.x, misses),
+    y: checkField(fields, 'y', opts.y, misses),
+    r: checkField(fields, 'r', opts.r, misses),
+    color: checkField(fields, 'color', opts.color, misses),
+    label: checkField(fields, 'label', opts.label, misses),
+  };
   const isNum = (key: string | undefined) => (key && fields.get(key).cls === 'num' ? key : undefined);
-  const xKey = pick(opts.x, isNum(roles?.x), fields.first('num', [opts.y])?.key);
-  const yKey = pick(opts.y, roleY(roles).find(key => key !== xKey && isNum(key)), isNum(roles?.value !== xKey ? roles?.value : undefined), fields.first('num', [xKey])?.key);
-  if (!xKey || !yKey) return 'two numeric fields are needed';
-  const rKey = pick(opts.r, roles?.size);
-  const colorKey = pick(opts.color, roles?.color);
-  const labelKey = pick(opts.label, roles?.label, fields.list.find(info => info.kind === 'path' || info.key === 'path')?.key, fields.first('cat', [colorKey])?.key);
+  const xKey = pick(want.x, isNum(roles?.x), fields.first('num', [want.y])?.key);
+  const yKey = pick(want.y, roleY(roles).find(key => key !== xKey && isNum(key)), isNum(roles?.value !== xKey ? roles?.value : undefined), fields.first('num', [xKey])?.key);
+  if (!xKey || !yKey) return unfit('two numeric fields are needed', misses, fields, opts.source);
+  const rKey = pick(want.r, roles?.size);
+  const colorKey = pick(want.color, roles?.color);
+  const labelKey = pick(want.label, roles?.label, fields.list.find(info => info.kind === 'path' || info.key === 'path')?.key, fields.first('cat', [colorKey])?.key);
   const labelInfo = labelKey ? fields.get(labelKey) : undefined;
 
   const counts = new Map<string, number>();
@@ -64,7 +78,7 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
     const entity = entityOf(labelInfo, labelKey ? row[labelKey] : undefined, row);
     raw.push({x, y, r: rKey ? num(row[rKey]) : undefined, group: 0, category, text: labelKey && row[labelKey] != null && row[labelKey] !== '' ? label(row[labelKey]) : undefined, entity, path: entity?.type === 'file'});
   }
-  if (raw.length === 0) return `no rows with numbers in "${say(xKey, 40)}" and "${say(yKey, 40)}"`;
+  if (raw.length === 0) return unfit(`no rows with numbers in "${say(xKey, 40)}" and "${say(yKey, 40)}"`, misses, fields, opts.source);
   const {keep, folded} = foldSeries(counts);
   const names = folded.size > 0 ? [...keep, OTHER] : keep;
   const colorInfo = colorKey ? fields.get(colorKey) : undefined;
@@ -81,6 +95,8 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
     rInfo: rKey ? fields.get(rKey) : undefined,
     colorInfo,
     skipped,
+    misses,
+    fields,
   };
 }
 
@@ -165,8 +181,9 @@ function layoutPoints(model: Model, scale: string, quadrants: boolean, width: nu
   const logY = scale === 'logy' || scale === 'loglog';
   const usable = model.points.filter(point => !(logX && point.x <= 0) && !(logY && point.y <= 0));
   const offScale = model.points.length - usable.length;
-  const medX = median(usable, point => point.x) ?? 0;
-  const medY = median(usable, point => point.y) ?? 0;
+  // the median of whole numbers (commit counts, line counts) is drawn and tagged as a whole number
+  const medX = asWhole(median(usable, point => point.x) ?? 0, usable.map(point => point.x));
+  const medY = asWhole(median(usable, point => point.y) ?? 0, usable.map(point => point.y));
   // the median tags live in the margins, outside the plot: the right margin is as wide as the y tag
   const yTagText = `${width < 420 ? 'med' : 'median'} ${fmtValue(medY, model.yInfo)}`;
   const xTagText = `${width < 420 ? 'med' : 'median'} ${fmtValue(medX, model.xInfo)}`;
@@ -297,12 +314,18 @@ function Plot(p: {id: string; rows: Rows; state: DataState<Rows>; skipped: numbe
   const {id, rows, state, props} = p;
   const slots = useSlots();
   const assign = useSlotter();
+  const source = state.ds?.source;
   const model = useMemo(
-    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, r: props.r, color: props.color, label: props.label}, slots, assign),
-    [rows, state.fields, state.roles, props.x, props.y, props.r, props.color, props.label, slots, assign],
+    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, r: props.r, color: props.color, label: props.label, source}, slots, assign),
+    [rows, state.fields, state.roles, props.x, props.y, props.r, props.color, props.label, source, slots, assign],
   );
-  if (typeof model === 'string') return <Empty message={`${model}${state.ds ? ` (${state.ds.source})` : ''}`} />;
-  return <Points id={id} model={model} skipped={p.skipped} props={props} />;
+  if ('code' in model) return <Unable code={model.code} message={model.message} />;
+  return (
+    <>
+      <MissReport misses={model.misses} fields={model.fields} source={source} />
+      <Points id={id} model={model} skipped={p.skipped} props={props} />
+    </>
+  );
 }
 
 function Points(p: {id: string; model: Model; skipped: number; props: C.ViewProps<typeof C.ScatterPlot>}): JSX.Element {
@@ -393,7 +416,7 @@ function Points(p: {id: string; model: Model; skipped: number; props: C.ViewProp
 
   return (
     <>
-      <Note>{notes(p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.skipped > 0 && `${count(model.skipped, 'row')} without numbers`, layout && layout.offScale > 0 && `${fmtNum(layout.offScale)} off the log scale`, layout && layout.spread.length > 0 && `equal ${layout.spread.map(name => say(name, 16)).join(', ')} spread apart`)}</Note>
+      <Note>{notes(missNote(model.misses), p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.skipped > 0 && `${count(model.skipped, 'row')} without numbers`, layout && layout.offScale > 0 && `${fmtNum(layout.offScale)} off the log scale`, layout && layout.spread.length > 0 && `equal ${layout.spread.map(name => say(name, 16)).join(', ')} spread apart`)}</Note>
       <Figure
         name="ScatterPlot"
         label={aria}

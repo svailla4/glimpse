@@ -1,7 +1,7 @@
 // DatasetStore (design 2.4): runs sources through the injected registry and memoizes their results per canonical
 // ref, per HEAD, and per working-tree revision for sources flagged `wt`. It knows nothing about surfaces: the session
 // binds results to data-model paths.
-import {formatRef, type Dataset, type Rows, type RowsPage, type SourceMeta, type SourceRef} from '@glimpse/catalog';
+import {formatRef, type Dataset, type Field, type Rows, type RowsPage, type SourceMeta, type SourceRef} from '@glimpse/catalog';
 import {SourceError, type RepoContext, type SourceResult} from '../contracts.ts';
 import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
 
@@ -32,6 +32,53 @@ export interface DatasetStoreOptions {
   maxRunning?: number;
   maxWaiting?: number;
   runTimeoutMs?: number;
+  /** A counter that moves whenever a ref of the repository moves (a branch, a tag, a remote-tracking ref). */
+  refs?: () => number;
+}
+
+// ---------------------------------------------------------------- a graph read as rows (finding V009)
+/** `diff.impact as=rows`: the nodes of a graph source as rows, for a table or a chart. The one argument Glimpse adds. */
+export const AS_ROWS: Readonly<{key: string; value: string}> = {key: 'as', value: 'rows'};
+
+/** The columns of a graph's nodes read as rows, in display order; those no node has are left out. */
+export const NODE_FIELDS: readonly Field[] = [
+  {key: 'label', kind: 'text', label: 'Node', priority: 1}, {key: 'id', kind: 'text', priority: 3}, {key: 'status', kind: 'chip'},
+  {key: 'fanIn', kind: 'num', label: 'Importers', priority: 1}, {key: 'fanOut', kind: 'num', label: 'Imports'}, {key: 'loc', kind: 'num', label: 'LOC'},
+  {key: 'files', kind: 'num'}, {key: 'group', kind: 'module'},
+];
+
+/** True for a ref that reads a graph source as rows. */
+export const readsAsRows = (meta: SourceMeta, ref: SourceRef): boolean => meta.kind === 'graph' && ref.args[AS_ROWS.key] === AS_ROWS.value;
+
+/** The ref of the graph itself, without `as=rows`. */
+function graphRef(ref: SourceRef): SourceRef {
+  const args = {...ref.args};
+  delete args[AS_ROWS.key];
+  return {...ref, args};
+}
+
+/** A settled graph outcome as rows of its nodes, with fields and roles for the components that draw rows. */
+function nodesAsRows(outcome: Ready): Ready {
+  const graph = outcome.result.data as {nodes?: unknown} | null;
+  const nodes = (Array.isArray(graph?.nodes) ? graph.nodes : []).filter((node): node is Record<string, unknown> => typeof node === 'object' && node !== null);
+  const rows: Rows = nodes.map(node => Object.fromEntries(NODE_FIELDS.map(field => [field.key, node[field.key]]).filter(([, value]) => value !== undefined)));
+  const fields = NODE_FIELDS.filter(field => rows.some(row => row[field.key] !== undefined));
+  const roles = {label: 'label', ...(fields.some(field => field.key === 'fanIn') ? {value: 'fanIn', x: 'label', y: ['fanIn']} : {})};
+  return {
+    ...outcome,
+    meta: {...outcome.meta, kind: 'rows', shape: 'Rows', budget: Math.max(outcome.meta.budget, rows.length), fields, roles},
+    result: {data: rows, summary: `${rows.length} nodes as rows; fields ${fields.map(field => field.key).join(' ')}`, ...(outcome.result.warnings ? {warnings: outcome.result.warnings} : {})},
+  };
+}
+
+/**
+ * True when a ref of this source reads revisions other than HEAD: a range or a ref as its target (`main..HEAD`,
+ * `origin/main`). The working tree and the index (`wt`, `staged`) do not.
+ */
+export function readsRefs(meta: SourceMeta, ref: SourceRef): boolean {
+  const target = ref.target?.trim() ?? '';
+  if (!meta.target?.includes('range') || target === '' || target === 'wt' || target === 'staged') return false;
+  return meta.target === 'range' || target.includes('..') || !target.includes('/');
 }
 
 function describeError(error: unknown): {code: string; message: string} {
@@ -81,12 +128,17 @@ export class DatasetStore {
 
   private cacheKey(ref: SourceRef, meta: SourceMeta): string {
     const ctx = this.options.context();
-    return [formatRef(ref), ctx.git?.head ?? '', meta.wt ? ctx.rev() : ''].join('\u0000');
+    // Finding V052: `main..HEAD` depends on main as much as on HEAD; the refs counter moves when any ref does.
+    return [formatRef(ref), ctx.git?.head ?? '', meta.wt ? ctx.rev() : '', readsRefs(meta, ref) ? this.options.refs?.() ?? 0 : ''].join('\u0000');
   }
 
   /** The memoized result for the ref at the current HEAD and revision, if there is one. */
   peek(ref: SourceRef): Ready | undefined {
     const source = resolveSource(ref.source, this.options.registry);
+    if (source && readsAsRows(source.meta, ref)) {
+      const graph = this.peek(graphRef(ref));
+      return graph ? nodesAsRows(graph) : undefined;
+    }
     return source ? this.entries.get(this.cacheKey(ref, source.meta))?.settled : undefined;
   }
 
@@ -98,6 +150,8 @@ export class DatasetStore {
     const source = resolveSource(ref.source, this.options.registry);
     if (!source) return Promise.resolve({ok: false, meta: undefined, error: {code: 'E_SOURCE', message: `unknown source "${ref.source}"`}});
     const meta = source.meta;
+    // The graph is run (or answered from memory) as the graph, and read as rows here: one run serves both views.
+    if (readsAsRows(meta, ref)) return this.run(graphRef(ref)).then(outcome => (outcome.ok ? nodesAsRows(outcome) : outcome));
     if (this.closed) return Promise.resolve({ok: false, meta, error: {code: 'E_INTERNAL', message: 'the session has ended'}});
     const key = this.cacheKey(ref, meta);
     const existing = this.entries.get(key);

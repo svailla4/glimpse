@@ -1,6 +1,6 @@
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
-import {MAX_EDGES, MAX_NODES, fitLabel, fitSub} from '../../src/components/diagrams/Graph.tsx';
+import {MAX_EDGES, MAX_NODES, NAME_KEEP, distinctLabels, fitLabel, fitSub, nameZoom} from '../../src/components/diagrams/Graph.tsx';
 import {LOD_ZOOM, MONO_11, POSITIONS_KEY, READABLE_ZOOM, UI_12, configurePositionStorage, textWidth} from '../../src/components/diagrams/edgekit/index.ts';
 import {buildPatch, buildSurface, datasetFixture, errorDataset, renderExpress, renderSpec} from '../harness.tsx';
 import {
@@ -49,8 +49,9 @@ describe('Graph: states', () => {
     expect(lineOf(edgeOf(view, 'g', 'ui->api'))).toMatch(/^M[\d.]+ ([\d.]+)L[\d.]+ \1$/);
 
     expect(cell.querySelector('[data-group="srv"]')!.textContent).toBe('server');
-    expect(cell.querySelector('[data-gl-note]')!.textContent).toBe('5 modules · 6 edges · 2 in cycles');
-    expect(stageOf(view, 'g').getAttribute('aria-label')).toBe('Graph, 5 modules, 6 edges, 2 in cycles, most connected auth');
+    // decision D16: the external packages are not counted as modules (the Modules KPI does not count them either)
+    expect(cell.querySelector('[data-gl-note]')!.textContent).toBe('3 modules · 2 packages · 6 edges · 2 modules in cycles');
+    expect(stageOf(view, 'g').getAttribute('aria-label')).toBe('Graph, 3 modules, 2 packages, 6 edges, 2 modules in cycles, most connected auth');
     expect(view.errors).toEqual([]);
   });
 
@@ -573,7 +574,9 @@ describe('Graph: a readable opening view', () => {
     // where this is, and how much of it
     const overview = view.cell('g').querySelector('[data-overview]')!;
     expect(overview.querySelectorAll('rect')).toHaveLength(48 + 1);
-    const shown = nodesOf(view).filter(node => touches(view, node)).length;
+    // only the nodes it shows whole: one cut off at the edge is not in view
+    const shown = nodesOf(view).filter(node => inside(view, node, 1)).length;
+    expect(shown).toBeLessThan(nodesOf(view).filter(node => touches(view, node)).length + 1);
     expect(view.cell('g').querySelector('[data-in-view]')!.textContent).toBe(`${shown} of 48 in view`);
 
     // "Fit to view" really fits, however far out that is, and the overview is no longer needed
@@ -636,8 +639,28 @@ describe('Graph: a readable opening view', () => {
     zoomTo(0.3);
     expect(node().querySelectorAll('text')).toHaveLength(0);
     expect(node().querySelector('rect')).not.toBeNull();
-    // the frame of a group keeps a readable label too
     expect(view.errors).toEqual([]);
+  });
+
+  // Finding V066: the step above said 'the frame of a group keeps a readable label too' and asserted nothing.
+  it('keeps the label of a group frame at least 10 px on screen when zoomed out', async () => {
+    const graph = layeredGraph(4, 8);
+    const grouped = {groups: [{id: 'pkg', label: 'pkg'}], nodes: graph.nodes.map(node => ({...node, group: 'pkg'})), edges: graph.edges};
+    const view = await ready(INLINE, {data: {'/g': grouped}});
+    const stage = stageOf(view, 'g');
+    const label = () => view.cell('g').querySelector<SVGTextElement>('[data-group] text')!;
+    const zoomTo = (k: number) => {
+      for (let i = 0; i < 60 && Math.abs(viewOf(stage).k - k) > 0.004; i++) {
+        fireEvent.wheel(stage, {deltaY: -Math.log(k / viewOf(stage).k) / 0.0015, clientX: 480, clientY: 300, ctrlKey: true});
+      }
+    };
+    zoomTo(1);
+    expect(label().textContent).toBe('pkg');
+    for (const k of [0.75, 0.5, 0.3]) {
+      zoomTo(k);
+      const size = Number.parseFloat(label().style.fontSize || '10.5');
+      expect(size * viewOf(stage).k, `at ${k}`).toBeGreaterThanOrEqual(10);
+    }
   });
 
   it('holds the selected node still when the zoom buttons are used, and the middle of the graph otherwise', async () => {
@@ -703,6 +726,57 @@ describe('Graph: a readable opening view', () => {
     // a stage much wider than tall (at 960 x 600 this chain is drawn larger top to bottom, and is)
     const wide = await ready(INLINE, {data: {'/g': chain}, size: {width: 1400, height: 420}});
     expect(stageOf(wide, 'g').getAttribute('data-dir')).toBe('LR');
+  });
+
+  // A scoped module graph of a large repository (a2ui-repo, task 12): 24 modules in a long chain of cycles, in a plate
+  // with no size inside Tabs. It opened whole at 44%, where the larger zoomed-out names held 3 to 6 letters: 'com…',
+  // 'expre…', 'resol…', 'valid…'. A node is only identifiable when its name says which one it is.
+  it('opens no further out than keeps every zoomed-out name long enough to say which module it is', async () => {
+    const names = [
+      'renderers', 'samples', 'a2ui_agent', 'tools', 'catalogs', 'v0_9', 'src/*', 'common', 'catalog', 'v1_0', 'resolution', 'expressions',
+      'state', 'validation', 'v1', 'universal', 'processing', 'reactivity', 'v0_8', 'rpc', 'web_core', 'zod-to-json-schema', 'types', 'errors',
+    ];
+    const nodes = names.map((label, i) => ({id: `mod${i}`, label, kind: i === 21 ? 'external' : 'cluster', cycle: i >= 5 && i <= 20}));
+    const edges: Array<{from: string; to: string; weight: number; cycle?: boolean}> = [];
+    for (let i = 0; i < 5; i++) edges.push({from: `mod${i}`, to: 'mod5', weight: 3});
+    // A chain of fourteen modules, each importing the next two, with cycles back; five leaves beside it.
+    for (let i = 5; i < 18; i++) {
+      edges.push({from: `mod${i}`, to: `mod${i + 1}`, weight: 4});
+      if (i + 2 <= 18) edges.push({from: `mod${i}`, to: `mod${i + 2}`, weight: 1});
+      if (i >= 7) edges.push({from: `mod${i}`, to: `mod${i - 2}`, weight: 1, cycle: true});
+    }
+    for (let leaf = 19; leaf < 24; leaf++) edges.push({from: `mod${leaf - 11}`, to: `mod${leaf}`, weight: 1});
+    const view = await ready(`root=Page('T',[g])\ng=Graph($/g)`, {data: {'/g': {level: 'module', nodes, edges}}, size: {width: 1256, height: 600}});
+    const stage = stageOf(view, 'g');
+    const {k} = viewOf(stage);
+    expect(k).toBeLessThan(0.91);
+    let checked = 0;
+    for (const node of view.cell('g').querySelectorAll('[data-node]')) {
+      const at = onStage(stage, node);
+      if (at.right <= 0 || at.left >= 1256) continue;
+      const label = names[Number(node.getAttribute('data-node')!.slice(3))]!;
+      const drawn = node.querySelector('text')?.textContent ?? '';
+      // The whole name, or at least NAME_KEEP of its letters before the ellipsis.
+      expect(drawn.replace(/…$/, '').length, `'${label}' drawn as '${drawn}' at ${Math.round(k * 100)}%`).toBeGreaterThanOrEqual(Math.min(NAME_KEEP, label.length));
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(6);
+  });
+
+  it('works out the zoom from which a zoomed-out name keeps its first letters, in 5% steps', () => {
+    expect(NAME_KEEP).toBe(8);
+    const node = (name: string, cycle = false, w = 136) => ({w, data: {name, cycle}});
+    // Short names in wide nodes: any zoom the levels of detail draw names at.
+    expect(nameZoom([node('l0/m0', false, 168)])).toBeLessThanOrEqual(LOD_ZOOM);
+    // 'expressions' with a cycle mark needs more than the 44% the graph opened at.
+    const zoom = nameZoom([node('common', true), node('expressions', true), node('state', true)]);
+    expect(zoom).toBeGreaterThan(0.44);
+    expect(zoom).toBeLessThan(0.91);
+    expect(Math.round(zoom * 20)).toBe(zoom * 20);
+    // at that zoom, the face the node draws holds the eight letters and the mark, and 'common' whole
+    const size = 10.5 / zoom;
+    expect(textWidth('expressi…', {size}) + 7 / zoom + 4).toBeLessThanOrEqual(136 - 14);
+    expect(textWidth('common', {size}) + 7 / zoom + 4).toBeLessThanOrEqual(136 - 14);
   });
 
   it('pinches with two fingers around the point between them', async () => {
@@ -819,11 +893,17 @@ describe('Graph: review findings', () => {
   });
 
   it('shows the scope row of the plate while the dataset is drilled, and keeps it across a re-render (D1)', async () => {
-    const view = renderExpress(SPEC, {datasets: 'ready'});
+    const base = buildSurface('test', SPEC, {datasets: 'ready'});
+    const view = renderSpec(base);
     await screen.findAllByRole('img', {name: /^Graph/});
     view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), drill: {target: 'src/api', up: 'src'}});
+    await waitFor(() => expect(view.cell('g').querySelector('[data-gl-scope]')!.textContent).toBe('src/api'));
+    // Finding V066: a real re-render: the model redefines the component (a new title); the crumb comes from the
+    // dataset's envelope, not from state the component held, so it is still there.
+    view.send(buildPatch('test', base, "g=Graph(title='Deps again',size='l')"));
+    await waitFor(() => expect(view.cell('g').textContent).toContain('Deps again'));
     const cell = view.cell('g');
-    await waitFor(() => expect(cell.querySelector('[data-gl-scope]')!.textContent).toBe('src/api'));
+    expect(cell.querySelector('[data-gl-scope]')!.textContent).toBe('src/api');
     fireEvent.click(cell.querySelector('[data-gl-scope-up]')!);
     expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'deps_modules', target: 'src'}});
     fireEvent.click(cell.querySelector('[data-gl-scope-reset]')!);
@@ -838,10 +918,10 @@ describe('Graph: review findings', () => {
       view.unmount();
       return text;
     };
-    expect(await note('server')).toBe('3 modules · 2 edges');
-    expect(await note('server/')).toBe('3 modules · 2 edges');
-    expect(await note('nowhere')).toBe('3 modules · 2 edges · focus "nowhere" not found');
-    expect(await note('server/spec')).toBe('3 modules · 2 edges · focus server/spec · 1 hop');
+    expect(await note('server')).toBe('2 modules · 1 package · 2 edges');
+    expect(await note('server/')).toBe('2 modules · 1 package · 2 edges');
+    expect(await note('nowhere')).toBe('2 modules · 1 package · 2 edges · focus "nowhere" not found');
+    expect(await note('server/spec')).toBe('2 modules · 1 package · 2 edges · focus server/spec · 1 hop');
   });
 
   it('cuts a path label at its directories and keeps the last segment (D12)', () => {
@@ -869,5 +949,107 @@ describe('Graph: review findings', () => {
     view.unmount();
     const small = await ready();
     expect(small.cell('g').querySelector('[data-edge][data-faint]')).toBeNull();
+  });
+});
+
+describe('Graph: what the model hears and what the person reads (D14, D16, V007, V048, V059)', () => {
+  const modules = {level: 'module', nodes: [
+    {id: 'packages/server/src/host', label: 'host', kind: 'cluster'},
+    {id: 'packages/server/src/mcp', label: 'mcp', kind: 'cluster'},
+    {id: 'packages/viewer/src', label: 'viewer', kind: 'cluster'},
+  ], edges: [{from: 'packages/server/src/mcp', to: 'packages/server/src/host'}, {from: 'packages/viewer/src', to: 'packages/server/src/mcp'}]};
+
+  it('reports a focus that matches no node as W_FOCUS with the nearest ids, and withdraws it once it does (V007)', async () => {
+    const view = renderExpress(`root=Page('T',[g])\ng=Graph($/g,focus='packages/server/src/spec',title='Deps',size='l')`, {data: {'/g': modules}});
+    await waitFor(() => expect(view.stateOf('g')).toBe('W_FOCUS'));
+    const said = view.reports.findLast(report => report.code === 'W_FOCUS')!;
+    expect(said.message).toBe('Graph#g: focus "packages/server/src/spec" matches no node; nearest: packages/server/src/mcp, packages/server/src/host, packages/viewer/src');
+    // The person sees the whole graph and the note.
+    expect(nodeIds(view, 'g')).toHaveLength(3);
+    expect(view.cell('g').querySelector('[data-gl-note]')!.textContent).toContain('not found');
+    view.setData('/g', {...modules, nodes: [...modules.nodes, {id: 'packages/server/src/spec', label: 'spec', kind: 'cluster'}]});
+    await waitFor(() => expect(view.stateOf('g')).toBe('OK'));
+  });
+
+  it('says nothing about a focus that names the scope the graph is drawn for', async () => {
+    const view = renderExpress(`root=Page('T',[g])\ng=Graph($/g,focus='packages',title='Deps',size='l')`, {data: {'/g': modules}});
+    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(3));
+    await waitFor(() => expect(view.stateOf('g')).toBe('OK'));
+    expect(view.reports).toEqual([]);
+  });
+
+  it('draws a graph without nodes as the truthful answer of its source (I_EMPTY), not as a problem', async () => {
+    const view = renderExpress(SPEC, {datasets: 'ready'});
+    await screen.findAllByRole('img', {name: /^Graph/});
+    view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: {level: 'module', nodes: [], edges: []}, note: 'no import cycles'});
+    await waitFor(() => expect(view.cell('g').querySelector('[data-gl-state="empty"]')!.textContent).toContain('no import cycles'));
+    await waitFor(() => expect(view.stateOf('g')).toBe('I_EMPTY'));
+    // Inline data with no nodes is a problem the model should hear about.
+    const inline = renderExpress(INLINE, {data: {'/g': {nodes: [], edges: []}}});
+    await waitFor(() => expect(inline.stateOf('g')).toBe('W_EMPTY'));
+  });
+
+  it('says how many of how many modules a cut graph shows, once (D16)', async () => {
+    const view = renderExpress(SPEC, {datasets: 'ready'});
+    await screen.findAllByRole('img', {name: /^Graph/});
+    view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: modules, truncated: {total: 90, returned: 3, strategy: 'treecut'}});
+    // one phrase, in the graph's unit: '3 of 90 modules', not 'showing 3 of 90 · tree cut' beside '3 modules'
+    await waitFor(() => expect(view.cell('g').querySelector('[data-gl-note]')!.textContent).toMatch(/^3 of 90 modules · 2 edges/));
+    expect(view.cell('g').querySelector('[data-gl-marginal]')).toBeNull();
+    expect(view.cell('g').textContent!.match(/3 of 90/g)).toHaveLength(1);
+    // a graph the source did not cut says how many it has
+    view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: modules, truncated: undefined});
+    await waitFor(() => expect(view.cell('g').querySelector('[data-gl-note]')!.textContent).toMatch(/^3 modules · 2 edges/));
+  });
+
+  it('tells nodes that would read alike apart, and never cuts a package name like a path (V048)', async () => {
+    const graph = {level: 'file', nodes: [
+      {id: 'typescript/core/src/state/types.ts', label: 'types.ts', kind: 'file'},
+      {id: 'typescript/core/src/catalog/types.ts', label: 'types.ts', kind: 'file'},
+      {id: '.github/scripts', label: 'scripts', kind: 'dir'},
+      {id: 'typescript/scripts', label: 'scripts', kind: 'dir'},
+      {id: 'ext:@angular/platform-browser-dynamic', label: '@angular/platform-browser-dynamic', kind: 'external'},
+    ], edges: []};
+    const view = renderExpress(INLINE, {data: {'/g': graph}});
+    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(5));
+    const name = (id: string) => nodeOf(view, 'g', id).querySelector('text')!.textContent!;
+    expect(name('typescript/core/src/state/types.ts')).toBe('state/types.ts');
+    expect(name('typescript/core/src/catalog/types.ts')).toBe('catalog/types.ts');
+    expect(name('.github/scripts')).toBe('.github/scripts');
+    expect(name('typescript/scripts')).toBe('typescript/scripts');
+    const pkg = name('ext:@angular/platform-browser-dynamic');
+    expect(pkg.startsWith('@angular/')).toBe(true);
+    expect(pkg.endsWith('…')).toBe(true);
+    expect(fitLabel('@angular/platform-browser-dynamic', 80, UI_12, true).startsWith('@angular')).toBe(true);
+    // Zoomed out, labels that end alike keep the start of their path when they are cut ('.git…/scripts', not '…/scripts').
+    const {labels, ends} = distinctLabels([
+      {id: '.github/scripts', label: '.github/scripts'}, {id: 'typescript/scripts', label: 'typescript/scripts'},
+      {id: 'a/x/types.ts', label: 'types.ts'}, {id: 'b/x/types.ts', label: 'types.ts'}, {id: 'ext:@scope/scripts', label: '@scope/scripts', pkg: true},
+    ], label => label);
+    expect([...ends].sort()).toEqual(['.github/scripts', 'a/x/types.ts', 'b/x/types.ts', 'typescript/scripts']);
+    expect(labels.get('a/x/types.ts')).toBe('a/x/types.ts');
+    expect(labels.has('.github/scripts')).toBe(false);
+  });
+
+  it('drills a rest cluster of a scoped graph by its id, and offers no drill on files or packages (V059)', async () => {
+    const graph = {level: 'module', nodes: [
+      {id: 'typescript/catalogs/shared/sandbox/*', label: 'sandbox/*', kind: 'cluster'},
+      {id: 'typescript/core/web_core', label: 'web_core', kind: 'cluster'},
+      {id: 'typescript/core/web_core/src/index.ts', label: 'index.ts', kind: 'file'},
+      {id: 'ext:zod', label: 'zod', kind: 'external'},
+    ], edges: [{from: 'typescript/catalogs/shared/sandbox/*', to: 'typescript/core/web_core'}, {from: 'typescript/core/web_core', to: 'ext:zod'}]};
+    const view = renderExpress(SPEC, {datasets: 'ready'});
+    await screen.findAllByRole('img', {name: /^Graph/});
+    view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: graph});
+    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(4));
+    click(nodeOf(view, 'g', 'typescript/catalogs/shared/sandbox/*'));
+    click(nodeOf(view, 'g', 'typescript/catalogs/shared/sandbox/*'));
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'deps_modules', target: 'typescript/catalogs/shared/sandbox/*'}});
+    for (const id of ['typescript/core/web_core/src/index.ts', 'ext:zod']) {
+      const before = view.actions.length;
+      click(nodeOf(view, 'g', id));
+      click(nodeOf(view, 'g', id));
+      expect(view.actions.slice(before).map(a => a.name)).toEqual(['gl_select', 'gl_select']);
+    }
   });
 });

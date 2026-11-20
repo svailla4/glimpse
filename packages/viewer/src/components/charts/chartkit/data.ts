@@ -71,13 +71,22 @@ export interface FieldInfo {
 }
 export interface FieldSet {
   list: FieldInfo[];
+  /** Every key the data has: the fields the dataset describes, then any other key of the first rows. */
+  keys: string[];
   /** Info for any key, sniffed from the rows when the dataset does not describe it. */
   get(key: string): FieldInfo;
   first(cls: FieldClass, not?: ReadonlyArray<string | undefined>): FieldInfo | undefined;
+  /**
+   * The key a field name from a spec means: the name itself, the same name in another case, or the key whose label
+   * it is. Undefined when the data has no such field.
+   */
+  find(name: string): string | undefined;
 }
 
 const NUMERIC_KINDS: ReadonlySet<FieldKind> = new Set<FieldKind>(['num', 'bytes', 'pct', 'duration', 'bar', 'heat']);
 const SNIFF_ROWS = 50;
+/** Rows read for the keys the data has: a key that only appears further down is rare and costs a false W_FIELD. */
+const KEY_ROWS = 200;
 
 function sniff(rows: Rows, key: string): FieldClass {
   let seen = 0;
@@ -105,17 +114,21 @@ export function inspect(rows: Rows, fields?: Field[]): FieldSet {
     unit: field?.unit,
     cls: field?.kind ? (NUMERIC_KINDS.has(field.kind) ? 'num' : field.kind === 'date' ? 'date' : 'cat') : sniff(rows, key),
   });
+  const present = new Set<string>();
+  for (let i = 0; i < rows.length && i < KEY_ROWS; i++) for (const key of Object.keys(rows[i]!)) present.add(key);
   let list: FieldInfo[];
   if (Array.isArray(fields) && fields.length > 0) {
     list = fields.filter(field => field && typeof field.key === 'string').map(field => describe(field.key, field));
   } else {
-    const keys = new Set<string>();
-    for (let i = 0; i < rows.length && i < SNIFF_ROWS; i++) for (const key of Object.keys(rows[i]!)) keys.add(key);
-    list = [...keys].map(key => describe(key));
+    list = [...present].map(key => describe(key));
   }
   const byKey = new Map(list.map(info => [info.key, info]));
+  const keys = [...byKey.keys()];
+  for (const key of present) if (!byKey.has(key)) keys.push(key);
+  const known = new Set(keys);
   return {
     list,
+    keys,
     get(key) {
       let info = byKey.get(key);
       if (!info) {
@@ -125,7 +138,95 @@ export function inspect(rows: Rows, fields?: Field[]): FieldSet {
       return info;
     },
     first: (cls, not = []) => list.find(info => info.cls === cls && !not.includes(info.key)),
+    find(name) {
+      if (known.has(name)) return name;
+      const lower = name.toLowerCase();
+      return keys.find(key => key.toLowerCase() === lower) ?? list.find(info => info.label.toLowerCase() === lower)?.key;
+    },
   };
+}
+
+// ---------------------------------------------------------------- field names a spec gave (decisions D14, D15)
+/** A field name the spec gave for `prop` that the data does not have. */
+export interface FieldMiss {
+  prop: string;
+  name: string;
+}
+
+/**
+ * Checks one field name of a spec against the data. A name the data has comes back as its key; one it does not have
+ * is listed in `misses` and dropped, so the chart falls back to its default encoding for that prop, as it would had
+ * the spec left the prop out, and says what it could not find (W_FIELD). It never draws an empty plate for a guess.
+ */
+export function checkField(fields: FieldSet, prop: string, name: string | undefined, misses: FieldMiss[]): string | undefined {
+  const text = typeof name === 'string' ? name.trim() : '';
+  if (text === '') return undefined;
+  const key = fields.find(text);
+  if (key === undefined) misses.push({prop, name: text});
+  return key;
+}
+
+/** checkField for a prop that takes several names ('commits files'), or one label with spaces ('Main module'). */
+export function checkFields(fields: FieldSet, prop: string, spec: string | undefined, misses: FieldMiss[]): string[] {
+  const whole = typeof spec === 'string' && /\s/.test(spec.trim()) ? fields.find(spec.trim()) : undefined;
+  if (whole !== undefined) return [whole];
+  const keys: string[] = [];
+  for (const name of words(spec)) {
+    const key = checkField(fields, prop, name, misses);
+    if (key !== undefined && !keys.includes(key)) keys.push(key);
+  }
+  return keys;
+}
+
+const LISTED_FIELDS = 16;
+
+/**
+ * The W_FIELD message: each missing name with the prop that asked for it, where it was looked for, and the fields
+ * the data has. `no field "date" (x) in git.timeline; fields: week module commits`.
+ */
+export function missText(misses: readonly FieldMiss[], fields: FieldSet, source?: string): string {
+  const names = misses.map(miss => `"${say(miss.name, 40)}" (${miss.prop})`).join(', ');
+  const keys = fields.keys.length > LISTED_FIELDS ? [...fields.keys.slice(0, LISTED_FIELDS), '…'] : fields.keys;
+  return `no field${misses.length === 1 ? '' : 's'} ${names} in ${source ?? 'the data'}; fields: ${keys.length > 0 ? keys.join(' ') : 'none'}`;
+}
+
+/** The plate's note for the same: short, since the axes already name the fields drawn instead. */
+export function missNote(misses: readonly FieldMiss[]): string | undefined {
+  if (misses.length === 0) return undefined;
+  return `no field ${misses.map(miss => `"${say(miss.name, 24)}"`).join(', ')}`;
+}
+
+/**
+ * Why a chart draws nothing. W_FIELD: a field the spec named is not in the data (and the default found nothing
+ * either). W_SHAPE: the data has no field the chart can draw. Both are told to the model (decision D14).
+ */
+export interface Unfit {
+  code: 'W_FIELD' | 'W_SHAPE';
+  message: string;
+}
+
+/** The Unfit for a model that found nothing to draw: the missing names when the spec gave any, else `why`. */
+export function unfit(why: string, misses: readonly FieldMiss[], fields: FieldSet, source?: string): Unfit {
+  return misses.length > 0 ? {code: 'W_FIELD', message: missText(misses, fields, source)} : {code: 'W_SHAPE', message: source ? `${why} (${source})` : why};
+}
+
+// ---------------------------------------------------------------- additive measures
+// Lines, files and bytes add up across rows: a remainder of them can be one `other` bar. Commit counts per file do
+// not (one commit touches many files), nor do authors, scores, shares or complexity: summing them draws a bar no
+// row has (V004).
+const ADDITIVE = /^(loc|sloc|lines|lines of code|non-blank lines|files|bytes|size|count|add|added|additions|insertions|del|deleted|deletions|tokens)$/i;
+
+/** True when the values of a measure can be summed across rows into a meaningful remainder. */
+export function additive(info: FieldInfo | undefined): boolean {
+  if (!info) return false;
+  if (info.kind === 'bytes') return true;
+  if (info.kind === 'pct' || info.kind === 'duration') return false;
+  return ADDITIVE.test(info.key) || ADDITIVE.test(info.label);
+}
+
+/** A statistic of whole numbers (a median of line counts) is drawn as a whole number. */
+export function asWhole(value: number, values: readonly number[]): number {
+  return Number.isInteger(value) || !values.every(Number.isInteger) ? value : Math.round(value);
 }
 
 /** First non-empty candidate: an explicit prop, then the dataset's role, then a sniffed field. */
@@ -230,6 +331,18 @@ export function foldSeries(totals: ReadonlyMap<string, number>, max = 8): {keep:
   const ranked = [...names].sort((a, b) => Math.abs(totals.get(b) ?? 0) - Math.abs(totals.get(a) ?? 0));
   const top = new Set(ranked.slice(0, max - 1));
   return {keep: names.filter(name => top.has(name)), folded: new Set(names.filter(name => !top.has(name)))};
+}
+
+/**
+ * The `max` largest series, in their order, for a measure whose remainder cannot be summed into `other`: the rest
+ * are left out and counted.
+ */
+export function topSeries(totals: ReadonlyMap<string, number>, max = 8): {keep: string[]; dropped: number} {
+  const names = [...totals.keys()];
+  if (names.length <= max) return {keep: names, dropped: 0};
+  const ranked = [...names].sort((a, b) => Math.abs(totals.get(b) ?? 0) - Math.abs(totals.get(a) ?? 0));
+  const top = new Set(ranked.slice(0, max));
+  return {keep: names.filter(name => top.has(name)), dropped: names.length - max};
 }
 
 // ---------------------------------------------------------------- text fitting

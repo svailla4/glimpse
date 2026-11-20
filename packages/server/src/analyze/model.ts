@@ -24,11 +24,11 @@ export interface RepoModel {
    */
   cycles: string[][];
   /**
-   * How many modules the repository has, as a fact that can be counted and does not depend on any display cap: the
-   * packages its manifests declare when there are at least two (the rows of repo.packages), otherwise the
-   * directories that hold source files.
+   * How many modules the repository has: the clusters of the same cut deps.modules and deps.matrix draw, before any
+   * cap on how many a plate shows (`cut` folds the smaller ones into rest clusters; this count does not). A module
+   * graph of the repository says "20 of <modules>", and the Modules KPI is this number.
    */
-  modules: {count: number; unit: 'packages' | 'source directories'};
+  modules: number;
   /** Import statements seen and how many of them matched nothing; undefined when the index was not built here. */
   imports?: number;
   unresolved?: number;
@@ -67,12 +67,17 @@ export function declaredPackages(manifests: Manifests): Manifests['packages'] {
   return manifests.packages.filter(pkg => pkg.ecosystem !== 'make');
 }
 
-function countModules(files: readonly FileEntry[], manifests: Manifests): RepoModel['modules'] {
-  const packages = declaredPackages(manifests).length;
-  if (packages >= 2) return {count: packages, unit: 'packages'};
-  const dirs = new Set<string>();
-  for (const file of files) if (sourceLines(file) > 0) dirs.add(dirName(file.path));
-  return {count: dirs.size, unit: 'source directories'};
+/** Directories with a manifest: the boundaries every module cut prefers. */
+export function manifestDirsOf(manifests: Manifests): ReadonlySet<string> {
+  return new Set(manifests.packages.map(pkg => pkg.dir));
+}
+
+/**
+ * The modules under `root` ('' for the repository) as every module cut groups them, with no cap on their number: the
+ * count a capped graph of that scope is a cut of.
+ */
+export function countModules(files: readonly FileEntry[], manifests: Manifests, root = ''): number {
+  return cutModules(files.map(file => ({path: file.path, weight: sourceLines(file)})), {root, manifestDirs: manifestDirsOf(manifests), unbounded: true}).ids.length;
 }
 
 export function buildModel(
@@ -80,7 +85,7 @@ export function buildModel(
 ): RepoModel {
   const {files, facts, links, manifests} = parts;
   const byPath = new Map(files.map(file => [file.path, file]));
-  const cut = cutModules(files.map(file => ({path: file.path, weight: sourceLines(file)})), {manifestDirs: new Set(manifests.packages.map(pkg => pkg.dir))});
+  const cut = cutModules(files.map(file => ({path: file.path, weight: sourceLines(file)})), {manifestDirs: manifestDirsOf(manifests)});
   const runtime: Array<[string, string]> = [];
   for (const edge of links) if (edge.kind !== 'type' && edge.kind !== 'dynamic' && !isPackageImport(edge) && byPath.has(edge.to)) runtime.push([edge.from, edge.to]);
   return {

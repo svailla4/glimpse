@@ -138,7 +138,8 @@ describe('files.*', () => {
       {lang: 'Go Module', files: 1, loc: 5, pct: 0.8},
       {lang: 'Ignore List', files: 1, loc: 4, pct: 0.6},
     ]);
-    expect(result).toMatchObject({total: 9, roles: {label: 'lang', value: 'loc'}, summary: '9 rows; fields lang files loc pct; TypeScript 59% Go 16% Python 14% JSON 5%'});
+    expect(result).toMatchObject({total: 9, roles: {label: 'lang', value: 'loc'}, summary: '9 rows; fields lang files loc pct; TypeScript 59% Go 15% Python 14% JSON 5%'});
+    // Rounded from the exact share (98 of 634 lines is 15.46%), as the repo line of a show result rounds it (V032).
     checkResult('files.langs', result);
   });
 });
@@ -149,15 +150,16 @@ describe('repo.*', () => {
     expect(result.data).toEqual([
       {label: 'Files', value: 36},
       {label: 'Lines', value: 634, format: 'compact'},
-      {label: 'Languages', value: 4},
-      // three manifests: package.json, pyproject.toml and services/gateway/go.mod (the rows of repo.packages)
-      {label: 'Modules', value: 3},
-      {label: 'Cycles', value: 1, tone: 'warn'},
+      // the rows of files.langs (D16): nine languages, none unclassified
+      {label: 'Languages', value: 9},
+      // the nine clusters deps.modules draws: the cut folds nothing in a repository this small (D16)
+      {label: 'Modules', value: 9},
+      {label: 'File cycles', value: 1, tone: 'warn'},
       // one commit in the 30 days before the pinned clock (4 Nov), three in the 30 days before that
       {label: 'Commits (30d)', value: 1, delta: -2},
       {label: 'Contributors', value: 3},
     ]);
-    expect(result.summary).toBe('7 rows; fields label value; Files 36, Lines 634, Languages 4, Modules 3 (packages), File cycles 1, Commits (30d) 1, Contributors 3');
+    expect(result.summary).toBe('7 rows; fields label value; Files 36, Lines 634, Languages 9, Modules 9, File cycles 1, Commits (30d) 1, Contributors 3');
     expect(result.warnings).toBeUndefined();
     checkResult('repo.kpis', result);
   });

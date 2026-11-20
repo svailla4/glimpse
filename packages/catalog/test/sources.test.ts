@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {SOURCE_BY_NAME, SOURCES, acceptsArg, datasetKey, formatRef, isDataset, looksLikeRef, parseRef, sourceDoc, type A2uiMessage} from '../src/index.ts';
+import {SOURCE_BY_NAME, SOURCES, acceptsArg, datasetKey, fieldsFor, formatRef, isDataset, looksLikeRef, parseRef, sourceDoc, variantWithField, type A2uiMessage} from '../src/index.ts';
 import {corpus} from './support.ts';
 
 describe('source refs', () => {
@@ -83,6 +83,45 @@ describe('source refs', () => {
       expect(source.wt === true, source.name).toBe(['files', 'repo', 'deps', 'code', 'diff'].includes(group) || joined.has(source.name));
     }
     expect(SOURCES.filter(s => s.wt).map(s => s.name)).toEqual(expect.arrayContaining(['repo.stack', 'repo.packages', 'repo.scripts', 'deps.modules', 'deps.files', 'deps.cycles', 'deps.external', 'deps.matrix']));
+  });
+
+  // V008 / D15: 'git.churn by=module' returns module rows, so a field name asked of it is checked against those.
+  it('fieldsFor gives the fields and roles of the rows a ref returns, a variant when an argument selects one', () => {
+    const churn = SOURCE_BY_NAME.get('git.churn')!;
+    expect(acceptsArg(churn, 'by')).toBe(true);
+    expect(fieldsFor(churn)).toEqual({fields: churn.fields, roles: churn.roles});
+    expect(fieldsFor(churn, {by: 'file'})).toEqual({fields: churn.fields, roles: churn.roles});
+    const byModule = fieldsFor(churn, {by: 'module', top: '20'});
+    expect(byModule.fields!.map(field => field.key)).toEqual(['module', 'commits', 'authors', 'files']);
+    expect(byModule.roles).toEqual({label: 'module', value: 'commits', x: 'module', y: ['commits']});
+    expect(fieldsFor(churn, {by: ' Module '})).toBe(byModule);
+    // a source without variants, or with no fields at all
+    expect(fieldsFor(SOURCE_BY_NAME.get('files.langs')!, {by: 'module'}).fields!.map(field => field.key)).toEqual(['lang', 'files', 'loc', 'pct']);
+    expect(fieldsFor(SOURCE_BY_NAME.get('deps.modules')!)).toEqual({});
+    // an argument named after an Object.prototype member selects nothing
+    expect(fieldsFor(churn, JSON.parse('{"__proto__": {"by": "module"}}') as Record<string, string>)).toEqual({fields: churn.fields, roles: churn.roles});
+  });
+
+  // V008: both writers asked git.churn for 'module' and got per-file bars; the server can name the ref that has it.
+  it('variantWithField names the variant whose rows carry a field the plain rows lack', () => {
+    const churn = SOURCE_BY_NAME.get('git.churn')!;
+    expect(variantWithField(churn, 'module')).toBe('by=module');
+    expect(variantWithField(churn, ' Module ')).toBe('by=module');
+    expect(variantWithField(churn, 'commits')).toBeUndefined(); // the per-file rows have it
+    expect(variantWithField(churn, 'zzz')).toBeUndefined();
+    expect(variantWithField(SOURCE_BY_NAME.get('git.hotspots')!, 'module')).toBeUndefined();
+  });
+
+  it('every variant is selected by an argument the source accepts, and its roles name its own fields', () => {
+    for (const source of SOURCES) {
+      for (const [selector, variant] of Object.entries(source.variants ?? {})) {
+        const [arg, value] = selector.split('=');
+        expect(acceptsArg(source, arg!), `${source.name} ${selector}`).toBe(true);
+        expect(value, selector).toMatch(/^[a-z]+$/);
+        const keys = variant.fields.map(field => field.key);
+        for (const role of Object.values(variant.roles ?? {}).flat()) expect(keys, `${source.name} ${selector} role ${role}`).toContain(role);
+      }
+    }
   });
 
   it('git.log documents that its target is a path or a range', () => {

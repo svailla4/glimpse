@@ -100,7 +100,7 @@ kv=KeyValue({Language:'TypeScript',Entry:'src/api/routes.ts#L12',Tests:true,Lega
     await waitFor(() => expect(code(cell)).toBe('E_TARGET'));
     view.setData('/kv', 'just a string');
     await waitFor(() => expect(code(cell)).toBe('E_SHAPE'));
-    expect(cell.textContent).toContain('expected an object or [{k, v}], received string');
+    expect(cell.textContent).toContain('expected {Label: value} or [{label, value}], received string');
     view.setData('/kv', [1, 'two', null]);
     await waitFor(() => expect(state(cell)).toBe('empty'));
     view.setData('/kv', {Name: 'demo'});

@@ -2,8 +2,7 @@ import type * as C from '@glimpse/catalog';
 import {formatFileLoc, parseFileLoc, type CodeNote, type DataInput} from '@glimpse/catalog';
 import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode} from 'react';
 import {
-  Drafting, Empty, Icon, PlateAside, Redline, fmtNum, toNumber, useDataset, useFollowedFile, useHostActions, useRev, useSelection,
-  type GlView,
+  Drafting, Empty, Icon, PlateAside, REPORT_CODES, Redline, fmtNum, toNumber, useDataset, useFollowedFile, useHostActions, useRev, useSelection, type GlView,
 } from '../../kit/index.ts';
 import {Crumbs, ignoredMarksText, inRanges, parseMarks, TokenSpans} from './codekit/lines.tsx';
 import k from './codekit/lines.module.css';
@@ -22,6 +21,11 @@ const SKIPPED: Record<string, (path: string, size: number) => string> = {
   // disk: outside the root, ignored by git, under .git, in a dependency tree.
   'outside-root': path => `${path} is not a file of this project (outside it, ignored, or under .git)`,
 };
+/** A binary or very large file is what it is (I_*); a missing one is W_FILE when the spec named it, I_* when a selection did. */
+function skippedCode(skipped: string, named: boolean): string {
+  if (skipped === 'binary' || skipped === 'too-large') return REPORT_CODES.truthful;
+  return named ? 'W_FILE' : REPORT_CODES.truthful;
+}
 const NOTE_TAG: Record<string, string> = {note: 'Note', warn: 'Warning', risk: 'Risk'};
 
 interface Note { line: number; anchor: number; text: string; kind: string }
@@ -135,7 +139,9 @@ export function CodeFile(props: CodeFileProps): ReactNode {
     }
   }, [current, total, path, targetFrom, targetTo]);
 
-  if (!path) return <Empty message="no file selected" />;
+  // Decision D14: waiting for a selection, and a file that cannot be shown, are truthful states; a file the spec names
+  // that is not there is a fault the agent can fix.
+  if (!path) return <Empty message="no file selected" code={REPORT_CODES.waiting} />;
   if (lines.error) {
     return (
       <div className={k.failed} data-gl-code-failed="">
@@ -145,8 +151,8 @@ export function CodeFile(props: CodeFileProps): ReactNode {
     );
   }
   if (!file) return <Drafting label={`reading ${path}`} />;
-  if (file.skipped) return <Empty message={(SKIPPED[file.skipped] ?? SKIPPED.missing!)(file.path, file.size)} />;
-  if (total === 0) return <Empty message={`${file.path} is empty`} />;
+  if (file.skipped) return <Empty message={(SKIPPED[file.skipped] ?? SKIPPED.missing!)(file.path, file.size)} code={skippedCode(file.skipped, props.file !== undefined)} />;
+  if (total === 0) return <Empty message={`${file.path} is empty`} code={REPORT_CODES.truthful} />;
 
   const shownPath = file.path;
   // Where the rows of a newly shown file open: its range, a few lines down from the top.

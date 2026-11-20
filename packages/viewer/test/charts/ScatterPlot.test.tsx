@@ -81,10 +81,18 @@ describe('ScatterPlot', () => {
     expect(labels.length).toBeLessThanOrEqual(8);
   });
 
+  it('keeps a fractional median on an axis of fractions (V050)', async () => {
+    const rows = [{a: 0.5, b: 1.25}, {a: 1, b: 2}, {a: 2, b: 2.5}, {a: 3, b: 4}];
+    const view = await chart(`ScatterPlot($/d,'a','b',quadrants=true)`, {rows});
+    expect(view.root.querySelector('[data-median="x"]')?.textContent).toBe('median 1.5');
+    expect(view.root.querySelector('[data-median="y"]')?.textContent).toBe('median 2.25');
+  });
+
   it('draws dashed median lines for quadrants', async () => {
     const view = await chart(`ScatterPlot($/d,'commits','complexity',quadrants=true)`, {rows: FILES});
     expect(view.all('[data-quadrants] line')).toHaveLength(2);
-    expect(view.root.querySelector('[data-quadrants]')?.textContent).toContain('median 27.5');
+    // whole-number axes have whole-number medians (V050): the median of 22 and 33 commits is tagged 28, not 27.5
+    expect(view.root.querySelector('[data-median="x"]')?.textContent).toBe('median 28');
     // the tags are in the margins (F007), each at the end of its line: the x tag under the plot, the y tag right of it
     const [vertical, horizontal] = view.all('[data-quadrants] line');
     const bottom = Number(vertical!.getAttribute('y2'));
@@ -94,7 +102,7 @@ describe('ScatterPlot', () => {
     // (the line is snapped to the pixel grid, the tag is not)
     expect(Math.abs(Number(xTag.getAttribute('x')) - Number(vertical!.getAttribute('x1')))).toBeLessThan(1);
     expect(Number(view.root.querySelector('[data-median="y"]')!.getAttribute('x'))).toBeGreaterThan(right);
-    expect(view.root.querySelector('[data-median="y"]')!.textContent).toBe('median 55.5');
+    expect(view.root.querySelector('[data-median="y"]')!.textContent).toBe('median 56');
     view.unmount();
     const plain = await chart(`ScatterPlot($/d,'commits','complexity')`, {rows: FILES});
     expect(plain.all('[data-quadrants]')).toHaveLength(0);

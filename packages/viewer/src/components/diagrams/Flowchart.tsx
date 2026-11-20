@@ -112,6 +112,8 @@ export const FlowchartView: GlView<typeof C.Flowchart> = ({id, props}) => {
       sized={props.size != null}
       ariaLabel={ariaLabel}
       renderNode={drawNode}
+      // Shapes hold 12 px text, edge labels 11 px: the stage opens no further out than keeps the smallest at 10 px.
+      minText={model.edges.some(edge => edge.label) ? 11 : 12}
       nodesep={32}
       ranksep={44}
     />

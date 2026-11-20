@@ -1,11 +1,15 @@
 // packages/server/src/sources/git/git.ts
 // The git.* sources. All of them read the one shared history parse (git/log.ts); none runs its own `git log`,
 // except git.log for a change range, which is short by nature.
-import {SOURCE_BY_NAME, type ChurnRow, type CommitRow, type HotspotRow, type SourceMeta, type SourceRef} from '@glimpse/catalog';
+import {SOURCE_BY_NAME, type ChurnRow, type CommitRow, type Field, type HotspotRow, type Roles, type SourceMeta, type SourceRef} from '@glimpse/catalog';
+import {repoModel} from '../../analyze/index.ts';
+import {languageOf} from '../../analyze/languages.ts';
 import {locate, repoPath} from '../../code/file.ts';
 import {SourceError, type RepoContext, type Source} from '../../contracts.ts';
 import {commitStats, getHeaders, getLog, inScope, LIMIT_WARNING, LOG_LIMIT, rangeLog, refNames, type GitLog, type LogCommit, type LogHeader} from '../../git/log.ts';
 import {RANGE_PATTERN, resolveCommit, resolveRange} from '../../git/range.ts';
+import {cutFor} from '../files/deps.ts';
+import {withCanonicalTarget} from '../targets.ts';
 import {cutRows, dayOf, isoOf, pathOf, plural, requireGit, round, SHALLOW_WARNING, sinceOf, topOf, type Since} from './args.ts';
 
 export interface GitSourceOptions {
@@ -29,6 +33,8 @@ const OTHER = 'other';
 /** Series for files at the top of the repository, and for paths whose top-level directory no longer exists. */
 const ROOT_FILES = '(root)';
 const REMOVED = '(removed)';
+/** Series for commits that change no file. */
+const NO_FILES = '(no files)';
 
 const meta = (name: string): SourceMeta => {
   const found = SOURCE_BY_NAME.get(name);
@@ -252,6 +258,9 @@ function gitTimeline(nowMs: () => number): Source {
             most = files;
           }
         }
+        // A commit that changes no file (an empty commit, the boundary of a shallow clone) is still a commit of the
+        // repository: git.activity and git.log count it, so the timeline does too, in a series of its own (V030).
+        if (main === undefined && h.scope === '') main = NO_FILES;
         if (main !== undefined) totals.set(main, (totals.get(main) ?? 0) + 1);
         touched.push({time: commit.time, module: main});
       }
@@ -353,12 +362,64 @@ function ownerOf(stat: FileStat): {owner: string; ownership: number} {
 const byCommitsThenPath = (a: {commits: number; path: string}, b: {commits: number; path: string}): number =>
   b.commits - a.commits || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
+/** The columns of git.churn by=module: the catalog's variant when it declares one, else the same set written here. */
+function moduleChurnShape(source: SourceMeta): {fields: Field[]; roles: Roles} {
+  const declared = (source as SourceMeta & {variants?: Readonly<Record<string, {fields: Field[]; roles?: Roles}>>}).variants?.['by=module'];
+  return {
+    fields: declared?.fields ?? [{key: 'module', kind: 'module', label: 'Module', priority: 1}, {key: 'commits', kind: 'bar', priority: 1}, {key: 'authors', kind: 'num'}, {key: 'files', kind: 'num', label: 'Files changed'}],
+    roles: declared?.roles ?? {label: 'module', value: 'commits', x: 'module', y: ['commits']},
+  };
+}
+
+/**
+ * git.churn by=module (V008): one row per module of the cut deps.modules draws for the same scope. A commit counts
+ * once per module it touches; `files` are the files of the module it changed that still exist.
+ */
+async function moduleChurn(ctx: RepoContext, h: History): Promise<Array<{module: string; commits: number; authors: number; files: number}>> {
+  const model = await repoModel(ctx);
+  const files = h.scope ? model.files.filter(file => inScope(file.path, h.scope)) : model.files;
+  const cut = cutFor(model, h.scope, files, undefined);
+  const stats = new Map<string, {commits: number; authors: Set<string>; files: Set<string>}>();
+  for (const commit of h.log.commits) {
+    const touched = new Set<string>();
+    for (const path of commit.files) {
+      if (!h.log.alive.has(path) || !inScope(path, h.scope)) continue;
+      const module = cut.moduleOf(path);
+      let stat = stats.get(module);
+      if (!stat) {
+        stat = {commits: 0, authors: new Set(), files: new Set()};
+        stats.set(module, stat);
+      }
+      stat.files.add(path);
+      if (touched.has(module)) continue;
+      touched.add(module);
+      stat.commits++;
+      stat.authors.add(commit.author);
+    }
+  }
+  return [...stats].map(([module, stat]) => ({module, commits: stat.commits, authors: stat.authors.size, files: stat.files.size}))
+    .sort((a, b) => b.commits - a.commits || (a.module < b.module ? -1 : a.module > b.module ? 1 : 0));
+}
+
 function gitChurn(nowMs: () => number): Source {
   const source = meta('git.churn');
   return {
     meta: source,
     async run(ctx, ref, signal) {
+      const by = (ref.args.by ?? 'file').trim().toLowerCase();
+      if (by !== 'file' && by !== 'module') throw new SourceError('E_ARGS', `git.churn: by must be file or module, got "${by.slice(0, 40)}"`);
       const h = await history(ctx, ref, signal, nowMs());
+      if (by === 'module') {
+        const rows = await moduleChurn(ctx, h);
+        signal.throwIfAborted();
+        return cutRows(source, rows, {
+          top: h.top,
+          by: 'commits',
+          warnings: h.warnings,
+          ...moduleChurnShape(source),
+          detail: shown => [windowNote(h), shown[0] ? `top ${shown[0].module} ${plural(shown[0].commits, 'commit')}` : 'no commits'].filter(Boolean).join('; '),
+        });
+      }
       const rows = fileStats(h.log, h.scope).sort(byCommitsThenPath).map((stat): ChurnRow => ({
         // Full timestamps, like git.log's `date`: a bare day reads as midnight UTC and shows a commit of minutes ago as hours old.
         path: stat.path, commits: stat.commits, authors: stat.authors.size, ...ownerOf(stat), first: isoOf(stat.first), last: isoOf(stat.last),
@@ -382,11 +443,13 @@ function gitHotspots(nowMs: () => number): Source {
       const [files, facts] = await Promise.all([ctx.index.files(), ctx.index.facts()]);
       signal.throwIfAborted();
       const entries = new Map(files.map(file => [file.path, file]));
-      // Only analysed source files rank: a lockfile or a changelog changes often and says nothing about risk.
+      // Only source files of a programming language rank: a lockfile, a changelog, a README or a YAML file changes
+      // often and says nothing about risk. Prose and data have facts too (a heading outline, TODO tags), so having
+      // facts is not the test; the language's kind is (V072).
       const candidates = fileStats(h.log, h.scope).flatMap(stat => {
         const entry = entries.get(stat.path);
         const fact = facts.get(stat.path);
-        if (!entry || !fact || entry.generated || entry.binary) return [];
+        if (!entry || !fact || entry.generated || entry.binary || languageOf(stat.path)?.kind !== 'code') return [];
         return [{stat, complexity: Number.isFinite(fact.complexity) ? Math.max(0, fact.complexity) : 0, sloc: entry.sloc, isTest: entry.isTest}];
       });
       const maxCommits = Math.max(1, ...candidates.map(c => c.stat.commits));
@@ -514,8 +577,11 @@ function gitCoupling(nowMs: () => number): Source {
   };
 }
 
-/** The seven git.* sources. `now` is injectable so tests of the default time windows do not depend on today's date. */
+/**
+ * The seven git.* sources. `now` is injectable so tests of the default time windows do not depend on today's date. A
+ * path target is read under the name the inventory has for it, as git's pathspecs match names exactly.
+ */
 export function createGitSources(options: GitSourceOptions = {}): Source[] {
   const now = options.now ?? Date.now;
-  return [gitLog(now), gitActivity(now), gitTimeline(now), gitChurn(now), gitHotspots(now), gitAuthors(now), gitCoupling(now)];
+  return [gitLog(now), gitActivity(now), gitTimeline(now), gitChurn(now), gitHotspots(now), gitAuthors(now), gitCoupling(now)].map(withCanonicalTarget);
 }

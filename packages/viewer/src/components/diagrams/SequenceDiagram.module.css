@@ -94,7 +94,7 @@
     fill: var(--sq-paper);
   }
   .number {
-    font: 10px var(--gl-font-mono);
+    font: 11px var(--gl-font-mono);
     font-feature-settings: 'tnum' 1, 'zero' 1;
     fill: var(--gl-ink-3);
     text-anchor: middle;

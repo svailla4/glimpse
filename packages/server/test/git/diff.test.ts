@@ -3,6 +3,7 @@ import {appendFile, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {DiffFile, DiffLine, TokenLine} from '@glimpse/catalog';
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
+import {createRepoIndex} from '../../src/analyze/index.ts';
 import {createCodeService} from '../../src/code/index.ts';
 import type {CodeService} from '../../src/contracts.ts';
 import {capHunks, createDiffService, listChanges, MAX_FILE_DIFF_LINES, wordMarks, type RawHunk} from '../../src/git/diff.ts';
@@ -217,6 +218,17 @@ describe('createDiffService', () => {
     expect(renamed.hunks![0]!.lines.filter(line => line.t !== ' ').map(line => line.t).join('')).toBe('++++');
     const one = await service.diff({range: 'main~4..main~3', path: FIXTURE.rename.to});
     expect(one.files).toEqual([renamed]);
+  });
+
+  it('fetches a file by a path spelled in another case under the name it has on disk (V071)', async () => {
+    const service = createDiffService({...ctx, index: createRepoIndex(repo.root, ctx.runGit, () => {})}, code);
+    // macOS and Windows file systems usually ignore case, Linux ones do not: there the variant names no file
+    const insensitive = existsSync(join(repo.root, 'SRC/API/ROUTES.TS'));
+    const truth = await service.diff({range: 'main..feature', path: 'src/api/routes.ts'});
+    expect(truth.files.map(file => file.path)).toEqual(['src/api/routes.ts']);
+    const asked = await service.diff({range: 'main..feature', path: 'SRC/Api/Routes.ts'});
+    expect(asked.files).toEqual(insensitive ? truth.files : []);
+    expect(asked.totals).toEqual(insensitive ? truth.totals : {files: 0, add: 0, del: 0});
   });
 
   it('highlights each side of a hunk as one block and survives a code service that fails', async () => {

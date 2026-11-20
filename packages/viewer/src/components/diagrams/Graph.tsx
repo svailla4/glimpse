@@ -2,7 +2,9 @@
 import type * as C from '@glimpse/catalog';
 import {parseFileLoc, type EntityRef, type GraphData, type GraphEdge, type GraphGroup, type GraphNode} from '@glimpse/catalog';
 import {useCallback, useMemo, type ReactNode} from 'react';
-import {DataGate, Empty, Redline, elidePath, fmtNum, useCatSlots, useDataset, useHostActions, type GlView} from '../../kit/index.ts';
+import {
+  DataGate, Empty, Redline, elidePath, emptyCodeOf, fmtNum, useCatSlots, useDataset, useHostActions, useReportState, type GlView,
+} from '../../kit/index.ts';
 import {Diagram, MONO_11, UI_12, fitText, textWidth, type DiagramEdge, type DiagramGroup, type DiagramNode, type Dir, type Face, type NodeFlags} from './edgekit/index.ts';
 import css from './Graph.module.css';
 
@@ -187,12 +189,13 @@ function entityOf(node: CleanNode): EntityRef {
 
 /**
  * A label cut to `maxWidth`. A path gives up its directories first and keeps its last segment (design rule D12):
- * `…/core/web_core`, not `typescript/co…`.
+ * `…/core/web_core`, not `typescript/co…`. A package name (`@angular/core`) is a name, not a path: it is cut at the
+ * end, so it never passes for one (`@angular/co…`, not `…/core`).
  */
-export function fitLabel(text: string, maxWidth: number, face: Face): string {
+export function fitLabel(text: string, maxWidth: number, face: Face, pkg = false): string {
   if (textWidth(text, face) <= maxWidth) return text;
   // A path, not a sentence that happens to hold a slash ("12 files, 3 in/out").
-  if (text.includes('/') && !text.includes(' ')) {
+  if (!pkg && text.includes('/') && !text.includes(' ')) {
     // Nothing longer than this many of the narrowest glyphs can fit.
     for (let max = Math.min(text.length - 1, Math.floor(maxWidth / (0.34 * face.size))); max >= 4; max--) {
       const cut = elidePath(text, max);
@@ -216,6 +219,62 @@ export function fitSub(text: string, maxWidth: number, face: Face): string {
   return fitLabel(text, maxWidth, face);
 }
 
+/**
+ * Labels that two or more nodes would show alike get the shortest stretch of their path that tells them apart
+ * (`state/types.ts` and `catalog/types.ts`), where `name` gives the text a node would show. Returns the new full
+ * labels by node id (nodes that are already distinct are left out), and the ids whose path labels end alike
+ * (`.github/scripts`, `typescript/scripts`): those keep the start of their path when they are cut, at any zoom.
+ */
+export function distinctLabels(
+  nodes: ReadonlyArray<{id: string; label: string; file?: string; pkg?: boolean}>, name: (label: string, pkg: boolean) => string,
+): {labels: Map<string, string>; ends: Set<string>} {
+  const out = new Map<string, string>();
+  const byName = new Map<string, Array<(typeof nodes)[number]>>();
+  for (const node of nodes) {
+    const shown = name(node.label, node.pkg === true);
+    const list = byName.get(shown);
+    if (list) list.push(node);
+    else byName.set(shown, [node]);
+  }
+  for (const same of byName.values()) {
+    if (same.length < 2) continue;
+    // Their paths, from the id (a module or a file) or the file a node opens; the label's own last word ends them.
+    const paths = same.map(node => {
+      const path = (node.file ? parseFileLoc(node.file).path : node.id).replace(/^[a-z]+:/, '').replace(/\/\*$/, '').split('/').filter(Boolean);
+      const last = node.label.split('/').filter(Boolean).at(-1);
+      return last !== undefined && path.at(-1) !== last ? [...path, last] : path;
+    });
+    const longest = Math.max(...paths.map(path => path.length));
+    for (let k = 2; k <= longest; k++) {
+      const labels = paths.map(path => path.slice(-k).join('/'));
+      if (new Set(labels).size < labels.length) continue;
+      same.forEach((node, i) => { if (labels[i] !== node.label) out.set(node.id, labels[i]!); });
+      break;
+    }
+  }
+  const byLast = new Map<string, string[]>();
+  for (const node of nodes) {
+    const label = out.get(node.id) ?? node.label;
+    if (node.pkg || !label.includes('/')) continue;
+    const last = label.split('/').filter(Boolean).at(-1) ?? label;
+    byLast.set(last, [...(byLast.get(last) ?? []), node.id]);
+  }
+  const ends = new Set<string>();
+  for (const ids of byLast.values()) if (ids.length > 1) for (const id of ids) ends.add(id);
+  return {labels: out, ends};
+}
+
+/** A path label cut to `maxWidth` keeping both ends: its first segment (what tells it apart) and its last. */
+function fitBothEnds(text: string, maxWidth: number, face: Face): string {
+  if (textWidth(text, face) <= maxWidth) return text;
+  const parts = text.split('/');
+  if (parts.length < 2) return fitText(text, maxWidth, face);
+  const tail = parts.length === 2 ? `/${parts[1]!}` : `/…/${parts.at(-1)!}`;
+  const room = maxWidth - textWidth(tail, face);
+  if (room < textWidth('ab…', face)) return fitLabel(text, maxWidth, face);
+  return `${fitText(parts[0]!, room, face)}${tail}`.replace('……', '…');
+}
+
 /** A face size that is at least `px` on screen at zoom `k`, rounded up so no serialisation takes it below. */
 const faceFor = (px: number, k: number) => Math.ceil((px / k) * 100) / 100;
 
@@ -224,6 +283,22 @@ function placeOf(node: CleanNode): string | undefined {
   if (node.kind !== 'cluster' && node.kind !== 'dir') return undefined;
   if (node.id === '(root)' || node.id === '.') return '';
   return (node.id.endsWith('/*') ? node.id.slice(0, -2) : node.id).replace(/\/+$/, '');
+}
+
+/**
+ * The node ids most like `focus`, best first: the longest run of leading path segments in common, then those that
+ * hold the focus's last segment. For the report of a focus that matches no node.
+ */
+export function nearestIds(ids: readonly string[], focus: string, max = 3): string[] {
+  const want = focus.replace(/\/+$/, '').split('/');
+  const last = want.at(-1) ?? '';
+  const scored = ids.map(id => {
+    const parts = id.split('/');
+    let common = 0;
+    while (common < Math.min(parts.length, want.length) && parts[common] === want[common]) common++;
+    return {id, score: common * 2 + (last !== '' && id.includes(last) ? 1 : 0)};
+  });
+  return scored.filter(item => item.score > 0).sort((a, b) => b.score - a.score || a.id.length - b.id.length).slice(0, max).map(item => item.id);
 }
 
 /** The node with the most edges: where a graph too large to read as a whole opens. */
@@ -249,9 +324,15 @@ function isScope(graph: CleanGraph, focus: string): boolean {
 /** The /meta/slots tables a spine key is looked up in, first hit wins. */
 const SPINE_SLOTS = ['module', 'lang'] as const;
 
+/** How a label is cut: a path from the front, a package name at the end, a disambiguated path at both ends. */
+type Cut = 'path' | 'name' | 'ends';
+const cutLabel = (text: string, maxWidth: number, face: Face, cut: Cut) =>
+  cut === 'ends' ? fitBothEnds(text, maxWidth, face) : fitLabel(text, maxWidth, face, cut === 'name');
+
 interface NodeDraw {
   /** The full label, for the cut a zoomed-out node makes itself. */
   label: string;
+  cut: Cut;
   rawSub?: string;
   name: string;
   sub?: string;
@@ -263,6 +344,33 @@ interface NodeDraw {
   fanOut: number;
 }
 
+/** A zoomed-out name says which node it is when it keeps this many characters (or all of a shorter one). */
+export const NAME_KEEP = 8;
+/** Where a zoomed-out name starts (spine and gap) and how much it leaves at the right edge. */
+const FAR_X = 10;
+const FAR_END = 4;
+/** The cycle mark of a zoomed-out node: its size on screen, and its gap. */
+const FAR_MARK = 7;
+const FAR_MARK_GAP = 4;
+
+/**
+ * The zoom from which every node's zoomed-out name (drawNode at NodeFlags.lod 'name') keeps the name its full face
+ * shows, or NAME_KEEP characters of it: further out, module names were cut to 'com…' and 'expre…' at 10 px. Faces
+ * are sized for the zoom rounded down to 5%, so this is a whole step.
+ */
+export function nameZoom(nodes: ReadonlyArray<{w: number; data: Pick<NodeDraw, 'name' | 'cycle'>}>): number {
+  let need = 0;
+  for (const node of nodes) {
+    const chars = [...node.data.name.replace(/…$/, '')];
+    const kept = chars.length > NAME_KEEP ? `${chars.slice(0, NAME_KEEP).join('')}…` : node.data.name;
+    const mark = node.data.cycle ? 1 : 0;
+    // A name of `em` ems drawn FAR_LABEL px on screen, and the mark, in what the node has beside its spine.
+    const em = textWidth(kept, {size: 1});
+    need = Math.max(need, (FAR_LABEL * em + FAR_MARK * mark) / Math.max(1, node.w - FAR_X - FAR_END - FAR_MARK_GAP * mark));
+  }
+  return Math.ceil(need * 20 - 1e-6) / 20;
+}
+
 function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
   const d = node.data;
   if (flags.lod !== 'full') {
@@ -270,10 +378,10 @@ function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
     // further out the box and its spine.
     const size = faceFor(FAR_LABEL, flags.k);
     const subSize = faceFor(FAR_SUB, flags.k);
-    const mark = 7 / flags.k;
-    const spine = flags.lod === 'box' ? 10 : 5;
-    const x = spine + 5;
-    const room = node.w - x - 4;
+    const mark = FAR_MARK / flags.k;
+    const spine = flags.lod === 'box' ? 10 : FAR_X - 5;
+    const x = FAR_X;
+    const room = node.w - x - FAR_END;
     const twoLines = flags.lod === 'name' && d.rawSub !== undefined && size + subSize + 6 / flags.k <= node.h;
     return (
       <g className={css.body} data-lod={flags.lod} data-selected={flags.selected || undefined} data-focus={flags.focus || undefined} data-external={d.external || undefined}>
@@ -281,7 +389,7 @@ function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
         <rect className={css.spine} width={spine} height={node.h} style={{fill: d.spine}} />
         {flags.lod === 'name' ? (
           <text className={css.far} x={x} y={twoLines ? node.h / 2 - subSize / 2 - 1 / flags.k : node.h / 2} style={{fontSize: size}}>
-            {fitLabel(d.label, room - (d.cycle ? mark + 4 : 0), {size})}
+            {cutLabel(d.label, room - (d.cycle ? mark + FAR_MARK_GAP : 0), {size}, d.cut)}
           </text>
         ) : null}
         {twoLines ? <text className={css.farSub} x={x} y={node.h / 2 + size / 2 + 1 / flags.k} style={{fontSize: subSize}}>{fitSub(d.rawSub!, room, {size: subSize, mono: true})}</text> : null}
@@ -305,7 +413,13 @@ function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
   );
 }
 
-function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; focus?: string; depth: number; sized: boolean}) {
+function GraphBody(p: {
+  id: string; data: unknown; dsKey?: string; dir?: Dir; focus?: string; depth: number; sized: boolean;
+  /** What to say, and report, when the data has no nodes (decision D14): the source's reason makes it I_EMPTY. */
+  empty: {code: string; message: string; detail?: string};
+  /** The source cut the graph: it drew `returned` of `total` (modules for deps.modules, decision D16). */
+  cut?: {returned: number; total: number};
+}) {
   const {id, data, focus, depth} = p;
   const host = useHostActions(id);
 
@@ -321,6 +435,15 @@ function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; foc
     return {graph: {...graph, edges}, focused, hiddenEdges: graph.edges.length - edges.length};
   }, [clean, focus, depth]);
 
+  // A focus that names no node (and not the scope the graph is drawn for) is drawn as the whole graph, and the
+  // model hears it (decision D14): W_FOCUS, with the ids closest to what it asked for.
+  const missingFocus = useMemo(() => {
+    if (!shown || shown.focused || focus === undefined || focus === '' || isScope(shown.graph, focus)) return undefined;
+    const nearest = nearestIds(shown.graph.nodes.map(node => node.id), focus);
+    return `focus "${focus}" matches no node${nearest.length > 0 ? `; nearest: ${nearest.join(', ')}` : ''}`;
+  }, [shown, focus]);
+  useReportState(missingFocus !== undefined ? 'W_FOCUS' : undefined, missingFocus ?? '');
+
   // Spine inks (design rule D6): a key the session knows keeps its ink, the rest take the free ones in order.
   const slotKeys = useMemo(() => (shown ? shown.graph.nodes.flatMap(node => (node.slotKey !== undefined ? [node.slotKey] : [])) : []), [shown]);
   const cat = useCatSlots(SPINE_SLOTS, slotKeys);
@@ -330,7 +453,7 @@ function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; foc
     const {graph} = shown;
     const maxFan = Math.max(1, ...graph.nodes.map(node => Math.max(node.fanIn ?? 0, node.fanOut ?? 0)));
     const maxWeight = Math.max(0, ...graph.edges.map(edge => edge.weight ?? 0));
-    const marks = (node: CleanNode) => (node.cycle ? 36 : 0) + (node.status ? 14 : 0);
+    const marks = (node: CleanNode) => (node.cycle ? 42 : 0) + (node.status ? 14 : 0);
     // One width for the graph: what its longest name asks for, so short names make a compact picture. In a larger
     // graph a second line that is longer is cut at a separator instead of widening every node.
     const roomy = graph.nodes.length <= ROOMY_UNTIL;
@@ -341,10 +464,18 @@ function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; foc
     }
     width = Math.min(NODE_W_MAX, Math.ceil(width / 4) * 4);
     const compact = graph.nodes.length > COMPACT_FROM;
+    // Two nodes that would read alike (two '…/scripts', two 'types.ts') say which is which (V048).
+    const isPkg = (node: CleanNode) => node.kind === 'external' || node.kind === 'package';
+    const distinct = distinctLabels(
+      graph.nodes.map(node => ({id: node.id, label: node.label, file: node.file, pkg: isPkg(node)})),
+      (label, pkg) => fitLabel(label, width - LABEL_X - LABEL_END, UI_12, pkg),
+    );
     const nodes: Array<DiagramNode<NodeDraw>> = graph.nodes.map(node => {
       const status = node.status ? STATUS[node.status] : undefined;
       const room = width - LABEL_X - LABEL_END - marks(node);
       const place = placeOf(node);
+      const label = distinct.labels.get(node.id) ?? node.label;
+      const cut: Cut = distinct.ends.has(node.id) ? 'ends' : isPkg(node) ? 'name' : 'path';
       const facts = [
         node.sub,
         node.cycle ? 'in a cycle' : undefined,
@@ -362,11 +493,12 @@ function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; foc
         match: place !== undefined ? {type: node.kind === 'dir' ? 'dir' : 'module', id: node.id, path: place} : undefined,
         label: node.label,
         detail: facts.join(' · ') || undefined,
-        drillable: p.dsKey !== undefined && (node.kind === 'cluster' || node.kind === 'dir'),
+        drillable: p.dsKey !== undefined && place !== undefined,
         data: {
-          label: node.label,
+          label,
+          cut,
           rawSub: compact ? undefined : node.sub,
-          name: fitLabel(node.label, room, UI_12),
+          name: cutLabel(label, room, UI_12, cut),
           sub: node.sub && !compact ? fitSub(node.sub, width - LABEL_X - LABEL_END, MONO_11) : undefined,
           spine: status?.ink ?? cat.color(node.slotKey),
           external: node.kind === 'external',
@@ -393,7 +525,7 @@ function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; foc
       };
     });
     const groups: DiagramGroup[] = graph.groups.map(group => ({...group, drillable: p.dsKey !== undefined && group.id.startsWith(DIR_GROUP) && group.id.length > DIR_GROUP.length}));
-    return {nodes, edges, groups};
+    return {nodes, edges, groups, lodZoom: nameZoom(nodes)};
   }, [shown, cat, p.dsKey]);
 
   // Drilling only asks the host for another scope; the plate's scope row (DataGate) is the way back (design rule D1).
@@ -407,7 +539,7 @@ function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; foc
 
   if (typeof clean === 'string' || !shown) return <Redline code="E_SHAPE" id={`Graph#${id}`} message={typeof clean === 'string' ? clean : 'not a graph'} />;
   const {graph} = shown;
-  if (graph.nodes.length === 0) return <Empty message="no nodes to draw" />;
+  if (graph.nodes.length === 0) return <Empty message={p.empty.message} detail={p.empty.detail} code={p.empty.code} />;
   if (!model) {
     return (
       <Redline
@@ -421,10 +553,18 @@ function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; foc
   const [one, many] = LEVEL_NOUN[graph.level ?? ''] ?? ['node', 'nodes'];
   const cycles = graph.nodes.filter(node => node.cycle).length;
   const {dropped} = graph;
+  // What a cut dataset drew of how many is said once, here, in the graph's own unit: '20 of 54 modules' (decision
+  // D16; the gate's own 'showing ...' note is off). The external packages a module or file graph adds are counted
+  // apart: they are not modules, and the Modules KPI beside the graph does not count them.
+  const packages = LEVEL_NOUN[graph.level ?? ''] && graph.level !== 'package' ? graph.nodes.filter(node => node.kind === 'external').length : 0;
+  const own = count(graph.nodes.length - packages, one, many);
+  const extra = packages > 0 ? count(packages, 'package', 'packages') : undefined;
   const summary = [
-    count(graph.nodes.length, one, many),
+    p.cut && p.cut.total > p.cut.returned ? `${fmtNum(p.cut.returned)} of ${count(p.cut.total, one, many)}` : own,
+    extra,
     count(graph.edges.length, 'edge', 'edges'),
-    cycles > 0 ? `${fmtNum(cycles)} in cycles` : undefined,
+    // Which level the cycle marks are at, as the Cycles KPI says (decision D16).
+    cycles > 0 ? `${count(cycles, one, many)} in cycles` : undefined,
     shown.focused && focus !== undefined ? `focus ${elidePath(focus, 32)} · ${count(depth, 'hop', 'hops')}` : undefined,
     focus !== undefined && focus !== '' && !shown.focused && !isScope(graph, focus) ? `focus "${fitLabel(focus, 120, MONO_11)}" not found` : undefined,
     dropped.dangling > 0 ? `${count(dropped.dangling, 'dangling edge', 'dangling edges')} dropped` : undefined,
@@ -435,8 +575,8 @@ function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; foc
   let busiest: CleanNode | undefined;
   for (const node of graph.nodes) if (!busiest || (node.fanIn ?? 0) + (node.fanOut ?? 0) > (busiest.fanIn ?? 0) + (busiest.fanOut ?? 0)) busiest = node;
   const ariaLabel = [
-    `Graph, ${count(graph.nodes.length, one, many)}, ${count(graph.edges.length, 'edge', 'edges')}`,
-    cycles > 0 ? `${cycles} in cycles` : undefined,
+    `Graph, ${[own, extra].filter(Boolean).join(', ')}, ${count(graph.edges.length, 'edge', 'edges')}`,
+    cycles > 0 ? `${count(cycles, one, many)} in cycles` : undefined,
     busiest && (busiest.fanIn ?? 0) + (busiest.fanOut ?? 0) > 0 ? `most connected ${busiest.label}` : undefined,
     shown.focused ? `focused on ${focus}` : undefined,
   ].filter(Boolean).join(', ');
@@ -451,6 +591,7 @@ function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; foc
       dir={p.dir}
       wrap
       lod
+      lodZoom={model.lodZoom}
       nodesep={NODESEP}
       ranksep={RANKSEP}
       sized={p.sized}
@@ -465,12 +606,36 @@ function GraphBody(p: {id: string; data: unknown; dsKey?: string; dir?: Dir; foc
   );
 }
 
+/** What the source drew of how many, when it says it cut the graph (`truncated`). */
+function cutOf(state: {truncated?: {returned: number; total: number}}): {returned: number; total: number} | undefined {
+  const cut = state.truncated;
+  return cut && Number.isFinite(cut.total) && Number.isFinite(cut.returned) && cut.total > cut.returned ? {returned: cut.returned, total: cut.total} : undefined;
+}
+
+/** The first line of a text, or undefined. */
+const firstLine = (text: unknown) => (typeof text === 'string' && text.trim() !== '' ? text.trim().split('\n', 1)[0] : undefined);
+
 export const GraphView: GlView<typeof C.Graph> = ({id, props}) => {
   const state = useDataset<GraphData>(props.data);
   const depth = Math.max(1, Math.min(4, Math.round(props.depth ?? 1)));
+  // A graph with no nodes: the source's reason ('no import cycles') is a truthful answer, nothing else is.
+  const reason = state.ds ? (firstLine(state.ds.note) ?? (Array.isArray(state.ds.warnings) ? state.ds.warnings.map(firstLine).find(Boolean) : undefined)) : undefined;
+  const empty = reason !== undefined ? {code: emptyCodeOf(state), message: reason, detail: state.ds?.source} : {code: 'W_EMPTY', message: 'no nodes to draw'};
   return (
-    <DataGate state={state} id={`Graph#${id}`}>
-      {data => <GraphBody id={id} data={data} dsKey={state.ds?.$ds} dir={props.dir === 'TB' || props.dir === 'LR' ? props.dir : undefined} focus={props.focus || undefined} depth={depth} sized={props.size != null} />}
+    <DataGate state={state} id={`Graph#${id}`} marginal={false}>
+      {data => (
+        <GraphBody
+          {...(cutOf(state) ? {cut: cutOf(state)} : {})}
+          id={id}
+          data={data}
+          dsKey={state.ds?.$ds}
+          dir={props.dir === 'TB' || props.dir === 'LR' ? props.dir : undefined}
+          focus={props.focus || undefined}
+          depth={depth}
+          sized={props.size != null}
+          empty={empty}
+        />
+      )}
     </DataGate>
   );
 };

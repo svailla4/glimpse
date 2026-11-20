@@ -1,14 +1,17 @@
 // BarChart: magnitude by category. Horizontal when there are many bars or long labels; grouped, stacked or
-// normalised series; everything beyond `limit` folds into one `other (N)` bar.
+// normalised series. Beyond `limit` bars, a measure that adds up (lines, files, bytes) folds into one `other (N)`
+// bar; any other measure (commits per file, scores, shares) keeps its top bars and says how many it left out, since
+// a sum of it would be a bar no row has (V004).
 import type {EntityRef, Field, Roles, Rows, SurfaceMeta} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {useMemo, type JSX} from 'react';
-import {Empty, fmtNum, type DataState, type GlView} from '../../kit/index.ts';
+import {fmtNum, type DataState, type GlView} from '../../kit/index.ts';
 import css from './BarChart.module.css';
 import {
-  DEFAULT_HEIGHT, Figure, Legend, Note, OTHER, RowsGate, ValueGrid, barPath, clipName, clipPath, count, entityOf, fillVar,
-  fmtValue, foldSeries, formatOf, inspect, kit, label, linearAxis, notes, num, pick, roleY, say, slotKind, textWidth, tickFormat, useChartBox,
-  useDrawIn, useMarkNav, useSlots, useSlotter, widest, words, type FieldInfo, type Mark, type Slotter, type ValueAxis,
+  DEFAULT_HEIGHT, Figure, Legend, MissReport, Note, OTHER, RowsGate, Unable, ValueGrid, additive, barPath, checkField, checkFields, clipName,
+  clipPath, count, entityOf, fillVar, fmtValue, foldSeries, formatOf, inspect, kit, label, linearAxis, missNote, notes, num, pick, roleY, say,
+  slotKind, textWidth, tickFormat, topSeries, unfit, useChartBox, useDrawIn, useMarkNav, useSlots, useSlotter, widest, type FieldInfo,
+  type FieldMiss, type FieldSet, type Mark, type Slotter, type Unfit, type ValueAxis,
 } from './chartkit/index.ts';
 
 type Mode = 'grouped' | 'stacked' | 'pct';
@@ -32,6 +35,13 @@ interface Model {
   bad: number;
   /** Categories folded into the `other (N)` bar. */
   folded: number;
+  /** Bars kept of how many, when the rest are left out instead of folded. */
+  top?: {shown: number; of: number; noun?: string};
+  /** Series left out of a grouped chart whose measure does not add up. */
+  droppedSeries: number;
+  /** Field names of the spec that the data does not have (drawn with the defaults instead). */
+  misses: FieldMiss[];
+  fields: FieldSet;
 }
 
 interface Options {
@@ -39,20 +49,29 @@ interface Options {
   y?: string;
   series?: string;
   limit: number;
+  mode: Mode;
+  /** The rows are the whole set: no source cut, so a remainder of them is the remainder of everything. */
+  complete: boolean;
+  source?: string;
 }
 
-function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: Options, slots: SurfaceMeta['slots'] | undefined, assign: Slotter): Model | string {
+const NOUNS: Partial<Record<EntityRef['type'], string>> = {file: 'files', author: 'authors', module: 'modules', commit: 'commits', symbol: 'symbols', package: 'packages'};
+
+function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: Options, slots: SurfaceMeta['slots'] | undefined, assign: Slotter): Model | Unfit {
   const fields = inspect(rows, fieldList);
-  const yKeys = words(opts.y);
+  const misses: FieldMiss[] = [];
+  const xWanted = checkField(fields, 'x', opts.x, misses);
+  const yKeys = checkFields(fields, 'y', opts.y, misses);
+  const seriesWanted = checkField(fields, 'series', opts.series, misses);
   if (yKeys.length === 0) yKeys.push(...roleY(roles));
-  const xKey = pick(opts.x, roles?.label, roles?.x, fields.first('cat', yKeys)?.key, fields.first('date', yKeys)?.key);
+  const xKey = pick(xWanted, roles?.label, roles?.x, fields.first('cat', yKeys)?.key, fields.first('date', yKeys)?.key);
   if (yKeys.length === 0) {
     const fallback = pick(roles?.value, fields.first('num', [xKey])?.key);
     if (fallback) yKeys.push(fallback);
   }
-  if (yKeys.length === 0) return 'no numeric field to draw';
+  if (yKeys.length === 0) return unfit('no numeric field to draw', misses, fields, opts.source);
   const roleSeries = roles?.series && roles.series !== xKey ? roles.series : undefined;
-  const seriesKey = pick(opts.series, yKeys.length === 1 ? roleSeries : undefined);
+  const seriesKey = pick(seriesWanted, yKeys.length === 1 ? roleSeries : undefined);
   const xInfo = xKey ? fields.get(xKey) : undefined;
 
   const cats = new Map<string, {entity?: EntityRef; cells: Map<string, number>}>();
@@ -80,9 +99,16 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
     if (seriesKey) add(label(row[seriesKey]), row[yKeys[0]!]);
     else for (const key of yKeys) add(key, row[key]);
   });
-  if (valid === 0) return `no numeric values in ${yKeys.map(key => `"${say(key, 40)}"`).join(', ')}`;
+  if (valid === 0) return unfit(`no numeric values in ${yKeys.map(key => `"${say(key, 40)}"`).join(', ')}`, misses, fields, opts.source);
 
-  const {keep, folded} = foldSeries(totals);
+  // A stack adds its series up by definition; grouped bars of a measure that does not add up keep their largest
+  // eight series rather than draw an `other` series that sums them.
+  const sums = yKeys.every(key => additive(fields.get(key)));
+  let keep: string[];
+  let folded = new Set<string>();
+  let droppedSeries = 0;
+  if (sums || opts.mode !== 'grouped') ({keep, folded} = foldSeries(totals));
+  else ({keep, dropped: droppedSeries} = topSeries(totals));
   const names = folded.size > 0 ? [...keep, OTHER] : keep;
   const seriesInfo = seriesKey ? fields.get(seriesKey) : undefined;
   const kind = slotKind(seriesInfo);
@@ -103,20 +129,28 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
   });
 
   let foldedCats = 0;
+  let top: Model['top'];
   if (list.length > opts.limit) {
     const weight = (cat: Category) => cat.values.reduce<number>((sum, value) => sum + Math.abs(value ?? 0), 0);
     const ranked = list.map((cat, index) => ({index, weight: weight(cat)})).sort((a, b) => b.weight - a.weight || a.index - b.index);
     const kept = new Set(ranked.slice(0, opts.limit).map(entry => entry.index));
     const rest = list.filter((_, index) => !kept.has(index));
-    foldedCats = rest.length;
-    const sums = series.map((_, s) => {
-      let sum: number | undefined;
-      for (const cat of rest) if (cat.values[s] !== undefined) sum = (sum ?? 0) + cat.values[s]!;
-      return sum;
-    });
-    list = [...list.filter((_, index) => kept.has(index)), {label: `${OTHER} (${fmtNum(rest.length)})`, path: false, values: sums}];
+    // `other` stands for every row not drawn: only for a measure that adds up, and only when no source cut rows away
+    if (sums && opts.complete) {
+      foldedCats = rest.length;
+      const restSums = series.map((_, s) => {
+        let sum: number | undefined;
+        for (const cat of rest) if (cat.values[s] !== undefined) sum = (sum ?? 0) + cat.values[s]!;
+        return sum;
+      });
+      list = [...list.filter((_, index) => kept.has(index)), {label: `${OTHER} (${fmtNum(rest.length)})`, path: false, values: restSums}];
+    } else {
+      const type = list.find(cat => cat.entity)?.entity?.type;
+      top = {shown: opts.limit, of: list.length, noun: type ? NOUNS[type] : undefined};
+      list = list.filter((_, index) => kept.has(index));
+    }
   }
-  return {cats: list, series, valueInfo: fields.get(yKeys[0]!), bad, folded: foldedCats};
+  return {cats: list, series, valueInfo: fields.get(yKeys[0]!), bad, folded: foldedCats, top, droppedSeries, misses, fields};
 }
 
 interface Bar {
@@ -293,12 +327,20 @@ function Plot(p: {id: string; rows: Rows; state: DataState<Rows>; skipped: numbe
   const slots = useSlots();
   const assign = useSlotter();
   const limit = props.limit ?? 20;
+  const mode: Mode = props.mode ?? 'grouped';
+  const complete = !state.truncated && !(typeof state.total === 'number' && state.total > rows.length);
+  const source = state.ds?.source;
   const model = useMemo(
-    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, series: props.series, limit}, slots, assign),
-    [rows, state.fields, state.roles, props.x, props.y, props.series, limit, slots, assign],
+    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, series: props.series, limit, mode, complete, source}, slots, assign),
+    [rows, state.fields, state.roles, props.x, props.y, props.series, limit, mode, complete, source, slots, assign],
   );
-  if (typeof model === 'string') return <Empty message={`${model}${state.ds ? ` (${state.ds.source})` : ''}`} />;
-  return <Bars id={id} model={model} skipped={p.skipped} props={props} />;
+  if ('code' in model) return <Unable code={model.code} message={model.message} />;
+  return (
+    <>
+      <MissReport misses={model.misses} fields={model.fields} source={source} />
+      <Bars id={id} model={model} skipped={p.skipped} props={props} />
+    </>
+  );
 }
 
 function Bars(p: {id: string; model: Model; skipped: number; props: C.ViewProps<typeof C.BarChart>}): JSX.Element {
@@ -351,7 +393,16 @@ function Bars(p: {id: string; model: Model; skipped: number; props: C.ViewProps<
 
   return (
     <>
-      <Note>{notes(p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.bad > 0 && `${count(model.bad, 'value')} not numeric`, model.folded > 0 && `${fmtNum(model.folded)} folded into other`)}</Note>
+      <Note>
+        {notes(
+          missNote(model.misses),
+          p.skipped > 0 && `${count(p.skipped, 'row')} skipped`,
+          model.bad > 0 && `${count(model.bad, 'value')} not numeric`,
+          model.folded > 0 && `${fmtNum(model.folded)} folded into other`,
+          model.top && `top ${fmtNum(model.top.shown)} of ${fmtNum(model.top.of)}${model.top.noun ? ` ${model.top.noun}` : ''}`,
+          model.droppedSeries > 0 && `${fmtNum(model.droppedSeries)} more series not drawn`,
+        )}
+      </Note>
       <Figure
         name="BarChart"
         label={aria}

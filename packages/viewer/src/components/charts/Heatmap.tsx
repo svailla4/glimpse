@@ -3,11 +3,12 @@
 import type {EntityRef, Field, Roles, Rows} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {useEffect, useId, useMemo, useRef, type JSX} from 'react';
-import {Empty, fmtNum, seqVar, useSelection, type DataState, type GlView} from '../../kit/index.ts';
+import {fmtNum, seqVar, useSelection, type DataState, type GlView} from '../../kit/index.ts';
 import css from './Heatmap.module.css';
 import {
-  CanvasLayer, DEFAULT_HEIGHT, Figure, Legend, Note, Ramp, RowsGate, clip, clipName, count, entityOf, fmtValue, inspect, kit, label, matches, notes, num, pick,
-  roleY, say, textWidth, time, useChartBox, useDrawIn, prepareCanvas, useInks, useMarkNav, type ArrowKey, type FieldInfo, type Mark,
+  CanvasLayer, DEFAULT_HEIGHT, Figure, Legend, MissReport, Note, Ramp, RowsGate, Unable, checkField, clip, clipName, count, entityOf, fmtValue, inspect,
+  kit, label, matches, missNote, notes, num, pick, roleY, say, textWidth, time, unfit, useChartBox, useDrawIn, prepareCanvas, useInks, useMarkNav,
+  type ArrowKey, type FieldInfo, type FieldMiss, type FieldSet, type Mark, type Unfit,
 } from './chartkit/index.ts';
 
 const CANVAS_ABOVE = 60 * 60;
@@ -32,6 +33,9 @@ interface Model {
   bad: number;
   /** Cells left out because their row or column is beyond the axis cap. */
   cut: number;
+  /** Field names of the spec that the data does not have (drawn with the defaults instead). */
+  misses: FieldMiss[];
+  fields: FieldSet;
 }
 
 function ordered(labels: Map<string, unknown>, info: FieldInfo): string[] {
@@ -41,12 +45,14 @@ function ordered(labels: Map<string, unknown>, info: FieldInfo): string[] {
   return names.sort((a, b) => key(a) - key(b));
 }
 
-function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: {x?: string; y?: string; value?: string}): Model | string {
+function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: {x?: string; y?: string; value?: string; source?: string}): Model | Unfit {
   const fields = inspect(rows, fieldList);
-  const valueKey = pick(opts.value, roles?.value, fields.first('num', [opts.x, opts.y])?.key);
-  const xKey = pick(opts.x, roles?.x, fields.first('cat', [valueKey, opts.y])?.key, fields.first('date', [valueKey, opts.y])?.key);
-  const yKey = pick(opts.y, roleY(roles).find(key => key !== xKey && key !== valueKey), fields.first('cat', [valueKey, xKey])?.key, fields.first('date', [valueKey, xKey])?.key);
-  if (!xKey || !yKey || !valueKey) return 'two category fields and a numeric field are needed';
+  const misses: FieldMiss[] = [];
+  const want = {x: checkField(fields, 'x', opts.x, misses), y: checkField(fields, 'y', opts.y, misses), value: checkField(fields, 'value', opts.value, misses)};
+  const valueKey = pick(want.value, roles?.value, fields.first('num', [want.x, want.y])?.key);
+  const xKey = pick(want.x, roles?.x, fields.first('cat', [valueKey, want.y])?.key, fields.first('date', [valueKey, want.y])?.key);
+  const yKey = pick(want.y, roleY(roles).find(key => key !== xKey && key !== valueKey), fields.first('cat', [valueKey, xKey])?.key, fields.first('date', [valueKey, xKey])?.key);
+  if (!xKey || !yKey || !valueKey) return unfit('two category fields and a numeric field are needed', misses, fields, opts.source);
   const xInfo = fields.get(xKey);
   const yInfo = fields.get(yKey);
 
@@ -66,7 +72,7 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
     if (!rowSeen.has(line)) rowSeen.set(line, row[yKey]);
     cells.push([line, col, value]);
   }
-  if (cells.length === 0) return `no numeric values in "${say(valueKey, 40)}"`;
+  if (cells.length === 0) return unfit(`no numeric values in "${say(valueKey, 40)}"`, misses, fields, opts.source);
 
   const bothModules = xInfo.kind === 'module' && yInfo.kind === 'module';
   const sameDomain = xInfo.kind === undefined && yInfo.kind === undefined && xInfo.cls === 'cat' && yInfo.cls === 'cat'
@@ -118,6 +124,8 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
     yInfo,
     bad,
     cut,
+    misses,
+    fields,
   };
 }
 
@@ -202,12 +210,18 @@ function layoutCells(model: Model, diverging: boolean, width: number, boxHeight:
 
 function Plot(p: {id: string; rows: Rows; state: DataState<Rows>; skipped: number; props: C.ViewProps<typeof C.Heatmap>}): JSX.Element {
   const {id, rows, state, props} = p;
+  const source = state.ds?.source;
   const model = useMemo(
-    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, value: props.value}),
-    [rows, state.fields, state.roles, props.x, props.y, props.value],
+    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, value: props.value, source}),
+    [rows, state.fields, state.roles, props.x, props.y, props.value, source],
   );
-  if (typeof model === 'string') return <Empty message={`${model}${state.ds ? ` (${state.ds.source})` : ''}`} />;
-  return <Cells id={id} model={model} skipped={p.skipped} props={props} />;
+  if ('code' in model) return <Unable code={model.code} message={model.message} />;
+  return (
+    <>
+      <MissReport misses={model.misses} fields={model.fields} source={source} />
+      <Cells id={id} model={model} skipped={p.skipped} props={props} />
+    </>
+  );
 }
 
 function Cells(p: {id: string; model: Model; skipped: number; props: C.ViewProps<typeof C.Heatmap>}): JSX.Element {
@@ -333,7 +347,7 @@ function Cells(p: {id: string; model: Model; skipped: number; props: C.ViewProps
 
   return (
     <>
-      <Note>{notes(p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.bad > 0 && `${count(model.bad, 'row')} without a value`, model.cut > 0 && `${count(model.cut, 'cell')} beyond ${MAX_AXIS} × ${MAX_AXIS}`)}</Note>
+      <Note>{notes(missNote(model.misses), p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.bad > 0 && `${count(model.bad, 'row')} without a value`, model.cut > 0 && `${count(model.cut, 'cell')} beyond ${MAX_AXIS} × ${MAX_AXIS}`)}</Note>
       <Figure
         name="Heatmap"
         label={aria}

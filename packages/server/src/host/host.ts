@@ -6,7 +6,7 @@ import {ActionRouter} from '../session/actions.ts';
 import {ownEnv} from '../session/env.ts';
 import type {HostHandle, Session, TabState} from '../session/session.ts';
 import {checkRequest} from './guard.ts';
-import {canOpen, detachedLauncher, osOpenCommand, type Launcher} from './open.ts';
+import {canOpen, detachedLauncher, launchOptions, osOpenCommand, programFor, type Launcher} from './open.ts';
 import {handleApi, type ApiContext} from './routes.ts';
 import {SseHub} from './sse.ts';
 import {serveStatic} from './static.ts';
@@ -26,6 +26,8 @@ export interface HostOptions {
   /** Directory holding the built viewer (index.html, assets/); undefined when none was found. */
   viewerDir: string | undefined;
   launcher?: Launcher;
+  /** Finds a program by name (tests); findProgram on the trusted PATH by default. */
+  which?: (name: string) => string | undefined;
   now?: () => number;
 }
 
@@ -147,7 +149,13 @@ export async function startHost(options: HostOptions): Promise<Host> {
       if (now() - openedAt < REOPEN_AFTER_MS) return 'opened';
       openedAt = now();
       const [command, args] = osOpenCommand(`${origin}/#t=${token}`);
-      (options.launcher ?? detachedLauncher)(command, args);
+      // Finding V019: the opener by its absolute path, never one a relative PATH entry or the project supplies.
+      const program = programFor(command, env, {root: session.root, ...(options.which ? {which: options.which} : {})});
+      if (!program) {
+        log(`glimpse: no ${command} on PATH to open the viewer; open ${origin}/#t=… from the tool result`);
+        return 'none';
+      }
+      (options.launcher ?? detachedLauncher)(program, args, launchOptions(env, session.root));
       return 'opened';
     },
     close() {

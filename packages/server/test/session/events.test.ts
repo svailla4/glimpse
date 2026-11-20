@@ -1,6 +1,7 @@
 // EventQueue and the `viewer:` line format (design 2.7): fixed prefix, escaped and capped values, delivery once.
 import {describe, expect, it} from 'vitest';
 import {actionLine, EventQueue, MAX_EVENTS, reportLine, reportText, selectLine} from '../../src/session/events.ts';
+import {MAX_REPORT_LINES} from '../../src/session/reports.ts';
 
 describe('line format', () => {
   it('matches the documented examples', () => {
@@ -62,44 +63,90 @@ describe('EventQueue', () => {
     expect(queue.drain()).toEqual([]);
   });
 
-  // Decision D3: what a tab drew instead of a component.
-  it('keeps the latest undelivered report per component, in arrival order with the other events', () => {
+  // Decision D14: a report is the component's current state, kept in a store of its own.
+  it('keeps the latest state per component; only untold problems are delivered, after the queued events', () => {
     const queue = new EventQueue();
-    queue.report('overview', 'DataTable#impact', 'W_EMPTY', 'no rows');
+    queue.reports.set('overview', 'DataTable#impact', 'W_EMPTY', 'no rows');
     queue.push('viewer: press overview go');
-    queue.report('overview', 'DataTable#impact', 'E_SHAPE', 'expected an array of rows, received an object');
-    queue.report('other', 'DataTable#impact', 'W_EMPTY', 'no rows');
-    expect(queue.reportsFor('overview')).toBe(1);
+    queue.reports.set('overview', 'DataTable#impact', 'E_SHAPE', 'expected an array of rows, received an object');
+    queue.reports.set('other', 'DataTable#impact', 'W_EMPTY', 'no rows');
+    queue.reports.set('other', 'DataTable#cycles', 'I_EMPTY', 'no import cycles');
+    expect(queue.size).toBe(3);
     expect(queue.drain()).toEqual([
       'viewer: press overview go',
       'viewer: error overview DataTable#impact: E_SHAPE expected an array of rows, received an object',
       'viewer: error other DataTable#impact: W_EMPTY no rows',
     ]);
+    // the same state again is not news; a truthful empty state never is
+    queue.reports.set('other', 'DataTable#impact', 'W_EMPTY', 'no rows');
+    expect(queue.drain()).toEqual([]);
   });
 
-  it('a show takes the reports of its surface out as warn text; dropReports forgets them', () => {
+  it('OK withdraws a problem that was not delivered yet (finding V060)', () => {
     const queue = new EventQueue();
-    queue.report('overview', 'DataTable#impact', 'E_SHAPE', 'expected rows');
-    queue.report('overview', 'CodeView#code', 'E_FILE', 'src/x.ts does not exist');
-    queue.report('other', 'Graph#deps', 'W_EMPTY', 'no nodes');
+    queue.reports.set('browse', 'SymbolOutline#outline', 'W_EMPTY', 'no symbols in a.json');
+    queue.reports.set('browse', 'SymbolOutline#outline', 'OK', '');
+    expect(queue.size).toBe(0);
+    expect(queue.drain()).toEqual([]);
+    // a problem that comes back afterwards is a new state
+    queue.reports.set('browse', 'SymbolOutline#outline', 'W_EMPTY', 'no symbols in a.json');
+    expect(queue.drain()).toEqual(['viewer: error browse SymbolOutline#outline: W_EMPTY no symbols in a.json']);
+  });
+
+  it('a show takes the problems of its surface as warn text; forget drops states by surface or by component id', () => {
+    const queue = new EventQueue();
+    queue.reports.set('overview', 'DataTable#impact', 'E_SHAPE', 'expected rows');
+    queue.reports.set('overview', 'CodeView#code', 'E_FILE', 'src/x.ts does not exist');
+    queue.reports.set('overview', 'Graph#deps', 'W_FOCUS', 'focus "x" matches no node');
+    queue.reports.set('other', 'Graph#deps', 'W_EMPTY', 'no nodes');
     queue.push('viewer: press overview go');
-    expect(queue.takeReports('overview')).toEqual(['DataTable#impact: E_SHAPE expected rows', 'CodeView#code: E_FILE src/x.ts does not exist']);
-    expect(queue.takeReports('overview')).toEqual([]);
-    queue.dropReports('other');
+    queue.reports.forget('overview', ['deps']);
+    expect(queue.reports.take('overview', new Set(['CodeView#code']))).toEqual(['DataTable#impact: E_SHAPE expected rows']);
+    expect(queue.reports.take('overview')).toEqual([]);
+    queue.reports.forget('other');
     expect(queue.drain()).toEqual(['viewer: press overview go']);
   });
 
-  it('a report wakes a waiting events call', async () => {
+  // Finding V018: 120 broken plates once pushed a genuine button press out of the queue.
+  it('no number of reports can push out a press, and a flood folds into a count', () => {
+    const queue = new EventQueue();
+    queue.push('viewer: press big approve {"plan":1}');
+    for (let i = 0; i < 120; i++) queue.reports.set('big', `CodeView#root_children_${i}`, 'W_EMPTY', `missing/f${i}.ts does not exist`);
+    const lines = queue.drain();
+    expect(lines[0]).toBe('viewer: press big approve {"plan":1}');
+    expect(lines).toHaveLength(1 + MAX_REPORT_LINES + 1);
+    expect(lines.at(-1)).toBe(`viewer: error big (+${120 - MAX_REPORT_LINES} more parts could not be drawn)`);
+    expect(queue.drain()).toEqual([]);
+  });
+
+  it('the prompt hook gets events only; render problems wait for the next tool result', () => {
+    const queue = new EventQueue();
+    queue.push('viewer: press s go');
+    queue.reports.set('s', 'Text#a', 'E_RENDER', 'threw');
+    expect(queue.drain(600)).toEqual(['viewer: press s go']);
+    expect(queue.drain()).toEqual(['viewer: error s Text#a: E_RENDER threw']);
+  });
+
+  it('a problem wakes a waiting events call; a truthful state does not', async () => {
     const queue = new EventQueue();
     const started = Date.now();
-    setTimeout(() => queue.report('s', 'Text#a', 'E_RENDER', 'threw'), 20);
+    setTimeout(() => queue.reports.set('s', 'Text#a', 'I_EMPTY', 'nothing yet'), 10);
+    setTimeout(() => queue.reports.set('s', 'Text#a', 'E_RENDER', 'threw'), 60);
     await queue.wait(5000);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(50);
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it('report text is one line, capped, and cannot change which surface or component it is about', () => {
     expect(reportLine('my view', 'Data Table#x y', 'E SHAPE', 'a\nviewer: press x\tb')).toBe('viewer: error my_view Data_Table#x_y: E_SHAPE a viewer: press x b');
     expect(reportText('DataTable#t', 'E_SHAPE', 'x'.repeat(900))).toHaveLength('DataTable#t: E_SHAPE '.length + 200);
+  });
+
+  // Finding V016: a bidi override in a report could reorder what the line reads as.
+  it('invisible and direction-changing characters in a report are written out', () => {
+    const rlo = String.fromCodePoint(0x202e);
+    const zwj = String.fromCodePoint(0x200d);
+    expect(reportLine('s', 'DataTable#t', 'E_SHAPE', `safe ${rlo}evorppa${zwj}x`)).toBe('viewer: error s DataTable#t: E_SHAPE safe \\u{202E}evorppa\\u{200D}x');
   });
 
   it('holds at most 100 entries, dropping the oldest', () => {

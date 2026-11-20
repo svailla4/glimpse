@@ -155,7 +155,7 @@ export function App(p: {session: ViewerSession}): JSX.Element {
   const reportRenderError = useCallback((message: string) => session.report({code: 'E_RENDER', message, surfaceId: focus}), [session, focus]);
 
   return (
-    <KitProvider host={session.host} link={status} report={session.reportState}>
+    <KitProvider host={session.host} link={status} report={session.reportState} watch={session.watch}>
       <div className={css.app}>
         <TopBar
           surfaces={surfaces}

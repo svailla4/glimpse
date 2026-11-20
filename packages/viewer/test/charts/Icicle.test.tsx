@@ -82,14 +82,16 @@ describe('Icicle', () => {
     view.setData('/d', {name: '', path: '', dir: true, children: [{name: 'c.ts', path: 'c.ts', loc: 5}]});
     expect(cells(view)).toEqual(['', 'c.ts']);
   });
-  it('grows the rows of a sized cell up to 32 px and keeps the legend under them (F009)', async () => {
+  it('gives the rows the height of a sized cell, up to 120 px, and keeps the legend under them (F009)', async () => {
     const plain = await chart('Icicle()');
     expect(new Set(plain.all('[data-cell] rect:first-child').map(el => el.getAttribute('height')))).toEqual(new Set(['20']));
     plain.unmount();
-    // four levels in a 600 px box: 32 px rows, then the legend, then blank
+    // four levels in a 600 px box: the rows share the height left after the legend, at most 120 px each
     const sized = await chart(`Icicle(size='l')`);
-    expect(new Set(sized.all('[data-cell] rect:first-child').map(el => el.getAttribute('height')))).toEqual(new Set(['32']));
-    expect(sized.svg.getAttribute('height')).toBe(String(4 * 33 - 1));
+    expect(new Set(sized.all('[data-cell] rect:first-child').map(el => el.getAttribute('height')))).toEqual(new Set(['120']));
+    expect(sized.svg.getAttribute('height')).toBe(String(4 * 121 - 1));
+    // a row that tall names its value under the name
+    expect(sized.all('[data-cell-value]').length).toBeGreaterThan(0);
     // the legend is inside the plot box, right after the drawing
     const legend = sized.root.querySelector('[data-chart-legend]')!;
     expect(sized.svg.parentElement!.parentElement!.contains(legend)).toBe(true);

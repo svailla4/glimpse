@@ -247,6 +247,21 @@ describe('DataTable: sort, search, group', () => {
     expect(firstCells(view)[0]).toContain('limiter.go');
   });
 
+  // Finding V049: sorting the 15-row 'top by score' table by commits reordered those 15 rows under 'top by score'.
+  it('says a sort of a cut dataset by another field reorders only the rows shown', async () => {
+    const ds = datasetFixture('git.churn');
+    const cut = {[`/ds/${ds.$ds}`]: {...ds, pageable: false, total: 40, truncated: {total: 40, returned: 6, strategy: 'topN', by: 'commits'}}};
+    const view = renderExpress(page("DataTable('git.churn')"), {datasets: 'ready', data: cut});
+    await ready(view);
+    const note = () => view.cell('t').querySelector('[data-gl-table-note]')?.textContent ?? '';
+    expect(note()).toBe('');
+    fireEvent.click(within(headers(view)[3]!).getByRole('button'));
+    expect(note()).toBe('sorted: owner (6 shown)');
+    // sorted by the field the cut ranks by, the rows shown are the top ones: nothing to add
+    fireEvent.click(within(headers(view)[1]!).getByRole('button'));
+    expect(note()).toBe('');
+  });
+
   it('sorts by a field that is not a column, numbers numerically, missing values last', async () => {
     const view = renderExpress(page("DataTable($/rows,'name',sort='-n')"), {data: {'/rows': [{name: 'two', n: 2}, {name: 'none'}, {name: 'ten', n: '10'}, {name: 'nine', n: 9}]}});
     await ready(view);

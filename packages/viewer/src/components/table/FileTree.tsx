@@ -2,8 +2,7 @@ import type * as C from '@glimpse/catalog';
 import type {DirNode, EntityRef} from '@glimpse/catalog';
 import {memo, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type RefObject} from 'react';
 import {
-  DataGate, Empty, PathText, PlateAside, Redline, fmtNum, seqVar, useDataset, useHostActions, useSelection,
-  type GlView, type GlViewProps,
+  DataGate, Empty, PathText, PlateAside, REPORT_CODES, Redline, fileEntity, fmtNum, seqVar, useDataset, useFollowedFile, useHostActions, useSelection, type GlView, type GlViewProps,
 } from '../../kit/index.ts';
 import s from './FileTree.module.css';
 import {useListNav, useScrollFade} from './nav.ts';
@@ -336,8 +335,23 @@ function TreeBody({id, props, tree, drill, refocus, drilled}: BodyProps): JSX.El
   const heat: Heat = props.heat ?? 'none';
   const initialDepth = props.depth ?? 2;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const {selected, select} = useSelection(id);
+  const {selected: chosen, select} = useSelection(id);
   const host = useHostActions(id);
+
+  // With nothing selected the tree shows the file the view follows ($/ui/file: a tree preset opens its code view on
+  // the README), so the open file is marked and in view from the start. Clearing a selection (Escape) clears that
+  // mark too, until another file is followed.
+  const followed = useFollowedFile(undefined);
+  const [dismissed, setDismissed] = useState<string>();
+  const hadSelection = useRef(chosen !== null);
+  useEffect(() => {
+    if (hadSelection.current && chosen === null) setDismissed(followed);
+    hadSelection.current = chosen !== null;
+  }, [chosen, followed]);
+  const selected = useMemo<EntityRef | null>(
+    () => chosen ?? (followed && followed !== dismissed ? fileEntity(followed) : null),
+    [chosen, followed, dismissed],
+  );
 
   // Directories open to `depth` levels until the reader says otherwise, per directory.
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(() => new Map());
@@ -458,6 +472,7 @@ function TreeBody({id, props, tree, drill, refocus, drilled}: BodyProps): JSX.El
       return;
     } else if (event.key === 'Escape') {
       if (find !== null) updateFind(null);
+      else if (chosen === null && followed) setDismissed(followed);
       else select(null);
     } else if (event.key === 'ArrowRight') {
       if (line.kind !== 'node' || !node.dir) return;
@@ -492,8 +507,15 @@ function TreeBody({id, props, tree, drill, refocus, drilled}: BodyProps): JSX.El
     event.preventDefault();
   };
 
-  if (lines.length === 0) return <Empty message={tree.root.path ? `${tree.root.path} is an empty directory` : 'empty directory'} />;
+  if (lines.length === 0) return <Empty message={tree.root.path ? `${tree.root.path} is an empty directory` : 'empty directory'} code={REPORT_CODES.truthful} />;
   const scope = tree.root.path;
+  // Finding V049: drilled into the selected folder, every row is inside the selection; tinting them all says nothing.
+  const selectedPath = selected?.type === 'dir' ? (selected.path ?? selected.id).replace(/\/+$/, '') : undefined;
+  const scopeIsSelected = selectedPath !== undefined && scope !== '' && selectedPath === scope.replace(/\/+$/, '');
+  const markOf = (node: Parameters<typeof entityOf>[0]) => {
+    const mark = selectionMark(selected, entityOf(node));
+    return scopeIsSelected && mark === 'within' ? undefined : mark;
+  };
   return (
     <div className={s.root} data-sized={props.size ? '' : undefined} data-gl-tree="">
       {tree.dropped > 0 ? (
@@ -524,7 +546,7 @@ function TreeBody({id, props, tree, drill, refocus, drilled}: BodyProps): JSX.El
                 line={line}
                 metric={metric}
                 heat={line.kind === 'node' && heat !== 'none' ? heatStep(line.node, heat, tree.peak) : undefined}
-                mark={line.kind === 'node' ? selectionMark(selected, entityOf(line.node)) : undefined}
+                mark={line.kind === 'node' ? markOf(line.node) : undefined}
                 active={virtual.index === nav.active}
                 canDrill={line.kind === 'more' && canDrillInto(line.node)}
               />

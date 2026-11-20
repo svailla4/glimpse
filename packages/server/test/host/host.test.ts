@@ -260,8 +260,12 @@ describe('opening the tab', () => {
     const first = await show(fx, 'demo', `root=Page('Demo',[])`);
     expect(first.tab).toBe('opened');
     expect(fx.launched).toHaveLength(1);
+    // finding V019: the opener by its absolute path
+    expect(fx.launched[0]![0]).toMatch(/^\/usr\/bin\/(?:open|xdg-open|rundll32)$/);
     expect(fx.launched[0]![1].at(-1)).toBe(`http://127.0.0.1:${fx.port}/#t=${TOKEN}`);
-    expect(first.url).toBe(`http://127.0.0.1:${fx.port}/#/demo`);
+    // finding V045: the route is a label; the link that works is the one with the token
+    expect(first.url).toBe('#/demo');
+    expect(first.openUrl).toBe(`http://127.0.0.1:${fx.port}/#t=${TOKEN}`);
     clock += 4000;
     expect((await show(fx, 'demo', `$/n=1`)).tab).toBe('opened');
     expect(fx.launched).toHaveLength(1);

@@ -48,9 +48,40 @@ describe('Histogram', () => {
     const words = await chart('Histogram($/d)', {rows: ['a', 'b']});
     expect(words.state()).toBe('empty');
     words.unmount();
+    // a value field the data does not have: the default field is counted and the plate says which name it missed (D15)
     const missing = await chart(`Histogram($/d,'nope')`, {rows: [{loc: 4}]});
-    expect(missing.state()).toBe('empty');
-    expect(missing.root.textContent).toContain('"nope"');
+    expect(missing.state()).toBeNull();
+    expect(missing.root.querySelector('[data-chart-note]')?.textContent).toBe('no field "nope"');
+    missing.unmount();
+    const nothing = await chart(`Histogram($/d,'nope')`, {rows: [{name: 'x'}]});
+    expect(nothing.state()).toBe('empty');
+    expect(nothing.root.textContent).toContain('"nope"');
+  });
+
+  it('keeps the median and p90 tags in a band above the bars, clear of the bars and of each other', async () => {
+    // the tallest bin is the last, where the 90th percentile falls (the gallery's file sizes)
+    const rows = [420, 480, 560, 640, 700, 820, 868, 900, 960].map(loc => ({loc}));
+    for (const width of [960, 360]) {
+      const view = await chart(`Histogram($/d,'loc')`, {rows, size: {width, height: 600}});
+      const barTop = Math.min(...view.all('rect[data-i]').map(el => Number(el.getAttribute('y'))));
+      const p90 = view.root.querySelector('[data-p90] text')!;
+      const median = view.root.querySelector('[data-median] text')!;
+      // a 10.5 px tag hangs about 3 px below its baseline: it ends at least 6 px above the highest bar
+      expect(Number(p90.getAttribute('y')) + 3).toBeLessThanOrEqual(barTop - 6);
+      expect(Number(view.root.querySelector('[data-p90] line')!.getAttribute('y2'))).toBeLessThan(barTop);
+      // one row each
+      expect(Number(p90.getAttribute('y')) - Number(median.getAttribute('y'))).toBeGreaterThanOrEqual(12);
+      view.unmount();
+    }
+  });
+
+  it('tags whole-number data with whole-number statistics (V050)', async () => {
+    const whole = await chart(`Histogram($/d)`, {rows: [1, 2, 3, 4]});
+    expect(whole.root.querySelector('[data-median] text')?.textContent).toBe('median 3');
+    expect(whole.root.querySelector('[data-p90] text')?.textContent).toBe('p90 4');
+    whole.unmount();
+    const fractions = await chart(`Histogram($/d)`, {rows: [0.5, 1, 2.25, 4]});
+    expect(fractions.root.querySelector('[data-median] text')?.textContent).toBe('median 1.63');
   });
 
   it('survives one datum, identical values, negatives and a log count axis', async () => {

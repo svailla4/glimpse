@@ -139,11 +139,27 @@ describe('planSequence', () => {
     const plan = planSequence(ast('A->>B: hi; B->>C: a label that is clearly longer than the minimum column'), 0);
     const [a, b, c] = plan.actors.map(actor => actor.x);
     expect(b! - a!).toBe(140);
-    // the label wants more than a lifeline may have: the gap stops at 280 and the label is cut
+    // the label wants more than a lifeline may have: the gap stops at 280 and the label takes a second line (V014)
     expect(c! - b!).toBe(280);
     const row = plan.rows[1]!;
-    expect(row.kind === 'message' && row.text.endsWith('…')).toBe(true);
+    expect(row.kind === 'message' && row.lines).toEqual(['a label that is clearly longer than the', 'minimum column']);
+    expect(row.h).toBeGreaterThan(plan.rows[0]!.h);
     expect(plan.width).toBeGreaterThan(c!);
+  });
+
+  it('wraps a label to two lines in a narrow plate instead of cutting it (V014)', () => {
+    const five = ast('Model->>Server: show(spec); Server->>Parser: parse A2UI Express spec; Parser-->>Server: parts and data bindings; Server->>Sources: run every bound source; Server-->>Model: ok plus one line per dataset');
+    // From a span=7 plate of a 1440 px page (where the review saw 'parse A2UI Ex…') down to a phone: every label whole.
+    for (const width of [700, 520, 420, 360]) {
+      const plan = planSequence(five, width);
+      for (const row of plan.rows) {
+        if (row.kind !== 'message') continue;
+        expect(row.lines.join(' ')).toBe(row.full);
+        expect(row.lines.length).toBeLessThanOrEqual(2);
+      }
+    }
+    const narrow = planSequence(five, 520);
+    expect(narrow.rows.find(row => row.kind === 'message' && row.full === 'parse A2UI Express spec')).toMatchObject({lines: ['parse A2UI', 'Express spec']});
   });
 
   it('stretches a narrow diagram to its container and scrolls a wide one', () => {
@@ -158,7 +174,7 @@ describe('planSequence', () => {
     expect(wide.width * wide.scale).toBeGreaterThan(600);
   });
 
-  it('fits a cell that is a little too narrow: gaps close up first, then the drawing is scaled, never below 80%', () => {
+  it('fits a cell that is a little too narrow: gaps close up first, then the drawing is scaled, never below 10 px text', () => {
     const six = ast('User->>Agent: ask; Agent->>Server: show; Server->>Sources: run; Sources-->>Server: rows; Server->>Viewer: frame; Viewer->>Hub: event; Hub-->>User: done');
     const natural = planSequence(six, 0);
     expect(natural.scale).toBe(1);
@@ -175,23 +191,19 @@ describe('planSequence', () => {
     // span=5 of a 1440 px page: the case from the review, six lifelines in 510 px
     const narrow = planSequence(six, 510);
     expect(narrow.scale).toBeLessThan(1);
-    expect(narrow.scale).toBeGreaterThanOrEqual(0.8);
-    expect(narrow.width * narrow.scale).toBeLessThanOrEqual(510.5);
-    for (const actor of narrow.actors) {
-      expect((actor.x - actor.w / 2) * narrow.scale).toBeGreaterThanOrEqual(0);
-      expect((actor.x + actor.w / 2) * narrow.scale).toBeLessThanOrEqual(510);
-    }
+    // 11 px step numbers and notes stay 10 px on screen (design rule D18): the rest scrolls
+    expect(narrow.scale).toBeGreaterThanOrEqual(10 / 11);
 
-    // far too narrow: 80% is the floor, the rest scrolls
+    // far too narrow: the floor, and the rest scrolls
     const tiny = planSequence(six, 300);
-    expect(tiny.scale).toBe(0.8);
+    expect(tiny.scale).toBe(0.91);
     expect(tiny.width * tiny.scale).toBeGreaterThan(300);
   });
 
   it('gives a self-message on the last lifeline room on the right', () => {
     const plan = planSequence(ast('A->>B: hi; B->>B: think about it for a while'), 0);
     const self = plan.rows[1]!;
-    expect(self.kind === 'message' && self.text).toBe('think about it for a while');
+    expect(self.kind === 'message' && self.lines).toEqual(['think about it for a while']);
     expect(plan.width - plan.actors[1]!.x).toBeGreaterThan(150);
   });
 

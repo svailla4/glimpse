@@ -5,8 +5,8 @@ import {repoModel, type RepoModel} from '../../analyze/index.ts';
 import {MAX_READ_BYTES} from '../../analyze/inventory.ts';
 import {languageOf} from '../../analyze/languages.ts';
 import {SourceError, type RepoContext, type Source} from '../../contracts.ts';
-import {filesIn} from './files.ts';
-import {byText, define, plural, rowsResult, scopeOf} from './shared.ts';
+import {filesIn, languageMix} from './files.ts';
+import {byText, define, inScope, plural, rowsResult, scopeOf} from './shared.ts';
 
 interface Match {
   path: string;
@@ -110,24 +110,39 @@ export function codeSources(): Source[] {
   });
 
   const refs = define('code.refs', async (ctx, ref, signal, meta) => {
-    const word = (ref.target ?? '').trim();
+    // `code.refs <name> [path]`: an identifier has no spaces, so whatever follows it is a path scope.
+    const [word = '', ...rest] = (ref.target ?? '').trim().split(/\s+/);
     if (word === '') throw new SourceError('E_TARGET', `${meta.name} needs an identifier, e.g. ${meta.name} createServer`);
     if (word.length > 200 || /[\0\r\n]/.test(word)) throw new SourceError('E_TARGET', `${meta.name}: "${word.slice(0, 40)}" is not an identifier`);
+    const scope = rest.length > 0 ? scopeOf({...ref, target: rest.join(' ')}) : '';
     const model = await repoModel(ctx);
+    if (scope !== '') filesIn(model, scope, meta.name);
     const found = (await grepWithGit(ctx, word, signal)) ?? (await grepInProcess(ctx, model, word, signal));
     // Only files of the inventory count, so both searches agree and nothing generated floods the list.
     const matches = found.filter(match => {
       const file = model.byPath.get(match.path);
-      return file !== undefined && !file.generated && !file.binary;
+      return file !== undefined && !file.generated && !file.binary && inScope(match.path, scope);
     });
-    if (matches.length === 0) throw new SourceError('E_TARGET', `${meta.name}: no matches for "${word}"`);
-    const defines = (path: string) => model.facts.get(path)?.symbols.some(symbol => symbol.name === word) === true;
-    const definedIn = [...new Set(matches.map(match => match.path))].filter(defines);
-    const rank = new Set(definedIn);
-    matches.sort((a, b) => Number(rank.has(b.path)) - Number(rank.has(a.path)) || byText(a.path, b.path) || a.line - b.line);
+    if (matches.length === 0) throw new SourceError('E_TARGET', `${meta.name}: no matches for "${word}"${scope ? ` under "${scope}"` : ''}`);
+    // A definition is a declaration in source code: a Markdown heading or a class in a fenced example is not (V035).
+    const isCode = (path: string) => languageOf(path)?.kind === 'code';
+    const defines = (path: string) => isCode(path) && model.facts.get(path)?.symbols.some(symbol => symbol.name === word && symbol.kind !== 'heading') === true;
+    // When several languages define the name, the one the repository is mostly written in leads, then non-tests.
+    const weight = new Map(languageMix(model).map((row, index) => [row.lang, index]));
+    const langRank = (path: string) => weight.get(model.byPath.get(path)?.lang ?? '') ?? Number.MAX_SAFE_INTEGER;
+    const definedIn = [...new Set(matches.map(match => match.path))].filter(defines)
+      .sort((a, b) => langRank(a) - langRank(b) || Number(model.byPath.get(a)?.isTest) - Number(model.byPath.get(b)?.isTest) || byText(a, b));
+    const order = new Map(definedIn.map((path, index) => [path, index]));
+    // Groups: the definitions, then the other code files, then documentation and data.
+    const tier = (path: string) => (order.has(path) ? 0 : isCode(path) ? 1 : 2);
+    matches.sort((a, b) => tier(a.path) - tier(b.path) || (order.get(a.path) ?? 0) - (order.get(b.path) ?? 0) || byText(a.path, b.path) || a.line - b.line);
     const rows: Rows = matches.map(match => ({file: `${match.path}#L${match.line}`, text: match.text.trimEnd().slice(0, MAX_TEXT)}));
     const fileCount = new Set(matches.map(match => match.path)).size;
-    const lead = `${plural(matches.length, 'match', 'matches')} in ${plural(fileCount, 'file')}${definedIn[0] ? `; defined in ${definedIn[0]}` : ''}`;
+    const extensions = [...new Set(definedIn.map(path => /\.[^./]+$/.exec(path)?.[0] ?? ''))].filter(Boolean);
+    const defined = definedIn.length === 0 ? ''
+      : definedIn.length === 1 ? `; defined in ${definedIn[0]}`
+      : `; defined in ${plural(definedIn.length, 'file')}${extensions.length > 1 ? ` (${extensions.join(' ')})` : ''}, first ${definedIn[0]}`;
+    const lead = `${plural(matches.length, 'match', 'matches')} in ${plural(fileCount, 'file')}${scope ? ` under ${scope}` : ''}${defined}`;
     return rowsResult(meta, ref, rows, {by: 'file', lead, warnings: matches.length >= MAX_MATCHES ? [`stopped at ${MAX_MATCHES} matches`] : []});
   });
 
@@ -138,7 +153,7 @@ export function codeSources(): Source[] {
     const tags = new Map<string, number>();
     for (const file of filesIn(model, scope, meta.name)) {
       for (const todo of model.facts.get(file.path)?.todos ?? []) {
-        rows.push({tag: todo.tag, file: `${file.path}#L${todo.line}`, text: todo.text});
+        rows.push({tag: todo.tag, file: `${file.path}#L${todo.line}`, text: todo.text, ...(todo.owner ? {owner: todo.owner} : {})});
         tags.set(todo.tag, (tags.get(todo.tag) ?? 0) + 1);
       }
     }

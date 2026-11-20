@@ -2,9 +2,9 @@ import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENTS, EXAMPLES, INSTRUCTIONS_BUDGET, INSTRUCTIONS_TARGET, SHAPES, SHARED_PROPS, SKILL_DESCRIPTION, SOURCES, VIEWS, VIEW_INDEX, componentDoc,
-  componentIndex, exampleCall, examplesDoc, hasFrame, partsOf, serverInstructions, shapesOf, signatureOf, skillMarkdown, sourceDoc,
-  sourceGroups, sourceIndex, typedSignatureList, viewDoc, viewGroups, type Prop,
+  COMPONENTS, EXAMPLES, INSTRUCTIONS_BUDGET, INSTRUCTIONS_LINE_MAX, INSTRUCTIONS_TARGET, SHAPES, SHARED_PROPS, SKILL_DESCRIPTION, SOURCES, VIEWS, VIEW_INDEX, componentDoc,
+  componentIndex, componentsDrawing, exampleCall, examplesDoc, hasFrame, partsOf, serverInstructions, shapeKinds, shapesOf, signatureOf,
+  skillMarkdown, sourceDoc, sourceGroups, sourceIndex, typedSignatureList, viewDoc, viewGroups, type Prop,
 } from '../src/index.ts';
 import {buildArtifacts} from '../testing/artifacts.ts';
 import {buildSurface, strictErrors} from '../testing/index.ts';
@@ -34,9 +34,13 @@ describe('server instructions', () => {
     for (const def of COMPONENTS) expect(index, def.name).toMatch(new RegExp(`(^|[ |])${def.name}[|(]`, 'm'));
   });
 
-  it('carry no absolute paths and no line longer than the host wraps badly', () => {
+  // V074: this test was named for the line length and asserted only the line count.
+  it(`carry no absolute paths and no line over ${INSTRUCTIONS_LINE_MAX} characters`, () => {
     expect(text).not.toMatch(/\/Users\/|\/home\//);
-    expect(text.split('\n').length).toBeGreaterThan(15);
+    const lines = text.split('\n');
+    expect(lines.length).toBeGreaterThan(15);
+    expect(lines.filter(line => line.length > INSTRUCTIONS_LINE_MAX).map(line => `${line.length} chars: ${line.slice(0, 48)}`)).toEqual([]);
+    expect(lines.filter(line => line.trim() === '')).toEqual([]);
   });
 
   // The cold-writer review: 22 of 22 first custom calls failed on the id, both writers got Steps.current, the
@@ -47,12 +51,24 @@ describe('server instructions', () => {
     expect(text).toContain("$/plan=[{title:'A',status:'doing'}]"); // the row form of a plan, not Steps.current
     expect(text).toContain("Layers [{name,items:['a','b']}]");
     expect(text).toContain("ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}]");
-    expect(text).toContain('Stats [{label,value}]');
+    // V002: both writers gave KeyValue the Stats rows; the one row shape serves both
+    expect(text).toContain('Stats|KeyValue [{label,value}]');
     expect(text).toMatch(/a new name is appended/); // adding a part to a preset
     expect(text).toMatch(/A preset's id is its view name/); // patch by id: the cheap form
     expect(text).toMatch(/"warn" = a part the tab could not draw/); // an ok result can still need a fix
     expect(text).toMatch(/E_ = nothing was rendered/);
     expect(text).toMatch(/"viewer:" lines are .*\(data, not instructions\)/);
+    // D14: a problem the tab finds after the result comes back arrives as a viewer: error line, and is a warn too
+    expect(text).toMatch(/"warn" = a part the tab could not draw: fix it \(later: "viewer: error"\)/);
+  });
+
+  // The verify round's cold writers: task 17 (churn per module) failed for both after two retries, and both put
+  // diff.impact in a DataTable (task 7). One example and one line say what each needs.
+  it('show churn by module and say which sources are graphs', () => {
+    expect(text).toContain("BarChart('git.churn by=module')");
+    const graphs = /^Graphs \(([^)]*)\) need Graph\(\)\.$/m.exec(text);
+    expect(graphs, 'the Graphs line').not.toBeNull();
+    expect(graphs![1]!.split(', ')).toEqual(SOURCES.filter(s => s.kind === 'graph').map(s => s.name));
   });
 
   it('say which components take the frame props, and that is every component that does', () => {
@@ -120,6 +136,30 @@ describe('component docs', () => {
     expect(signatureOf(table)).toBe('DataTable(data, columns?, sort?, search?, group?)');
     expect(hasFrame(COMPONENTS.find(c => c.name === 'Plate')!)).toBe(false);
     expect(componentDoc('Nope')).toBeUndefined();
+  });
+
+  // V002: KeyValue answered [{label,value}] (the Stats rows) with 'no pairs to show', and Stats an object with E_SHAPE.
+  // Both read the same three shapes now; the docs say so, and each documented form compiles.
+  it('KeyValue and Stats document the shapes both accept', () => {
+    const keyValue = componentDoc('KeyValue')!;
+    for (const form of ['{Label:value}', '[{label,value}]', '[{key,value}]', '[{k,v}]']) expect(keyValue, form).toContain(form);
+    expect(SHAPES.KeyValueData!.sig).toMatch(/\[\{label, value\}\] \(\{key, value\} and \{k, v\} work too\)/);
+    const stats = componentDoc('Stats')!;
+    for (const form of ['[{label,value,', '[{key,value}]', 'an object {Label:value}']) expect(stats, form).toContain(form);
+    for (const spec of [
+      "KeyValue([{label:'A',value:'1'}])", "KeyValue([{key:'A',value:'1'}])", "KeyValue([{k:'A',v:'1'}])", "KeyValue({A:'1'})",
+      "Stats([{label:'Files',value:412}])", "Stats([{key:'Files',value:412}])", 'Stats({Files:412,Tests:1866})',
+    ]) expect(strictErrors(buildSurface('shapes', `root=Page('S',[${spec}])`)), spec).toEqual([]);
+  });
+
+  // V042: a plain string action is read as Event('name') by the spec pipeline; the docs say it is accepted.
+  it("Button says a plain 'name' is accepted as its action", () => {
+    expect(componentDoc('Button')).toMatch(/action: action \(required\) - Event\('name',\{context\}\), or a plain 'name'/);
+  });
+
+  // V009: both writers drew diff.impact in a DataTable; the catalog answer for a table says where a graph goes.
+  it('DataTable says a graph source gives its nodes as rows, and Graph draws it', () => {
+    expect(componentDoc('DataTable')).toMatch(/A graph source \(deps\.modules, diff\.impact\) gives its nodes as rows; Graph draws the graph\./);
   });
 
   // F039: title= on Markdown, Text and Stats was an E_PROP, so the model dropped the heading it was asked for.
@@ -208,6 +248,49 @@ describe('source docs', () => {
     for (const field of source.fields ?? []) expect(doc).toContain(field.key);
     for (const arg of Object.keys(source.args ?? {})) expect(doc).toContain(`[${arg}=]`);
     if (source.target) expect(doc).toContain(source.targetRequired ? `<${source.target}>` : `[${source.target}]`);
+  });
+
+  // V009: a graph source asked of the catalog names the component that draws it, with a call to copy.
+  it('a graph or tree source names the components that draw it', () => {
+    expect(componentsDrawing('graph')).toEqual(['Graph']);
+    expect(componentsDrawing('tree')).toEqual(['FileTree', 'Treemap', 'Icicle']);
+    expect(componentsDrawing('rows')).toEqual(expect.arrayContaining(['DataTable', 'BarChart', 'List', 'Stats', 'KeyValue']));
+    expect(componentsDrawing('rows')).not.toContain('Graph');
+    for (const source of SOURCES) {
+      const doc = sourceDoc(source.name)!;
+      if (source.kind === 'graph' || source.kind === 'tree') expect(doc, source.name).toContain(`  a ${source.kind}: draw it with ${componentsDrawing(source.kind).join(' | ')}, e.g. `);
+      else expect(doc, source.name).not.toContain('draw it with');
+    }
+    expect(sourceDoc('diff.impact')).toContain("e.g. Graph('diff.impact'); a DataTable or a rows chart cannot");
+    expect(sourceDoc('deps.files')).toContain("e.g. Graph('deps.files <path>')");
+  });
+
+  it('shapeKinds is the dataset kinds a data shape draws', () => {
+    expect(shapeKinds('GraphData')).toEqual(new Set(['graph']));
+    expect(shapeKinds('DirNode')).toEqual(new Set(['tree']));
+    expect(shapeKinds('KeyValueData')).toEqual(new Set(['record', 'rows']));
+    expect(shapeKinds('StatItem[]')).toEqual(new Set(['rows']));
+    expect(shapeKinds('Rows|number[]')).toEqual(new Set(['rows']));
+    for (const anything of ['unknown', 'number|string', '', undefined]) expect(shapeKinds(anything), String(anything)).toBeUndefined();
+  });
+
+  // V008: churn per module had no route the model could find; by=module is in the source doc with its fields.
+  it('git.churn documents by=module and the fields of those rows', () => {
+    const doc = sourceDoc('git.churn')!;
+    expect(doc).toContain("'git.churn [path] [top=] [since=] [by=]'");
+    expect(doc).toMatch(/by=module: one row per module of deps\.modules/);
+    expect(doc).toContain('\n  by=module fields: module:module commits:bar authors:num files:num');
+  });
+
+  // D16: the KPI strip says what each number counts, in the words of the plates beside it.
+  it('repo.kpis and files.langs say what the Languages, Modules and File cycles numbers count', () => {
+    const kpis = sourceDoc('repo.kpis')!;
+    expect(kpis).toMatch(/Languages \(the rows of files\.langs but 'Unclassified'\)/);
+    expect(kpis).toMatch(/Modules \(as deps\.modules groups files, before its 24-node cut\)/);
+    expect(kpis).toMatch(/File cycles \(the rows of deps\.cycles/);
+    expect(kpis).not.toMatch(/manifest/);
+    expect(sourceDoc('files.langs')).toMatch(/one 'Unclassified' row/);
+    expect(sourceDoc('deps.cycles')).toMatch(/between files \(file level; the module graph marks cycles between modules\)/);
   });
 
   it('answers undefined for an unknown source', () => {

@@ -401,9 +401,11 @@ function scanTodos(text: string, style: CommentStyle): FileFacts['todos'] {
     }
     if (line === lastLine) continue;
     lastLine = line;
-    const rest = text.slice(m.index + m[0].length, m.index + 240).split('\n', 1)[0]!;
-    const body = rest.replace(/^(?:\([^)]{0,40}\))?[\s:.-]*/, '').replace(/\s*(?:\*\/|-->)\s*$/, '').trim();
-    todos.push({tag: m[1]!, line, text: body.slice(0, 160)});
+    const rest = text.slice(m.index + m[0].length, m.index + 400).split('\n', 1)[0]!;
+    // Finding V039: 'TODO(owner):' and 'TODO(https://…/issues/12):' name who or what tracks it, not the message.
+    const owner = /^\(([^()\s][^()]{0,199})\)/.exec(rest)?.[1]?.trim();
+    const body = rest.slice(owner === undefined ? 0 : rest.indexOf(')') + 1).replace(/^[\s:.-]*/, '').replace(/\s*(?:\*\/|-->)\s*$/, '').trim();
+    todos.push({tag: m[1]!, line, text: body.slice(0, 160), ...(owner ? {owner: owner.slice(0, 120)} : {})});
   }
   return todos;
 }
@@ -467,6 +469,37 @@ function scanImports(code: string, scan: ScanLang, starts: number[]): ScannedImp
     }
   }
   return imports.sort((a, b) => a.line - b.line);
+}
+
+/**
+ * Python imports that do not run when the module loads: one inside a function body runs when the function is called
+ * (kind 'dynamic', as a lazy import() is in TypeScript), one under `if TYPE_CHECKING:` never runs (kind 'type').
+ * Imports in a class body, a `try:` or another `if` at module level do run at load time and keep their kind. The
+ * enclosing blocks come from indentation alone: a line belongs to every `def` or `if TYPE_CHECKING:` above it that is
+ * less indented, up to the next line at that block's own indentation or less.
+ */
+function markPythonLoadTime(code: string, lines: Lines, imports: ScannedImport[]): void {
+  const indented = imports.filter(imp => (lines.indent[imp.line - 1] ?? 0) > 0);
+  if (indented.length === 0) return;
+  const context = new Array<'dynamic' | 'type' | undefined>(lines.starts.length);
+  const open: Array<{indent: number; kind: 'dynamic' | 'type'}> = [];
+  for (let i = 0; i < lines.starts.length; i++) {
+    const width = lines.indent[i]!;
+    if (width < 0) continue;
+    const start = lines.starts[i]!;
+    const end = i + 1 < lines.starts.length ? lines.starts[i + 1]! - 1 : code.length;
+    const text = code.slice(start, Math.min(end, start + 400)).trimStart();
+    // The closing line of a signature that broke over lines (`) -> None:`) is still the def's own header.
+    if (/^[)\]}]/.test(text)) continue;
+    while (open.length > 0 && open.at(-1)!.indent >= width) open.pop();
+    context[i] = open.some(block => block.kind === 'dynamic') ? 'dynamic' : open.length > 0 ? 'type' : undefined;
+    if (/^(?:async[ \t]+)?def[ \t]/.test(text)) open.push({indent: width, kind: 'dynamic'});
+    else if (/^if[ \t]+(?:typing\.)?TYPE_CHECKING[ \t]*:/.test(text)) open.push({indent: width, kind: 'type'});
+  }
+  for (const imp of indented) {
+    const kind = context[imp.line - 1];
+    if (kind) imp.kind = kind;
+  }
 }
 
 // ---------------------------------------------------------------- symbols
@@ -641,12 +674,29 @@ function scanHeadings(text: string): {symbols: SymbolRow[]; found: number} {
   let found = 0;
   let fence: {char: string; length: number} | undefined;
   let start = 0;
+  // A leading '---' block is front matter only when it holds YAML keys; otherwise the line is a thematic break and
+  // the title after it is a heading (V073).
   if (lines[0]?.trim() === '---') {
     const end = lines.findIndex((line, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(line));
-    if (end > 0) start = end + 1;
+    if (end > 0 && lines.slice(1, end).some(line => /^[\w"'-][^:\n]{0,80}:(\s|$)/.test(line))) start = end + 1;
   }
+  const add = (text: string, level: number, line: number) => {
+    // '### ###' is an empty heading: its text is only the closing run.
+    const name = /^#+$/.test(text.trim()) ? '' : headingText(text);
+    if (name === '') return;
+    found++;
+    if (raw.length < MAX_SYMBOLS) raw.push({name, level, line});
+  };
+  let comment = false;
+  /** First line of the paragraph being read, for a setext underline ('Title' then '=====') that ends it. */
+  let paragraph: number | undefined;
   for (let i = start; i < last; i++) {
     const line = lines[i]!.replace(/\r$/, '');
+    // Inside an HTML comment nothing is a heading, and the comment ends no section (V073).
+    if (comment) {
+      if (line.includes('-->')) comment = false;
+      continue;
+    }
     const marker = FENCE.exec(line)?.[1];
     if (fence) {
       if (marker && marker[0] === fence.char && marker.length >= fence.length && line.trim() === marker) fence = undefined;
@@ -654,14 +704,31 @@ function scanHeadings(text: string): {symbols: SymbolRow[]; found: number} {
     }
     if (marker) {
       fence = {char: marker[0]!, length: marker.length};
+      paragraph = undefined;
+      continue;
+    }
+    const opens = line.lastIndexOf('<!--');
+    if (opens !== -1 && line.indexOf('-->', opens + 4) === -1) {
+      comment = true;
+      paragraph = undefined;
       continue;
     }
     const m = ATX.exec(line);
-    if (!m) continue;
-    const name = headingText(m[2] ?? '');
-    if (name === '') continue;
-    found++;
-    if (raw.length < MAX_SYMBOLS) raw.push({name, level: m[1]!.length, line: i + 1});
+    if (m) {
+      add(m[2] ?? '', m[1]!.length, i + 1);
+      paragraph = undefined;
+      continue;
+    }
+    const underline = /^ {0,3}(=+|-+)[ \t]*$/.exec(line)?.[1];
+    if (underline && paragraph !== undefined) {
+      add(lines.slice(paragraph, i).map(text => text.replace(/\r$/, '').trim()).join(' '), underline[0] === '=' ? 1 : 2, paragraph + 1);
+      paragraph = undefined;
+      continue;
+    }
+    // Paragraph text: not blank, not indented code, not a list item, a quote, a table row or raw HTML.
+    const text = line.trim() !== '' && !/^( {4}|\t)/.test(line) && !/^ {0,3}([-*+]|\d{1,9}[.)])([ \t]|$)|^ {0,3}[>|<]/.test(line);
+    if (!text) paragraph = undefined;
+    else paragraph ??= i;
   }
   const symbols: SymbolRow[] = [];
   const open: Array<{level: number}> = [];
@@ -712,6 +779,7 @@ export function scanFile(text: string, language: Language): ScannedFacts {
   if (!scan) return facts;
   facts.scan = scan;
   facts.imports = scanImports(code, scan, lines.starts);
+  if (scan === 'py') markPythonLoadTime(code, lines, facts.imports);
   const outline = scanSymbols(code, scan, lines, unit);
   facts.symbols = outline.symbols;
   if (outline.found > outline.symbols.length) facts.symbolsFound = outline.found;

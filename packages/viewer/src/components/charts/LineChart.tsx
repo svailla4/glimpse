@@ -6,13 +6,13 @@ import type * as C from '@glimpse/catalog';
 import {bisectLeft} from 'd3-array';
 import {area, line} from 'd3-shape';
 import {useId, useMemo, useState, type JSX} from 'react';
-import {Empty, catVar, fmtNum, useSelection, type DataState, type GlView} from '../../kit/index.ts';
+import {catVar, fmtNum, useSelection, type DataState, type GlView} from '../../kit/index.ts';
 import css from './LineChart.module.css';
 import {
-  DEFAULT_HEIGHT, Figure, Legend, Note, OTHER, RowsGate, ValueGrid, clip, clipName, count, entityOf, fillVar, fmtDay, fmtShortDay,
-  fmtValue, foldSeries, formatOf, inspect, isOtherKey, kit, label, linearAxis, logAxis, matches, notes, num, pick, roleY, say, slotKind, textWidth,
-  tickFormat, time, timeAxis, useChartBox, useDrawIn, useMarkNav, useSlots, useSlotter, widest, words, type ArrowKey, type FieldInfo,
-  type LegendItem, type Mark, type Slotter, type ValueAxis,
+  DEFAULT_HEIGHT, Figure, Legend, MissReport, Note, OTHER, RowsGate, Unable, ValueGrid, checkField, checkFields, clip, clipName, count, entityOf,
+  fillVar, fmtDay, fmtShortDay, fmtValue, foldSeries, formatOf, inspect, isOtherKey, kit, label, linearAxis, logAxis, matches, missNote, notes, num,
+  pick, roleY, say, slotKind, textWidth, tickFormat, time, timeAxis, unfit, useChartBox, useDrawIn, useMarkNav, useSlots, useSlotter, widest,
+  type ArrowKey, type FieldInfo, type FieldMiss, type FieldSet, type LegendItem, type Mark, type Slotter, type Unfit, type ValueAxis,
 } from './chartkit/index.ts';
 
 type Mode = 'line' | 'area' | 'stacked' | 'pct';
@@ -34,27 +34,33 @@ interface Model {
   valueInfo?: FieldInfo;
   xInfo?: FieldInfo;
   bad: number;
+  /** Field names of the spec that the data does not have (drawn with the defaults instead). */
+  misses: FieldMiss[];
+  fields: FieldSet;
 }
 
 function buildModel(
   rows: Rows,
   fieldList: Field[] | undefined,
   roles: Roles | undefined,
-  opts: {x?: string; y?: string; series?: string; stacked: boolean},
+  opts: {x?: string; y?: string; series?: string; stacked: boolean; source?: string},
   slots: SurfaceMeta['slots'] | undefined,
   assign: Slotter,
-): Model | string {
+): Model | Unfit {
   const fields = inspect(rows, fieldList);
-  const yKeys = words(opts.y);
+  const misses: FieldMiss[] = [];
+  const xWanted = checkField(fields, 'x', opts.x, misses);
+  const yKeys = checkFields(fields, 'y', opts.y, misses);
+  const seriesWanted = checkField(fields, 'series', opts.series, misses);
   if (yKeys.length === 0) yKeys.push(...roleY(roles));
-  const xKey = pick(opts.x, roles?.x, roles?.date, fields.first('date', yKeys)?.key, fields.first('cat', yKeys)?.key, fields.first('num', yKeys)?.key);
+  const xKey = pick(xWanted, roles?.x, roles?.date, fields.first('date', yKeys)?.key, fields.first('cat', yKeys)?.key, fields.first('num', yKeys)?.key);
   if (yKeys.length === 0) {
     const fallback = pick(roles?.value, fields.first('num', [xKey])?.key);
     if (fallback) yKeys.push(fallback);
   }
-  if (!xKey || yKeys.length === 0) return 'no x and numeric field to draw';
+  if (!xKey || yKeys.length === 0) return unfit('no x and numeric field to draw', misses, fields, opts.source);
   const roleSeries = roles?.series && roles.series !== xKey ? roles.series : undefined;
-  let seriesKey = pick(opts.series, yKeys.length === 1 ? roleSeries : undefined);
+  let seriesKey = pick(seriesWanted, yKeys.length === 1 ? roleSeries : undefined);
   if (!seriesKey && yKeys.length === 1 && !roles) {
     // rows that repeat an x are one row per series: the first categorical field tells the series apart
     const candidate = fields.first('cat', [xKey, ...yKeys])?.key;
@@ -85,7 +91,7 @@ function buildModel(
     if (seriesKey) add(label(row[seriesKey]), row[yKeys[0]!]);
     else for (const key of yKeys) add(key, row[key]);
   }
-  if (points.length === 0) return `no numeric values in ${yKeys.map(key => `"${say(key, 40)}"`).join(', ')}`;
+  if (points.length === 0) return unfit(`no numeric values in ${yKeys.map(key => `"${say(key, 40)}"`).join(', ')}`, misses, fields, opts.source);
 
   const keys = [...xIndex.keys()];
   if (xType !== 'point') {
@@ -135,7 +141,7 @@ function buildModel(
   // layers instead of sitting on them as the largest shape.
   const rest = series.findIndex(s => isOtherKey(s.name));
   if (opts.stacked && rest > 0) series.unshift(...series.splice(rest, 1));
-  return {xType, xs, xLabels, series, valueInfo: fields.get(yKeys[0]!), xInfo, bad};
+  return {xType, xs, xLabels, series, valueInfo: fields.get(yKeys[0]!), xInfo, bad, misses, fields};
 }
 
 /**
@@ -403,12 +409,18 @@ function Plot(p: {id: string; rows: Rows; state: DataState<Rows>; skipped: numbe
   const slots = useSlots();
   const assign = useSlotter();
   const stacked = props.mode === 'stacked' || props.mode === 'pct';
+  const source = state.ds?.source;
   const model = useMemo(
-    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, series: props.series, stacked}, slots, assign),
-    [rows, state.fields, state.roles, props.x, props.y, props.series, stacked, slots, assign],
+    () => buildModel(rows, state.fields, state.roles, {x: props.x, y: props.y, series: props.series, stacked, source}, slots, assign),
+    [rows, state.fields, state.roles, props.x, props.y, props.series, stacked, source, slots, assign],
   );
-  if (typeof model === 'string') return <Empty message={`${model}${state.ds ? ` (${state.ds.source})` : ''}`} />;
-  return <Lines id={id} model={model} skipped={p.skipped} props={props} />;
+  if ('code' in model) return <Unable code={model.code} message={model.message} />;
+  return (
+    <>
+      <MissReport misses={model.misses} fields={model.fields} source={source} />
+      <Lines id={id} model={model} skipped={p.skipped} props={props} />
+    </>
+  );
 }
 
 function Lines(p: {id: string; model: Model; skipped: number; props: C.ViewProps<typeof C.LineChart>}): JSX.Element {
@@ -475,7 +487,7 @@ function Lines(p: {id: string; model: Model; skipped: number; props: C.ViewProps
 
   return (
     <>
-      <Note>{notes(p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.bad > 0 && `${count(model.bad, 'value')} skipped`, layout && layout.offScale > 0 && `${fmtNum(layout.offScale)} off the log scale`, openFrom !== undefined && 'last period still open')}</Note>
+      <Note>{notes(missNote(model.misses), p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.bad > 0 && `${count(model.bad, 'value')} skipped`, layout && layout.offScale > 0 && `${fmtNum(layout.offScale)} off the log scale`, openFrom !== undefined && 'last period still open')}</Note>
       <Figure
         name="LineChart"
         label={aria}

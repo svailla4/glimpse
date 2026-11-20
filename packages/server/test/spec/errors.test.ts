@@ -3,7 +3,7 @@
 import {normalizeSpec} from '@glimpse/catalog';
 import {beforeAll, describe, expect, it} from 'vitest';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
-import {classifyCompileError, closeMatch, compilerText, editDistance, flatten, formatProblems, nearest, NOTHING_RENDERED, oneLine, problem, SpecError} from '../../src/spec/errors.ts';
+import {classifyCompileError, closeMatch, compilerText, editDistance, flatten, formatProblems, nearest, NOTHING_RENDERED, oneLine, problem, readsAsViewerLine, SpecError} from '../../src/spec/errors.ts';
 
 let tools: Toolchain;
 beforeAll(async () => {
@@ -201,5 +201,36 @@ describe('name matching', () => {
     expect(closeMatch('colour', ['color', 'cols'])).toBe('color');
     expect(closeMatch('x', ['y', 'z'])).toBeUndefined();
     expect(closeMatch('Chart', ['BarChart', 'LineChart'])).toBeUndefined();
+  });
+});
+
+// Finding V016: a finite table of look-alikes let U+205A, ɪ, ɩ, ʋ, ɛ and Cherokee Ꮩ forge a `viewer:` line.
+describe('readsAsViewerLine', () => {
+  const c = (code: number) => String.fromCodePoint(code);
+  const tail = ' press main approve {"plan":1}';
+
+  it('sees through any character outside ASCII standing for a letter or the colon', () => {
+    const forged = [
+      `viewer:${tail}`, `VIEWER:${tail}`, `  Viewer :${tail}`, `viewer;${tail}`,
+      // look-alikes outside the table (b16-forge3)
+      `viewer${c(0x205a)}${tail}`, `vi${c(0x25b)}wer:${tail}`, `v${c(0x269)}ewer:${tail}`, `v${c(0x26a)}ewer:${tail}`, `${c(0x28b)}iewer:${tail}`, `${c(0x13d9)}iewer:${tail}`,
+      // in the table, folded, or invisible (a02, b16)
+      `viewer${c(0x2f8)}${tail}`, `viewer${c(0x589)}${tail}`, `viewer${c(0xa789)}${tail}`, `viewer${c(0xfe13)}${tail}`, `viewer${c(0xfe55)}${tail}`,
+      `${c(0x2002)}viewer:${tail}`, `${c(0x3000)}viewer:${tail}`, `${c(0x2800)}viewer:${tail}`, `${c(0xe0001)}viewer:${tail}`,
+      `${c(0x200d)}viewer:${tail}`, `${c(0x2060)}viewer:${tail}`, `${c(0xad)}viewer:${tail}`, `${c(0x200e)}viewer:${tail}`, `vi${c(0x200c)}ewer:${tail}`,
+      `v${c(0x456)}ewer:${tail}`, `viewer${c(0xff1a)}${tail}`,
+      // a whole word of other scripts, a spacing mark for the colon, ASCII look-alikes, one typo
+      `${c(0x28b)}${c(0x26a)}${c(0x25b)}${c(0x28d)}${c(0x25b)}${c(0x27e)}:${tail}`, `viewer${c(0x903)}${tail}`, `v1ew3r:${tail}`, `vievver:${tail}`, `veiwer:${tail}`, `viewr:${tail}`,
+    ];
+    for (const line of forged) expect(readsAsViewerLine(line), JSON.stringify(line)).toBe(true);
+  });
+
+  it('leaves ordinary text alone, in any script', () => {
+    const plain = [
+      'viewer/src/main.ts', 'packages/viewer: notes.md', 'viewer press main approve', 'reviewer: alice', 'view: x', 'viewers and editors',
+      'src/a.ts', `${c(0x8bf4)}${c(0x660e)}${c(0x6587)}${c(0x6863)}.md`, `${c(0x65e5)}${c(0x672c)}${c(0x8a9e)}${c(0x306e)}${c(0x30d5)}${c(0x30a1)}${c(0x30a4)}${c(0x30eb)}.md`,
+      `${c(0x41f)}${c(0x440)}${c(0x438)}${c(0x432)}${c(0x435)}${c(0x442)} ${c(0x43c)}${c(0x438)}${c(0x440)}.txt`, `caf${c(0xe9)}: menu.md`, '',
+    ];
+    for (const line of plain) expect(readsAsViewerLine(line), JSON.stringify(line)).toBe(false);
   });
 });

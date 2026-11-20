@@ -28,6 +28,38 @@ export interface ListNav {
 }
 
 const FIRST_PAINT = {width: 0, height: 420};
+const OVERSCAN = 8;
+/** Height of the faded bottom edge of a scroller (useScrollFade): a row under it is not in full view. */
+const EDGE = 16;
+/**
+ * A list this short mounts every row (finding V047): nothing it shows can depend on the virtual window being in step
+ * with the scroller, and 64 rows cost nothing to keep mounted.
+ */
+export const SMALL_LIST = 64;
+
+/**
+ * The virtual window follows the scroller's live position (V047). A position that changed without a scroll event
+ * (the browser clamping it after the plate grew, the scroller moved in the document) would leave the rows on screen
+ * unmounted until the next scroll. Whenever focus enters the list or the scroller changes size, a drift between the
+ * two is put right by replaying the scroll event the virtualizer listens to.
+ */
+function useFollowScroll(scrollRef: RefObject<HTMLDivElement | null>, offsetOf: () => number | null): void {
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const sync = () => {
+      const offset = offsetOf();
+      if (offset !== null && Math.abs(offset - element.scrollTop) > 1) element.dispatchEvent(new Event('scroll'));
+    };
+    element.addEventListener('focusin', sync);
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(sync) : undefined;
+    observer?.observe(element);
+    return () => {
+      element.removeEventListener('focusin', sync);
+      observer?.disconnect();
+    };
+  }, [scrollRef, offsetOf]);
+}
 
 export function useListNav({count, rowHeight, scrollRef, offsetTop = 0}: ListNavOptions): ListNav {
   const [activeState, setActiveState] = useState(0);
@@ -49,13 +81,16 @@ export function useListNav({count, rowHeight, scrollRef, offsetTop = 0}: ListNav
     count,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
-    overscan: 8,
+    overscan: count <= SMALL_LIST ? count : OVERSCAN,
     scrollMargin: offsetTop,
     scrollPaddingStart: offsetTop,
     initialRect: FIRST_PAINT,
     rangeExtractor,
     useFlushSync: false,
   });
+
+  const offsetOf = useCallback(() => virtualizer.scrollOffset, [virtualizer]);
+  useFollowScroll(scrollRef, offsetOf);
 
   const measured = useRef(rowHeight);
   useEffect(() => {
@@ -80,9 +115,13 @@ export function useListNav({count, rowHeight, scrollRef, offsetTop = 0}: ListNav
     (index: number) => {
       const next = Math.min(Math.max(0, index), Math.max(0, count - 1));
       setActiveState(next);
-      virtualizer.scrollToIndex(next, {align: 'auto'});
+      // A row already in full view stays where it is; any other is brought to the middle, clear of the faded edges.
+      const element = scrollRef.current;
+      const top = offsetTop + next * rowHeight;
+      const inView = element !== null && top >= element.scrollTop + offsetTop && top + rowHeight <= element.scrollTop + element.clientHeight - EDGE;
+      if (!inView) virtualizer.scrollToIndex(next, {align: 'center'});
     },
-    [count, virtualizer],
+    [count, virtualizer, scrollRef, offsetTop, rowHeight],
   );
 
   // focusTick re-runs the effect when the row that is already active is focused again.

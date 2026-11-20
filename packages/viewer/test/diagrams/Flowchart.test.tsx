@@ -2,7 +2,7 @@ import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {POSITIONS_KEY, configurePositionStorage} from '../../src/components/diagrams/edgekit/index.ts';
 import {buildPatch, buildSurface, renderExpress, renderSpec} from '../harness.tsx';
-import {click, drag, edgeOf, fakeStorage, focus, inside, key, lineOf, nodeIds, nodeOf, pointsOf, positionOf, stageOf, type FakeStorage} from './util.tsx';
+import {click, drag, edgeOf, fakeStorage, focus, inside, key, lineOf, nodeIds, nodeOf, pointsOf, positionOf, runsAlong, stageOf, viewOf, type FakeStorage} from './util.tsx';
 
 const GALLERY = 'Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429]); H --> DB[(Postgres)]; H -.-> C((cache))';
 const spec = (src: string, props = '') => `root=Page('T',[f])\nf=Flowchart('${src}'${props},title='Flow',size='l')`;
@@ -76,9 +76,10 @@ describe('Flowchart', () => {
   it('keeps the two edges of a cycle apart', async () => {
     const view = await ready('A --> B; B --> A');
     expect(lineOf(edgeOf(view, 'f', 'A->B'))).not.toBe(lineOf(edgeOf(view, 'f', 'B->A')));
-    const forth = pointsOf(lineOf(edgeOf(view, 'f', 'A->B')));
-    const back = pointsOf(lineOf(edgeOf(view, 'f', 'B->A')));
-    expect(back[0]![0]).toBe(forth[0]![0] + 8);
+    // The way back goes round the side in a corridor of its own: the two never share a stretch of line.
+    const forth = pointsOf(lineOf(edgeOf(view, 'f', 'A->B'))).map(([x, y]) => ({x, y}));
+    const back = pointsOf(lineOf(edgeOf(view, 'f', 'B->A'))).map(([x, y]) => ({x, y}));
+    expect(runsAlong(forth, back)).toBe(false);
   });
 
   it('shows a redline with the statement and column for a parse error', async () => {
@@ -202,3 +203,51 @@ describe('Flowchart', () => {
     expect(cell.querySelectorAll('[data-edge]')).toHaveLength(3);
   });
 });
+
+describe('Flowchart: opens readable (design rule D18, V005)', () => {
+  const zoomOf = (view: ReturnType<typeof renderExpress>) => Number.parseInt(view.cell('f').querySelector('button[aria-label="Zoom out"]')!.previousElementSibling!.textContent!, 10);
+  const LOGIN = 'Start([Open login page]) --> Form[Enter email and password]\\nForm --> Submit[Submit credentials]\\nSubmit --> Check{Credentials valid?}\\nCheck -->|yes| Session[Create session]\\nSession --> Done([Signed in])\\nCheck -->|no| Fail[Show error and count the attempt]\\nFail -->|retry| Form';
+  const STATES = 'Start((start)) -->|show with root=| Created\\nCreated -->|show without root=| Patched\\nPatched -->|show without root=| Patched\\nCreated -->|show with root=| Replaced\\nPatched -->|show with root=| Replaced\\nReplaced -->|show without root=| Patched\\nCreated -->|removed| Deleted\\nPatched -->|removed| Deleted\\nReplaced -->|removed| Deleted';
+
+  it('grows an unsized plate to show a tall chart whole at 100% instead of shrinking its 11 px labels', async () => {
+    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart('${LOGIN}',dir='TB',title='Login')`, {size: {width: 618, height: 600}});
+    await screen.findByRole('img', {name: /^Flowchart/});
+    expect(zoomOf(view)).toBe(100);
+    const stage = view.cell('f').querySelector<HTMLElement>('svg[role="img"]')!.parentElement!;
+    expect(Number.parseFloat(stage.style.height)).toBeGreaterThan(420);
+  });
+
+  // 724 px: the span=7 plate of a 1440 px page, where the chart opened at 91% with only the 'D' of 'Deleted' on the
+  // stage and the footer said '5 of 5 in view'.
+  it.each([560, 724])('opens a chart too wide for its %s px plate with readable labels, on a part that cuts no node, counting the nodes it shows', async width => {
+    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart('${STATES}',dir='LR',title='States')`, {size: {width, height: 600}});
+    await screen.findByRole('img', {name: /^Flowchart/});
+    expect(zoomOf(view)).toBeGreaterThanOrEqual(91);
+    const stage = stageOf(view, 'f');
+    const {x, y, k} = viewOf(stage);
+    // An unsized plate is as tall as the chart needs: its height is set on the stage's box.
+    const height = Number.parseFloat(stage.parentElement!.style.height);
+    expect(height).toBeGreaterThan(0);
+    let shown = 0;
+    for (const node of view.cell('f').querySelectorAll('[data-node]')) {
+      // The ring the shell draws around every node is 4 px out on each side.
+      const ring = node.lastElementChild!;
+      const at = positionOf(node);
+      const [left, right] = [at.x * k + x, (at.x + Number(ring.getAttribute('width')) - 8) * k + x];
+      const [top, bottom] = [at.y * k + y, (at.y + Number(ring.getAttribute('height')) - 8) * k + y];
+      const cut = (left < -0.5 && right > 0.5) || (left < width - 0.5 && right > width + 0.5);
+      expect(cut, `${node.getAttribute('data-node')} is cut at the edge of the stage`).toBe(false);
+      expect((top < -0.5 && bottom > 0.5) || (top < height - 0.5 && bottom > height + 0.5), `${node.getAttribute('data-node')} is cut at the top or bottom`).toBe(false);
+      if (left >= -0.5 && right <= width + 0.5 && top >= -0.5 && bottom <= height + 0.5) shown++;
+    }
+    expect(shown).toBeLessThan(5);
+    expect(view.cell('f').querySelector('[data-in-view]')!.textContent).toBe(`${shown} of 5 in view`);
+  });
+
+  it('draws a long edge label on two lines', async () => {
+    const view = await ready('A -->|show with id and spec, no root| B');
+    const label = view.cell('f').querySelector('[data-edge-label]')!;
+    expect([...label.querySelectorAll('tspan')].map(t => t.textContent)).toEqual(['show with id and', 'spec, no root']);
+  });
+});
+

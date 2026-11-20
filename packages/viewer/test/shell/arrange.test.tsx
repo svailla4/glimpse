@@ -2,7 +2,7 @@
 import {act, fireEvent, screen} from '@testing-library/react';
 import type {ReactNode} from 'react';
 import {describe, expect, it} from 'vitest';
-import {ARRANGE_STORAGE_KEY, ArrangeStoreContext, arrangeKey, createArrangeStore, type ArrangeStore} from '../../src/kit/arrange.tsx';
+import {ARRANGE_STORAGE_KEY, ArrangeStoreContext, arrangeKey, createArrangeStore, rebalance, relocate, type ArrangeStore} from '../../src/kit/arrange.tsx';
 import {buildPatch, buildSurface, renderExpress, type RenderedSpec} from '../harness.tsx';
 import {fakeStorage} from './scripted.ts';
 
@@ -122,26 +122,234 @@ describe('arranging the plates of a container', () => {
     expect(stored(storage)).toEqual({});
   });
 
-  it('Alt+Shift+Left/Right changes the span, from the spec span or the full row, within 1..12', async () => {
+  it('Alt+Shift+Left/Right changes the span, from the spec span or the full row, within 1..12, and the row stays full', async () => {
     const {view, storage} = mount();
     await view.settle();
     alt(header(view, 'a'), 'ArrowLeft', true);
     expect(view.cell('a').getAttribute('data-span')).toBe('5');
     expect(view.cell('a').style.getPropertyValue('--gl-span')).toBe('5');
-    expect(stored(storage)).toEqual({[KEY]: {root: {order: [], span: {a: 5}}}});
+    // the row-mate takes the column: 5 + 7, no hole (D17, V037)
+    expect(view.cell('b').getAttribute('data-span')).toBe('7');
+    expect(stored(storage)).toEqual({[KEY]: {root: {order: [], span: {a: 5, b: 7}}}});
     expect(header(view, 'a').querySelector('[role="status"]')?.textContent).toBe('Span 5 of 12');
     alt(header(view, 'a'), 'ArrowRight', true);
     alt(header(view, 'a'), 'ArrowRight', true);
     expect(view.cell('a').getAttribute('data-span')).toBe('7');
-    // a cell without a span is the full row: narrowing starts from 12
+    expect(view.cell('b').getAttribute('data-span')).toBe('5');
+    // a cell without a span is the full row: it cannot get wider, and narrowing starts from 12
     alt(header(view, 'c'), 'ArrowRight', true);
-    expect(view.cell('c').getAttribute('data-span')).toBe('12');
+    expect(view.cell('c').getAttribute('data-span')).toBeNull();
+    expect(header(view, 'c').querySelector('[role="status"]')?.textContent).toBe('Span 12 of 12');
     alt(header(view, 'c'), 'ArrowLeft', true);
     expect(view.cell('c').getAttribute('data-span')).toBe('11');
     for (let i = 0; i < 20; i++) alt(header(view, 'c'), 'ArrowLeft', true);
     expect(view.cell('c').getAttribute('data-span')).toBe('1');
     // order is untouched by resizing
     expect(cells(view).map(([, order]) => order)).toEqual(['', '', '', '']);
+  });
+
+  it('rebalance keeps every row full: what a plate gains or gives up, its row-mates give or take (D17, V037)', () => {
+    const span = (spans: Record<string, number>) => (id: string) => spans[id] ?? 12;
+    const overview = {kpis: 12, map: 7, langs: 5, deps: 8, side: 4};
+    const order = ['kpis', 'map', 'langs', 'deps', 'side'];
+    // the verifier's step: "Where the code is" one column wider. Languages gives the column and stays beside it.
+    expect(rebalance(order, span(overview), 'map', 8, 12)).toEqual({map: 8, langs: 4});
+    // dragged 300 px narrower: Languages takes the columns, no ragged gap at the right
+    expect(rebalance(order, span(overview), 'map', 4, 12)).toEqual({map: 4, langs: 8});
+    // a row-mate gives columns down to a quarter; past that it moves down to a row it fills, and the plate takes
+    // the row
+    expect(rebalance(order, span(overview), 'map', 9, 12)).toEqual({map: 9, langs: 3});
+    expect(rebalance(order, span(overview), 'map', 10, 12)).toEqual({map: 12, langs: 12});
+    // three plates: the last one moves down, the one that stays gets what it leaves over
+    expect(rebalance(['a', 'b', 'c'], span({a: 4, b: 4, c: 4}), 'a', 7, 12)).toEqual({a: 7, b: 5, c: 12});
+    // a hole in the row is filled first
+    expect(rebalance(['a', 'b'], span({a: 4, b: 4}), 'a', 7, 12)).toEqual({a: 7});
+    // a plate alone in its row: narrowing pulls the next plate up when that one is alone too
+    expect(rebalance(['a', 'b'], span({}), 'a', 8, 12)).toEqual({a: 8, b: 4});
+    expect(rebalance(['a', 'b', 'c'], span({b: 6, c: 6}), 'a', 8, 12)).toEqual({a: 8});
+    // and nothing for a span it already has, or for an id that is not a child
+    expect(rebalance(order, span(overview), 'map', 7, 12)).toEqual({});
+    expect(rebalance(order, span(overview), 'nope', 3, 12)).toEqual({});
+    // every row of every result is full or a single plate
+    for (const [id, to] of [['map', 1], ['map', 11], ['langs', 9], ['deps', 2], ['side', 12], ['kpis', 6]] as const) {
+      const next = {...overview, ...rebalance(order, span(overview), id, to, 12)};
+      let used = 0;
+      const rows: number[] = [];
+      for (const other of order) {
+        const s = next[other as keyof typeof next];
+        if (used + s > 12) { rows.push(used); used = 0; }
+        used += s;
+      }
+      rows.push(used);
+      expect(rows.filter(sum => sum !== 12), `${id} -> ${to}`).toEqual(id === 'kpis' ? [6] : []);
+    }
+  });
+
+  it('relocate keeps every row full when a plate moves to another row (D17)', () => {
+    const overview: Record<string, number> = {kpis: 12, map: 7, langs: 5, deps: 8, side: 4, activity: 6, hot: 6, pkgs: 12};
+    const order = Object.keys(overview);
+    const span = (spans: Record<string, number>) => (id: string) => spans[id] ?? 12;
+    const natural = (id: string) => overview[id];
+    /** Row sums of an order packed the way the grid packs it. */
+    const sums = (ids: readonly string[], spans: Record<string, number>, tracks = 12) => {
+      const rows: number[] = [];
+      let used = tracks;
+      for (const id of ids) {
+        const s = spans[id] ?? 12;
+        if (used + s > tracks) { rows.push(0); used = 0; }
+        rows[rows.length - 1]! += s;
+        used += s;
+      }
+      return rows;
+    };
+
+    // The verifier's drag: Hotspots dropped on the left of the module graph joins that row, which shares its 12
+    // columns out in proportion; Activity, left alone, takes its whole row. Before: hot alone (6 empty columns), then
+    // deps + side, then activity alone (6 empty columns).
+    const dropped = relocate(order, span(overview), 'hot', 3, 12, 'deps', natural);
+    expect(dropped).toEqual({order: ['kpis', 'map', 'langs', 'hot', 'deps', 'side', 'activity', 'pkgs'], span: {hot: 4, deps: 5, side: 3, activity: 12}});
+    expect(sums(dropped.order, {...overview, ...dropped.span})).toEqual([12, 12, 12, 12, 12]);
+    // on its right: the same row, in that order
+    expect(relocate(order, span(overview), 'hot', 5, 12, 'side', natural).span).toEqual({deps: 5, side: 3, hot: 4, activity: 12});
+    // above or below a plate that has a full row of its own, it gets a full row of its own too
+    expect(relocate(order, span(overview), 'hot', 7, 12, 'pkgs', natural)).toEqual({order: ['kpis', 'map', 'langs', 'deps', 'side', 'activity', 'pkgs', 'hot'], span: {activity: 12, hot: 12}});
+
+    // The keyboard: Alt+ArrowUp twice. The first step stays inside the row (nothing changes but the order); the
+    // second steps over side into the graph's row. Before: deps alone (4 empty columns), hot + side, activity alone.
+    let spans = {...overview};
+    let ids: readonly string[] = order;
+    const step = (id: string, by: number) => {
+      const next = relocate(ids, span(spans), id, ids.indexOf(id) + by, 12, undefined, natural);
+      spans = {...spans, ...next.span};
+      ids = next.order;
+      return next.span;
+    };
+    expect(step('hot', -1)).toEqual({});
+    expect(step('hot', -1)).toEqual({deps: 5, hot: 4, side: 3, activity: 12});
+    expect(ids.slice(3, 7)).toEqual(['deps', 'hot', 'side', 'activity']);
+    expect(sums(ids, spans)).toEqual([12, 12, 12, 12, 12]);
+    // and back down: the plates get their spec spans again
+    expect(step('hot', 1)).toEqual({});
+    expect(step('hot', 1)).toEqual({deps: 8, side: 4, hot: 6, activity: 6});
+    expect(ids).toEqual(order);
+    // Up to the top, row by row: each row it passes through shares out and gets its spans back after it.
+    for (let i = 0; i < 6; i++) step('hot', -1);
+    expect(ids).toEqual(['hot', 'kpis', 'map', 'langs', 'deps', 'side', 'activity', 'pkgs']);
+    expect([spans.map, spans.langs, spans.deps, spans.side, spans.activity, spans.hot]).toEqual([7, 5, 8, 4, 12, 12]);
+
+    // Every move of every plate, next to either neighbour, leaves every row full.
+    for (const id of order) {
+      for (let to = 0; to < order.length; to++) {
+        const rest = order.filter(other => other !== id);
+        for (const beside of [undefined, rest[to - 1], rest[to]]) {
+          const moved = relocate(order, span(overview), id, to, 12, beside, natural);
+          expect(sums(moved.order, {...overview, ...moved.span}).filter(sum => sum !== 12), `${id} -> ${to} beside ${beside}`).toEqual([]);
+        }
+      }
+    }
+
+    // A grid of equal tracks reflows as before: nothing changes but the order, and its short last row stays.
+    expect(relocate(['g1', 'g2', 'g3', 'g4'], () => 1, 'g2', 3, 3)).toEqual({order: ['g1', 'g3', 'g4', 'g2'], span: {}});
+    // A plate leaving a full row for the short last one: both rows end full.
+    const grid = relocate(['a', 'b', 'c', 'd'], span({a: 1, b: 1, c: 1, d: 2}), 'c', 3, 3);
+    expect(grid).toEqual({order: ['a', 'b', 'd', 'c'], span: {a: 2}});
+    // A row that cannot give each plate a quarter breaks in two, never between the plate and its neighbour.
+    const crowded = relocate(['a', 'b', 'c', 'd', 'e'], span({a: 3, b: 3, c: 3, d: 3, e: 12}), 'e', 2, 12, 'b');
+    expect(crowded.order).toEqual(['a', 'b', 'e', 'c', 'd']);
+    expect(sums(crowded.order, {a: 3, b: 3, c: 3, d: 3, e: 12, ...crowded.span})).toEqual([12, 12]);
+    // nothing for a move that goes nowhere, or for an id that is not a child
+    expect(relocate(order, span(overview), 'map', 1, 12)).toEqual({order, span: {}});
+    expect(relocate(order, span(overview), 'nope', 1, 12)).toEqual({order, span: {}});
+  });
+
+  it('a plate dragged or stepped into another row joins it and every row stays full; stepping back restores the spec (D17)', async () => {
+    const spec = `root=Page('T',[map,langs,deps,side,activity,hot,pkgs])
+map=Plate('Map',[Text('m')],span=7)
+langs=Plate('Langs',[Text('l')],span=5)
+deps=Plate('Deps',[Text('d')],span=8)
+side=Plate('Side',[Text('s')],span=4)
+activity=Plate('Activity',[Text('a')],span=6)
+hot=Plate('Hot',[Text('h')],span=6)
+pkgs=Plate('Packages',[Text('p')])`;
+    const plates = ['map', 'langs', 'deps', 'side', 'activity', 'hot', 'pkgs'];
+    /** [id, span] of the plates in the order the page shows them (the DOM follows the visual order). */
+    const shown = (view: RenderedSpec) => [...view.container.querySelectorAll<HTMLElement>('.gl-cell[data-id]')]
+      .map(cell => cell.getAttribute('data-id')!)
+      .filter(id => plates.includes(id))
+      .map(id => [id, Number(view.cell(id).getAttribute('data-span') ?? 12)] as const);
+    const rows = (view: RenderedSpec) => {
+      const out: string[][] = [];
+      let used = 12;
+      for (const [id, span] of shown(view)) {
+        if (used + span > 12) { out.push([]); used = 0; }
+        out.at(-1)!.push(`${id} ${span}`);
+        used += span;
+      }
+      return out;
+    };
+    const mounted = mount(spec);
+    const {view} = mounted;
+    // The cells laid out on a 960 px grid of 80 px columns and 100 px rows, from their order and spans (after the
+    // harness installed its own layout).
+    const original = Element.prototype.getBoundingClientRect;
+    const box = (left: number, top: number, width: number, height: number) =>
+      ({left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({})}) as DOMRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      if (this.classList.contains('gl-grid12')) return box(0, 0, 960, 1000);
+      const id = this.getAttribute('data-id');
+      if (!this.classList.contains('gl-cell') || !id || !plates.includes(id)) return original.call(this);
+      let row = 0;
+      let used = 0;
+      for (const [other, span] of shown(view)) {
+        if (used + span > 12) { row++; used = 0; }
+        if (other === id) return box(used * 80, row * 100, span * 80, 100);
+        used += span;
+      }
+      return box(0, 0, 0, 0);
+    };
+    try {
+      await view.settle();
+      expect(rows(view)).toEqual([['map 7', 'langs 5'], ['deps 8', 'side 4'], ['activity 6', 'hot 6'], ['pkgs 12']]);
+
+      // Hotspots dragged onto the left half of the graph's plate (row 2)
+      fireEvent.pointerDown(header(view, 'hot'), {button: 0, clientX: 600, clientY: 210, pointerType: 'mouse'});
+      fireEvent.pointerMove(window, {clientX: 100, clientY: 150});
+      expect(document.querySelector<HTMLElement>('.gl-drop-marker')!.style.height).toBe('100px');
+      fireEvent.pointerUp(window);
+      expect(rows(view)).toEqual([['map 7', 'langs 5'], ['hot 4', 'deps 5', 'side 3'], ['activity 12'], ['pkgs 12']]);
+
+      act(() => mounted.store.reset(KEY));
+      expect(rows(view)).toEqual([['map 7', 'langs 5'], ['deps 8', 'side 4'], ['activity 6', 'hot 6'], ['pkgs 12']]);
+
+      // Alt+ArrowUp twice: past activity, then past side into the graph's row
+      header(view, 'hot').focus();
+      alt(header(view, 'hot'), 'ArrowUp');
+      expect(rows(view)).toEqual([['map 7', 'langs 5'], ['deps 8', 'side 4'], ['hot 6', 'activity 6'], ['pkgs 12']]);
+      alt(header(view, 'hot'), 'ArrowUp');
+      expect(rows(view)).toEqual([['map 7', 'langs 5'], ['deps 5', 'hot 4', 'side 3'], ['activity 12'], ['pkgs 12']]);
+      expect(header(view, 'hot').querySelector('[role="status"]')?.textContent).toBe('Position 4 of 7');
+      // and back: the spec layout again, with nothing left to remember
+      alt(header(view, 'hot'), 'ArrowDown');
+      alt(header(view, 'hot'), 'ArrowDown');
+      expect(rows(view)).toEqual([['map 7', 'langs 5'], ['deps 8', 'side 4'], ['activity 6', 'hot 6'], ['pkgs 12']]);
+      expect(stored(mounted.storage)).toEqual({});
+    } finally {
+      Element.prototype.getBoundingClientRect = original;
+    }
+  });
+
+  it('a moved plate moves in the DOM too: the focus order and the plate numbers follow what the person sees (V049)', async () => {
+    const {view} = mount();
+    await view.settle();
+    const order = () => [...view.container.querySelectorAll<HTMLElement>('.gl-grid12 > * .gl-cell, .gl-grid12 > .gl-cell')].map(cell => cell.getAttribute('data-id')).filter(id => ['a', 'b', 'c', 'note'].includes(id!));
+    expect(order()).toEqual(['a', 'b', 'c', 'note']);
+    const head = header(view, 'c');
+    head.focus();
+    alt(head, 'ArrowUp');
+    await view.settle();
+    expect(order()).toEqual(['a', 'c', 'b', 'note']);
+    // the header that was moved keeps the focus, so the next Alt+Arrow moves it on
+    expect(document.activeElement).toBe(header(view, 'c'));
   });
 
   it('ignores keys without Alt, with other modifiers, and keys pressed inside the header controls', async () => {
@@ -171,8 +379,11 @@ describe('arranging the plates of a container', () => {
     expect(marker.style.height).toBe('1px');
     expect(marker.style.width).toBe('960px');
     expect(view.cell('c').hasAttribute('data-dragging')).toBe(true);
+    // the tooltips of the views it passes over stay down meanwhile (kit.css, V049)
+    expect(document.documentElement.hasAttribute('data-gl-arranging')).toBe(true);
     expect(storage.writes).toEqual([]);
     fireEvent.pointerUp(window);
+    expect(document.documentElement.hasAttribute('data-gl-arranging')).toBe(false);
     expect(document.querySelector('.gl-drop-marker')).toBeNull();
     expect(view.cell('c').hasAttribute('data-dragging')).toBe(false);
     expect(stored(storage)[KEY].root.order).toEqual(['c', 'a', 'b', 'note']);
@@ -234,15 +445,18 @@ describe('arranging the plates of a container', () => {
     // the fake container is 960 px wide with no gap: a column is 80 px
     fireEvent.pointerMove(window, {clientX: 330});
     expect(view.cell('a').getAttribute('data-span')).toBe('4');
+    expect(view.cell('b').getAttribute('data-span')).toBe('8');
     expect(edge.textContent).toBe('4 / 12 COL');
+    // the whole row: the row-mate gets a row of its own, which it fills
     fireEvent.pointerMove(window, {clientX: 5000});
-    expect(view.cell('a').getAttribute('data-span')).toBe('12');
+    expect([view.cell('a').getAttribute('data-span'), view.cell('b').getAttribute('data-span')]).toEqual(['12', '12']);
+    // every step starts from where the drag started: back at 6 + 6 first, then 1 + 11
     fireEvent.pointerMove(window, {clientX: -50});
-    expect(view.cell('a').getAttribute('data-span')).toBe('1');
+    expect([view.cell('a').getAttribute('data-span'), view.cell('b').getAttribute('data-span')]).toEqual(['1', '11']);
     fireEvent.pointerMove(window, {clientX: 720});
     fireEvent.pointerUp(window);
     expect(edge.hasAttribute('data-resizing')).toBe(false);
-    expect(stored(storage)).toEqual({[KEY]: {root: {order: [], span: {a: 9}}}});
+    expect(stored(storage)).toEqual({[KEY]: {root: {order: [], span: {a: 9, b: 3}}}});
     fireEvent.pointerMove(window, {clientX: 100});
     expect(view.cell('a').getAttribute('data-span')).toBe('9');
   });
@@ -368,9 +582,11 @@ p2=Plate('P two',[Text('x')])`;
     });
     expect([view.cell('s1').style.order, view.cell('s2').style.order]).toEqual(['1', '0']);
 
-    // a Grid snaps spans to its own tracks, a Row to flex shares, both starting from 1
+    // a Grid snaps spans to its own tracks, a Row to flex shares, both starting from 1. In a full row of one-track
+    // plates the last one moves down to a row it fills (g1 and g3 come first in the visual order now)
     alt(header(view, 'g1'), 'ArrowRight', true);
     expect(view.cell('g1').getAttribute('data-span')).toBe('2');
+    expect(view.cell('g2').getAttribute('data-span')).toBe('3');
     for (let i = 0; i < 5; i++) alt(header(view, 'g1'), 'ArrowRight', true);
     expect(view.cell('g1').getAttribute('data-span')).toBe('3');
     alt(header(view, 'r2'), 'ArrowRight', true);

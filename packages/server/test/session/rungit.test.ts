@@ -2,10 +2,10 @@
 // die with the session.
 import {execFileSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {rm, writeFile} from 'node:fs/promises';
-import {join} from 'node:path';
+import {mkdir, rm, writeFile} from 'node:fs/promises';
+import {delimiter, dirname, join} from 'node:path';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
-import {createRunGit, GIT_MAX_BUFFER, SAFE_CONFIG} from '../../src/session/rungit.ts';
+import {createRunGit, filterOverrides, GIT_MAX_BUFFER, SAFE_CONFIG, withoutSubmoduleTrees} from '../../src/session/rungit.ts';
 import {tempRoot} from './fakes.ts';
 
 let dir: Awaited<ReturnType<typeof tempRoot>>;
@@ -95,6 +95,119 @@ describe('createRunGit', () => {
       expect(runs).toBe(true);
       expect(existsSync(marker)).toBe(false);
       expect(SAFE_CONFIG).toEqual(expect.arrayContaining(['core.fsmonitor=false', 'core.hooksPath=/dev/null']));
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  // Finding V017: a filter driver of the repository's own configuration ran on every `git status` and `git diff`.
+  it.skipIf(!posix)('a filter driver set by the repository never runs; git still reads the tree', async () => {
+    const repo = await tempRoot();
+    try {
+      const git = (...args: string[]) => execFileSync('git', ['-C', repo.root, ...args], {stdio: 'pipe', env: {...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null'}});
+      git('init', '-q');
+      git('config', 'user.name', 'Test');
+      git('config', 'user.email', ['test', 'example.invalid'].join('@'));
+      const marker = join(repo.root, 'filter-ran');
+      await writeFile(join(repo.root, 'a.txt'), 'one\n');
+      await writeFile(join(repo.root, '.gitattributes'), '* filter=evil\n');
+      git('add', '-A');
+      git('commit', '-q', '-m', 'first');
+      git('config', 'filter.evil.clean', `sh -c 'touch "${marker}"; cat'`);
+      git('config', 'filter.evil.smudge', `sh -c 'touch "${marker}"; cat'`);
+      git('config', 'filter.evil.required', 'true');
+      await writeFile(join(repo.root, 'a.txt'), 'one\ntwo\n');
+      // without the override git does run it, so the test can tell
+      git('diff', '--numstat');
+      const runs = existsSync(marker);
+      await rm(marker, {force: true});
+      const {runGit} = createRunGit(repo.root);
+      expect((await runGit(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', '.'])).toString()).toContain('a.txt');
+      expect((await runGit(['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--numstat', '-z', 'HEAD'])).toString()).toMatch(/^1\t0\ta\.txt/);
+      expect(runs).toBe(true);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  // Finding V017, re-attack b17: the superproject defines no driver; its submodule's own config (.git/modules/sub/config,
+  // part of the same untrusted .git directory) does, and `git status` / `git diff` ran it inside the submodule.
+  it.skipIf(!posix)('a filter driver of a submodule never runs either: git stays out of the submodules\' working trees', async () => {
+    const repo = await tempRoot();
+    const source = await tempRoot();
+    try {
+      const env = {...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null'};
+      const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], {stdio: 'pipe', env});
+      for (const root of [source.root, repo.root]) {
+        git(root, 'init', '-q');
+        git(root, 'config', 'user.name', 'Test');
+        git(root, 'config', 'user.email', ['test', 'example.invalid'].join('@'));
+      }
+      await writeFile(join(source.root, 's.txt'), 'one\n');
+      await writeFile(join(source.root, '.gitattributes'), '* filter=evil2\n');
+      git(source.root, 'add', '-A');
+      git(source.root, 'commit', '-q', '-m', 'sub');
+      await writeFile(join(repo.root, 'top.txt'), 'top\n');
+      git(repo.root, 'add', '-A');
+      git(repo.root, 'commit', '-q', '-m', 'top');
+      git(repo.root, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', source.root, 'sub');
+      git(repo.root, 'commit', '-q', '-m', 'add sub');
+      const marker = join(repo.root, 'sub-filter-ran');
+      git(join(repo.root, 'sub'), 'config', 'filter.evil2.clean', `sh -c 'touch "${marker}"; cat'`);
+      await writeFile(join(repo.root, 'sub', 's.txt'), 'one\ntwo\n');
+      await writeFile(join(repo.root, 'top.txt'), 'top\nmore\n');
+      // without Glimpse, a plain status runs the submodule's filter, so the test can tell
+      git(repo.root, 'status', '--porcelain');
+      const runs = existsSync(marker);
+      await rm(marker, {force: true});
+      const {runGit} = createRunGit(repo.root, env);
+      expect((await runGit(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', '.'])).toString()).toContain('top.txt');
+      expect((await runGit(['diff-files', '--name-only', '--relative', '-z'])).toString()).toContain('top.txt');
+      expect((await runGit(['--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff', '--no-textconv', '-M', '--relative', '--numstat', '-z', 'HEAD'])).toString()).toMatch(/^1\t0\ttop\.txt/);
+      expect(runs).toBe(true);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      await repo.cleanup();
+      await source.cleanup();
+    }
+  });
+
+  it('withoutSubmoduleTrees adds --ignore-submodules=dirty to the commands that look into submodules, and only to them', () => {
+    expect(withoutSubmoduleTrees(['status', '--porcelain', '--', '.'])).toEqual(['status', '--ignore-submodules=dirty', '--porcelain', '--', '.']);
+    expect(withoutSubmoduleTrees(['--literal-pathspecs', 'diff', '-U3', 'HEAD'])).toEqual(['--literal-pathspecs', 'diff', '--ignore-submodules=dirty', '-U3', 'HEAD']);
+    expect(withoutSubmoduleTrees(['-c', 'a.b=c', 'diff-files', '-z'])).toEqual(['-c', 'a.b=c', 'diff-files', '--ignore-submodules=dirty', '-z']);
+    expect(withoutSubmoduleTrees(['diff', '--ignore-submodules=all'])).toEqual(['diff', '--ignore-submodules=all']);
+    expect(withoutSubmoduleTrees(['log', '--', 'status'])).toEqual(['log', '--', 'status']);
+    expect(withoutSubmoduleTrees(['ls-files', '-o'])).toEqual(['ls-files', '-o']);
+  });
+
+  it('filterOverrides empties the drivers of the repository and leaves the user\'s own', () => {
+    const listing = ['local', 'filter.evil.clean\nsh -c x', 'global', 'filter.lfs.clean\ngit-lfs clean -- %f', 'worktree', 'filter.wt.process\nrun', 'local', 'filter.a=b.smudge\ncat', ''].join('\0');
+    expect(filterOverrides(listing, true)).toEqual([
+      'filter.evil.clean=', 'filter.evil.smudge=', 'filter.evil.process=', 'filter.evil.required=false',
+      'filter.wt.clean=', 'filter.wt.smudge=', 'filter.wt.process=', 'filter.wt.required=false',
+      'filter.a=b.clean=', 'filter.a=b.smudge=', 'filter.a=b.process=', 'filter.a=b.required=false',
+    ]);
+    expect(filterOverrides(['filter.x.clean\ncat', ''].join('\0'), false)).toEqual(['filter.x.clean=', 'filter.x.smudge=', 'filter.x.process=', 'filter.x.required=false']);
+    expect(filterOverrides('', true)).toEqual([]);
+  });
+
+  // Finding V019: a repository-committed node_modules/.bin/git ran on the first tool call.
+  it.skipIf(!posix)('git is found by its absolute path outside the project, never through a relative PATH entry', async () => {
+    const repo = await tempRoot();
+    try {
+      execFileSync('git', ['init', '-q', repo.root]);
+      const marker = join(repo.root, 'repo-git-ran');
+      await mkdir(join(repo.root, 'node_modules', '.bin'), {recursive: true});
+      await writeFile(join(repo.root, 'node_modules', '.bin', 'git'), `#!/bin/sh\ntouch '${marker}'\nexit 0\n`, {mode: 0o755});
+      const real = dirname(execFileSync('sh', ['-c', 'command -v git']).toString().trim());
+      const {runGit} = createRunGit(repo.root, {PATH: ['node_modules/.bin', join(repo.root, 'node_modules', '.bin'), real].join(delimiter)});
+      expect((await runGit(['rev-parse', '--is-inside-work-tree'])).toString().trim()).toBe('true');
+      expect(existsSync(marker)).toBe(false);
+      const only = createRunGit(repo.root, {PATH: 'node_modules/.bin'});
+      await expect(only.runGit(['version'])).rejects.toThrow(/git was not found on PATH/);
+      expect(existsSync(marker)).toBe(false);
     } finally {
       await repo.cleanup();
     }

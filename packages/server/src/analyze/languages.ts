@@ -149,10 +149,20 @@ export function isBinaryExt(path: string): boolean {
   return BINARY_EXT.has(extName(path));
 }
 
-const TEST_PATH = /(^|\/)(tests?|__tests__|spec|specs)\/|[._-](test|spec)\.[^/]+$|_test\.(go|py|dart|rb)$|(^|\/)test_[^/]+\.py$|[a-z0-9]Tests?\.(java|kt|cs|swift)$/;
+const TEST_PATH = /(^|\/)(tests?|__tests__)\/|[._-](test|spec)\.[^/]+$|_test\.(go|py|dart|rb)$|(^|\/)test_[^/]+\.py$|[a-z0-9]Tests?\.(java|kt|cs|swift)$/;
+/** Directories that hold a project's own source: a `spec/` beneath one is code (a spec parser), not RSpec. */
+const SOURCE_DIRS = new Set(['src', 'lib', 'source', 'sources', 'Sources', 'app', 'pkg', 'internal']);
 
+/**
+ * A test file: one in a tests/ or __tests__/ directory, one named as a test (a.test.ts, a_spec.rb, a_test.go,
+ * test_a.py, ATests.swift), or one in a spec/ directory that is not inside a source directory (RSpec and Jasmine keep
+ * specs at the project root; packages/server/src/spec/guard.ts is source, V010).
+ */
 export function isTestPath(path: string): boolean {
-  return TEST_PATH.test(path);
+  if (TEST_PATH.test(path)) return true;
+  const dirs = path.split('/').slice(0, -1);
+  const spec = dirs.findIndex(segment => segment === 'spec' || segment === 'specs');
+  return spec !== -1 && !dirs.slice(0, spec).some(segment => SOURCE_DIRS.has(segment));
 }
 
 const LOCKFILES = new Set([

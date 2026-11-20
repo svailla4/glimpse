@@ -77,7 +77,7 @@ export const Section = component('Section', {
 
 export const Grid = component('Grid', {
   family: 'layout', chunk: 'layout', tier: 'A',
-  doc: "Columns: equal by default, or a ratio like '2:1'. Wraps on narrow screens.",
+  doc: "Columns: equal, a ratio like '2:1', or the children's span= on 12 columns. Wraps on narrow screens.",
   example: "Grid([FileTree(),CodeView()],'1:2')",
 }, {
   children: p.children('Cells, left to right.'),
@@ -127,7 +127,7 @@ export const Split = component('Split', {
   start: p.child('Left/top pane.'),
   end: p.child('Right/bottom pane.'),
   ratio: opt(p.str("Initial ratio like '1:2'. Default '1:1'.")),
-  dir: opt(p.enum(['row', 'col'], 'Side by side or stacked.', {horizontal: 'row', h: 'row', column: 'col', vertical: 'col', v: 'col'})),
+  dir: minor(opt(p.enum(['row', 'col'], 'Side by side or stacked.', {horizontal: 'row', h: 'row', column: 'col', vertical: 'col', v: 'col'}))),
   size: minor(opt(p.enum(['s', 'm', 'l', 'xl', 'fill'], 'Height.', SIZE_ALIASES))),
   ...CELL,
 });
@@ -174,7 +174,7 @@ export const KeyValue = component('KeyValue', {
   doc: 'Definition grid; paths, numbers, lists and booleans format themselves.',
   example: "KeyValue({Language:'TypeScript',Entry:'src/main.ts',Tests:true})",
 }, {
-  data: p.data<KeyValueData>('KeyValueData', 'Object {Label:value} or [{k,v}].'),
+  data: p.data<KeyValueData>('KeyValueData', 'Object {Label:value}, or [{label,value}] ([{key,value}] and [{k,v}] work too).'),
   cols: opt(p.int('Columns 1-3. Default 1.', 1, 3)),
   ...FRAME,
 });
@@ -204,7 +204,7 @@ export const Steps = component('Steps', {
   example: "Steps([{title:'Add the middleware',status:'done'},{title:'Wire the router',status:'doing'},{title:'Tests'}],title='Plan')",
 }, {
   data: p.data<StepItem[]>('StepItem[]', '[{title,note?,status?,file?}]; status todo|doing|done|blocked|skipped.'),
-  current: opt(p.number('Number of the active step, counting from 1 as drawn. Usually omitted: give that step status doing.')),
+  current: minor(opt(p.number('Number of the active step, counting from 1 as drawn. Usually omitted: give that step status doing.'))),
   ...FRAME,
 });
 
@@ -216,7 +216,7 @@ export const Stat = component('Stat', {
   value: p.data<number | string>('number|string', 'Number or short string.'),
   label: opt(p.text('Caption.')),
   delta: opt(p.number('Signed change.')),
-  unit: opt(p.text('Unit after the value.')),
+  unit: minor(opt(p.text('Unit after the value.'))),
   spark: minor(opt(p.data<number[]>('number[]', 'Numbers for a sparkline.'))),
   format: minor(opt(p.enum(['num', 'compact', 'bytes', 'pct', 'duration'], 'Number format. Default compact.', {
     number: 'num', int: 'num', integer: 'num', full: 'num', short: 'compact', size: 'bytes', percent: 'pct', percentage: 'pct', time: 'duration', ms: 'duration',
@@ -229,7 +229,7 @@ export const Stats = component('Stats', {
   doc: 'KPI strip: hairline-separated Stat cells.',
   example: "Stats([{label:'Files',value:412},{label:'Tests',value:1866,delta:12}])",
 }, {
-  data: opt(p.data<StatItem[]>('StatItem[]', '[{label,value,unit?,delta?,spark?,format?,tone?}].', 'repo.kpis')),
+  data: opt(p.data<StatItem[]>('StatItem[]', '[{label,value,unit?,delta?,spark?,format?,tone?}] ([{key,value}] works too), or an object {Label:value}.', 'repo.kpis')),
   ...FRAME,
 });
 
@@ -254,7 +254,7 @@ export const DataTable = component('DataTable', {
   doc: 'Virtualized sortable table; columns come from the dataset unless given.',
   example: "DataTable('git.hotspots top=25','path commits:bar complexity:bar owner',sort='-score',title='Hotspots')",
 }, {
-  data: p.data<Rows>('Rows', 'Rows: source ref, $/path or inline list of objects.'),
+  data: p.data<Rows>('Rows', 'Rows: source ref, $/path or inline list of objects. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph.'),
   columns: opt(p.str("Shorthand 'key[:kind][=Label] ...'. Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
   sort: opt(p.str("'field' or '-field'.")),
   search: minor(opt(p.flag('Show the search box. Default: when more than 20 rows.'))),
@@ -326,7 +326,7 @@ export const BarChart = component('BarChart', {
   series: opt(p.str('Field that splits bars into series.')),
   mode: opt(p.enum(['grouped', 'stacked', 'pct'], 'Default grouped.', {group: 'grouped', stack: 'stacked', percent: 'pct', normalized: 'pct'})),
   dir: minor(opt(p.enum(['h', 'v'], 'Orientation. Default automatic.', {horizontal: 'h', row: 'h', vertical: 'v', column: 'v', col: 'v'}))),
-  limit: minor(opt(p.int('Bars kept; the rest fold into Other. Default 20.', 1, 200))),
+  limit: minor(opt(p.int('Bars kept (default 20); the rest fold into other when the measure adds up.', 1, 200))),
   ...FRAME,
 });
 
@@ -428,7 +428,7 @@ export const Graph = component('Graph', {
   data: opt(p.data<GraphData>('GraphData', '{nodes:[{id,label}],edges:[{from,to}],groups?}.', 'deps.modules')),
   dir: opt(p.enum(['LR', 'TB'], 'Flow direction. Default LR.', DIR_ALIASES)),
   focus: opt(p.text('Node id to centre; its neighbourhood is emphasised.')),
-  depth: opt(p.int('Hops shown around the focus. Default 1.', 1, 4)),
+  depth: minor(opt(p.int('Hops shown around the focus. Default 1.', 1, 4))),
   ...FRAME,
 });
 
@@ -479,7 +479,7 @@ export const CodeBlock = component('CodeBlock', {
   code: p.text('Source text.'),
   lang: opt(p.str('Language id (ts, py, go, rust, sql, json, sh ...).')),
   mark: opt(p.str("Lines to highlight: '3,7-9' (or 'L3,L7-9').")),
-  title: opt(p.text('Header label.')),
+  title: minor(opt(p.text('Header label.'))),
   ...CELL,
 });
 
@@ -530,7 +530,7 @@ export const Button = component('Button', {
   example: "Button('Approve plan',Event('approve',{plan:1}),'primary')",
 }, {
   label: p.text('Button text.'),
-  action: p.action("Event('name',{context})."),
+  action: p.action("Event('name',{context}), or a plain 'name' (read as Event('name'))."),
   tone: opt(p.enum(['default', 'primary', 'quiet'], 'Style.', {secondary: 'default', normal: 'default', ghost: 'quiet', subtle: 'quiet', link: 'quiet'})),
   ...CELL,
 });

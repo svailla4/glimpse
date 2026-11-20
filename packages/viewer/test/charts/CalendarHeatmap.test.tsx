@@ -13,10 +13,12 @@ describe('CalendarHeatmap', () => {
     expect(cells).toHaveLength(16);
     expect(cells.filter(el => el.getAttribute('data-step') === '0')).toHaveLength(6);
     expect(cells.filter(el => el.getAttribute('data-step') === '4').length).toBeGreaterThan(0);
-    // two and a half weeks of history are drawn on a quarter of calendar, at the largest cell size
+    // two and a half weeks of history on a 960 px plate: as much of the year before them as fills it, at 18 px
     expect(new Set(cells.map(el => el.getAttribute('width')))).toEqual(new Set(['18']));
-    expect(view.all('svg text').map(el => el.textContent)).toEqual(['Aug', 'Sep', 'Oct', 'Nov', 'M', 'W', 'F']);
+    expect(view.all('svg text').map(el => el.textContent)).toEqual(['2026', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'M', 'W', 'F']);
     expect(view.all('[data-chart-ramp] span')).toHaveLength(7);
+    // the key says which period its totals cover (V050)
+    expect(view.root.querySelector('[data-chart-summary]')?.textContent).toBe('40 commits · 10 active days · Nov 2026');
     expect(view.errors).toEqual([]);
   });
 
@@ -95,18 +97,23 @@ describe('CalendarHeatmap', () => {
       view.unmount();
       return out;
     };
-    // 53 weeks: 11 px cells need 711 px, 18 px cells 1,082 px
+    // 53 weeks: 11 px cells need 711 px, 24 px cells 1,400 px
     expect((await cellAt(720)).size).toBe(11);
     expect((await cellAt(960)).size).toBe(15);
+    // a full-width plate at 1440 px is used to its end (the integrator's 1440 px history)
+    const desk = await cellAt(1240);
+    expect(desk.size).toBe(20);
+    expect(desk.key).toBe(22 + 53 * 22 - 2);
     const wide = await cellAt(1700);
-    expect(wide.size).toBe(18);
+    expect(wide.size).toBe(24);
     // the legend ends at the last week column, not at the far side of the plate
-    expect(wide.key).toBe(22 + 53 * 20 - 2);
-    expect(wide.summary).toBe('730 n · 292 active days');
+    expect(wide.key).toBe(22 + 53 * 26 - 2);
+    expect(wide.summary).toBe('730 n · 292 active days · Jan – Dec 2026');
   });
 
   it('draws a short history on a quarter of calendar: the days before it are outlines, not zeros (F009)', async () => {
-    const view = await chart(`CalendarHeatmap($/d,'date','n')`, {rows: [{date: '2026-11-18', n: 3}, {date: '2026-11-20', n: 5}]});
+    const rows = [{date: '2026-11-18', n: 3}, {date: '2026-11-20', n: 5}];
+    const view = await chart(`CalendarHeatmap($/d,'date','n')`, {rows, size: {width: 300, height: 600}});
     // only the days of the data are marks
     expect(view.all('rect[data-i]')).toHaveLength(3);
     const before = view.root.querySelector('[data-before]')!;
@@ -114,6 +121,16 @@ describe('CalendarHeatmap', () => {
     expect(before.getAttribute('d')!.match(/M/g)).toHaveLength(87);
     expect(view.svg.getAttribute('aria-label')).toContain('2 active days of 3');
     view.unmount();
+    // a plate with room for more shows more of the year before, so it is not left half blank (integrator, 1440 px)
+    const wide = await chart(`CalendarHeatmap($/d,'date','n')`, {rows, size: {width: 960, height: 600}});
+    const gridRight = Number.parseFloat(wide.root.querySelector<HTMLElement>('[data-chart-key]')!.style.maxWidth);
+    expect(gridRight).toBeGreaterThan(960 - 30);
+    expect(wide.all('rect[data-i]')).toHaveLength(3);
+    // and never more than a year of calendar
+    const huge = await chart(`CalendarHeatmap($/d,'date','n')`, {rows, size: {width: 4000, height: 600}});
+    expect(huge.root.querySelector('[data-before]')!.getAttribute('d')!.match(/M/g)!.length).toBeLessThanOrEqual(53 * 7);
+    huge.unmount();
+    wide.unmount();
     const year = await chart(`CalendarHeatmap($/d,'date','n')`, {rows: Array.from({length: 365}, (_, i) => ({date: day(i), n: 1}))});
     // 1 January 2026 is a Thursday: the four days of its week before it
     expect(year.root.querySelector('[data-before]')!.getAttribute('d')!.match(/M/g)).toHaveLength(4);

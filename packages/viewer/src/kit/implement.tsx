@@ -22,9 +22,10 @@
 // - Styles. Component CSS Modules wrap their content in `@layer gl.components { ... }`; the build checks it.
 import {Component, Suspense, createContext, lazy, useContext, useMemo, useState, type FC, type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
-import {createComponentImplementation, type ReactCatalogComponent} from '@a2ui/react';
+import {createComponentImplementation, useA2uiSurface, type ReactCatalogComponent} from '@a2ui/react';
 import {hasFrame, type ChildToken, type Chunk, type ComponentDef, type PropMap, type ViewProps} from '@glimpse/catalog';
 import type {AnyComponentDef} from '@glimpse/catalog';
+import {CellReportContext, Subpart, useCellReporter} from './report.ts';
 
 /** What every family view receives. */
 export interface GlViewProps<D> {
@@ -171,6 +172,8 @@ class Quiet extends Component<{fallback: ReactNode; children: ReactNode}, {faile
  * `Fallback` renders while that chunk loads, when it has no such view yet, when it fails to load and when the
  * borrowed view throws, so your component never depends on another package being finished. Never import another
  * chunk's component file by path. Pass your own component `id`: actions and selection need a real component id.
+ * A borrowed view is a part of your component (decision D14): an empty state or a redline it draws is not reported as
+ * your component's state. Report what your component as a whole shows with your own <Empty> or useReportState().
  */
 export function borrowView<D = AnyComponentDef>(load: () => Promise<ViewModule>, name: string, Fallback: GlView<D>): GlView<D> {
   const Lazy = lazy(async () => {
@@ -180,9 +183,11 @@ export function borrowView<D = AnyComponentDef>(load: () => Promise<ViewModule>,
   return function Borrowed(props: GlViewProps<D>) {
     const fallback = <Fallback {...props} />;
     return (
-      <Quiet fallback={fallback}>
-        <Suspense fallback={fallback}><Lazy {...props} /></Suspense>
-      </Quiet>
+      <Subpart>
+        <Quiet fallback={fallback}>
+          <Suspense fallback={fallback}><Lazy {...props} /></Suspense>
+        </Quiet>
+      </Subpart>
     );
   };
 }
@@ -285,19 +290,23 @@ export function implement<N extends string, P extends PropMap>(
     const title: string = frameable && typeof props.title === 'string' ? props.title.trim() : '';
     const framed = title !== '';
     const cell = useMemo<CellInfo>(() => ({name: def.name, id, framed, flush: framed && flush}), [id, framed]);
+    // The component's state for the host (decision D14): what the states inside this cell draw, as one report.
+    const reporter = useCellReporter(def.name, id, useA2uiSurface()?.id);
     const body = (
       <CellContext.Provider value={cell}>
-        <FramedContext.Provider value={framed ? id : null}>
-          <AsideContext.Provider value={framed ? (header ?? false) : null}>
-            <ScopeContext.Provider value={framed ? (scope ?? false) : null}>
-              <Boundary id={id} name={def.name} Redline={Redline} watch={props} onRetry={retry}>
-                <Suspense fallback={<Drafting />}>
-                  <View id={id} props={props} child={child} />
-                </Suspense>
-              </Boundary>
-            </ScopeContext.Provider>
-          </AsideContext.Provider>
-        </FramedContext.Provider>
+        <CellReportContext.Provider value={reporter}>
+          <FramedContext.Provider value={framed ? id : null}>
+            <AsideContext.Provider value={framed ? (header ?? false) : null}>
+              <ScopeContext.Provider value={framed ? (scope ?? false) : null}>
+                <Boundary id={id} name={def.name} Redline={Redline} watch={props} onRetry={retry}>
+                  <Suspense fallback={<Drafting />}>
+                    <View id={id} props={props} child={child} />
+                  </Suspense>
+                </Boundary>
+              </ScopeContext.Provider>
+            </AsideContext.Provider>
+          </FramedContext.Provider>
+        </CellReportContext.Provider>
       </CellContext.Provider>
     );
     return (

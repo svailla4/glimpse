@@ -46,7 +46,7 @@ test('D1: a drill into a module has a way back, survives a reload, and a re-show
 test('D2: a hyphenated id is a view of its own, end to end', async ({page, glimpse}) => {
   const shown = await glimpse.call('show', {id: 'auth-flow', spec: "root=Page('Auth flow',[Text($/msg)])\n$/msg='first'"});
   expect(shown.isError, shown.text).toBe(false);
-  expect(shown.lines[0]).toMatch(/^ok auth-flow http:\/\/127\.0\.0\.1:\d+\/#\/auth-flow tab=none /);
+  expect(shown.lines[0]).toMatch(/^ok auth-flow #\/auth-flow tab=none /);
   expect(shown.text).not.toContain('fixed ');
   await openViewer(page, glimpse);
   await expectSurface(page, 'auth-flow');

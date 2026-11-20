@@ -2,6 +2,7 @@
 // JSON as untrusted: a line that is not an array of pairs becomes plain text, an unknown class becomes class 0.
 import {TOKEN_CLASSES, type TokenLine} from '@glimpse/catalog';
 import {memo, type ReactNode} from 'react';
+import {DirText} from '../../../kit/index.ts';
 import s from './lines.module.css';
 
 /** Character ranges [from, to) inside one line (word-level diff marks). */
@@ -65,7 +66,8 @@ export function Crumbs(p: {path: string}): ReactNode {
   const slash = p.path.lastIndexOf('/');
   return (
     <span className={s.crumbs} title={p.path} data-gl-path={p.path}>
-      {slash >= 0 ? <span className={s.dir}>{p.path.slice(0, slash + 1)}</span> : null}
+      {/* Decision D17: whole leading directories give way before one is cut ('…/processing/', not 'web_…'). */}
+      {slash >= 0 ? <DirText dir={p.path.slice(0, slash + 1)} /> : null}
       <span className={s.base}>{p.path.slice(slash + 1)}</span>
     </span>
   );

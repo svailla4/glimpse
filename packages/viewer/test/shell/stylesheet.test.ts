@@ -45,8 +45,47 @@ describe('kit.css', () => {
 });
 
 describe('base.css', () => {
-  it('does not stretch the plate of an unsized chart to the tallest neighbour of its row (F009)', () => {
-    const declarations = rule(read('styles/base.css'), ".gl-cell[data-family='chart']:not([data-size]) > :is(.gl-frame, .gl-body)");
-    expect(declarations).toBe('flex: 0 0 auto;');
+  it('does not stretch the plate of an unsized component to the tallest neighbour of its row (F009, the Cycles plate)', () => {
+    const css = read('styles/base.css');
+    // a chart never; tables and empty states not in a row (the page grid, a Grid, a Row say so with --gl-cell-fit)
+    expect(rule(css, ".gl-cell[data-family='chart']:not([data-size]) > :is(.gl-frame, .gl-body)")).toBe('flex: 0 0 auto;');
+    expect(rule(css, ".gl-cell:not([data-size]):not([data-family='layout']) > :is(.gl-frame, .gl-body)")).toBe('flex: calc(1 - var(--gl-fit)) 1 auto;');
+    expect(rule(css, '.gl-grid12')).toContain('--gl-cell-fit: 1');
+    for (const name of ['Grid', 'Row']) expect(read(`components/layout/${name}.module.css`), name).toContain('--gl-cell-fit: 1');
+    // the cell reads the flag of its container and clears it for what is nested
+    expect(rule(css, '.gl-cell')).toContain('--gl-fit: var(--gl-cell-fit, 0)');
+    expect(rule(css, '.gl-cell > :is(.gl-frame, .gl-body)')).toContain('--gl-cell-fit: initial');
+    // where the browser can, a plate other than a chart may still grow a little to keep one bottom line with its row
+    expect(css).toContain('@supports (max-height: calc-size(fit-content, size + 1px))');
+    expect(css).toContain('max-height: calc-size(fit-content, size + 64px + (1 - var(--gl-fit)) * 100000px);');
+  });
+
+  it('hides tooltips while a plate is moved or resized (V049)', () => {
+    expect(rule(read('styles/kit.css'), ':root[data-gl-arranging] .gl-tooltip')).toBe('display: none;');
+  });
+
+  it('keeps the spans the spec asked for in a window of 1100 px and wider (D17)', () => {
+    const css = read('styles/base.css');
+    // the page container is the window less 64 px of padding: 1036 px at 1100
+    expect(css).toContain('@container page (max-width: 999px)');
+    expect(css).not.toContain('max-width: 1099px');
+  });
+});
+
+describe('CommitList.module.css', () => {
+  // Finding V050: two ref chips read 'PYTHON/A2UI-…' and 'PYTHON/A2UI-…'.
+  it('elides a ref chip from its start, so the tail that tells refs apart stays', () => {
+    const css = read('components/table/CommitList.module.css');
+    expect(rule(css, '.ref')).toContain('direction: rtl');
+    expect(rule(css, '.ref > bdi')).toContain('direction: ltr');
+  });
+});
+
+describe('edgekit.module.css', () => {
+  // Finding V049: at 100% the overview inset covered a node and stayed opaque.
+  it('fades the overview inset while the pointer is over the diagram, and brings it back on the inset', () => {
+    const css = read('components/diagrams/edgekit/edgekit.module.css');
+    expect(rule(css, '.canvas:hover ~ .overview')).toMatch(/opacity: 0\.\d+/);
+    expect(rule(css, '.overview:hover')).toContain('opacity: 1');
   });
 });

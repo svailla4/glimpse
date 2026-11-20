@@ -121,15 +121,41 @@ describe('preset views', () => {
     expect(anchored.refs).toEqual(plain.refs);
   });
 
+  // Finding V050: a .diff file got a full-width one-node 'Imports and importers' graph.
+  it('file leaves out the imports graph for a file no import analysis reads', () => {
+    for (const path of ['eval/run_039/patch.diff', 'README.md', 'config/app.yaml', 'LICENSE', 'package-lock.json']) {
+      const {surface} = compiled(`file ${path}`);
+      expect(surface.components.find(c => c.id === 'near'), path).toBeUndefined();
+      expect(JSON.stringify(surface.components[0]), path).not.toContain('near');
+    }
+    for (const path of ['src/core/index.ts', 'tools/stats.py', 'cmd/main.go']) expect(compiled(`file ${path}`).surface.components.find(c => c.id === 'near'), path).toBeDefined();
+  });
+
   // F016: the Cycles / External tabs were the only unframed block of the overview.
   it('overview keeps its ten part names and frames the cycles and external tabs', () => {
     const {source, surface} = compiled('overview');
     expect(partsOf(source)).toEqual(['kpis', 'stack', 'notes', 'map', 'langs', 'deps', 'side', 'activity', 'hot', 'pkgs']);
     // `side` is still the Tabs (a patch of it keeps the frame); the plate around it is an inline child of root
-    expect(surface.components.find(c => c.id === 'side')).toMatchObject({component: 'Tabs', labels: ['Cycles', 'External']});
+    expect(surface.components.find(c => c.id === 'side')).toMatchObject({component: 'Tabs', labels: ['File cycles', 'External']});
     const plate = surface.components.find(c => c.component === 'Plate' && (c as unknown as {children: string[]}).children.includes('side'));
-    expect(plate).toMatchObject({title: 'Cycles and external packages', span: 4});
+    expect(plate).toMatchObject({title: 'File cycles and external packages', span: 4});
     expect((surface.components[0] as unknown as {children: string[]}).children).toContain(plate!.id);
+  });
+
+  // D16 (V011, V036): the overview put 'CYCLES 0' (files) above a module graph with red cycle marks, and a count of
+  // manifests under 'Modules'. The plates now say which cycles they list and what a Packages row is.
+  it('cycle plates say they list file cycles, and package tables say a row is a manifest', () => {
+    const overview = compiled('overview').surface.components;
+    expect(overview.find(c => c.id === 'side')).toMatchObject({labels: ['File cycles', 'External']});
+    expect(overview.find(c => c.id === 'pkgs')).toMatchObject({title: 'Packages', note: 'One row per manifest file.'});
+    expect(VIEW_BY_NAME.get('overview')!.doc).toContain('file cycles');
+    const deps = compiled('deps').surface.components;
+    expect(deps.find(c => c.id === 'cycles')).toMatchObject({title: 'File cycles', note: expect.stringMatching(/between files; the graph marks cycles between modules/)});
+    expect(deps.find(c => c.id === 'graph')).toMatchObject({component: 'Graph', title: 'Module dependencies'});
+    expect(VIEW_BY_NAME.get('deps')!.doc).toContain('file cycles');
+    expect(compiled('stack').surface.components.find(c => c.id === 'pkgs')).toMatchObject({note: 'One row per manifest file.'});
+    // no preset calls a count of manifests "modules"
+    for (const call of PRESET_CALLS) expect(presetSource(call).source, call).not.toMatch(/title='Modules'/);
   });
 
   // F069: "complexity" read as cyclomatic complexity, and test files topped the list unmarked.

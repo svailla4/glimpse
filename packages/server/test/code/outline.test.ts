@@ -1,8 +1,11 @@
+import {existsSync} from 'node:fs';
+import {join} from 'node:path';
 import type {SymbolRow} from '@glimpse/catalog';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
+import {createRepoIndex} from '../../src/analyze/index.ts';
 import {createCodeService} from '../../src/code/index.ts';
 import type {FileFacts} from '../../src/contracts.ts';
-import {makeFixtureRepo, type FixtureRepo} from '../fixtures/repo.ts';
+import {createRunGit, makeFixtureRepo, type FixtureRepo} from '../fixtures/repo.ts';
 import {makeContext} from '../git/context.ts';
 
 describe('code service: outline', () => {
@@ -30,6 +33,17 @@ describe('code service: outline', () => {
     expect(await code.outline('src/index.ts')).toEqual({path: 'src/index.ts', symbols: []});
     expect(await code.outline('README.md')).toEqual({path: 'README.md', symbols: []});
     expect(await code.outline('no/such/file.ts')).toEqual({path: 'no/such/file.ts', symbols: []});
+  });
+
+  it('reads a path spelled in another case as the file it names on disk (V071)', async () => {
+    const ctx = await makeContext(repo.root, {});
+    const code = createCodeService({...ctx, index: createRepoIndex(repo.root, createRunGit(repo.root), () => {})});
+    // macOS and Windows file systems usually ignore case, Linux ones do not: there the variant names no file
+    const insensitive = existsSync(join(repo.root, 'readme.md'));
+    const truth = await code.outline('README.md');
+    expect(truth.symbols.map(symbol => symbol.name).slice(0, 2)).toEqual(['shop', 'Layout']);
+    expect(await code.outline('readme.md')).toEqual(insensitive ? truth : {path: 'readme.md', symbols: []});
+    expect(await code.outline('SRC/Auth/Tokens.ts#L9')).toEqual(insensitive ? await code.outline('src/auth/tokens.ts') : {path: 'SRC/Auth/Tokens.ts', symbols: []});
   });
 
   it('drops malformed symbols and repairs incomplete ones', async () => {

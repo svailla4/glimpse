@@ -43,12 +43,12 @@ describe('diff.* sources on the fixture repository', () => {
   it('diff.stats: the working tree by default, staged, and a commit range', async () => {
     const wt = await run<StatItem[]>('diff.stats');
     expect(wt.data).toEqual(stats([3, 20, 1, 0, 0]));
-    expect(wt).toMatchObject({total: 5, summary: 'wt: 3 files +20 -1, 0 commits, 0 test files; fields label value'});
+    expect(wt).toMatchObject({total: 5, summary: 'wt: 3 files +20 -1, 0 commits, 0 test files changed; fields label value'});
     expect((await run<StatItem[]>('diff.stats wt')).data).toEqual(wt.data);
     expect((await run<StatItem[]>('diff.stats staged')).data).toEqual(stats([0, 0, 0, 0, 0]));
     const range = await run<StatItem[]>('diff.stats main..feature');
     expect(range.data).toEqual(stats([4, 29, 0, 3, 1]));
-    expect(range.summary).toBe('main..feature: 4 files +29 -0, 3 commits, 1 test file; fields label value');
+    expect(range.summary).toBe('main..feature: 4 files +29 -0, 3 commits, 1 test file changed; fields label value');
     // three dots and a longer way round give the same change
     expect((await run<StatItem[]>('diff.stats main...feature')).data).toEqual(range.data);
     // the last two commits: four files of the UI, then two tests and two auth files

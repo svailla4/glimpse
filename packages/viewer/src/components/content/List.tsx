@@ -5,7 +5,7 @@ import {List as ListDef, type EntityRef, type Field, type FieldKind, type Roles}
 import type * as C from '@glimpse/catalog';
 import {useMemo, useState} from 'react';
 import {DASH, Empty, PathText, Redline, fmtCell, fmtNum, toNumber, useDataset, useTooltip, type GlView} from '../../kit/index.ts';
-import {cellEntity, cellText, fileEntity, isRecord, looksLikePath, shapeMessage, toneMark} from './shared/data.ts';
+import {cellEntity, cellText, fileEntity, isRecord, looksLikePath, shapeHint, shapeMessage, toneMark} from './shared/data.ts';
 import {useEntityRows} from './shared/entityRow.ts';
 import {textOf} from './shared/inline.tsx';
 import {DataPlate} from './shared/Plate.tsx';
@@ -15,6 +15,8 @@ import styles from './List.module.css';
 const DEFAULT_LIMIT = 10;
 /** The catalog's upper bound for `limit`; "Show all" never draws more rows than this. */
 const MAX_ROWS = 200;
+/** A subtitle this short (a tag, a status, a language) is never cut: 'TODO' and not 'TO…'. */
+const SHORT_SUB = 12;
 
 interface Item {
   title: string;
@@ -132,7 +134,7 @@ export const ListView: GlView<typeof C.List> = ({id, props}) => {
     <DataPlate id={id} def={ListDef} title={textOf(props.title).trim() || undefined} note={textOf(props.note).trim() || undefined} state={state}>
       {data => {
         if (!Array.isArray(data)) return <Redline code="E_SHAPE" id={`List#${id}`} message={shapeMessage('a list of {title, sub?, value?, file?} or rows', data)} />;
-        if (items.length === 0) return <Empty message="no rows to list" />;
+        if (items.length === 0) return <Empty message={`no rows to list: List takes [{title, sub?, value?, file?}] or rows with a text field, got ${shapeHint(data)}`} code="W_SHAPE" />;
         return (
           <div className={styles.wrap}>
             <ol className={styles.list} ref={roving.ref} onKeyDown={roving.onKeyDown} style={{['--list-rank' as never]: rankWidth}}>
@@ -144,6 +146,7 @@ export const ListView: GlView<typeof C.List> = ({id, props}) => {
                     key={i}
                     className={styles.row}
                     data-entity={item.entity ? '' : undefined}
+                    data-where={item.file && item.file !== item.title ? '' : undefined}
                     data-selected={rows.isMarked(item.entity) || undefined}
                     {...roving.item(i)}
                     onClick={event => rows.onClick(item.entity, event)}
@@ -152,11 +155,22 @@ export const ListView: GlView<typeof C.List> = ({id, props}) => {
                     }}
                   >
                     <span className={styles.rank} aria-hidden="true">{i + 1}</span>
-                    <span className={styles.title} title={item.file ? undefined : item.title}>
+                    <span className={styles.title} title={item.file === item.title ? undefined : item.title}>
                       {tone ? <span className={styles.tone} style={{background: tone.color}} role="img" aria-label={tone.word} /> : null}
-                      {item.file ? <PathText file={item.file} label={item.title !== item.file ? item.title : undefined} /> : item.title}
+                      {item.file === item.title ? <PathText file={item.file} /> : <span className={styles.text}>{item.title}</span>}
                     </span>
-                    {item.sub ? <span className={styles.sub} title={item.sub}>{item.sub}</span> : null}
+                    {/* A row titled by its text (a TODO, a match) still says where it is: the location has its own box, which
+                        keeps the file name and line whole while the text gives way (V039, D12). */}
+                    {item.file && item.file !== item.title ? (
+                      <span className={styles.where} data-gl-list-where="">
+                        <PathText file={item.file} />
+                      </span>
+                    ) : null}
+                    {item.sub ? (
+                      <span className={styles.sub} title={item.sub} data-short={item.sub.length <= SHORT_SUB || undefined}>
+                        {item.sub}
+                      </span>
+                    ) : null}
                     {item.value ? (
                       <span
                         className={styles.value}

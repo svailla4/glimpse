@@ -4,7 +4,7 @@ import type * as C from '@glimpse/catalog';
 import {useMemo} from 'react';
 import {DataGate, Empty, Redline, useCatSlots, useDataset, type GlView} from '../../kit/index.ts';
 import {Chip} from './shared/Chip.tsx';
-import {cellText, isRecord, shapeMessage, toneMark} from './shared/data.ts';
+import {cellText, isRecord, shapeHint, shapeMessage, toneMark} from './shared/data.ts';
 import styles from './Chips.module.css';
 
 /** More chips than this are folded into one "+N" chip. */
@@ -38,7 +38,7 @@ export const ChipsView: GlView<typeof C.Chips> = ({id, props}) => {
     <DataGate state={state} id={`Chips#${id}`}>
       {data => {
         if (!Array.isArray(data)) return <Redline code="E_SHAPE" id={`Chips#${id}`} message={shapeMessage('a list of strings or {label, tone?}', data)} />;
-        if (chips.length === 0) return <Empty message="no chips to show" />;
+        if (chips.length === 0) return <Empty message={`no chips: Chips takes strings or [{label, tone?}], got ${shapeHint(data)}`} code="W_SHAPE" />;
         const shown = chips.slice(0, MAX_CHIPS);
         return (
           <ul className={styles.chips}>

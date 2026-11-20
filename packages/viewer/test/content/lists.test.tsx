@@ -121,7 +121,8 @@ describe('List', () => {
     const view = renderExpress(`root=Page('T',[a])\na=List([{title:'redis',sub:'npm',value:14},{title:'zod',sub:'npm',value:7,tone:'warn'},{title:'pg',value:'n/a'},{title:'cache',file:'src/auth/cache.ts#L5'}],title='External',note='by importers')`);
     const cell = view.cell('a');
     const items = rows(cell);
-    expect(items.map(item => item.textContent)).toEqual(['1redisnpm14', '2zodnpm7', '3pgn/a', '4cache:5TS']);
+    // a titled row with a file keeps both: its title, then where it is (V039)
+    expect(items.map(item => item.textContent)).toEqual(['1redisnpm14', '2zodnpm7', '3pgn/a', '4cachesrc/auth/cache.ts:5TS']);
     const bars = items.map(item => (item.querySelector('span[aria-hidden="true"][style]') as HTMLElement | null)?.style.width);
     expect(bars).toEqual(['100%', '50%', undefined, undefined]);
     expect(within(items[1]!).getByRole('img', {name: 'warning'})).toBeTruthy();
@@ -140,7 +141,8 @@ describe('List', () => {
     expect(view.cell('ext').querySelector('[data-gl-marginal]')?.textContent).toBe('showing 3 of 5 · top');
     // no numeric field: no value and no bar; the file cell makes the title a file entity with the chip as subtitle
     const todos = rows(view.cell('todos'));
-    expect(todos[0]!.querySelector('.gl-path-base')?.textContent).toBe('move to argon2id');
+    expect(todos[0]!.querySelector('[title="move to argon2id"]')?.textContent).toBe('move to argon2id');
+    expect(todos[0]!.querySelector('[data-gl-list-where] .gl-path-base')?.textContent).toBe('service.ts');
     expect(todos[0]!.textContent).toContain('TODO');
     expect(todos[0]!.querySelector('span[aria-hidden="true"][style]')).toBeNull();
     fireEvent.click(todos[0]!);

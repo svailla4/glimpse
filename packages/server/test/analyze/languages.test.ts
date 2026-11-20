@@ -50,11 +50,16 @@ describe('path classes', () => {
   it.each([
     'test/auth.test.ts', 'src/__tests__/a.ts', 'tests/unit/a.py', 'spec/models/user_spec.rb', 'pkg/limiter/limiter_test.go',
     'tools/tests/test_stats.py', 'tools/test_cli.py', 'src/a.spec.tsx', 'app/src/test/java/FooTest.java', 'Sources/AppTests.swift',
+    'spec/a.rb', 'packages/web/spec/helpers/util.js', 'specs/api.js',
   ])('%s is a test', path => {
     expect(isTestPath(path)).toBe(true);
   });
 
-  it.each(['src/contest/a.ts', 'src/latest.ts', 'src/testing.py', 'src/attest.go', 'Sources/Contest.swift', 'spec.md'])('%s is not a test', path => {
+  // A spec/ directory inside a source directory is code: Glimpse's own spec compiler is packages/server/src/spec (V010).
+  it.each([
+    'src/contest/a.ts', 'src/latest.ts', 'src/testing.py', 'src/attest.go', 'Sources/Contest.swift', 'spec.md',
+    'packages/server/src/spec/guard.ts', 'lib/spec/parser.rb', 'src/openapi/spec/schema.ts',
+  ])('%s is not a test', path => {
     expect(isTestPath(path)).toBe(false);
   });
 

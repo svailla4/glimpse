@@ -1,4 +1,5 @@
-// Icicle: the hierarchy as stacked rows (20 px, up to 32 px in a sized cell that has the room), width by a metric.
+// Icicle: the hierarchy as stacked rows, width by a metric: 20 px rows, and in a sized cell rows that share its
+// height (up to 120 px each), so a shallow tree fills its plate instead of leaving most of it blank.
 // Clicking a directory zooms its subtree to full width; the top row (or Backspace) zooms back out. A rollup cell
 // drills the dataset; the way back out of a drill is the scope crumb the kit shows (and Backspace at the top).
 import type {DirNode} from '@glimpse/catalog';
@@ -15,7 +16,9 @@ import {
 const ROW = 20;
 const PITCH = ROW + 1;
 /** In a sized cell the rows grow to use the height, up to this pitch. */
-const MAX_PITCH = 33;
+const MAX_PITCH = 121;
+/** A row this tall has room for the value under the name. */
+const VALUE_ROW = 34;
 /** Height kept for the legend under the rows of a sized cell. */
 const LEGEND_ROOM = 30;
 
@@ -98,7 +101,7 @@ function Rows(p: {
   const meta = useMeta();
   const host = useHostActions(id);
   const {boxRef, fill, width, height: boxHeight} = useChartBox(p.size);
-  // a sized cell is given to the rows: they grow from 20 px up to 32 px before any of it is left blank
+  // a sized cell is given to the rows: they grow from 20 px up to 120 px before any of it is left blank
   const levels = view.height + 1;
   const pitch = fill ? Math.max(PITCH, Math.min(MAX_PITCH, Math.floor((boxHeight - LEGEND_ROOM) / levels))) : PITCH;
   const layout = useMemo(() => (width <= 0 ? undefined : layoutRows(view, metric, width, pitch)), [view, metric, width, pitch]);
@@ -169,10 +172,11 @@ function Rows(p: {
       >
         <rect className={paint ? undefined : css.dir} x={cell.x} y={cell.y} width={cell.w} height={row} style={paint ? {fill: paint.color} : undefined} />
         {node.rollup ? <rect x={cell.x} y={cell.y} width={cell.w} height={row} fill={`url(#${uid}-hatch)`} /> : null}
-        {cell.w >= 28 ? <text className={paint?.strong ? css.onStrong : css.onLight} x={cell.x + 5} y={cell.y + row / 2} dy="0.36em">{clip(node === tree.root ? clipTail(rootName, cell.w - 10) : node.name, cell.w - 10)}</text> : null}
+        {cell.w >= 28 ? <text className={paint?.strong ? css.onStrong : css.onLight} x={cell.x + 5} y={cell.y + Math.min(row / 2, 13)} dy="0.36em">{clip(node === tree.root ? clipTail(rootName, cell.w - 10) : node.name, cell.w - 10)}</text> : null}
+        {cell.w >= 28 && row >= VALUE_ROW ? <text className={paint?.strong ? css.onStrongDim : css.onLightDim} x={cell.x + 5} y={cell.y + 27} dy="0.36em" data-cell-value="">{clip(fmtNum(cell.value, METRIC_FORMAT[metric] === 'num' ? 'compact' : METRIC_FORMAT[metric]), cell.w - 10)}</text> : null}
       </g>
     );
-  }), [layout, painter, picked, uid, rootName, tree.root]);
+  }), [layout, painter, picked, uid, rootName, tree.root, metric]);
 
   const selection = nav.selected;
   const outline = layout && selection ? layout.cells.find(cell => {

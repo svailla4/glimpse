@@ -5,8 +5,10 @@
 //   - a snapshot for a surface that already exists replaces it, and `/ui` (selection, followed file) is carried over
 //     a delete + create unless the new snapshot sets it;
 //   - messages the processor rejects, and errors raised while rendering, go back to the host as v1.0 `error` messages;
-//   - so does every state a component shows instead of its content (a redline, an empty plate), once per surface
-//     instance, so the host can tell the agent what its view really looks like (design rule D3);
+//   - so does the state of every component (decision D14: OK, or the I_/W_/E_ state it shows instead of its content),
+//     when its cell mounts, when it changes and each time an update names the component again, so the host always
+//     knows what the view really looks like. The kit decides what a component's state is (kit/report.ts); the
+//     session tells the cells about updates and posts the states, a task's worth in one post;
 //   - actions go back as v1.0 `action` messages, `gl_select` debounced so that dragging a selection does not flood;
 //   - the lazy chunks of the component types a message names start loading before React asks for them.
 import type {ReactCatalogComponent} from '@a2ui/react';
@@ -16,7 +18,7 @@ import {
   type SurfaceInfo, type Transport,
 } from '@glimpse/catalog';
 import {createGlimpseCatalog, preloadChunks} from '../catalog.ts';
-import {kitSlots, type RenderReport} from '../kit/index.ts';
+import {createRedefinitions, kitSlots, type RenderReport, type ReportChannel} from '../kit/index.ts';
 import type {LinkEnd} from '../transport/hub.ts';
 
 export type Surface = SurfaceModel<ReactCatalogComponent>;
@@ -54,11 +56,12 @@ export interface ViewerSession {
   /** Reports an error the renderer caught (an error boundary) to the host. */
   report(error: {code: string; message: string; surfaceId?: string}): void;
   /**
-   * Reports a state a component shows instead of its content (KitProvider `report`). Each distinct report is sent
-   * once for as long as the surface object lives; a surface that is created again starts over, because the host
-   * drops what it knew about a surface it replaces.
+   * Posts the state of a component (KitProvider `report`): what its cell decided to say, as it says it. States of a
+   * surface that no longer exists are dropped; the states of one task go out in one post.
    */
   reportState(report: RenderReport): void;
+  /** KitProvider `watch`: a cell hears each update that names its component again. */
+  watch: NonNullable<ReportChannel['watch']>;
   /** Clears the selection of a surface (Escape with the focus on the page). Does nothing when nothing is selected. */
   clearSelection(id: string): void;
 }
@@ -76,8 +79,10 @@ const V = '1.0' as const;
 const SELECT_DELAY = 150;
 /** Distinct errors forwarded per epoch; a broken view must not turn into a stream of posts. */
 const MAX_REPORTED = 100;
-/** Distinct component states forwarded per surface instance. */
-const MAX_STATES = 200;
+/** Component states forwarded per surface instance: a view whose state flips on every render must not flood the host. */
+const MAX_STATES = 2000;
+/** Messages per post: a keepalive request body stays far under the 64 kB browsers allow in flight. */
+const MAX_POST = 100;
 const UI_PATH = '/ui';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -98,8 +103,11 @@ export function createViewerSession(transport: Transport, options: SessionOption
   const instances = new Map<string, number>();
   const pendingSelect = new Map<string, ActionPayload>();
   const reported = new Set<string>();
-  /** Component states already sent, per surface id; forgotten when the surface object is created again. */
-  const states = new Map<string, Set<string>>();
+  /** Component states sent per surface id; counted from zero when the surface object is created again. */
+  const states = new Map<string, number>();
+  /** States waiting for the end of the task, to go out in one post. */
+  let outbox: RendererMessage[] = [];
+  const redefinitions = createRedefinitions();
   const selectDelay = options.selectDelay ?? SELECT_DELAY;
   let snapshot: SessionSnapshot = {status: 'connecting', session: undefined, surfaces: [], focus: undefined, generation: 0};
   let processor: MessageProcessor<ReactCatalogComponent> | undefined;
@@ -173,14 +181,19 @@ export function createViewerSession(transport: Transport, options: SessionOption
     }]);
   };
 
+  const flushStates = () => {
+    const messages = outbox;
+    outbox = [];
+    for (let at = 0; at < messages.length; at += MAX_POST) post(messages.slice(at, at + MAX_POST));
+  };
+
   const reportState = (state: RenderReport) => {
     if (!processor?.getSurface(state.surfaceId)) return;
-    const sent = states.get(state.surfaceId) ?? new Set<string>();
-    states.set(state.surfaceId, sent);
-    const key = `${state.code}\n${state.message}`;
-    if (sent.has(key) || sent.size >= MAX_STATES) return;
-    sent.add(key);
-    post([{version: V, error: {code: state.code, message: state.message, surfaceId: state.surfaceId}}]);
+    const count = states.get(state.surfaceId) ?? 0;
+    if (count >= MAX_STATES) return;
+    states.set(state.surfaceId, count + 1);
+    if (outbox.length === 0) queueMicrotask(flushStates);
+    outbox.push({version: V, error: {code: state.code, message: state.message, surfaceId: state.surfaceId}});
   };
 
   const dispose = () => {
@@ -191,6 +204,7 @@ export function createViewerSession(transport: Transport, options: SessionOption
     pendingSelect.clear();
     reported.clear();
     states.clear();
+    outbox = [];
     instances.clear();
     processor?.model.dispose();
     processor?.dispose();
@@ -259,6 +273,8 @@ export function createViewerSession(transport: Transport, options: SessionOption
     } finally {
       applying = false;
     }
+    // Every component an update named says its state again once it has rendered (decision D14).
+    redefinitions.applied(batch);
     for (const [id, ui] of carried) {
       const model = target.getSurface(id)?.dataModel;
       if (model && !hasValue(model.get(UI_PATH))) model.set(UI_PATH, ui);
@@ -354,6 +370,7 @@ export function createViewerSession(transport: Transport, options: SessionOption
     refresh: id => act('gl_refresh', id),
     report,
     reportState,
+    watch: redefinitions.watch,
     clearSelection(id) {
       const surface = processor?.getSurface(id);
       if (!surface || surface.dataModel.get(PATHS.uiSel) == null) return;

@@ -99,7 +99,7 @@ describe('CodeTour', () => {
     view.setData('/tour', {file: 'a.ts', note: 'not a list'});
     await waitFor(() => expect(cell.querySelector('[data-gl-state="redline"]')?.getAttribute('data-code')).toBe('E_SHAPE'));
     view.setData('/tour', [null, {note: 'no file'}, 7]);
-    await waitFor(() => expect(cell.querySelector('[data-gl-state="empty"]')?.textContent).toBe('no stop names a file (3 dropped)'));
+    await waitFor(() => expect(cell.querySelector('[data-gl-state="empty"]')?.textContent).toBe('no stop names a file (3 dropped): CodeTour takes [{file, note}]'));
     view.setData('/tour', [null, {file: 'src/auth/service.ts', note: 9}, {file: '  '}]);
     await waitFor(() => expect(at(cell)).toBe('1 / 1'));
     expect(cell.querySelector('[data-gl-marginal]')?.textContent).toBe('2 malformed dropped');

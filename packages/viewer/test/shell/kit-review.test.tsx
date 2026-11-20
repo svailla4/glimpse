@@ -6,13 +6,14 @@ import {act, fireEvent, render, within} from '@testing-library/react';
 import {useEffect, useRef, useState} from 'react';
 import {describe, expect, it, vi} from 'vitest';
 import {
-  DataGate, Empty, Frame, KitProvider, PathText, PlateAside, Redline, assignSlots, catVar, elidePath, fileEntity, isFrameable, isOtherKey,
-  matchSelection, splitPath, useCatSlots, useDataset, useHostActions, useLinkStatus, useRows, useSelection, useSize, useTooltip,
-  type GlView,
+  DataGate, Drafting, Empty, Frame, KitProvider, PathText, PlateAside, Redline, Subpart, assignSlots, borrowView, catVar, dropDirs, elidePath, fileEntity,
+  isFrameable, isOtherKey, matchSelection, reportCode, splitPath, useCatSlots, useDataset, useHostActions, useLinkStatus, useReportState, useRows,
+  useSelection, useSize, useTooltip, widthBoxOf, type GlView,
 } from '../../src/kit/index.ts';
 import {COMPONENT_BY_NAME, hasFrame} from '@glimpse/catalog';
-import {createFixtureHost, datasetFixture, installLayout, pendingDataset} from '../harness.tsx';
-import {renderStub} from './stub.tsx';
+import {buildPatch, buildSurface, createFixtureHost, datasetFixture, installLayout, pendingDataset} from '../harness.tsx';
+import {Crumbs} from '../../src/components/code/codekit/lines.tsx';
+import {flushReports, renderStub} from './stub.tsx';
 
 const CHURN = `/ds/${datasetKey(parseRef('git.churn'))}`;
 const page = (body: string) => `root=Page('T',[a])\na=${body}`;
@@ -34,6 +35,83 @@ describe('PathText keeps the file name (D12, F083)', () => {
     expect(dir.querySelector('bdi')?.textContent).toBe('typescript/renderers/react/src/resolution/');
     expect(path.querySelector('.gl-path-base')?.textContent).toBe('generic-binder.ts');
     expect([...path.children].map(child => child.className)).toEqual(['gl-path-dir', 'gl-path-base', 'gl-path-line', 'gl-path-ext']);
+  });
+
+  it('drops whole leading directories before it cuts inside one (D17)', () => {
+    const dir = 'typescript/renderers/react/src/resolution/';
+    expect(dropDirs(dir, 60)).toBe(0);
+    // room for `…/` and the last three directories: src/resolution/ needs 15, react/ 6 more
+    expect(dropDirs(dir, 23)).toBe(2);
+    expect(dropDirs(dir, 22)).toBe(3);
+    // not even the last directory fits beside `…/`: all of them go (`…/generic-binder.ts`), none is cut inside
+    expect(dropDirs(dir, 13)).toBe(4);
+    expect(dropDirs(dir, 12)).toBe(5);
+    // no room even for `…/`: the stylesheet cuts what is there
+    expect(dropDirs(dir, 1)).toBe(0);
+    // in a box with room for 23 characters of the 42 the directory has, it shows `…/react/src/resolution/`
+    const widths = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('gl-path-dir') ? (this.textContent?.length ?? 0) * 7 : 0;
+    });
+    const room = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('gl-path-dir') ? Math.min(23 * 7, (this.textContent?.length ?? 0) * 7) : 0;
+    });
+    const {container} = render(<PathText file={`${dir}generic-binder.ts#L12`} />);
+    widths.mockRestore();
+    room.mockRestore();
+    const path = container.querySelector<HTMLElement>('.gl-path')!;
+    expect(path.querySelector('.gl-path-dir')?.textContent).toBe('…/react/src/resolution/');
+    expect(path.querySelector('.gl-path-dir')?.getAttribute('data-dropped')).toBe('2');
+    expect(path.querySelector('.gl-path-base')?.textContent).toBe('generic-binder.ts');
+    // the whole location stays the tooltip
+    expect(path.title).toBe(`${dir}generic-binder.ts#L12`);
+  });
+
+  // Decision D17: in a table, a path measured before the table knew its width was never measured again when its
+  // column narrowed (the plate kept its width), so 'dart/a2ui_core/…' was cut inside 'dart/'. It follows its cell.
+  it('a path re-measures when its table cell changes width, not only its plate', () => {
+    const plate = document.createElement('div');
+    plate.className = 'gl-cell';
+    plate.innerHTML = '<div role="grid"><div role="row"><div role="gridcell"><span class="gl-path"><span class="gl-path-dir">a/</span></span></div></div></div><p><span class="gl-path-dir">b/</span></p>';
+    document.body.append(plate);
+    expect(widthBoxOf(plate.querySelector('[role="gridcell"] .gl-path-dir'))).toBe(plate.querySelector('[role="gridcell"]'));
+    expect(widthBoxOf(plate.querySelector('p .gl-path-dir'))).toBe(plate);
+    expect(widthBoxOf(null)).toBe(document.documentElement);
+    plate.remove();
+  });
+
+  // Decision D17: 'dart/a2ui_core/lib/src/core/' measured 202 px in a 201 px box, was taken as fitting, and the
+  // stylesheet's ellipsis then cut it inside 'dart/'. One pixel over is over.
+  it('drops a directory when the path is one pixel too wide', () => {
+    const dir = 'dart/a2ui_core/lib/src/core/';
+    const widths = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('gl-path-dir') ? (this.textContent === dir ? 202 : (this.textContent?.length ?? 0) * 7) : 0;
+    });
+    const room = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('gl-path-dir') ? Math.min(201, (this.textContent?.length ?? 0) * 7) : 0;
+    });
+    const {container} = render(<PathText file={`${dir}catalog.dart`} />);
+    widths.mockRestore();
+    room.mockRestore();
+    expect(container.querySelector('.gl-path-dir')?.textContent).toBe('…/a2ui_core/lib/src/core/');
+  });
+
+  // Decision D17: the code views' header (CodeView, SymbolOutline, DiffView) cut 'typescript/core/web_…' inside a
+  // directory; it now gives way the same way as PathText.
+  it('the code header crumbs drop whole leading directories before cutting one', () => {
+    const dir = 'typescript/core/web_core/src/processing/';
+    const widths = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('gl-path-dir') ? (this.textContent?.length ?? 0) * 7 : 0;
+    });
+    const room = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('gl-path-dir') ? Math.min(20 * 7, (this.textContent?.length ?? 0) * 7) : 0;
+    });
+    const {container} = render(<Crumbs path={`${dir}message-processor.ts`} />);
+    widths.mockRestore();
+    room.mockRestore();
+    const crumbs = container.querySelector<HTMLElement>('[data-gl-path]')!;
+    expect(crumbs.querySelector('.gl-path-dir')?.textContent).toBe('…/src/processing/');
+    expect(crumbs.textContent).toBe('…/src/processing/message-processor.ts');
+    expect(crumbs.title).toBe(`${dir}message-processor.ts`);
   });
 
   it('splitPath and elidePath never give up the basename', () => {
@@ -184,6 +262,34 @@ describe('scope crumb: the way back from a drill (D1, F074, F017, F018)', () => 
     expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {target: ''}});
   });
 
+  it('hands the keyboard focus on when the control that had it goes away: Up -> Full view -> plate header, or the cell (V063)', () => {
+    const view = renderStub(`root=Page('T',[a,b])\na=DataTable('git.churn',title='Churn')\nb=DataTable('git.churn')`, {DataTable: Gated}, {datasets: 'ready'});
+    view.setData(CHURN, drilled({drill: {target: '.agents/skills/x', up: '.agents/skills'}}));
+    const row = () => view.cell('a').querySelector<HTMLElement>('.gl-frame-scope')!;
+    // Up, and there is still a level above: the focus stays on Up
+    row().querySelector<HTMLButtonElement>('[data-gl-scope-up]')!.focus();
+    fireEvent.click(row().querySelector('[data-gl-scope-up]')!);
+    view.setData(CHURN, drilled({drill: {target: '.agents/skills', up: '.agents'}}));
+    expect(document.activeElement?.hasAttribute('data-gl-scope-up')).toBe(true);
+    // Up to the last level: Up goes away, Full view takes the focus
+    fireEvent.click(row().querySelector('[data-gl-scope-up]')!);
+    view.setData(CHURN, drilled({drill: {target: '.agents', up: ''}}));
+    expect(row().querySelector('[data-gl-scope-up]')).toBeNull();
+    expect(document.activeElement).toBe(row().querySelector('[data-gl-scope-reset]'));
+    // Full view: the plate header
+    fireEvent.click(row().querySelector('[data-gl-scope-reset]')!);
+    view.setData(CHURN, datasetFixture('git.churn'));
+    expect(document.activeElement).toBe(view.cell('a').querySelector(':scope > .gl-frame > .gl-frame-head'));
+    // without a plate there is no header: the cell itself takes the focus instead of <body>
+    view.setData(CHURN, drilled({drill: {target: 'src/auth', up: 'src'}}));
+    const bare = view.cell('b');
+    bare.querySelector<HTMLButtonElement>('[data-gl-scope-up]')!.focus();
+    fireEvent.click(bare.querySelector('[data-gl-scope-up]')!);
+    view.setData(CHURN, datasetFixture('git.churn'));
+    expect(document.activeElement).toBe(bare);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
   it('renders in place, above the content, for a component without a plate, and for every component bound to the dataset', () => {
     const view = renderStub(`root=Page('T',[a,b])\na=DataTable('git.churn')\nb=DataTable('git.churn',title='Same data')`, {DataTable: Gated}, {datasets: 'ready'});
     view.setData(CHURN, drilled());
@@ -198,42 +304,141 @@ describe('scope crumb: the way back from a drill (D1, F074, F017, F018)', () => 
   });
 });
 
-describe('what the viewer drew is reported to the host (D3, F032)', () => {
-  it('reports an empty plate as W_EMPTY and a redline under its own code, each starting with Name#id', () => {
+describe('what a component draws is its state for the host (D3, D14, F032, V060-V062)', () => {
+  /** A Gated view that also follows the selection, so writing /ui/sel really renders it again (V066). */
+  let gatedRenders = 0;
+  const Following: GlView<any> = ({id, props}) => {
+    gatedRenders++;
+    useSelection(id);
+    const state = useDataset<unknown>(props.data);
+    return <DataGate state={state} id={`DataTable#${id}`}>{() => <p data-body="">rows</p>}</DataGate>;
+  };
+  const codes = (view: ReturnType<typeof renderStub>, id: string) => view.states.filter(state => state.componentId === id).map(state => state.code);
+
+  it('classifies: W_EMPTY for nothing to show and no reason, I_EMPTY for a truthful empty answer, the redline code, nothing while pending', async () => {
     const view = renderStub(`root=Page('T',[a,b,c])\na=DataTable('git.churn',title='Churn')\nb=DataTable('git.log')\nc=DataTable('git.authors')`, {DataTable: Gated}, {datasets: 'ready'});
+    await flushReports();
+    // every component says it draws
     expect(view.reports).toEqual([]);
+    expect(codes(view, 'a')).toEqual(['OK']);
+    expect(codes(view, 'root')).toEqual(['OK']);
     view.setData(CHURN, {...datasetFixture('git.churn'), data: []});
-    expect(view.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no data from git.churn', surfaceId: 'test'}]);
+    await flushReports();
+    expect(view.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no data from git.churn', surfaceId: 'test', componentId: 'a'}]);
+    // the source says why it is empty: a truthful answer, not something for the model to fix
+    view.setData(CHURN, {...datasetFixture('git.churn'), data: [], note: 'no import cycles'});
+    await flushReports();
+    expect(view.reports.at(-1)).toEqual({code: 'I_EMPTY', message: 'DataTable#a: no import cycles (git.churn)', surfaceId: 'test', componentId: 'a'});
     view.setData(`/ds/${datasetKey(parseRef('git.log'))}`, {$ds: datasetKey(parseRef('git.log')), kind: 'rows', status: 'error', source: 'git.log', error: {code: 'E_NO_GIT', message: 'not a git repository'}});
-    expect(view.reports.at(-1)).toEqual({code: 'E_NO_GIT', message: 'DataTable#b: not a git repository', surfaceId: 'test'});
-    // a pending dataset is not a state worth telling
+    await flushReports();
+    expect(view.reports.at(-1)).toEqual({code: 'E_NO_GIT', message: 'DataTable#b: not a git repository', surfaceId: 'test', componentId: 'b'});
+    // a pending dataset is not a state worth telling, and it does not withdraw anything either
+    const before = view.states.length;
     view.setData(`/ds/${datasetKey(parseRef('git.authors'))}`, pendingDataset('git.authors'));
-    expect(view.reports).toHaveLength(2);
+    await flushReports();
+    expect(view.states).toHaveLength(before);
+    // inline data that is empty is the spec's own: W_EMPTY
+    const inline = renderStub(`$/rows=[]\n${page('DataTable($/rows)')}`, {DataTable: Gated});
+    await flushReports();
+    expect(inline.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no items', surfaceId: 'test', componentId: 'a'}]);
   });
 
-  it('reports again when the state changes, and says nothing for the same state rendered again', () => {
-    const view = renderStub(page("DataTable('git.churn')"), {DataTable: Gated}, {datasets: 'ready'});
+  it('reports again when the state changes, withdraws it with OK, and says nothing for the same state rendered again', async () => {
+    const view = renderStub(page("DataTable('git.churn')"), {DataTable: Following}, {datasets: 'ready'});
     view.setData(CHURN, {...datasetFixture('git.churn'), data: []});
+    await flushReports();
+    expect(codes(view, 'a')).toEqual(['W_EMPTY']);
+    // a real re-render with the same state: the view follows the selection
+    const renders = gatedRenders;
     view.setData('/ui/sel', {type: 'file', id: 'x', path: 'x'});
-    expect(view.reports).toHaveLength(1);
+    await flushReports();
+    expect(gatedRenders).toBeGreaterThan(renders);
+    expect(codes(view, 'a')).toEqual(['W_EMPTY']);
     view.setData(CHURN, {...datasetFixture('git.churn'), data: [], warnings: ['no file changed in the last 90 days']});
+    await flushReports();
     expect(view.reports.map(report => report.message)).toEqual(['DataTable#a: no data from git.churn', 'DataTable#a: no file changed in the last 90 days (git.churn)']);
+    // the data arrives: the component draws, and says so
+    view.setData(CHURN, datasetFixture('git.churn'));
+    await flushReports();
+    expect(codes(view, 'a')).toEqual(['W_EMPTY', 'I_EMPTY', 'OK']);
   });
 
-  it('a view that throws is reported as E_RENDER, and a state a view renders itself is reported for its component', () => {
+  it('says its state again, OK included, each time an update names the component, changed or not (V051, V061)', async () => {
+    const spec = `$/rows=[]\nroot=Page('T',[a,b])\na=DataTable($/rows,title='First')\nb=Text('fine')`;
+    const view = renderStub(spec, {DataTable: Gated});
+    await flushReports();
+    expect(codes(view, 'a')).toEqual(['W_EMPTY']);
+    // an in-place "fix" that leaves it empty
+    view.send(buildPatch('test', buildSurface('test', spec), `a=DataTable($/rows,title='Second')`));
+    await flushReports();
+    expect(codes(view, 'a')).toEqual(['W_EMPTY', 'W_EMPTY']);
+    // the same definition again
+    view.send(buildPatch('test', buildSurface('test', spec), `a=DataTable($/rows,title='Second')`));
+    await flushReports();
+    expect(codes(view, 'a')).toEqual(['W_EMPTY', 'W_EMPTY', 'W_EMPTY']);
+    // a component that draws says OK when it is named again; one that is not named says nothing
+    view.send(buildPatch('test', buildSurface('test', spec), `b=Text('still fine')`));
+    await flushReports();
+    expect(codes(view, 'b')).toEqual(['OK', 'OK']);
+    expect(codes(view, 'a')).toHaveLength(3);
+  });
+
+  it('a view that throws is reported as E_RENDER, and a state a view renders itself is reported for its component: the most severe one', async () => {
     const Boom: GlView<any> = () => { throw new Error('view bug'); };
     const Own: GlView<any> = ({id}) => <><Empty message="no file selected" /><Redline code="E_SHAPE" id={`CodeView#${id}`} message="expected text" /></>;
+    const Waiting: GlView<any> = () => <Empty message="no file selected" code="I_WAITING" />;
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const view = renderStub(`root=Page('T',[a,b])\na=DataTable('git.churn')\nb=CodeView()`, {DataTable: Boom, CodeView: Own});
+    const view = renderStub(`root=Page('T',[a,b,c])\na=DataTable('git.churn')\nb=CodeView()\nc=SymbolOutline()`, {DataTable: Boom, CodeView: Own, SymbolOutline: Waiting});
     spy.mockRestore();
-    expect(view.reports).toContainEqual({code: 'E_RENDER', message: 'DataTable#a: view bug', surfaceId: 'test'});
-    expect(view.reports).toContainEqual({code: 'W_EMPTY', message: 'CodeView#b: no file selected', surfaceId: 'test'});
-    expect(view.reports).toContainEqual({code: 'E_SHAPE', message: 'CodeView#b: expected text', surfaceId: 'test'});
+    await flushReports();
+    expect(view.reports).toContainEqual({code: 'E_RENDER', message: 'DataTable#a: view bug', surfaceId: 'test', componentId: 'a'});
+    // one state per component: the redline wins over the empty line beside it
+    expect(view.reports.filter(report => report.componentId === 'b')).toEqual([{code: 'E_SHAPE', message: 'CodeView#b: expected text', surfaceId: 'test', componentId: 'b'}]);
+    // a view that waits for a selection says so with an I_ code
+    expect(view.reports).toContainEqual({code: 'I_WAITING', message: 'SymbolOutline#c: no file selected', surfaceId: 'test', componentId: 'c'});
   });
 
-  it('says nothing outside a component and where nobody listens', () => {
+  it('a part of a component never speaks for it: <Subpart>, part, and every borrowed view (V062)', async () => {
+    const Rich: GlView<any> = () => <Empty message="no code" />;
+    const Borrowed = borrowView(async () => ({views: {CodeBlock: Rich}}), 'CodeBlock', () => null);
+    const Prose: GlView<any> = ({id}) => <><p>Run the generator first.</p><Borrowed id={id} props={{}} child={() => null} /></>;
+    const Diff: GlView<any> = () => (
+      <>
+        <ul><li>a.ts</li><li>logo.png</li></ul>
+        <Empty message="logo.png is a binary file" part />
+        <Subpart><Redline code="E_DIFF" id="DiffView#d" message="logo.png: unreadable" /><Drafting label="reading a.ts" /></Subpart>
+      </>
+    );
+    const view = renderStub(`root=Page('T',[m,d])\nm=Markdown('x')\nd=DiffView()`, {Markdown: Prose, DiffView: Diff});
+    await view.settle();
+    expect(view.cell('m').querySelector('[data-gl-state="empty"]')?.textContent).toBe('no code');
+    expect(view.reports).toEqual([]);
+    expect(codes(view, 'm')).toEqual(['OK']);
+    expect(codes(view, 'd')).toEqual(['OK']);
+  });
+
+  it('a view that draws but could not do what the spec asked names it with useReportState, and withdraws it', async () => {
+    const Focus: GlView<any> = ({props}) => {
+      useReportState(props.data === 'zzz' ? 'W_FOCUS' : undefined, `focus "${String(props.data)}" matches no node`);
+      return <svg data-drawn="" />;
+    };
+    const view = renderStub(`$/f='zzz'\n${page('Graph($/f)')}`, {Graph: Focus});
+    await flushReports();
+    expect(view.reports).toEqual([{code: 'W_FOCUS', message: 'Graph#a: focus "zzz" matches no node', surfaceId: 'test', componentId: 'a'}]);
+    view.setData('/f', 'src');
+    await flushReports();
+    expect(codes(view, 'a')).toEqual(['W_FOCUS', 'OK']);
+  });
+
+  it('reportCode keeps a code the host accepts and gives an unclassed one the redline class', () => {
+    expect(['OK', 'W_EMPTY', 'I_WAITING', 'E_SHAPE', 'E', 'ENOENT', 'e_shape', 'E-BAD code'].map(reportCode)).toEqual(['OK', 'W_EMPTY', 'I_WAITING', 'E_SHAPE', 'E_E', 'E_ENOENT', 'E_SHAPE', 'E_BAD_CODE']);
+    expect(reportCode(`W_${'X'.repeat(60)}`)).toHaveLength(32);
+  });
+
+  it('says nothing outside a component and where nobody listens', async () => {
     const reports: unknown[] = [];
     const {unmount} = render(<KitProvider host={createFixtureHost()} report={report => void reports.push(report)}><Empty message="no views yet" /><Redline code="E" id="Surface#x" message="m" /></KitProvider>);
+    await flushReports();
     expect(reports).toEqual([]);
     unmount();
     expect(() => render(<Empty message="alone" />)).not.toThrow();
@@ -325,7 +530,9 @@ describe('useRows (F079)', () => {
   const envelope = (extra: Partial<Dataset> = {}): Dataset => ({$ds: 'k', kind: 'rows', status: 'ready', source: 'git.churn', data: [{a: 1}], total: 1000, pageable: true, ...extra});
   function mount(rows: (q: RowsQuery, signal?: AbortSignal) => Promise<RowsPage>) {
     const renders: Array<{ds: string | undefined; page: unknown; loading: boolean; error: string | undefined}> = [];
-    const Probe: GlView<any> = ({props}) => {
+    const Probe: GlView<any> = ({id, props}) => {
+      // follows the selection, so a write to /ui/sel really renders it again (V066)
+      useSelection(id);
       const state = useRows(props.data, {offset: 0, limit: 10});
       renders.push({ds: props.data?.$ds, page: state.page?.rows[0]?.v ?? null, loading: state.loading, error: state.error});
       return null;
@@ -338,7 +545,7 @@ describe('useRows (F079)', () => {
 
   it('fetches again when the envelope is replaced under the same key, and keeps the old page up meanwhile', async () => {
     let calls = 0;
-    const {view, last} = mount(async () => answer(`fetch#${++calls}`));
+    const {view, renders, last} = mount(async () => answer(`fetch#${++calls}`));
     await view.settle();
     expect([calls, last().page, last().loading]).toEqual([1, 'fetch#1', false]);
     // what the server publishes after a refresh or a drill: a new envelope, same key, same revision
@@ -346,9 +553,11 @@ describe('useRows (F079)', () => {
     expect(last()).toMatchObject({page: 'fetch#1', loading: true});
     await view.settle();
     expect([calls, last().page, last().loading]).toEqual([2, 'fetch#2', false]);
-    // something unrelated changing does not fetch
+    // something unrelated changing renders the view again but does not fetch
+    const before = renders.length;
     view.setData('/ui/sel', {type: 'file', id: 'x', path: 'x'});
     await view.settle();
+    expect(renders.length).toBeGreaterThan(before);
     expect(calls).toBe(2);
   });
 
@@ -418,24 +627,35 @@ describe('useSize (F080)', () => {
 });
 
 describe('the error boundary of a component (F078)', () => {
-  it('lets go of the error when the props change, so a view comes back once the data that broke it is replaced', () => {
+  it('lets go of the error when the props change, so a view comes back once the data that broke it is replaced', async () => {
+    let attempts = 0;
     const Fragile: GlView<any> = ({props}) => {
+      attempts++;
       if (props.text === 'boom') throw new Error('view bug on this value');
       return <span data-ok="">{String(props.text)}</span>;
     };
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const view = renderStub(`$/msg='fine'\n${page('Text($/msg)')}`, {Text: Fragile});
+    const spec = `$/msg='fine'\n${page('Text($/msg)')}`;
+    const view = renderStub(spec, {Text: Fragile});
     expect(view.cell('a').querySelector('[data-ok]')?.textContent).toBe('fine');
     view.setData('/msg', 'boom');
+    await flushReports();
     expect(view.cell('a').querySelector('[data-gl-state="redline"]')?.getAttribute('data-code')).toBe('E_RENDER');
-    expect(view.reports).toEqual([{code: 'E_RENDER', message: 'Text#a: view bug on this value', surfaceId: 'test'}]);
-    // something else changing does not retry a view whose props are the same
-    view.setData('/ui/sel', {type: 'file', id: 'x', path: 'x'});
+    expect(view.reports).toEqual([{code: 'E_RENDER', message: 'Text#a: view bug on this value', surfaceId: 'test', componentId: 'a'}]);
+    // something else rendering the cell again does not retry a view whose props are the same (V066: a real re-render,
+    // the update names the component and its cell renders once more, which the report again proves)
+    const tried = attempts;
+    view.send(buildPatch('test', buildSurface('test', spec), page('Text($/msg)').split('\n')[1]!));
+    await flushReports();
+    expect(view.reports).toHaveLength(2);
+    expect(attempts).toBe(tried);
     expect(view.cell('a').querySelector('[data-gl-state="redline"]')).not.toBeNull();
     view.setData('/msg', 'fixed');
     spy.mockRestore();
+    await flushReports();
     expect(view.cell('a').querySelector('[data-gl-state="redline"]')).toBeNull();
     expect(view.cell('a').querySelector('[data-ok]')?.textContent).toBe('fixed');
+    expect(view.states.at(-1)).toMatchObject({code: 'OK', componentId: 'a'});
   });
 });
 

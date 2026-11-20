@@ -1,15 +1,16 @@
 // CalendarHeatmap: daily activity as week columns of day cells, five steps with zero in the grid ink. Cells grow
-// from 9 to 18 px with the width; when the range does not fit, the oldest weeks are dropped rather than shrinking
-// the cells further. A short history is drawn on at least a quarter of calendar, the days before it as outlines.
+// from 9 to 24 px with the width; when the range does not fit, the oldest weeks are dropped rather than shrinking
+// the cells further. A short history is drawn on at least a quarter of calendar, and on as much of the year before
+// it as the plate has room for, the days before it as outlines. The key names the period the totals cover.
 import type {Field, Roles, Rows} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {quantileSorted} from 'd3-array';
 import {useMemo, type JSX} from 'react';
-import {Empty, fmtNum, seqVar, type DataState, type GlView} from '../../kit/index.ts';
+import {fmtNum, seqVar, type DataState, type GlView} from '../../kit/index.ts';
 import css from './CalendarHeatmap.module.css';
 import {
-  Figure, Legend, Note, Ramp, RowsGate, count, fmtDay, fmtValue, inspect, kit, notes, num, pick, roleY, say, textWidth, time, useChartBox,
-  useDrawIn, useMarkNav, type ArrowKey, type FieldInfo, type Mark,
+  Figure, Legend, MissReport, Note, Ramp, RowsGate, Unable, checkField, count, fmtDay, fmtValue, inspect, kit, missNote, notes, num, pick, roleY, say,
+  textWidth, time, unfit, useChartBox, useDrawIn, useMarkNav, type ArrowKey, type FieldInfo, type FieldMiss, type FieldSet, type Mark, type Unfit,
 } from './chartkit/index.ts';
 
 const DAY = 86_400_000;
@@ -31,13 +32,19 @@ interface Model {
   busiest: number;
   info?: FieldInfo;
   bad: number;
+  /** Field names of the spec that the data does not have (drawn with the defaults instead). */
+  misses: FieldMiss[];
+  fields: FieldSet;
 }
 
-function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: {date?: string; value?: string}): Model | string {
+function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | undefined, opts: {date?: string; value?: string; source?: string}): Model | Unfit {
   const fields = inspect(rows, fieldList);
-  const dateKey = pick(opts.date, roles?.date, fields.first('date')?.key, roles?.x);
-  if (!dateKey) return 'no date field to place days by';
-  const valueKey = pick(opts.value, roles?.value, roleY(roles)[0], fields.first('num', [dateKey])?.key);
+  const misses: FieldMiss[] = [];
+  const dateWanted = checkField(fields, 'date', opts.date, misses);
+  const valueWanted = checkField(fields, 'value', opts.value, misses);
+  const dateKey = pick(dateWanted, roles?.date, fields.first('date')?.key, roles?.x);
+  if (!dateKey) return unfit('no date field to place days by', misses, fields, opts.source);
+  const valueKey = pick(valueWanted, roles?.value, roleY(roles)[0], fields.first('num', [dateKey])?.key);
   const days = new Map<number, number>();
   let bad = 0;
   for (const row of rows) {
@@ -51,7 +58,7 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
     const day = Math.floor(at / DAY);
     days.set(day, (days.get(day) ?? 0) + value);
   }
-  if (days.size === 0) return `no dated values in "${say(dateKey, 40)}"`;
+  if (days.size === 0) return unfit(`no dated values in "${say(dateKey, 40)}"`, misses, fields, opts.source);
   let first = Infinity;
   let last = -Infinity;
   let max = 0;
@@ -70,7 +77,7 @@ function buildModel(rows: Rows, fieldList: Field[] | undefined, roles: Roles | u
   }
   positive.sort((a, b) => a - b);
   const cuts = positive.length > 0 ? [0.25, 0.5, 0.75].map(q => quantileSorted(positive, q)!) : [];
-  return {days, first, last, cuts, max, total, active: positive.length, busiest: max > 0 ? busiest : first, info: valueKey ? fields.get(valueKey) : undefined, bad};
+  return {days, first, last, cuts, max, total, active: positive.length, busiest: max > 0 ? busiest : first, info: valueKey ? fields.get(valueKey) : undefined, bad, misses, fields};
 }
 
 /** 0 for nothing, 1..4 by quartile of the active days; the busiest day is always the top step. */
@@ -106,17 +113,37 @@ interface Layout {
 
 /** A history shorter than this is still drawn as a calendar of this many weeks, not as a lone square. */
 const MIN_WEEKS = 13;
+/** Pitch (cell and gap) bounds: cells from 9 to 24 px. */
+const MIN_PITCH = 11;
+const MAX_PITCH = 26;
+/**
+ * A plate too wide for the history at the largest cells shows more of the year before it at this pitch, up to a
+ * year, instead of leaving half the plate blank.
+ */
+const FILL_PITCH = 20;
+const YEAR_WEEKS = 53;
+
+/** The months the data spans, for the key: 'Nov 2026', 'Mar – Nov 2026', 'Nov 2025 – Nov 2026'. */
+export function periodText(first: number, last: number): string {
+  const a = new Date(first * DAY);
+  const b = new Date(last * DAY);
+  const from = MONTHS[a.getUTCMonth()]!;
+  const to = `${MONTHS[b.getUTCMonth()]} ${b.getUTCFullYear()}`;
+  if (a.getUTCFullYear() !== b.getUTCFullYear()) return `${from} ${a.getUTCFullYear()} – ${to}`;
+  return a.getUTCMonth() === b.getUTCMonth() ? to : `${from} – ${to}`;
+}
 
 function layoutDays(model: Model, width: number): Layout {
   const left = 22;
   const top = 18;
   const end = model.last + (6 - weekday(model.last));
   const dataWeeks = (end - (model.first - weekday(model.first)) + 1) / 7;
-  const weeks = Math.max(dataWeeks, MIN_WEEKS);
+  const room = Math.max(MIN_PITCH, width - left);
+  let weeks = Math.max(dataWeeks, MIN_WEEKS);
+  if (room / weeks > MAX_PITCH) weeks = Math.max(weeks, Math.min(YEAR_WEEKS, Math.floor(room / FILL_PITCH)));
   const start = end - weeks * 7 + 1;
-  const room = Math.max(11, width - left);
-  // cells grow with the plate, up to 18 px, so a year fills a wide plate instead of its left half
-  const pitch = Math.max(11, Math.min(20, Math.floor(room / weeks)));
+  // cells grow with the plate, up to 24 px, so a year fills a wide plate instead of its left half
+  const pitch = Math.max(MIN_PITCH, Math.min(MAX_PITCH, Math.floor(room / weeks)));
   const shown = Math.max(1, Math.min(weeks, Math.floor(room / pitch)));
   const dropped = Math.max(0, dataWeeks - shown);
   const origin = start + (weeks - shown) * 7;
@@ -164,9 +191,18 @@ function layoutDays(model: Model, width: number): Layout {
 
 function Plot(p: {id: string; rows: Rows; state: DataState<Rows>; skipped: number; props: C.ViewProps<typeof C.CalendarHeatmap>}): JSX.Element {
   const {id, rows, state, props} = p;
-  const model = useMemo(() => buildModel(rows, state.fields, state.roles, {date: props.date, value: props.value}), [rows, state.fields, state.roles, props.date, props.value]);
-  if (typeof model === 'string') return <Empty message={`${model}${state.ds ? ` (${state.ds.source})` : ''}`} />;
-  return <Days id={id} model={model} skipped={p.skipped} props={props} />;
+  const source = state.ds?.source;
+  const model = useMemo(
+    () => buildModel(rows, state.fields, state.roles, {date: props.date, value: props.value, source}),
+    [rows, state.fields, state.roles, props.date, props.value, source],
+  );
+  if ('code' in model) return <Unable code={model.code} message={model.message} />;
+  return (
+    <>
+      <MissReport misses={model.misses} fields={model.fields} source={source} />
+      <Days id={id} model={model} skipped={p.skipped} props={props} />
+    </>
+  );
 }
 
 function Days(p: {id: string; model: Model; skipped: number; props: C.ViewProps<typeof C.CalendarHeatmap>}): JSX.Element {
@@ -194,7 +230,7 @@ function Days(p: {id: string; model: Model; skipped: number; props: C.ViewProps<
 
   return (
     <>
-      <Note>{notes(p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.bad > 0 && `${count(model.bad, 'row')} without a date or value`, layout && layout.dropped > 0 && `${count(layout.dropped, 'earlier week')} not shown`)}</Note>
+      <Note>{notes(missNote(model.misses), p.skipped > 0 && `${count(p.skipped, 'row')} skipped`, model.bad > 0 && `${count(model.bad, 'row')} without a date or value`, layout && layout.dropped > 0 && `${count(layout.dropped, 'earlier week')} not shown`)}</Note>
       <Figure
         name="CalendarHeatmap"
         label={aria}
@@ -210,7 +246,7 @@ function Days(p: {id: string; model: Model; skipped: number; props: C.ViewProps<
           <div style={layout ? {maxWidth: Math.max(340, layout.gridRight)} : undefined} data-chart-key="">
             <Legend
               items={[]}
-              start={`${fmtValue(model.total, model.info)} ${say(unit, 24)} · ${fmtNum(model.active)} active ${model.active === 1 ? 'day' : 'days'}`}
+              start={`${fmtValue(model.total, model.info)} ${say(unit, 24)} · ${fmtNum(model.active)} active ${model.active === 1 ? 'day' : 'days'} · ${periodText(model.first, model.last)}`}
               end={<Ramp steps={STEPS} low="0" high={fmtValue(model.max, model.info)} />}
             />
           </div>

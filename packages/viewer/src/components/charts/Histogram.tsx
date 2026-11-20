@@ -1,15 +1,16 @@
 // Histogram: the distribution of one numeric field (or a bare array of numbers), with the median as a dashed line
-// and a tick at the 90th percentile.
+// and a tick at the 90th percentile. Their tags sit in a band above the bars, so no tag ever touches a bar.
 import type {Field, Roles, Rows} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {bin, quantileSorted, thresholdFreedmanDiaconis, thresholdSturges} from 'd3-array';
 import {scaleLinear} from 'd3-scale';
 import {useMemo, type JSX} from 'react';
-import {DataGate, Empty, fmtNum, useDataset, type DataState, type GlView} from '../../kit/index.ts';
+import {DataGate, fmtNum, useDataset, type DataState, type GlView} from '../../kit/index.ts';
 import css from './Histogram.module.css';
 import {
-  DEFAULT_HEIGHT, Figure, Note, ShapeError, ValueGrid, count, fmtValue, formatOf, inspect, kit, linearAxis, logAxis, notes, num, pick,
-  reserve, say, textWidth, tickFormat, useChartBox, useDrawIn, useMarkNav, widest, type FieldInfo, type Mark, type ValueAxis,
+  DEFAULT_HEIGHT, Figure, MissReport, Note, ShapeError, Unable, ValueGrid, asWhole, checkField, count, fmtValue, formatOf, inspect, kit, linearAxis,
+  logAxis, missNote, notes, num, pick, reserve, say, textWidth, tickFormat, unfit, useChartBox, useDrawIn, useMarkNav, widest, type FieldInfo,
+  type FieldMiss, type FieldSet, type Mark, type Unfit, type ValueAxis,
 } from './chartkit/index.ts';
 
 const MAX_BINS = 40;
@@ -21,16 +22,21 @@ interface Model {
   bad: number;
   median: number;
   p90: number;
+  /** A value field the spec named that the data does not have (counted with the default field instead). */
+  misses: FieldMiss[];
+  fields?: FieldSet;
 }
 
-function buildModel(data: unknown[], fieldList: Field[] | undefined, roles: Roles | undefined, valueKey: string | undefined): Model | string {
+function buildModel(data: unknown[], fieldList: Field[] | undefined, roles: Roles | undefined, valueKey: string | undefined, source?: string): Model | Unfit {
   const rows = data.filter((item): item is Rows[number] => typeof item === 'object' && item !== null && !Array.isArray(item));
   let info: FieldInfo | undefined;
   let raw: unknown[];
+  const misses: FieldMiss[] = [];
+  let fields: FieldSet | undefined;
   if (rows.length > 0) {
-    const fields = inspect(rows, fieldList);
-    const key = pick(valueKey, roles?.value, fields.first('num')?.key);
-    if (!key) return 'no numeric field to count';
+    fields = inspect(rows, fieldList);
+    const key = pick(checkField(fields, 'value', valueKey, misses), roles?.value, fields.first('num')?.key);
+    if (!key) return unfit('no numeric field to count', misses, fields, source);
     info = fields.get(key);
     raw = rows.map(row => row[key]);
   } else raw = data;
@@ -41,15 +47,25 @@ function buildModel(data: unknown[], fieldList: Field[] | undefined, roles: Role
     if (value === undefined) bad++;
     else numbers.push(value);
   }
-  if (numbers.length === 0) return info ? `no numeric values in "${say(info.key, 40)}"` : 'no numbers to count';
+  if (numbers.length === 0) {
+    const why = info ? `no numeric values in "${say(info.key, 40)}"` : 'no numbers to count';
+    return fields ? unfit(why, misses, fields, source) : {code: 'W_SHAPE', message: source ? `${why} (${source})` : why};
+  }
   const values = numbers.sort((a, b) => a - b);
-  return {values, info, bad, median: quantileSorted(values, 0.5)!, p90: quantileSorted(values, 0.9)!};
+  // the median of line counts is a whole number of lines
+  return {values, info, bad, median: asWhole(quantileSorted(values, 0.5)!, values), p90: asWhole(quantileSorted(values, 0.9)!, values), misses, fields};
 }
 
 interface Bin {
   x0: number;
   x1: number;
   count: number;
+}
+interface Tag {
+  x: number;
+  y: number;
+  anchor: 'start' | 'end';
+  text: string;
 }
 interface Layout {
   width: number;
@@ -63,8 +79,34 @@ interface Layout {
   xTicks: Array<{x: number; label: string}>;
   medianX: number;
   p90X: number;
+  /** Where the dashed median line starts: under its tag, and under the p90 tag when that one sits across it. */
+  medianFrom: number;
+  medianTag: Tag;
+  p90Tag: Tag;
+  /** The p90 tick runs from under its tag down to just above the bars. */
+  p90From: number;
   marks: Mark[];
 }
+
+/** Tag rows above the plot: baselines of the median and p90 tags, and the top of the bars. */
+const TAG_ROW_1 = 14;
+const TAG_ROW_2 = 29;
+const PLOT_TOP = 40;
+/** Advance of one tag glyph: mono 10.5 px with 0.04 em letter spacing (chartkit `.tag`). */
+const TAG_PX = 10.5 * 0.6 + 0.42;
+
+/**
+ * Places a tag beside its line: right of it when it fits before `right`, else left of it. `x` is the line.
+ */
+function tagBeside(x: number, text: string, y: number, right: number): Tag {
+  const w = text.length * TAG_PX;
+  return x + 5 + w <= right ? {x: x + 5, y, anchor: 'start', text} : {x: x - 5, y, anchor: 'end', text};
+}
+
+const span = (tag: Tag): [number, number] => {
+  const w = tag.text.length * TAG_PX;
+  return tag.anchor === 'start' ? [tag.x, tag.x + w] : [tag.x - w, tag.x];
+};
 
 function binValues(model: Model, wanted: number | undefined): Bin[] {
   const {values} = model;
@@ -86,7 +128,7 @@ function binValues(model: Model, wanted: number | undefined): Bin[] {
 
 function layoutBins(model: Model, wanted: number | undefined, log: boolean, width: number, height: number): Layout {
   const bins = binValues(model, wanted);
-  const top = 36;
+  const top = PLOT_TOP;
   const bottom = height - 40;
   const right = width - 8;
   const counts = bins.map(b => b.count);
@@ -123,14 +165,31 @@ function layoutBins(model: Model, wanted: number | undefined, log: boolean, widt
   }
   const tickCount = Math.max(2, Math.min(8, Math.floor((right - left) / 80)));
   const xTicks = (single ? [bins[0]!.x0] : x.ticks(tickCount)).map(value => ({x: x(value), label: fmt(value)}));
-  return {width, height, left, right, top, bottom: floor, axis, bins: kept, xTicks, medianX: x(model.median), p90X: x(model.p90), marks};
+  // The median tag takes the first row; the p90 tag the second, so the two never collide, and each sits beside its
+  // own line. A p90 tag that has to sit left of its tick, across the median line, moves that line's start below it.
+  const medianX = x(model.median);
+  const p90X = x(model.p90);
+  const medianTag = tagBeside(medianX, `median ${fmtValue(model.median, model.info)}`, TAG_ROW_1, right);
+  const p90Tag = tagBeside(p90X, `p90 ${fmtValue(model.p90, model.info)}`, TAG_ROW_2, right);
+  const [from, to] = span(p90Tag);
+  const crossed = medianX >= from - 3 && medianX <= to + 3;
+  return {
+    width, height, left, right, top, bottom: floor, axis, bins: kept, xTicks, medianX, p90X, marks,
+    medianFrom: crossed ? TAG_ROW_2 + 5 : TAG_ROW_1 + 4, medianTag, p90Tag, p90From: TAG_ROW_2 + 4,
+  };
 }
 
 function Plot(p: {id: string; data: unknown[]; state: DataState<Rows | number[]>; props: C.ViewProps<typeof C.Histogram>}): JSX.Element {
   const {id, data, state, props} = p;
-  const model = useMemo(() => buildModel(data, state.fields, state.roles, props.value), [data, state.fields, state.roles, props.value]);
-  if (typeof model === 'string') return <Empty message={`${model}${state.ds ? ` (${state.ds.source})` : ''}`} />;
-  return <Bins id={id} model={model} props={props} />;
+  const source = state.ds?.source;
+  const model = useMemo(() => buildModel(data, state.fields, state.roles, props.value, source), [data, state.fields, state.roles, props.value, source]);
+  if ('code' in model) return <Unable code={model.code} message={model.message} />;
+  return (
+    <>
+      {model.fields ? <MissReport misses={model.misses} fields={model.fields} source={source} /> : null}
+      <Bins id={id} model={model} props={props} />
+    </>
+  );
 }
 
 function Bins(p: {id: string; model: Model; props: C.ViewProps<typeof C.Histogram>}): JSX.Element {
@@ -150,7 +209,7 @@ function Bins(p: {id: string; model: Model; props: C.ViewProps<typeof C.Histogra
 
   return (
     <>
-      <Note>{notes(model.bad > 0 && `${count(model.bad, 'value')} not numeric`)}</Note>
+      <Note>{notes(missNote(model.misses), model.bad > 0 && `${count(model.bad, 'value')} not numeric`)}</Note>
       <Figure
         name="Histogram"
         label={aria}
@@ -168,12 +227,12 @@ function Bins(p: {id: string; model: Model; props: C.ViewProps<typeof C.Histogra
             {name ? <text className={kit.axisTitle} x={layout.right} y={layout.bottom + 30} textAnchor="end">{say(name, 32)}</text> : null}
             {layout.bins.map((b, i) => <rect key={i} className={`${css.bin} ${kit.growY}`} x={b.x} y={b.y} width={b.w} height={Math.max(1, b.h)} data-i={i} />)}
             <g data-median="">
-              <line className={kit.guide} x1={Math.round(layout.medianX) + 0.5} x2={Math.round(layout.medianX) + 0.5} y1={layout.top - 22} y2={layout.bottom} />
-              <text className={kit.tag} x={layout.medianX + (layout.medianX > layout.right - 90 ? -5 : 5)} y={layout.top - 16} textAnchor={layout.medianX > layout.right - 90 ? 'end' : 'start'}>{`median ${median}`}</text>
+              <line className={kit.guide} x1={Math.round(layout.medianX) + 0.5} x2={Math.round(layout.medianX) + 0.5} y1={layout.medianFrom} y2={layout.bottom} />
+              <text className={kit.tag} x={layout.medianTag.x} y={layout.medianTag.y} textAnchor={layout.medianTag.anchor}>{layout.medianTag.text}</text>
             </g>
             <g data-p90="">
-              <line className={css.p90} x1={Math.round(layout.p90X) + 0.5} x2={Math.round(layout.p90X) + 0.5} y1={layout.top} y2={layout.top + 8} />
-              <text className={kit.tag} x={layout.p90X + (layout.p90X > layout.right - 70 ? -5 : 5)} y={layout.top - 3} textAnchor={layout.p90X > layout.right - 70 ? 'end' : 'start'}>{`p90 ${p90}`}</text>
+              <line className={css.p90} x1={Math.round(layout.p90X) + 0.5} x2={Math.round(layout.p90X) + 0.5} y1={layout.p90From} y2={layout.top - 3} />
+              <text className={kit.tag} x={layout.p90Tag.x} y={layout.p90Tag.y} textAnchor={layout.p90Tag.anchor}>{layout.p90Tag.text}</text>
             </g>
           </>
         ) : null}

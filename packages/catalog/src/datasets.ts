@@ -189,7 +189,8 @@ export interface StatItem { label: string; value: number | string; unit?: string
 export type StepStatus = 'todo' | 'doing' | 'done' | 'blocked' | 'skipped';
 export interface StepItem { title: string; note?: string; status?: StepStatus; file?: FileLoc }
 export interface ListItem { title: string; sub?: string; value?: number | string; file?: FileLoc; tone?: Tone }
-export type KeyValueData = Record<string, unknown> | Array<{k: string; v: unknown}>;
+/** An object of pairs, or one item per pair: {label, value} like Stats, {key, value} or {k, v}. */
+export type KeyValueData = Record<string, unknown> | Array<{label: string; value: unknown} | {key: string; value: unknown} | {k: string; v: unknown}>;
 export type ChipItem = string | {label: string; tone?: Tone; slotKey?: string};
 /** `name` is canonical; Layers also reads the layer's name from `label` or `title`. */
 export interface LayerItem { name: string; note?: string; items: Array<string | {label: string; file?: FileLoc; note?: string}> }

@@ -100,7 +100,8 @@ describe('show', () => {
     const {client} = await connect();
     const {lines, isError, text} = await call(client, 'show', {view: 'overview'});
     expect(isError).toBe(false);
-    expect(lines[0]).toMatch(/^ok overview http:\/\/127\.0\.0\.1:\d+\/#\/overview tab=none \d+ms open http:\/\/127\.0\.0\.1:\d+\/#t=test-token-0123456789$/);
+    // finding V045: the route is a label; the one link is the one that opens the live session
+    expect(lines[0]).toMatch(/^ok overview #\/overview tab=none \d+ms open http:\/\/127\.0\.0\.1:\d+\/#t=test-token-0123456789$/);
     expect(lines[1]).toMatch(/^repo glimpse-core-\w+ main@4f2a91c \| 32 files 10\.0k loc \| TypeScript 71% CSS 12% Markdown 9%$/);
     const order = lines.map(line => line.split(' ')[0]);
     expect(order).toEqual([...order].sort((a, b) => ['ok', 'fixed', 'repo', 'ds', 'parts', 'warn', 'viewer:'].indexOf(a!) - ['ok', 'fixed', 'repo', 'ds', 'parts', 'warn', 'viewer:'].indexOf(b!)));
@@ -117,7 +118,7 @@ describe('show', () => {
     const {client} = await connect({GLIMPSE_TEST_SLOW_MS: '700', GLIMPSE_TEST_SETTLE_MS: '150'});
     const created = await call(client, 'show', {id: 'rows', spec: "root=Page('Rows',[t,s])\nt=DataTable('fake.rows src top=5',title='Top files')\ns=DataTable('fake.slow')"});
     expect(created.isError).toBe(false);
-    expect(created.lines[0]).toMatch(/^ok rows http:\/\/127\.0\.0\.1:\d+\/#\/rows tab=none \d+ms open /);
+    expect(created.lines[0]).toMatch(/^ok rows #\/rows tab=none \d+ms open http:\/\/127\.0\.0\.1:\d+\/#t=/);
     // first call of the session: the repo line is included
     expect(created.lines[1]).toMatch(/^repo /);
     expect(created.lines.slice(2)).toEqual(['ds fake.rows src top=5 | 5/25 rows; fields path n owner; top src/file00.ts 25', 'ds fake.slow | pending', 'parts t s']);
@@ -129,9 +130,10 @@ describe('show', () => {
     const component = await call(client, 'show', {id: 'rows', spec: "t=DataTabel('fake.rows lib',colums='path n',title='Top files')"});
     expect(component.lines.slice(1)).toEqual(['fixed DataTabel -> DataTable', 'fixed colums -> columns', 'ds fake.rows lib | 0/0 rows; fields path n owner; top - 0']);
 
-    // Finding F043: a dataset line the model was given for this view is not repeated, only counted.
+    // Finding F043: a dataset line the model was given for this view is not repeated, only counted. $/notes is
+    // left from before and nothing in the view reads it, so it is not a slot of this view any more.
     const replaced = await call(client, 'show', {id: 'rows', spec: "root=Page('Rows',[t])"});
-    expect(replaced.lines.slice(1)).toEqual(['ds (+1 unchanged)', 'parts t | slots $/notes']);
+    expect(replaced.lines.slice(1)).toEqual(['ds (+1 unchanged)', 'parts t']);
   });
 
   it('view plus spec patches the preset in the same call', async () => {
@@ -201,7 +203,7 @@ describe('catalog and query', () => {
     const details = await call(client, 'catalog', {names: ['DataTabel', 'git.churn', 'view:diff', 'fake.rows']});
     expect(details.isError).toBe(false);
     expect(details.lines[0]).toBe('"DataTabel" -> DataTable');
-    expect(details.text).toContain("'git.churn [path] [top=] [since=]' -> rows (ChurnRow[], max 500)");
+    expect(details.text).toContain("'git.churn [path] [top=] [since=] [by=]' -> rows (ChurnRow[], max 500)");
     expect(details.text).toContain("view:diff [range] - Review a change");
     expect(details.text).toContain("diff=DiffView('wt',title='Diff',size='fill')");
 

@@ -1,6 +1,8 @@
 // Every preset view renders from the real analyzers without a redline, a console error or a CSP violation, and its
 // tool result stays inside the 1,200-character budget: on the fixture repository, on this repository and on
 // GLIMPSE_E2E_REPO when set.
+import {existsSync} from 'node:fs';
+import {join} from 'node:path';
 import {expectSettled, expectSurface, openViewer, pageState, recordTiming} from './support/glimpse.ts';
 import {EXTRA_REPO, ROOT} from './support/paths.ts';
 import {expect, test} from './support/test.ts';
@@ -78,4 +80,18 @@ test('show tells the agent when a code or diff target does not exist', async ({g
   expect(code.isError, code.text).toBe(false);
   expect(code.lines.filter(line => line.startsWith('warn ') && /does-not-exist\.ts/.test(line)), code.text).toHaveLength(1);
   expect(code.lines.filter(line => line.startsWith('warn ') && /nosuchbranch/.test(line)), code.text).toHaveLength(1);
+});
+
+// Finding V071: on a case-insensitive file system 'file SRC/Auth/Service.ts' is src/auth/service.ts. The view reads,
+// titles and lists it under the inventory's spelling, and the result says what was corrected.
+test('a path written in another case is shown under the inventory spelling', async ({page, glimpse, repoRoot}) => {
+  test.skip(!existsSync(join(repoRoot, 'readme.MD')), 'this file system tells case apart');
+  const shown = await glimpse.call('show', {view: 'file SRC/Auth/Service.ts'});
+  expect(shown.isError, shown.text).toBe(false);
+  expect(shown.lines, shown.text).toContain("fixed path 'SRC/Auth/Service.ts' -> 'src/auth/service.ts'");
+  expect(shown.lines.filter(line => line.startsWith('ds ')).join('\n'), shown.text).not.toMatch(/SRC\/Auth/);
+  expect(shown.lines.filter(line => line.startsWith('warn ')), shown.text).toEqual([]);
+  await openViewer(page, glimpse);
+  await expectSettled(page);
+  await expect(page.locator('[data-gl="Page"] h1').first()).toContainText('src/auth/service.ts');
 });

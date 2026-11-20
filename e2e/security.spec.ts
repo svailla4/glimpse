@@ -252,7 +252,7 @@ test.describe('containment', () => {
     for (const [id, slug] of [['../x', 'x'], ['a/b', 'a-b'], ['a b', 'a-b'], ['__proto__.x', '__proto__-x']]) {
       const result = await glimpse.call('show', {id, spec: "root=Page('x',[Text('y')])"});
       expect.soft(result.isError, `id ${JSON.stringify(id)}: ${result.text}`).toBe(false);
-      expect.soft(result.lines[0], `id ${JSON.stringify(id)}`).toMatch(new RegExp(`^ok ${slug} \\S+/#/${slug} `));
+      expect.soft(result.lines[0], `id ${JSON.stringify(id)}`).toMatch(new RegExp(`^ok ${slug} #/${slug} `));
       expect.soft(result.text, `id ${JSON.stringify(id)}`).toContain(`-> ${slug}`);
     }
     const unknown = await glimpse.call('show', {view: 'overveiw'});

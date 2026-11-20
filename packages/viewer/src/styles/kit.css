@@ -236,6 +236,8 @@
   .gl-path-dir, .gl-path-line { color: var(--gl-ink-3); }
   .gl-path-dir { flex: 0 1000000 auto; min-width: 2.5ch; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
   .gl-path-dir > bdi { direction: ltr; }
+  /* Whole directories were dropped for `…/` (kit/entity.tsx): what is left fits, and sits against the name. */
+  .gl-path-dir[data-dropped] { min-width: auto; }
   .gl-path-base { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--gl-ink); }
   .gl-path-line { flex: none; }
   .gl-path-ext {
@@ -277,6 +279,8 @@
     pointer-events: none;
     overflow-wrap: anywhere;
   }
+  /* A plate that is being moved or resized passes over other views: their tooltips stay down meanwhile. */
+  :root[data-gl-arranging] .gl-tooltip { display: none; }
 
   /* ---- arrangement (design 12.1.A): the plate header is the drag handle, its right edge resizes the span ------ */
   .gl-frame-head[data-arrange], .gl-arrange-handle { cursor: grab; }
@@ -301,5 +305,5 @@
   }
   .gl-resize[data-resizing] > .gl-resize-tag { display: block; }
   /* Spans only apply on the wide 12-column layout. */
-  @container page (max-width: 1099px) { .gl-resize { display: none; } }
+  @container page (max-width: 999px) { .gl-resize { display: none; } }
 }

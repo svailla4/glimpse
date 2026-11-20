@@ -42,7 +42,7 @@ describe('show', () => {
   it('create: one focused frame with the snapshot; ready data inline, slow data pending, then filled', async () => {
     const t = start();
     const outcome = await t.session.show(spec('demo', BASE));
-    expect(outcome).toMatchObject({id: 'demo', mode: 'create', url: 'http://127.0.0.1:4517/#/demo', tab: 'none', fixes: [], warnings: [], parts: ['notes', 'table', 'slow'], slots: ['$/notes'], first: true});
+    expect(outcome).toMatchObject({id: 'demo', mode: 'create', url: '#/demo', openUrl: 'http://127.0.0.1:4517/#t=test-token-0123456789', tab: 'none', fixes: [], warnings: [], parts: ['notes', 'table', 'slow'], slots: ['$/notes'], first: true});
     expect(outcome.openUrl).toMatch(/#t=/);
     expect(t.host.frames).toHaveLength(1);
     expect(t.host.frames[0]).toMatchObject({surfaceId: 'demo', focus: 'demo'});
@@ -95,6 +95,15 @@ describe('show', () => {
     expect(created(frame).components.map(c => c.id)).toEqual(['root', 'notes']);
     expect(created(frame).dataModel).toMatchObject({notes: 'hi', ds: {}});
     expect(outcome.parts).toEqual(['notes']);
+    expect(outcome.slots).toEqual(['$/notes']);
+  });
+
+  // Integrator item: the slots line listed the data of a spec that had been replaced.
+  it('the slots of a replace are those the new view reads or this call writes, not leftovers', async () => {
+    const t = start();
+    await t.session.show(spec('demo', `$/a='one'\n$/b='two'\nroot=Page('First',[Text($/a),Text($/b)])`));
+    expect((await t.session.show(spec('demo', `root=Page('Second',[Text('plain')])`))).slots).toEqual([]);
+    expect((await t.session.show(spec('demo', `$/c='three'\nroot=Page('Third',[Text($/b)])`))).slots).toEqual(['$/b', '$/c']);
   });
 
   it('a preset with a spec is one create; a preset on an existing id replaces it', async () => {
@@ -394,9 +403,10 @@ describe('host actions', () => {
   it('gl_open launches the editor for a path inside the root, as an argument vector', async () => {
     await mkdir(join(dir.root, 'src'), {recursive: true});
     await writeFile(join(dir.root, 'src', 'a b.ts'), 'x');
-    const t = start({env: {GLIMPSE_EDITOR: 'myedit --goto {file}:{line} --reuse', DISPLAY: ':0'}});
+    // finding V019: an absolute program is the user's own choice and is run as written
+    const t = start({env: {GLIMPSE_EDITOR: '/opt/edit/myedit --goto {file}:{line} --reuse', DISPLAY: ':0'}});
     expect(await t.session.openFile('src/a b.ts#L12-20')).toBeUndefined();
-    expect(t.launched).toEqual([['myedit', ['--goto', `${join(dir.root, 'src', 'a b.ts')}:12`, '--reuse']]]);
+    expect(t.launched).toEqual([['/opt/edit/myedit', ['--goto', `${join(dir.root, 'src', 'a b.ts')}:12`, '--reuse']]]);
   });
 
   it('gl_open refuses anything outside the root and opens nothing under GLIMPSE_NO_OPEN', async () => {

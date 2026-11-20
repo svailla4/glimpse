@@ -1,6 +1,7 @@
 // The repository index: inventory, facts, import edges and the module cut, memoized until invalidate().
 // Frozen signature (contracts.ts): createRepoIndex(root, runGit, log): RepoIndex.
-import {basename} from 'node:path';
+import {realpathSync} from 'node:fs';
+import {basename, sep} from 'node:path';
 import type {FileEntry, FileFacts, ImportEdge, RepoContext, RepoIndex, RunGit} from '../contracts.ts';
 import type {ScannedFacts} from './facts.ts';
 import {isListed, listFiles, scanFiles, type Scan, type ScanRecord} from './inventory.ts';
@@ -10,9 +11,15 @@ import {resolveImports} from './resolve.ts';
 
 export type {RepoModel} from './model.ts';
 
+/** The names of the scan: its files, and every directory that holds one ('' for the root). */
+interface Names {
+  files: ReadonlySet<string>;
+  dirs: ReadonlySet<string>;
+}
+
 interface Revision {
   scan: Promise<Scan>;
-  paths?: Promise<ReadonlySet<string>>;
+  names?: Promise<Names>;
   model?: Promise<RepoModel>;
   edges?: Promise<ImportEdge[]>;
 }
@@ -29,6 +36,25 @@ const OWN = new WeakMap<RepoIndex, Own>();
 const DERIVED = new WeakMap<RepoIndex, {files: unknown; model: Promise<RepoModel>}>();
 
 const normalize = (path: string) => path.replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/\/+$/, '');
+
+/**
+ * The repo-relative path as the file system spells it: the same path on a case-sensitive system, the stored case
+ * of each segment on a case-insensitive one. Undefined when nothing is there, or when the path only reaches a file
+ * through a symbolic link (its real path then differs by more than case): such a path is never a file of the project.
+ */
+export function canonicalCase(root: string, path: string): string | undefined {
+  if (path === '' || path.includes('\0') || path.startsWith('/') || path.split('/').some(part => part === '..')) return undefined;
+  let real: string;
+  try {
+    real = realpathSync.native(`${root}/${path}`);
+  } catch {
+    return undefined;
+  }
+  const base = realpathSync.native(root);
+  if (!real.startsWith(`${base}/`)) return undefined;
+  const named = real.slice(base.length + 1).split(sep).join('/');
+  return named.toLowerCase() === path.toLowerCase() ? named : undefined;
+}
 
 export function createRepoIndex(root: string, runGit: RunGit, log: (message: string) => void): RepoIndex {
   const name = basename(root);
@@ -65,6 +91,41 @@ export function createRepoIndex(root: string, runGit: RunGit, log: (message: str
     return mine.model;
   };
 
+  const namesOf = (mine: Revision): Promise<Names> => {
+    mine.names ??= mine.scan.then(scan => {
+      const files = new Set<string>();
+      const dirs = new Set<string>(['']);
+      for (const {path} of scan.entries) {
+        files.add(path);
+        for (let cut = path.lastIndexOf('/'); cut > 0; cut = path.lastIndexOf('/', cut - 1)) {
+          const dir = path.slice(0, cut);
+          if (dirs.has(dir)) break;
+          dirs.add(dir);
+        }
+      }
+      return {files, dirs};
+    });
+    return mine.names;
+  };
+
+  /** The inventory's name for a path and whether it is a file there; undefined when it names nothing of the project. */
+  const lookup = async (path: string): Promise<{name: string; file: boolean} | undefined> => {
+    const clean = normalize(path);
+    const mine = current();
+    const names = await namesOf(mine);
+    if (names.files.has(clean)) return {name: clean, file: true};
+    if (names.dirs.has(clean)) return {name: clean, file: false};
+    // On a case-insensitive file system '.IDEA/x' and 'readme.md' name '.idea/x' and 'README.md': the question is
+    // asked of the name the file has on disk, so a skipped directory stays skipped and a real file is found, and that
+    // name is the one handed back (V071).
+    const named = canonicalCase(root, clean);
+    if (named === undefined) return undefined;
+    if (names.files.has(named)) return {name: named, file: true};
+    if (names.dirs.has(named)) return {name: named, file: false};
+    // Not in the scan: either not a file of the project, or one created since. Git (or the walk's rules) decides.
+    return (await isListed(root, runGit, (await mine.scan).source, named)) ? {name: named, file: true} : undefined;
+  };
+
   const index: RepoIndex = {
     files: async () => (await current().scan).entries,
     facts: async () => (await current().scan).facts,
@@ -78,14 +139,8 @@ export function createRepoIndex(root: string, runGit: RunGit, log: (message: str
       return mine.edges;
     },
     moduleOf: async path => (await model()).cut.moduleOf(normalize(path)),
-    has: async path => {
-      const clean = normalize(path);
-      const mine = current();
-      mine.paths ??= mine.scan.then(scan => new Set(scan.entries.map(entry => entry.path)));
-      if ((await mine.paths).has(clean)) return true;
-      // Not in the scan: either not a file of the project, or one created since. Git (or the walk's rules) decides.
-      return isListed(root, runGit, (await mine.scan).source, clean);
-    },
+    has: async path => (await lookup(path))?.file === true,
+    canonical: async path => (await lookup(path))?.name,
     invalidate: () => {
       revision = undefined;
     },

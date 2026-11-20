@@ -36,13 +36,14 @@ export interface SurfaceRecord {
   sel?: EntityRef | null;
   /** The file that selection last pointed at (the value of /ui/file). */
   file?: string;
-  /** What the viewer reported it drew instead of the component (a redline, an empty state), by `Name#id`. */
-  reports: Map<string, ViewerReport>;
+  /**
+   * Ids of the components a preset defined and the model has not redefined since. What such a part draws when its
+   * data is empty is the preset's state, not something the model wrote (decision D14).
+   */
+  preset: Set<string>;
   createdAt: number;
   updatedAt: number;
 }
-
-export interface ViewerReport { code: string; message: string }
 
 export interface Draft {
   record: SurfaceRecord;
@@ -51,7 +52,8 @@ export interface Draft {
    * Replace mode only (finding F028): every component of the previous version is still in this one, so the tab can
    * be brought up to date with updateComponents and updateDataModel instead of deleteSurface + createSurface, and
    * keeps what lives in its components (tree expansion, scroll, filters). The server still treats the call as a
-   * replace: drills are cleared and every dataset is listed.
+   * replace: drills are cleared and every dataset is listed. `changed`: the components the call defines (identical
+   * or not) and any other whose definition differs; they are sent again and their reported state is forgotten.
    */
   inPlace?: {previous: SurfaceRecord; changed: ReadonlySet<string>};
   /** Patch mode: the compiled messages, to publish as they are. */
@@ -70,6 +72,9 @@ export interface DraftOptions {
   refs: ReadonlyMap<string, SourceRef>;
   /** Named parts the call defines. */
   parts: readonly string[];
+  /** Components the call's preset text defines, and those its own spec defines (which are the model's from then on). */
+  presetIds?: ReadonlySet<string>;
+  modelIds?: ReadonlySet<string>;
   now: number;
 }
 
@@ -165,10 +170,22 @@ function wholeSlots(messages: readonly A2uiMessage[], data: Record<string, unkno
   return out;
 }
 
-function titleOf(components: Map<string, WireComponent>, id: string): string {
+/** Longest surface title kept; tab labels and the session list show it. */
+const MAX_TITLE = 80;
+
+/**
+ * The Page title, at most MAX_TITLE characters. A long one loses its start, whole leading path segments first, so a
+ * file's title keeps its file name (finding V044: 'packages/…/very/long/dir' instead of 'session.ts').
+ */
+export function titleOf(components: Map<string, WireComponent>, id: string): string {
   const root = components.get(ROOT_ID);
-  const title = root?.component === 'Page' ? root.title : undefined;
-  return typeof title === 'string' && title.trim() ? title.trim().slice(0, 80) : id;
+  const title = root?.component === 'Page' && typeof root.title === 'string' ? root.title.trim() : '';
+  if (!title) return id;
+  if (title.length <= MAX_TITLE) return title;
+  const segments = title.split('/');
+  while (segments.length > 1 && 2 + segments.join('/').length > MAX_TITLE) segments.shift();
+  const tail = segments.join('/');
+  return tail.length + 2 <= MAX_TITLE && segments.length < title.split('/').length ? `…/${tail}` : `…${title.slice(-(MAX_TITLE - 1))}`;
 }
 
 function losesProp(before: WireComponent, after: WireComponent): boolean {
@@ -182,23 +199,26 @@ const pointer = (key: string) => `/${key.replace(/~/g, '~0').replace(/\//g, '~1'
 
 /**
  * Finding F028: the frame that brings a tab from `previous` to `record` without recreating the surface. Data slots,
- * envelopes and components that changed are sent; a slot or an envelope that is gone is removed (an updateDataModel
- * without a value). /ui stays the tab's own unless the spec wrote it. /meta always goes, so the frame is never
- * empty and carries the focus.
+ * envelopes and components that changed are sent; a slot or an envelope that is gone is removed (value null). /ui
+ * goes when what the store holds for it changed, so it stays the tab's own otherwise. /meta always goes, so the frame
+ * is never empty and carries the focus.
  */
 export function inPlaceMessages(previous: SurfaceRecord, record: SurfaceRecord, meta: SurfaceMeta, changed: ReadonlySet<string>): A2uiMessage[] {
   const surfaceId = record.id;
-  // An undefined value is dropped by JSON on the way to the tab, and an updateDataModel without a value removes the key.
+  // A2UI v1.0 requires `value` on every updateDataModel: a key that is gone is removed with an explicit null.
   const set = (path: string, value: unknown): A2uiMessage =>
-    ({version: PROTOCOL_VERSION, updateDataModel: {surfaceId, path, value: value === undefined ? undefined : structuredClone(value)}});
+    ({version: PROTOCOL_VERSION, updateDataModel: {surfaceId, path, value: value === undefined ? null : structuredClone(value)}});
   const out: A2uiMessage[] = [];
   const keys = new Set([...Object.keys(previous.data), ...Object.keys(record.data)]);
   for (const key of keys) {
-    if (key === 'ds' || key === 'meta' || UNSAFE_KEYS.has(key) || sameJson(previous.data[key], record.data[key])) continue;
-    // /ui is written only when the spec wrote it: the selection and the file are the tab's (and are kept in the record).
-    if (key === 'ui') { if (record.data.ui !== undefined) out.push(set('/ui', dataModelOf(record, meta).ui)); continue; }
+    if (key === 'ds' || key === 'meta' || key === 'ui' || UNSAFE_KEYS.has(key) || sameJson(previous.data[key], record.data[key])) continue;
     out.push(set(pointer(key), record.data[key]));
   }
+  // /ui as the tab has it (the spec's, with the user's selection on top) against what the store holds now. They differ
+  // when the spec wrote /ui, and when a preset shown again starts over from its own file (finding V053): the tab then
+  // shows what a reload or a second tab would.
+  const ui = dataModelOf(record, meta).ui;
+  if (!sameJson(dataModelOf(previous, meta).ui, ui)) out.push(set('/ui', ui));
   for (const key of new Set([...Object.keys(previous.ds), ...Object.keys(record.ds)])) {
     if (previous.ds[key] !== record.ds[key] && !UNSAFE_KEYS.has(key)) out.push(set(`/ds/${pointer(key).slice(1)}`, record.ds[key]));
   }
@@ -239,11 +259,16 @@ export class SurfaceStore {
     let rootRedefined = false;
     let lostProp = false;
     let wroteUi = false;
+    /** Every component the call's own text defines, whether or not its definition changed. */
+    const defined = new Set<string>();
 
     for (const message of messages) {
       if ('createSurface' in message) {
         components.clear();
-        for (const comp of message.createSurface.components) components.set(comp.id, structuredClone(comp));
+        for (const comp of message.createSurface.components) {
+          components.set(comp.id, structuredClone(comp));
+          defined.add(comp.id);
+        }
         // Own keys only, one by one: Object.assign would run the __proto__ setter for a key of that name.
         for (const [key, value] of Object.entries(structuredClone(message.createSurface.dataModel ?? {}))) {
           if (UNSAFE_KEYS.has(key)) continue;
@@ -256,6 +281,7 @@ export class SurfaceStore {
           if (comp.id === ROOT_ID && before) rootRedefined = true;
           if (before && losesProp(before, comp)) lostProp = true;
           components.set(comp.id, structuredClone(comp));
+          defined.add(comp.id);
         }
       } else if ('updateDataModel' in message) {
         setPath(data, message.updateDataModel.path ?? '/', structuredClone(message.updateDataModel.value));
@@ -275,9 +301,11 @@ export class SurfaceStore {
     }
     const mode: CommitMode = !previous ? 'create' : !current || rootRedefined || lostProp || pruned > 0 ? 'replace' : 'patch';
     // The viewer replaces a component's props wholesale and recreates one whose type changed, so a replace only needs
-    // a new surface when a component of the previous version would be left behind.
+    // a new surface when a component of the previous version would be left behind. Decision D14 (finding V051): every
+    // component the call defines is sent and its state forgotten, also when the definition is the same as before, so
+    // a fix that leaves it as broken as it was is reported again; components the call does not name are left alone.
     const inPlace = mode === 'replace' && previous !== undefined && [...previous.components.keys()].every(compId => components.has(compId))
-      ? {previous, changed: new Set([...components].filter(([compId, comp]) => !sameJson(previous.components.get(compId), comp)).map(([compId]) => compId))}
+      ? {previous, changed: new Set([...components].filter(([compId, comp]) => defined.has(compId) || !sameJson(previous.components.get(compId), comp)).map(([compId]) => compId))}
       : undefined;
     // Decision D1: a show that creates or replaces the surface starts every dataset at the spec's own scope again;
     // a patch keeps the scopes the user drilled to. A dataset that loses its drill needs a fresh run.
@@ -302,9 +330,7 @@ export class SurfaceStore {
       // The user's selection survives unless this call wrote /ui itself; viewer reports belong to one layout.
       ...(current && !wroteUi && current.sel !== undefined ? {sel: current.sel} : {}),
       ...(current && !wroteUi && current.file !== undefined ? {file: current.file} : {}),
-      // Decision D3: what a tab reported belongs to the components it drew. A tab updated in place reports a state
-      // once and does not repeat it, so the reports of components it keeps unchanged are kept with them.
-      reports: new Map(keep?.reports ?? (inPlace ? [...inPlace.previous.reports].filter(([key]) => !inPlace.changed.has(key.slice(key.indexOf('#') + 1))) : [])),
+      preset: new Set([...(current?.preset ?? []), ...(options.presetIds ?? [])].filter(compId => components.has(compId) && !options.modelIds?.has(compId))),
       createdAt: previous?.createdAt ?? options.now,
       updatedAt: options.now,
     };

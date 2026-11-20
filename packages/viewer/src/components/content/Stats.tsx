@@ -1,11 +1,11 @@
 // Stats (design 5.3): a KPI strip. Equal-width Stat cells separated by hairlines. When the cells do not fit one row
 // they are spread over rows of equal length (7 cells are 4 + 3, never 6 + 1), and every cell of the grid, a blank
 // one at the end included, draws the same rules, so a wrapped strip has no half-drawn lines and no orphan.
-import type {StatItem} from '@glimpse/catalog';
+import type {Roles, StatItem} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {useMemo, useRef, type JSX} from 'react';
 import {DataGate, Empty, Redline, fmtNum, toNumber, useDataset, useSize, type GlView} from '../../kit/index.ts';
-import {cellText, isRecord, shapeMessage} from './shared/data.ts';
+import {cellText, isLabelValueItem, isRecord, labelValueKeys, shapeHint, shapeMessage} from './shared/data.ts';
 import {StatCell, asFormat, type StatCellProps} from './shared/StatCell.tsx';
 import styles from './Stats.module.css';
 
@@ -49,20 +49,41 @@ function Strip(p: {cells: StatCellProps[]}): JSX.Element {
   );
 }
 
-function normalize(items: readonly unknown[]): StatCellProps[] {
+function cellOf(item: Record<string, unknown>, label: unknown, value: unknown): StatCellProps {
+  return {
+    value,
+    label: cellText(label).trim() || undefined,
+    unit: cellText(item.unit).trim() || undefined,
+    delta: item.delta,
+    spark: item.spark,
+    format: asFormat(item.format),
+    tone: item.tone,
+  };
+}
+
+/**
+ * Cells from a list of items or from the object form {Label: value} (V002: the shapes KeyValue takes work here too).
+ * An item's label is in `label`, `name`, `key`, `k` or `title`, its value in `value` or `v`, a dataset's roles first.
+ * In the object form a value may itself be a {value, unit, delta, ...} item.
+ */
+export function normalize(data: unknown, roles?: Roles): StatCellProps[] {
   const cells: StatCellProps[] = [];
-  for (const item of items as readonly (StatItem | unknown)[]) {
+  if (isRecord(data)) {
+    if (isLabelValueItem(data)) return normalize([data], roles);
+    for (const [label, value] of Object.entries(data)) {
+      if (isRecord(value)) {
+        const {valueKey} = labelValueKeys(value);
+        cells.push(cellOf(value, label, valueKey === undefined ? undefined : value[valueKey]));
+      } else cells.push({value, label: label.trim() || undefined});
+    }
+    return cells;
+  }
+  if (!Array.isArray(data)) return cells;
+  for (const item of data as readonly (StatItem | unknown)[]) {
     if (isRecord(item)) {
-      if (!('value' in item) && !('label' in item)) continue;
-      cells.push({
-        value: item.value,
-        label: cellText(item.label).trim() || undefined,
-        unit: cellText(item.unit).trim() || undefined,
-        delta: item.delta,
-        spark: item.spark,
-        format: asFormat(item.format),
-        tone: item.tone,
-      });
+      const {labelKey, valueKey} = labelValueKeys(item, roles);
+      if (labelKey === undefined && valueKey === undefined) continue;
+      cells.push(cellOf(item, labelKey === undefined ? undefined : item[labelKey], valueKey === undefined ? undefined : item[valueKey]));
     } else if (typeof item === 'number' || typeof item === 'string') {
       cells.push({value: item});
     }
@@ -71,13 +92,18 @@ function normalize(items: readonly unknown[]): StatCellProps[] {
 }
 
 export const StatsView: GlView<typeof C.Stats> = ({id, props}) => {
-  const state = useDataset<StatItem[]>(props.data);
-  const cells = useMemo(() => (Array.isArray(state.data) ? normalize(state.data) : []), [state.data]);
+  const state = useDataset<StatItem[] | Record<string, unknown>>(props.data);
+  const cells = useMemo(() => normalize(state.data, state.roles), [state.data, state.roles]);
   return (
     <DataGate state={state} id={`Stats#${id}`}>
       {data => {
-        if (!Array.isArray(data)) return <Redline code="E_SHAPE" id={`Stats#${id}`} message={shapeMessage('a list of {label, value}', data)} />;
-        if (cells.length === 0) return <Empty message="no figures to show" />;
+        if (!Array.isArray(data) && !isRecord(data)) return <Redline code="E_SHAPE" id={`Stats#${id}`} message={shapeMessage('[{label, value}] or {Label: value}', data)} />;
+        if (cells.length === 0) {
+          const given = Array.isArray(data) ? data.length > 0 : Object.keys(data).length > 0;
+          return given
+            ? <Empty message={`no figures: Stats takes [{label, value}] or {Label: value}, got ${shapeHint(data)}`} code="W_SHAPE" />
+            : <Empty message="no figures to show" />;
+        }
         const shown = cells.slice(0, MAX_CELLS);
         return (
           <div className={styles.stats}>

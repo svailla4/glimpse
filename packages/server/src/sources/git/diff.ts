@@ -5,6 +5,7 @@ import {
   SOURCE_BY_NAME, type DiffFileRow, type DirNode, type GraphData, type GraphEdge, type GraphNode, type SourceMeta, type StatItem,
 } from '@glimpse/catalog';
 import {importersOfGone} from '../../analyze/index.ts';
+import {isTestPath} from '../../analyze/languages.ts';
 import {isPackageImport} from '../../analyze/model.ts';
 import {langOfPath} from '../../code/langs.ts';
 import type {FileEntry, ImportEdge, RepoContext, Source, SourceResult} from '../../contracts.ts';
@@ -22,9 +23,7 @@ const meta = (name: string): SourceMeta => {
 };
 
 /** The repository's rule for test files (design 4.8), for paths the index does not know: deleted, or on another branch. */
-export function isTestPath(path: string): boolean {
-  return /(^|\/)(tests?|__tests__|spec)\//.test(path) || /[._-](test|spec)\./.test(path) || /_test\.go$/.test(path) || /(^|\/)test_[^/]*\.py$/.test(path);
-}
+export {isTestPath};
 
 interface Loaded {
   changes: ChangeSet;
@@ -71,6 +70,7 @@ const diffStats: Source = {
       const counted = await ctx.runGit(['rev-list', '--count', '--no-merges', ...(within.length > 0 ? [FULL_HISTORY] : []), ...range.logArgs, ...within], {signal});
       commits = Number(counted.toString('utf8').trim()) || 0;
     }
+    // Test files the change itself edits, adds or deletes; a test that only imports a changed file is diff.impact's.
     const tests = changes.files.filter(file => testOf(file, entries)).length;
     const data: StatItem[] = [
       {label: 'Files changed', value: totals.files},
@@ -83,7 +83,7 @@ const diffStats: Source = {
       data,
       total: data.length,
       ...withWarnings(warnings),
-      summary: summarize(`${totalsNote(changes)}, ${commits} ${commits === 1 ? 'commit' : 'commits'}, ${tests} test ${tests === 1 ? 'file' : 'files'}; fields label value`),
+      summary: summarize(`${totalsNote(changes)}, ${commits} ${commits === 1 ? 'commit' : 'commits'}, ${tests} test ${tests === 1 ? 'file' : 'files'} changed; fields label value`),
     };
   },
 };

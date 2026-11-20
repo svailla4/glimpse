@@ -15,6 +15,8 @@ export {ArrangeContext, PlateAside, borrowView, implement, isFrameable, loadChun
 export type {ArrangeApi, CellInfo, ChunkLoaders, GlView, GlViewProps, KitSlots, ViewModule} from './implement.tsx';
 export * from './marginal.tsx';
 export * from './provider.tsx';
+export {REPORT_CODES, ReportContext, Subpart, createRedefinitions, reportCode, useReportState} from './report.ts';
+export type {RenderReport, ReportChannel} from './report.ts';
 export * from './select.ts';
 export * from './states.tsx';
 export * from './surface.ts';

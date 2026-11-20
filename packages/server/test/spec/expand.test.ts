@@ -1,6 +1,6 @@
 // Expansion: source refs and default sources become /ds bindings; refs, notation, columns and reserved paths are
 // judged here. Runs on a registry of fakes plus the catalog's own source names.
-import {datasetKey, parseRef, SOURCE_BY_NAME, type A2uiMessage, type WireComponent} from '@glimpse/catalog';
+import {datasetKey, GALLERY_SPEC, parseRef, SOURCE_BY_NAME, VIEWS, type A2uiMessage, type WireComponent} from '@glimpse/catalog';
 import {beforeAll, describe, expect, it} from 'vitest';
 import {createRegistry} from '../../src/sources/registry.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
@@ -80,7 +80,7 @@ describe('expandMessages: data props', () => {
     const out = expand(`root=Page('x',[DataTable('code.symbols'),DataTable('git.churn limit=5'),Graph('deps.files src/a.ts depth=2 top=3')])`);
     expect(out.lines).toEqual([
       `E_ARGS DataTable#root_children_0.data: code.symbols needs a path. Ref: 'code.symbols <path> [top=]'`,
-      `E_ARGS DataTable#root_children_1.data: git.churn takes no argument "limit". Ref: 'git.churn [path] [top=] [since=]'`,
+      `E_ARGS DataTable#root_children_1.data: git.churn takes no argument "limit". Ref: 'git.churn [path] [top=] [since=] [by=]'`,
       `E_ARGS Graph#root_children_2.data: deps.files takes no argument "top". Ref: 'deps.files <path> [depth=]'`,
     ]);
   });
@@ -139,14 +139,44 @@ describe('expandMessages: notation, columns, paths', () => {
 
 // Findings F032 and F090: an `ok` whose view shows a redline. What the spec alone gives away is said at once.
 describe('expandMessages: what is certain to draw wrong', () => {
-  it('warns when a source returns a kind of data the component cannot draw', () => {
+  // Finding V009: the warning names the component that draws the kind the source returns.
+  it('warns when a source returns a kind of data the component cannot draw, and says what draws it', () => {
     const out = expand(`root=Page('x',[DataTable('diff.impact',id='impact'),Treemap('files.list'),Graph('files.tree'),DataTable('fake.rows'),Treemap(),JsonView('deps.modules')])`);
     expect(out.problems).toEqual([]);
     expect(out.warnings).toEqual([
-      'DataTable#impact: diff.impact returns a graph, but DataTable draws rows (Rows). The plate will show an error.',
-      'Treemap#root_children_1: files.list returns rows, but Treemap draws a tree (DirNode). The plate will show an error.',
-      'Graph#root_children_2: files.tree returns a tree, but Graph draws a graph (GraphData). The plate will show an error.',
+      "Treemap#root_children_1: files.list returns rows, which Treemap cannot draw: use DataTable('files.list'). The plate will show an error.",
+      "Graph#root_children_2: files.tree returns a tree, which Graph cannot draw: use FileTree('files.tree') or Treemap('files.tree'). The plate will show an error.",
     ]);
+  });
+
+  // Finding V006: the path deps.files needs was given as focus=, and the first try was E_ARGS.
+  it('a source that needs a path and has none takes the Graph focus as its target', () => {
+    const out = expand(`root=Page('x',[Graph('deps.files',focus='packages/server/src/spec',depth=2),Graph('deps.files src/a.ts',focus='src/b.ts'),Graph('deps.modules',focus='src')])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual(["Graph 'deps.files' -> 'deps.files packages/server/src/spec' (focus= names its path)"]);
+    const graphs = out.components.filter(comp => comp.component === 'Graph');
+    expect(graphs[0]).toMatchObject({data: bind('deps.files packages/server/src/spec'), depth: 2});
+    expect(graphs[0]!.focus).toBeUndefined();
+    // a ref that has its path, or a source that needs none, keeps its focus
+    expect(graphs[1]).toMatchObject({data: bind('deps.files src/a.ts'), focus: 'src/b.ts'});
+    expect(graphs[2]).toMatchObject({data: bind('deps.modules'), focus: 'src'});
+    // without a focus, the missing path is still the author's to give
+    expect(expand(`root=Page('x',[Graph('deps.files')])`).codes).toEqual(['E_ARGS']);
+  });
+
+  // Finding V009: both cold writers put diff.impact in a DataTable and got a redline.
+  it('a component that draws rows, bound to a graph source, draws its nodes as rows', () => {
+    const out = expand(`root=Page('x',[DataTable('diff.impact',id='impact',sort='-importers'),BarChart('deps.modules src',y='fanIn')])`);
+    expect(out.warnings).toEqual([]);
+    expect(out.fixes).toEqual([
+      "DataTable 'diff.impact' -> 'diff.impact as=rows' (its nodes as rows; Graph('diff.impact') draws the graph)",
+      "DataTable.sort '-importers' -> '-fanIn'",
+      "BarChart 'deps.modules src' -> 'deps.modules src as=rows' (its nodes as rows; Graph('deps.modules src') draws the graph)",
+    ]);
+    expect(out.byComponent('DataTable').data).toEqual(bind('diff.impact as=rows'));
+    // written that way by the model, the ref is accepted as it is
+    expect(checkRef('diff.impact as=rows', registry)).toMatchObject({ref: {source: 'diff.impact', args: {as: 'rows'}}});
+    expect(checkRef('git.log as=rows', registry)).toMatchObject({problem: {code: 'E_ARGS'}});
   });
 
   it('collects the literal files and ranges for the session to check', () => {
@@ -156,13 +186,100 @@ describe('expandMessages: what is certain to draw wrong', () => {
     expect(out.ranges).toEqual([{where: 'DiffView#root_children_5', range: 'main..HEAD'}]);
   });
 
-  it('collects the field names a component asks of its dataset', () => {
-    const out = expand(`root=Page('x',[ScatterPlot('fake.rows',x='churn',y='n'),DataTable('fake.rows src','path:path=File n:num',sort='-owner',group='lang'),LineChart('fake.rows',y='n owner'),BarChart($/inline,x='a'),Treemap(value='loc')])`);
+  // Finding V071: paths written in another case are recorded, and expanding with the names the session found shows,
+  // binds and checks them under the inventory's spelling, each said once.
+  it('records the paths it writes and uses the inventory names it is given for them', () => {
+    const spec = `root=Page('x',[CodeView('readme.md#L1-5'),CommitList('git.log readme.md top=5'),DataTable('git.churn PACKAGES top=3'),FileRef('readme.md'),DiffView('wt','Gone.ts'),CodeTour([{file:'readme.md',note:'n'}]),DiffView('main..HEAD'),DataTable('fake.rows')])`;
+    const first = expand(spec);
+    expect(first.paths).toEqual(['readme.md#L1-5', 'readme.md', 'PACKAGES', 'Gone.ts']);
+    expect(first.fixes).toEqual([]);
+
+    const {messages} = compileSpec(tools, {surfaceId: 's', sources: [spec], surfaces: []});
+    const names = new Map([['readme.md#L1-5', 'README.md#L1-5'], ['readme.md', 'README.md'], ['PACKAGES', 'packages'], ['Gone.ts', 'Gone.ts']]);
+    const out = expandMessages(messages, registry, names);
+    const components = 'createSurface' in messages[0]! ? messages[0].createSurface.components : [];
+    const comp = (i: number) => components.find(c => c.id === `root_children_${i}`)!;
+    expect(out.fixes).toEqual(["path 'readme.md#L1-5' -> 'README.md#L1-5'", "path 'readme.md' -> 'README.md'", "path 'PACKAGES' -> 'packages'"]);
+    expect(comp(0).file).toBe('README.md#L1-5');
+    expect(comp(1).data).toEqual(bind('git.log README.md top=5'));
+    expect(comp(2).data).toEqual(bind('git.churn packages top=3'));
+    expect(comp(3).file).toBe('README.md');
+    expect(comp(4).file).toBe('Gone.ts');
+    expect(comp(5).data).toEqual([{file: 'README.md', note: 'n'}]);
+    expect([...out.refs.keys()]).toContain(key('git.log README.md top=5'));
+    expect([...out.refs.keys()]).not.toContain(key('git.log readme.md top=5'));
+    expect(out.files.map(entry => entry.file)).toEqual(['README.md#L1-5', 'README.md', 'README.md']);
+  });
+
+  it('collects the field names a component asks of its dataset, once they are names the source returns', () => {
+    const out = expand(`root=Page('x',[ScatterPlot('fake.rows',x='churn',y='n'),DataTable('fake.rows src','path:path=File n:num',sort='-owner',group='lang'),LineChart('fake.rows',y='n owner'),BarChart($/inline,x='a'),Treemap(value='loc'),DataTable('fake.slow',sort='zzz')])`);
     expect(out.fields).toEqual([
-      {where: 'ScatterPlot#root_children_0', key: key('fake.rows'), names: ['churn', 'n']},
-      {where: 'DataTable#root_children_1', key: key('fake.rows src'), names: ['path', 'n', 'owner', 'lang']},
+      {where: 'ScatterPlot#root_children_0', key: key('fake.rows'), names: ['n']},
+      {where: 'DataTable#root_children_1', key: key('fake.rows src'), names: ['path', 'n', 'owner']},
       {where: 'LineChart#root_children_2', key: key('fake.rows'), names: ['n', 'owner']},
+      // no declared fields: checked against what the dataset returns once it has settled
+      {where: 'DataTable#root_children_5', key: key('fake.slow'), names: ['zzz']},
     ]);
+  });
+});
+
+// Decision D15 (finding V001): a guessed field name never produces an empty plate.
+describe('expandMessages: field names', () => {
+  const fixesOf = (spec: string) => expand(spec).fixes;
+  const propsOf = (spec: string, name: string) => expand(spec).byComponent(name);
+
+  it('keeps an exact name, and rewrites a case, a label, a synonym or a plural to the field meant', () => {
+    expect(fixesOf(`root=Page('x',[ScatterPlot('git.hotspots',x='churn',y='Complexity',r='lines',label='file')])`)).toEqual([
+      "ScatterPlot.x 'churn' -> 'commits'",
+      "ScatterPlot.y 'Complexity' -> 'complexity'",
+      "ScatterPlot.r 'lines' -> 'sloc'",
+      "ScatterPlot.label 'file' -> 'path'",
+    ]);
+    expect(propsOf(`root=Page('x',[SegmentedBar('files.langs',label='language',value='lines')])`, 'SegmentedBar')).toMatchObject({label: 'lang', value: 'loc'});
+    expect(propsOf(`root=Page('x',[LineChart('git.timeline src',x='date',y='commits',series='Main module')])`, 'LineChart')).toMatchObject({x: 'week', y: 'commits', series: 'module'});
+    expect(propsOf(`root=Page('x',[BarChart('git.churn by=module',x='module',y='churn')])`, 'BarChart')).toMatchObject({x: 'module', y: 'commits'});
+    expect(propsOf(`root=Page('x',[BarChart('git.authors',x='name',y='count')])`, 'BarChart')).toMatchObject({x: 'author', y: 'commits'});
+    expect(fixesOf(`root=Page('x',[ScatterPlot('git.hotspots',x='commits',y='complexity')])`)).toEqual([]);
+  });
+
+  it('a field only a variant of the source returns selects that variant', () => {
+    const out = expand(`root=Page('x',[BarChart('git.churn',x='module',y='churn')])`);
+    expect(out.fixes).toEqual(["BarChart 'git.churn' -> 'git.churn by=module' (it has the field module)", "BarChart.y 'churn' -> 'commits'"]);
+    expect(out.byComponent('BarChart')).toMatchObject({data: bind('git.churn by=module'), x: 'module', y: 'commits'});
+    // a variant the ref already chose, or a field the plain rows have, changes nothing
+    expect(expand(`root=Page('x',[BarChart('git.churn by=module',x='module')])`).fixes).toEqual([]);
+    expect(expand(`root=Page('x',[BarChart('git.churn',x='path',y='commits')])`).fixes).toEqual([]);
+  });
+
+  it('a field the rows carry beyond the declared columns is a field like any other', () => {
+    expect(fixesOf(`root=Page('x',[DataTable('git.hotspots',columns='path isTest:bool commits'),DataTable('diff.files wt',columns='path add del')])`)).toEqual([]);
+  });
+
+  it('drops what fits nothing, so the component draws its default encoding, and says which fields there are', () => {
+    const out = expand(`root=Page('x',[ScatterPlot('git.hotspots',x='zzz',y='complexity'),LineChart('git.activity',x='day',y='commits yyy'),DataTable('git.log',columns='sha subject when zzz:num=Z',sort='date desc',group='team')])`);
+    expect(out.fixes).toEqual([
+      "ScatterPlot.x 'zzz' dropped (fields: path commits complexity sloc score owner isTest)",
+      "LineChart.x 'day' -> 'date'",
+      "LineChart.y 'yyy' dropped (fields: date commits)",
+      "DataTable.columns 'when' -> 'date'",
+      "DataTable.columns 'zzz' dropped (fields: sha subject author date files add del refs)",
+      "DataTable.sort 'date desc' -> '-date'",
+      "DataTable.group 'team' dropped (fields: sha subject author date files add del refs)",
+    ]);
+    const scatter = out.byComponent('ScatterPlot');
+    expect(scatter.x).toBeUndefined();
+    expect(scatter.y).toBe('complexity');
+    expect(out.byComponent('LineChart')).toMatchObject({x: 'date', y: 'commits'});
+    expect(out.byComponent('DataTable')).toMatchObject({columns: 'sha subject date', sort: '-date'});
+    expect(out.byComponent('DataTable').group).toBeUndefined();
+  });
+
+  it.each([...VIEWS.map(view => [view.name, view.build(view.targetRequired ? (view.target === 'symbol' ? 'Session' : 'src/a.ts') : undefined, {})] as const), ['gallery', GALLERY_SPEC] as const])('the %s preset names only fields its sources return', (_, source) => {
+    expect(expand(source).fixes).toEqual([]);
+  });
+
+  it('inline data and sources without declared fields are left to the tab and the settle-time check', () => {
+    expect(fixesOf(`$/rows=[{a:1}]\nroot=Page('x',[BarChart($/rows,x='churn'),DataTable('fake.slow',sort='zzz'),Treemap(value='lines')])`)).toEqual([]);
   });
 
   it('writes a Split ratio given as a share the way Split reads it (finding F037)', () => {

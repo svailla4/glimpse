@@ -58,6 +58,29 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* Text beside a location (V039): the location takes what it needs up to 40% of the row, where its directory gives
+     way first and its file name and line stay; the text takes the rest and elides. */
+  .row[data-where] .title {
+    flex: 1 1 0;
+  }
+  .text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .where {
+    display: flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 40%;
+  }
+  .where :global(.gl-path-base) {
+    color: var(--gl-ink-2);
+  }
+  /* The file name already says what kind of file it is. */
+  .where :global(.gl-path-ext) {
+    display: none;
+  }
   .tone {
     flex: none;
     width: 5px;
@@ -71,6 +94,10 @@
     color: var(--gl-ink-3);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .sub[data-short] {
+    flex: none;
+    max-width: none;
   }
   .value {
     position: relative;

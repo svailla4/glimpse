@@ -105,6 +105,109 @@ describe('Python', () => {
     });
     expect(lines).toEqual(['app/main.py -> app/helpers.py (static)', 'app/main.py -> ext:utils (static)']);
   });
+
+  it('an absolute import of an external package never lands in a local package of the same name (V025)', () => {
+    // a2ui/ is a namespace package (no __init__.py); a2ui/a2a/ is the project's own package, and `a2a` is the
+    // external a2a-sdk distribution, as in the a2ui repository.
+    const {lines} = resolve({
+      'python/a2ui_a2a/pyproject.toml': '[project]\nname = "a2ui-a2a"\ndependencies = ["a2a-sdk>=0.3.0"]\n',
+      'python/a2ui_a2a/src/a2ui/a2a/__init__.py': 'from .parts import make\n',
+      'python/a2ui_a2a/src/a2ui/a2a/capabilities.py': 'from a2a.types import DataPart, Message\nfrom a2ui.a2a import parts\n',
+      'python/a2ui_a2a/src/a2ui/a2a/parts.py': 'from a2a import types\nimport a2a\n',
+      'python/a2ui_adk/src/a2ui/adk/__init__.py': '',
+      'python/a2ui_adk/src/a2ui/adk/a2a/__init__.py': '',
+      'python/a2ui_adk/src/a2ui/adk/a2a/types.py': '',
+      'python/a2ui_adk/src/a2ui/adk/a2a/_rpc.py': 'from a2a import types as a2a_types\nfrom a2a.types import Task\n',
+    });
+    expect(lines).toEqual([
+      'python/a2ui_a2a/src/a2ui/a2a/__init__.py -> python/a2ui_a2a/src/a2ui/a2a/parts.py (static)',
+      'python/a2ui_a2a/src/a2ui/a2a/capabilities.py -> ext:a2a (static)',
+      'python/a2ui_a2a/src/a2ui/a2a/capabilities.py -> python/a2ui_a2a/src/a2ui/a2a/parts.py (static)',
+      'python/a2ui_a2a/src/a2ui/a2a/parts.py -> ext:a2a (static)',
+      'python/a2ui_adk/src/a2ui/adk/a2a/_rpc.py -> ext:a2a (static)',
+    ]);
+  });
+
+  it('a script directory that also has an __init__.py still imports its sibling modules (V025)', () => {
+    // .agents/skills/<skill>/scripts/ in the a2ui repository: no manifest, the scripts are run directly (their
+    // directory is on the import path), and an __init__.py re-exports them for whoever imports the directory.
+    const dir = '.agents/skills/models/scripts';
+    const {lines} = resolve({
+      'pyproject.toml': '[project]\nname = "root"\ndependencies = ["requests>=2", "Py-YAML"]\n',
+      [`${dir}/__init__.py`]: 'from .engine import Codegen\nfrom .utils import snake\n',
+      [`${dir}/codegen.py`]: 'import argparse\nfrom engine import Codegen\nfrom schema_generators import build\nfrom utils import snake\nimport requests\nimport py_yaml\n',
+      [`${dir}/engine.py`]: 'from utils import snake\n',
+      [`${dir}/schema_generators.py`]: 'from engine import Codegen\nimport utils\n',
+      [`${dir}/utils.py`]: '',
+      // a sibling named like a declared dependency is not taken for it, nor is a sibling package for an external one
+      [`${dir}/requests.py`]: '',
+      [`${dir}/py_yaml.py`]: '',
+      'sib/scripts/__init__.py': '',
+      'sib/scripts/main.py': 'from helper import X\nimport utils\nimport a2a\n',
+      'sib/scripts/helper.py': '',
+      'sib/scripts/utils.py': '',
+      'sib/scripts/a2a/__init__.py': '',
+    });
+    expect(lines).toEqual([
+      `${dir}/__init__.py -> ${dir}/engine.py (static)`,
+      `${dir}/__init__.py -> ${dir}/utils.py (static)`,
+      `${dir}/codegen.py -> ${dir}/engine.py (static)`,
+      `${dir}/codegen.py -> ${dir}/schema_generators.py (static)`,
+      `${dir}/codegen.py -> ${dir}/utils.py (static)`,
+      `${dir}/codegen.py -> ext:py_yaml (static)`,
+      `${dir}/codegen.py -> ext:requests (static)`,
+      `${dir}/engine.py -> ${dir}/utils.py (static)`,
+      `${dir}/schema_generators.py -> ${dir}/engine.py (static)`,
+      `${dir}/schema_generators.py -> ${dir}/utils.py (static)`,
+      'sib/scripts/main.py -> ext:a2a (static)',
+      'sib/scripts/main.py -> sib/scripts/helper.py (static)',
+      'sib/scripts/main.py -> sib/scripts/utils.py (static)',
+    ]);
+  });
+
+  it('imports inside a function body are lazy and imports under `if TYPE_CHECKING:` are type-only (V026)', () => {
+    const {lines} = resolve({
+      'pkg/__init__.py': '',
+      'pkg/a.py': [
+        'from typing import TYPE_CHECKING',
+        'try:',
+        '    from pkg import b',
+        'except ImportError:',
+        '    b = None',
+        'if TYPE_CHECKING:',
+        '    from pkg import c',
+        'else:',
+        '    from pkg import d',
+        'class K:',
+        '    from pkg import e',
+        '    def method(self):',
+        '        from pkg import f',
+        'def g(',
+        '    x: int,',
+        ') -> None:',
+        '    """Docstring',
+        'from pkg import h',
+        '    """',
+        '    # from pkg import nothing',
+        '    from pkg import h',
+        'async def later():',
+        '    if True:',
+        '        import pkg.i',
+        'from pkg import j',
+      ].join('\n'),
+      ...Object.fromEntries('bcdefhij'.split('').map(name => [`pkg/${name}.py`, ''])),
+    });
+    expect(lines).toEqual([
+      'pkg/a.py -> pkg/b.py (static)',
+      'pkg/a.py -> pkg/c.py (type)',
+      'pkg/a.py -> pkg/d.py (static)',
+      'pkg/a.py -> pkg/e.py (static)',
+      'pkg/a.py -> pkg/f.py (dynamic)',
+      'pkg/a.py -> pkg/h.py (dynamic)',
+      'pkg/a.py -> pkg/i.py (dynamic)',
+      'pkg/a.py -> pkg/j.py (static)',
+    ]);
+  });
 });
 
 describe('Go', () => {
@@ -204,6 +307,47 @@ describe('JVM, C#, PHP, Ruby, Swift, Dart, C', () => {
       'Sources/Core/Model/User.swift': 'import Foundation\n',
     });
     expect(lines).toEqual(['Sources/App/main.swift -> Sources/Core (module)', 'Sources/App/main.swift -> ext:Alamofire (package)']);
+  });
+
+  it('Swift: targets named in Package.swift resolve by their name, whatever their folder is called (V028)', () => {
+    // As in a2ui: two targets live in folders called BasicCatalog; the second one is the module BasicCatalogSwiftUI.
+    const manifest = [
+      'let package = Package(',
+      '  name: "Kit",',
+      '  products: [.library(name: "BasicCatalogSwiftUI", targets: ["BasicCatalogSwiftUI"])],',
+      '  targets: [',
+      '    .target(name: "Core", path: "swift/core/Sources/Core"),',
+      '    .target(',
+      '      name: "BasicCatalog",',
+      '      dependencies: ["Core", .product(name: "OrderedJSON", package: "swift-json-schema")],',
+      '      path: "swift/core/Sources/BasicCatalog"',
+      '    ),',
+      '    .target(',
+      '      name: "BasicCatalogSwiftUI",',
+      '      dependencies: ["Core", "BasicCatalog"],',
+      '      path: "swift/swiftui/Sources/BasicCatalog",',
+      '      linkerSettings: [.linkedFramework("AVKit")]',
+      '    ),',
+      '    .testTarget(name: "KitTests", dependencies: ["BasicCatalogSwiftUI"]),',
+      '  ]',
+      ')',
+    ].join('\n');
+    const {lines} = resolve({
+      'Package.swift': manifest,
+      'swift/core/Sources/Core/Node.swift': '',
+      'swift/core/Sources/BasicCatalog/Button.swift': 'import Core\n',
+      'swift/swiftui/Sources/BasicCatalog/A2UIButton.swift': 'import Core\nimport BasicCatalog\nimport OrderedJSON\n',
+      'swift/swiftui/Sources/App/App.swift': 'import BasicCatalogSwiftUI\n',
+      'Tests/KitTests/ButtonTests.swift': '@testable import BasicCatalogSwiftUI\n',
+    });
+    expect(lines).toEqual([
+      'Tests/KitTests/ButtonTests.swift -> swift/swiftui/Sources/BasicCatalog (module)',
+      'swift/core/Sources/BasicCatalog/Button.swift -> swift/core/Sources/Core (module)',
+      'swift/swiftui/Sources/App/App.swift -> swift/swiftui/Sources/BasicCatalog (module)',
+      'swift/swiftui/Sources/BasicCatalog/A2UIButton.swift -> ext:OrderedJSON (package)',
+      'swift/swiftui/Sources/BasicCatalog/A2UIButton.swift -> swift/core/Sources/BasicCatalog (module)',
+      'swift/swiftui/Sources/BasicCatalog/A2UIButton.swift -> swift/core/Sources/Core (module)',
+    ]);
   });
 
   it('Dart: package: imports of local packages, relative imports, the SDK and pub packages', () => {

@@ -21,6 +21,11 @@ export interface CutOptions {
   max?: number;
   /** Directories holding a package manifest: preferred as cluster boundaries. */
   manifestDirs?: ReadonlySet<string>;
+  /**
+   * No cap: split until the structural rules alone stop (a directory under eight source files, or with one part, is
+   * one module). The modules a repository has before any display cut: what a capped cut folds into rest clusters.
+   */
+  unbounded?: boolean;
 }
 
 /** The most clusters any cut may have, however many are asked for. */
@@ -60,7 +65,7 @@ interface DirStat {
  */
 export function cutModules(files: readonly CutFile[], options: CutOptions = {}): ModuleCut {
   const root = options.root ?? '';
-  const max = Math.min(MAX_MODULES, Math.max(1, options.max ?? DEFAULT_MODULES));
+  const max = options.unbounded ? Number.POSITIVE_INFINITY : Math.min(MAX_MODULES, Math.max(1, options.max ?? DEFAULT_MODULES));
   const manifestDirs = options.manifestDirs ?? new Set<string>();
   const inScope = (path: string) => root === '' || path.startsWith(root + '/');
 

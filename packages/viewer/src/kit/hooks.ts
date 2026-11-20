@@ -29,31 +29,6 @@ export function useLinkStatus(): LinkStatus {
   return useContext(LinkContext);
 }
 
-/** What the viewer tells the host it actually drew in place of a component (design rule D3). */
-export interface RenderReport {
-  /** The redline code, or 'W_EMPTY' for an empty state. */
-  code: string;
-  /** Starts with `Name#id: `. */
-  message: string;
-  surfaceId: string;
-}
-/** Provided by the shell (KitProvider `report`); null where nobody listens. */
-export const ReportContext = createContext<((report: RenderReport) => void) | null>(null);
-
-/**
- * Tells the host that component `label` (`Name#id`) shows a state instead of its content: `code` is the redline
- * code or 'W_EMPTY'. Sent after the state is on screen and again when the code or the text changes; the shell sends
- * each distinct report once per surface. Does nothing without a label, outside a surface or where nobody listens.
- * Empty and Redline call it: a view that renders them has nothing to do.
- */
-export function useRenderReport(code: string, label: string | undefined, message: string): void {
-  const report = useContext(ReportContext);
-  const surfaceId = useA2uiSurface()?.id;
-  useEffect(() => {
-    if (report && surfaceId !== undefined && label) report({code, message: `${label}: ${message}`, surfaceId});
-  }, [report, surfaceId, code, label, message]);
-}
-
 export type DataStatus = 'pending' | 'ready' | 'empty' | 'error';
 export interface DataState<T> {
   status: DataStatus;
@@ -69,6 +44,11 @@ export interface DataState<T> {
   message?: string;
   /** Second, dimmer line of an empty state: the source, when `message` is the reason the dataset gave. */
   detail?: string;
+  /**
+   * The report code (decision D14): the redline code of an error; for an empty state I_EMPTY when the dataset says
+   * why it is empty (a truthful answer of the source), W_EMPTY when nothing is bound, the inline data is empty or the
+   * source gave no reason.
+   */
   code?: string;
 }
 
@@ -102,7 +82,9 @@ export function useDataset<T>(input: DataInput<T>): DataState<T> {
       if (ds.status === 'error') return {status: 'error', ds, code: ds.error?.code ?? 'E_SOURCE', message: ds.error?.message ?? 'source failed'};
       if (isEmpty(ds.data)) {
         const reason = emptyReason(ds);
-        return {status: 'empty', ds, message: reason ?? `no data from ${ds.source}`, ...(reason === undefined ? {} : {detail: ds.source})};
+        return reason === undefined
+          ? {status: 'empty', ds, code: 'W_EMPTY', message: `no data from ${ds.source}`}
+          : {status: 'empty', ds, code: 'I_EMPTY', message: reason, detail: ds.source};
       }
       return {status: 'ready', ds, data: ds.data as T, fields: ds.fields, roles: ds.roles, total: ds.total, truncated: ds.truncated};
     }
@@ -110,9 +92,18 @@ export function useDataset<T>(input: DataInput<T>): DataState<T> {
       return {status: 'error', code: 'E_UNEXPANDED_REF', message: `source ref "${input}" was not expanded by the server`};
     }
     // 'nothing bound' only when nothing is: an empty list the spec wrote is data, and the agent reads this message.
-    if (isEmpty(input)) return {status: 'empty', message: input == null ? 'nothing bound' : Array.isArray(input) ? 'no items' : 'no entries'};
+    if (isEmpty(input)) return {status: 'empty', code: 'W_EMPTY', message: input == null ? 'nothing bound' : Array.isArray(input) ? 'no items' : 'no entries'};
     return {status: 'ready', data: input as T};
   }, [input]);
+}
+
+/**
+ * The report code for an empty state a view draws itself from data that came through useDataset (a graph with no
+ * nodes, a diff with no files): I_EMPTY when the data is a server dataset that says why it is what it is (its note or
+ * first warning), else W_EMPTY. Pass it to <Empty code=...>. Not for a state the spec caused (a missing field: W_FIELD).
+ */
+export function emptyCodeOf(state: Pick<DataState<unknown>, 'ds'>): 'I_EMPTY' | 'W_EMPTY' {
+  return state.ds && emptyReason(state.ds) !== undefined ? 'I_EMPTY' : 'W_EMPTY';
 }
 
 function useSurface() {
@@ -166,6 +157,61 @@ export function useChildIds(componentId: string, prop = 'children'): string[] {
     return JSON.stringify(ids);
   });
   return useMemo(() => JSON.parse(snapshot) as string[], [snapshot]);
+}
+
+/**
+ * The `span` each child of `componentId` names in the spec (undefined where it names none), in spec order: what a
+ * container needs to read spans written for the 12-column grid (Grid, decision D17). Follows updateComponents of
+ * the container and of its children.
+ */
+export function useChildSpans(componentId: string): Array<number | undefined> {
+  const surface = useSurface();
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      const components = surface.componentsModel;
+      let watched: Array<{unsubscribe(): void}> = [];
+      let closed = false;
+      let queued = false;
+      const rewatch = () => {
+        queued = false;
+        for (const subscription of watched) subscription.unsubscribe();
+        watched = [];
+        if (closed) return;
+        const container = components.get(componentId);
+        const value: unknown = container?.properties.children;
+        const ids = Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+        watched = [container, ...ids.map(id => components.get(id))].flatMap(model => (model ? [model.onUpdated.subscribe(changed)] : []));
+      };
+      // Never subscribe to an emitter while it emits (it would call the new listener in the same pass): the list of
+      // models to watch is renewed once the update is over.
+      function changed() {
+        notify();
+        if (queued) return;
+        queued = true;
+        queueMicrotask(rewatch);
+      }
+      rewatch();
+      const created = components.onCreated.subscribe(changed);
+      const deleted = components.onDeleted.subscribe(changed);
+      return () => {
+        closed = true;
+        for (const subscription of watched) subscription.unsubscribe();
+        created.unsubscribe();
+        deleted.unsubscribe();
+      };
+    },
+    [surface, componentId],
+  );
+  const snapshot = useSyncExternalStore(subscribe, () => {
+    const components = surface.componentsModel;
+    const value: unknown = components.get(componentId)?.properties.children;
+    const ids = Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+    return ids.map(id => {
+      const span: unknown = components.get(id)?.properties.span;
+      return typeof span === 'number' && Number.isInteger(span) && span >= 1 && span <= 12 ? String(span) : '';
+    }).join(',');
+  });
+  return useMemo(() => (snapshot === '' ? [] : snapshot.split(',').map(text => (text === '' ? undefined : Number(text)))), [snapshot]);
 }
 
 /** Subscribes to an absolute data-model path. */

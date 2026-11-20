@@ -180,7 +180,7 @@ describe('getLog on a history longer than the limit', () => {
     calls.push(args);
     if (args[0] === 'rev-parse' && args.includes('--show-prefix')) return Buffer.from('\n');
     if (args[0] === 'rev-parse') return Buffer.from(`${head}\n`);
-    if (args[0] === 'ls-tree') return Buffer.from('app/main.ts\0docs/guide.md\0');
+    if (args[0] === 'ls-tree') return Buffer.from(`100644 blob ${sha(1)}\tapp/main.ts\x00100644 blob ${sha(2)}\tdocs/guide.md\x00`);
     if (args.includes('log')) {
       if (failNext) {
         failNext = false;

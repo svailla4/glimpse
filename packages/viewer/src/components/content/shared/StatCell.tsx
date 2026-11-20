@@ -80,7 +80,7 @@ export function StatCell(p: StatCellProps): JSX.Element {
   return (
     <div className={styles.stat} data-gl-stat="">
       {p.label || tone ? (
-        <div className={styles.label}>
+        <div className={styles.label} data-gl-stat-label="">
           {tone ? <span className={styles.tone} style={{background: tone.color}} role="img" aria-label={tone.word} title={tone.word} /> : null}
           {p.label}
         </div>

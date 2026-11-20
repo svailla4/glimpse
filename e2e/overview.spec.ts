@@ -15,7 +15,7 @@ test.describe('fixture repository', () => {
     const shown = await test.step('3. show{view:"overview"} answers with the documented lines', async () => {
       const result = await glimpse.call('show', {view: 'overview'});
       expect(result.isError, result.text).toBe(false);
-      expect(result.lines[0]).toMatch(new RegExp(`^ok overview http://127\\.0\\.0\\.1:\\d+/#/overview tab=none \\d+ms open http://127\\.0\\.0\\.1:\\d+/#t=${TOKEN}$`));
+      expect(result.lines[0]).toMatch(new RegExp(`^ok overview #/overview tab=none \\d+ms open http://127\\.0\\.0\\.1:\\d+/#t=${TOKEN}$`));
       expect(result.lines[1]).toMatch(/^repo \S+ main@[0-9a-f]{7} dirty \| 36 files \d+ loc \| TypeScript \d+%/);
       // one `ds` line per dataset the preset binds, none of them a failure
       const datasets = result.lines.filter(line => line.startsWith('ds ')).map(line => line.slice(3).split(' | ')[0]);
@@ -143,7 +143,7 @@ for (const [label, dir] of [['this repository', ROOT], ...(EXTRA_REPO ? [['GLIMP
     test('overview renders from real analyzers', async ({page, glimpse, watched, repoLabel}, testInfo) => {
       const result = await glimpse.call('show', {view: 'overview'});
       expect(result.isError, result.text).toBe(false);
-      expect(result.lines[0]).toMatch(/^ok overview http:\/\/127\.0\.0\.1:\d+\/#\/overview tab=none \d+ms open /);
+      expect(result.lines[0]).toMatch(/^ok overview #\/overview tab=none \d+ms open /);
       expect(result.lines[1]).toMatch(/^repo \S+ /);
       expect(result.lines.filter(line => line.startsWith('ds ')).length).toBeGreaterThanOrEqual(10);
       expect(result.text.length, 'preset result budget (design 10)').toBeLessThanOrEqual(1200);

@@ -29,7 +29,7 @@
       "value": 3
     },
     {
-      "label": "Cycles",
+      "label": "File cycles",
       "value": 1,
       "tone": "warn"
     },

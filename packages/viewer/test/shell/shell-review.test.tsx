@@ -9,7 +9,7 @@ import {createViewerSession} from '../../src/shell/session.ts';
 import {TopBar, tabLabel, type TopBarProps} from '../../src/shell/TopBar.tsx';
 import type {LinkEnd} from '../../src/transport/hub.ts';
 import {formatRoute, parseRoute} from '../../src/transport/launch.ts';
-import {installLayout} from '../harness.tsx';
+import {buildPatch, installLayout} from '../harness.tsx';
 import {actionsOf, errorsOf, fakeStorage, info, scriptedTransport, snapshot, type ScriptedTransport} from './scripted.ts';
 
 const V = '1.0' as const;
@@ -81,35 +81,89 @@ describe('surface ids with hyphens (D2, F031)', () => {
   });
 });
 
-describe('what the viewer drew goes back to the host (D3, F032)', () => {
-  it('posts each empty plate and redline once as a v1.0 error, and again after the surface is replaced', async () => {
-    const {transport, session} = mount();
-    const a = live(transport, 'a', EMPTY_PAGE, 'Alpha');
-    const states = () => errorsOf(transport.sent).filter(error => error.code === 'W_EMPTY');
-    expect(states()).toHaveLength(1);
-    expect(states()[0]).toMatchObject({code: 'W_EMPTY', surfaceId: 'a'});
-    expect(states()[0]!.message).toMatch(/^List#l: /);
-    // the same state reported again (a re-render, another tab switch) is not posted again
-    session.reportState({code: 'W_EMPTY', message: states()[0]!.message, surfaceId: 'a'});
-    expect(states()).toHaveLength(1);
-    // a different message for the same component is
-    session.reportState({code: 'E_SHAPE', message: 'List#l: expected rows', surfaceId: 'a'});
-    expect(errorsOf(transport.sent).at(-1)).toEqual({code: 'E_SHAPE', message: 'List#l: expected rows', surfaceId: 'a'});
-    // the host drops what it knew when it replaces the surface: the new one reports for itself
-    act(() => transport.frame('a', replace(snapshot('a', EMPTY_PAGE), 'a'), [a]));
-    expect(states()).toHaveLength(2);
-    // a state of a surface this tab does not have is nobody's
-    session.reportState({code: 'W_EMPTY', message: 'List#l: x', surfaceId: 'gone'});
-    expect(states()).toHaveLength(2);
+describe('a component state is state, not an event (D14, V051, V060, V061)', () => {
+  /** States arrive at the end of the task that rendered them. */
+  const flush = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  const statesOf = (transport: ScriptedTransport, label: string) => errorsOf(transport.sent).filter(error => error.message.startsWith(`${label}: `)).map(error => error.code);
+
+  it('says the state of every component when it is drawn: OK, or what it shows instead', async () => {
+    const {transport} = mount();
+    live(transport, 'a', EMPTY_PAGE, 'Alpha');
+    await flush();
+    expect(statesOf(transport, 'List#l')).toEqual(['W_EMPTY']);
+    expect(errorsOf(transport.sent).find(error => error.message.startsWith('List#l: '))).toEqual({code: 'W_EMPTY', message: 'List#l: no items', surfaceId: 'a'});
+    expect(statesOf(transport, 'Text#t')).toEqual(['OK']);
+    expect(statesOf(transport, 'Page#root')).toEqual(['OK']);
+    // one post for the whole first render
+    expect(transport.sent.filter(message => 'error' in message)).toHaveLength(3);
     expect(transport.sent.every(message => message.version === '1.0')).toBe(true);
   });
 
-  it('posts nothing once the session has ended', () => {
+  it('says it again when an update redefines the component and it is still broken: in-place replace, patch, same props', async () => {
+    const {transport} = mount();
+    const a = live(transport, 'a', EMPTY_PAGE, 'Alpha');
+    await flush();
+    const base = snapshot('a', EMPTY_PAGE);
+    // the model "fixes" the plate by renaming it: still no rows (V051, V061)
+    act(() => transport.frame('a', buildPatch('a', base, `l=List($/rows,title='Todo, revised')`), [a]));
+    await flush();
+    expect(statesOf(transport, 'List#l')).toEqual(['W_EMPTY', 'W_EMPTY']);
+    // a definition with exactly the same properties is a definition too: the host forgot, the tab says it again
+    act(() => transport.frame('a', buildPatch('a', base, `l=List($/rows,title='Todo, revised')`), [a]));
+    await flush();
+    expect(statesOf(transport, 'List#l')).toEqual(['W_EMPTY', 'W_EMPTY', 'W_EMPTY']);
+    // a component the update does not name says nothing new
+    expect(statesOf(transport, 'Text#t')).toEqual(['OK']);
+    // a redline that stays a redline, under a new title
+    act(() => transport.frame('a', buildPatch('a', base, `l=List('just text',title='Todo')`), [a]));
+    await flush();
+    act(() => transport.frame('a', buildPatch('a', base, `l=List('just text',title='Todo again')`), [a]));
+    await flush();
+    expect(statesOf(transport, 'List#l').slice(-2)).toEqual(['E_SHAPE', 'E_SHAPE']);
+  });
+
+  it('withdraws a state with OK once the component draws, whatever ended it (V060)', async () => {
+    const {transport, session} = mount();
+    const a = live(transport, 'a', EMPTY_PAGE, 'Alpha');
+    await flush();
+    // data arrives: no update names the List, it simply draws now
+    act(() => void session.surface('a')?.dataModel.set('/rows', [{title: 'one'}]));
+    await flush();
+    expect(statesOf(transport, 'List#l')).toEqual(['W_EMPTY', 'OK']);
+    // empty again, then fixed by a patch
+    act(() => void session.surface('a')?.dataModel.set('/rows', []));
+    await flush();
+    act(() => transport.frame('a', buildPatch('a', snapshot('a', EMPTY_PAGE), `$/rows=[{title:'two'}]\nl=List($/rows,title='Todo')`), [a]));
+    await flush();
+    expect(statesOf(transport, 'List#l')).toEqual(['W_EMPTY', 'OK', 'W_EMPTY', 'OK']);
+    // the same state rendered again (a re-render, the selection changing) is not posted again
+    const before = transport.sent.length;
+    act(() => void session.surface('a')?.dataModel.set('/ui/sel', file));
+    await flush();
+    expect(transport.sent.slice(before).filter(message => 'error' in message)).toEqual([]);
+  });
+
+  it('starts over when the surface is replaced, and drops states of a surface the tab does not have', async () => {
+    const {transport, session} = mount();
+    const a = live(transport, 'a', EMPTY_PAGE, 'Alpha');
+    await flush();
+    act(() => transport.frame('a', replace(snapshot('a', EMPTY_PAGE), 'a'), [a]));
+    await flush();
+    expect(statesOf(transport, 'List#l')).toEqual(['W_EMPTY', 'W_EMPTY']);
+    const before = transport.sent.length;
+    session.reportState({code: 'W_EMPTY', message: 'List#l: x', surfaceId: 'gone', componentId: 'l'});
+    await flush();
+    expect(transport.sent).toHaveLength(before);
+  });
+
+  it('posts nothing once the session has ended', async () => {
     const {transport, session} = mount();
     live(transport, 'a', `root=Page('Alpha',[Text('alpha text')])`);
+    await flush();
     act(() => transport.emit({type: 'bye', reason: 'shutdown'}));
     const before = transport.sent.length;
-    session.reportState({code: 'W_EMPTY', message: 'Text#t: nothing', surfaceId: 'a'});
+    session.reportState({code: 'W_EMPTY', message: 'Text#t: nothing', surfaceId: 'a', componentId: 't'});
+    await flush();
     expect(transport.sent).toHaveLength(before);
   });
 });
@@ -322,5 +376,79 @@ describe('top bar (F011)', () => {
     const view = render(<TopBar {...props({surfaces: [info('a', 'Alpha'), info('b', 'Beta')], focus: 'a'})} />);
     expect(view.container.querySelector('[data-gl-more]')).toBeNull();
     expect(screen.getByRole('tablist').hasAttribute('data-clip-end')).toBe(false);
+  });
+
+  /** Nine 100 px tabs in a strip whose width the test sets; the strip's ResizeObserver fires when the test says. */
+  function resizableStrip(surfaces: ReturnType<typeof info>[]) {
+    const strip = {width: 900, scrollLeft: 0};
+    const rect = (left: number, width: number) => ({x: left, y: 0, left, top: 0, right: left + width, bottom: 32, width, height: 32, toJSON: () => ({})});
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.getAttribute('role') === 'tablist') return rect(0, strip.width);
+      const tab = this.getAttribute('role') === 'tab' ? this : this.querySelector('[role="tab"]');
+      const index = surfaces.findIndex(surface => surface.id === (tab as HTMLElement | null)?.dataset.surface);
+      return index < 0 ? rect(0, 0) : rect(index * 100 - strip.scrollLeft, 100);
+    });
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(() => 900);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => strip.width);
+    vi.spyOn(HTMLElement.prototype, 'scrollLeft', 'get').mockImplementation(() => strip.scrollLeft);
+    vi.spyOn(HTMLElement.prototype, 'scrollLeft', 'set').mockImplementation((value: number) => { strip.scrollLeft = Math.max(0, Math.min(900 - strip.width, value)); });
+    const callbacks: Array<() => void> = [];
+    vi.stubGlobal('ResizeObserver', class {
+      private readonly run: () => void;
+      constructor(callback: () => void) { this.run = callback; }
+      observe() { callbacks.push(this.run); }
+      unobserve() {}
+      disconnect() {}
+    });
+    const resize = (width: number) => {
+      strip.width = width;
+      act(() => { for (const run of callbacks) run(); });
+    };
+    return {strip, resize};
+  }
+
+  it('keeps the active tab in sight when the window gets narrower (V044)', () => {
+    const surfaces = Array.from({length: 9}, (_, i) => info(`s${i}`, `View ${i}`));
+    const {strip, resize} = resizableStrip(surfaces);
+    render(<TopBar {...props({surfaces, focus: 's7'})} />);
+    expect(strip.scrollLeft).toBe(0);
+    // 1440 px -> 760 px: the strip is 300 px now, and the active tab was at 700..800
+    resize(300);
+    vi.unstubAllGlobals();
+    expect(strip.scrollLeft).toBe(524);
+    const box = screen.getByRole('tab', {name: 'View 7'}).getBoundingClientRect();
+    expect([box.left >= 0, box.right <= 300]).toEqual([true, true]);
+  });
+
+  it('a long file path keeps its file name even when the host cut the title (V044)', () => {
+    const path = 'eval/iterative_format_optimizer/history/atom/run_039_0fcabd8b_ast_implicit_string_child_autowrap/patch.diff';
+    const cut = path.slice(0, 80);
+    expect(tabLabel({id: 'file', title: cut, view: `file ${path}`})).toBe('…/patch.diff');
+    expect(tabLabel({id: 'file', title: cut, view: `file ${path}#L10-20`})).toBe('…/patch.diff');
+    // a title the model wrote is its own, whatever the call
+    expect(tabLabel({id: 'x', title: 'Overview', view: 'overview'})).toBe('Overview');
+    expect(tabLabel({id: 'x', title: 'Auth', view: 'tree src/auth'})).toBe('Auth');
+    render(<TopBar {...props({surfaces: [{...info('file', cut), view: `file ${path}`}], focus: 'file'})} />);
+    expect(screen.getByRole('tab', {name: path}).textContent).toBe('…/patch.diff');
+  });
+
+  it('the +N menu closes for good when every tab fits again: Escape is not swallowed, and it does not reopen (V064)', () => {
+    const surfaces = Array.from({length: 9}, (_, i) => info(`s${i}`, `View ${i}`));
+    const {resize} = resizableStrip(surfaces);
+    const view = render(<TopBar {...props({surfaces, focus: 's0'})} />);
+    resize(300);
+    fireEvent.click(view.container.querySelector('[data-gl-more]')!);
+    expect(screen.queryByRole('menu')).not.toBeNull();
+    // the window gets wide: no tab is hidden, the menu and its button go
+    resize(900);
+    expect(view.container.querySelector('[data-gl-more]')).toBeNull();
+    const pressed = new KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true});
+    act(() => void window.dispatchEvent(pressed));
+    expect(pressed.defaultPrevented).toBe(false);
+    // and narrow again, with no click: the menu stays closed
+    resize(300);
+    vi.unstubAllGlobals();
+    expect(view.container.querySelector('[data-gl-more]')).not.toBeNull();
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });

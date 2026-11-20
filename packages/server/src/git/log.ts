@@ -38,6 +38,8 @@ export interface GitLog {
   truncated: boolean;
   /** Paths that exist at HEAD. */
   alive: ReadonlySet<string>;
+  /** Renames the stream saw: an earlier name to the name the file has at HEAD (or last had). */
+  renames?: ReadonlyMap<string, string>;
 }
 
 /** Who and when, without the files: what counting commits and contributors needs. */
@@ -66,8 +68,11 @@ export function inScope(path: string, scope: string | undefined): boolean {
   return !scope || path === scope || path.startsWith(`${scope}/`);
 }
 
-/** Parses the stream LOG_ARGS produce. Records start with \x01; the header and every name-status field end with NUL. */
-export function parseLog(raw: string): LogCommit[] {
+/**
+ * Parses the stream LOG_ARGS produce. Records start with \x01; the header and every name-status field end with NUL.
+ * `renames`, when given, receives every earlier name the stream saw, mapped to the file's current name.
+ */
+export function parseLog(raw: string, renames?: Map<string, string>): LogCommit[] {
   const commits: LogCommit[] = [];
   // The stream is newest first, so a rename seen here names the file's future: older entries of `from` belong to `to`.
   const renamed = new Map<string, string>();
@@ -104,6 +109,7 @@ export function parseLog(raw: string): LogCommit[] {
     }
     commits.push({sha, author: author ?? '', time: Number(at) || 0, subject: subject.join('\x1f'), files: [...files]});
   }
+  if (renames) for (const old of renamed.keys()) renames.set(old, current(old));
   return commits;
 }
 
@@ -164,27 +170,67 @@ async function shallowBoundary(ctx: RepoContext): Promise<ReadonlySet<string>> {
   }
 }
 
-async function readCommits(ctx: RepoContext, args: string[], signal?: AbortSignal): Promise<LogCommit[]> {
+async function readCommits(ctx: RepoContext, args: string[], signal?: AbortSignal, renames?: Map<string, string>): Promise<LogCommit[]> {
   const [raw, boundary] = await Promise.all([ctx.runGit(args, {signal}), shallowBoundary(ctx)]);
-  const commits = parseLog(raw.toString('utf8'));
+  const commits = parseLog(raw.toString('utf8'), renames);
   for (const commit of commits) if (boundary.has(commit.sha)) commit.files = [];
   return commits;
 }
 
-async function readLog(ctx: RepoContext, head: string, extra: string[], pathspec: string | undefined): Promise<GitLog> {
+/** Earlier names given to a path scope at most: past this many, the scope is read under its current names only. */
+const MAX_EARLIER_NAMES = 500;
+
+/**
+ * The names a path scope had before: the renames the shared parse saw into the scope, and for one file every name
+ * `git log --follow` finds, however old. A pathspec matches names, not files, so a scope read without them stops at
+ * the last rename and drops every commit before it (V067).
+ */
+async function earlierNames(ctx: RepoContext, head: string, path: string, base: GitLog): Promise<string[]> {
+  const names = new Set<string>();
+  for (const [old, now] of base.renames ?? []) if (inScope(now, path) && !inScope(old, path)) names.add(old);
+  if (base.alive.has(path)) {
+    try {
+      const raw = await ctx.runGit(['--literal-pathspecs', 'log', '--no-merges', '-M', '--follow', '--name-only', '-z', '--relative', '--no-show-signature', '--format=', head, '--', path]);
+      for (const name of raw.toString('utf8').split('\0')) {
+        const clean = name.trim();
+        if (clean && clean !== path) names.add(clean);
+      }
+    } catch {
+      // the renames of the shared parse still apply
+    }
+  }
+  return [...names].sort().slice(0, MAX_EARLIER_NAMES);
+}
+
+async function readLog(ctx: RepoContext, head: string, extra: string[], pathspecs: readonly string[]): Promise<GitLog> {
   // No caller's signal here: the run is shared by every source that asks while it is in flight.
   const within = await subtree(ctx);
-  const args = pathspec
-    ? ['--literal-pathspecs', ...LOG_ARGS, FULL_HISTORY, '--full-diff', ...extra, head, '--', pathspec]
+  const args = pathspecs.length > 0
+    ? ['--literal-pathspecs', ...LOG_ARGS, FULL_HISTORY, '--full-diff', ...extra, head, '--', ...pathspecs]
     : [...LOG_ARGS, ...(within.length > 0 ? [FULL_HISTORY] : []), ...extra, head, ...within];
-  const [commits, tree] = await Promise.all([readCommits(ctx, args), ctx.runGit(['ls-tree', '-r', '-z', '--name-only', head])]);
-  return {commits, truncated: commits.length >= LOG_LIMIT, alive: new Set(tree.toString('utf8').split('\0').filter(Boolean))};
+  const renames = new Map<string, string>();
+  const [commits, tree] = await Promise.all([readCommits(ctx, args, undefined, renames), ctx.runGit(['ls-tree', '-r', '-z', head])]);
+  return {commits, truncated: commits.length >= LOG_LIMIT, alive: aliveFiles(tree.toString('utf8')), renames};
+}
+
+/**
+ * Files of a `git ls-tree -r -z` listing: regular and executable blobs. A symbolic link (mode 120000) and a submodule
+ * (160000) are paths, not files: the inventory lists neither, so no per-file row counts them (V031).
+ */
+export function aliveFiles(listing: string): Set<string> {
+  const alive = new Set<string>();
+  for (const record of listing.split('\0')) {
+    const tab = record.indexOf('\t');
+    if (tab === -1 || record.startsWith('120000 ') || record.startsWith('160000 ')) continue;
+    alive.add(record.slice(tab + 1));
+  }
+  return alive;
 }
 
 function entryFor(ctx: RepoContext, head: string): CacheEntry {
   const cached = cache.get(ctx.root);
   if (cached && cached.head === head) return cached;
-  const entry: CacheEntry = {head, base: readLog(ctx, head, [], undefined), scoped: new Map()};
+  const entry: CacheEntry = {head, base: readLog(ctx, head, [], []), scoped: new Map()};
   // A failed read must not be remembered, or every later call would fail the same way.
   entry.base.catch(() => { if (cache.get(ctx.root) === entry) cache.delete(ctx.root); });
   cache.delete(ctx.root);
@@ -219,7 +265,15 @@ export async function getLog(ctx: RepoContext, scope: LogScope = {}, signal?: Ab
   let scoped = entry.scoped.get(key);
   if (!scoped) {
     const extra = since === undefined ? [] : [`--since=${new Date(since * 1000).toISOString()}`];
-    const created = readLog(ctx, head, extra, path);
+    // A pathspec matches a name, not a file: an earlier name may since have been given to another file, whose commits
+    // the stream then holds too. After the parse has carried every commit over to the names its files have today,
+    // only those that touch the scope belong to it, the same rule the shared parse applies above (V067).
+    const created = path === undefined
+      ? readLog(ctx, head, extra, [])
+      : earlierNames(ctx, head, path, base).then(async names => {
+        const log = await readLog(ctx, head, extra, [path, ...names]);
+        return {...log, commits: log.commits.filter(c => c.files.some(f => inScope(f, path)))};
+      });
     scoped = created;
     created.catch(() => { if (entry.scoped.get(key) === created) entry.scoped.delete(key); });
     entry.scoped.set(key, scoped);

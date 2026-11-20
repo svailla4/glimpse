@@ -144,3 +144,18 @@ export function bigGraph(nodes: number, edges: number): {nodes: Array<{id: strin
   }
   return out;
 }
+
+/** True when two routes share a stretch of line: collinear segments overlapping by more than 2 px. */
+export function runsAlong(a: ReadonlyArray<{x: number; y: number}>, b: ReadonlyArray<{x: number; y: number}>): boolean {
+  for (let i = 1; i < a.length; i++) {
+    for (let j = 1; j < b.length; j++) {
+      const [p, q, r, t] = [a[i - 1]!, a[i]!, b[j - 1]!, b[j]!];
+      const vertical = Math.abs(p.x - q.x) < 0.5 && Math.abs(r.x - t.x) < 0.5 && Math.abs(p.x - r.x) < 2;
+      const horizontal = Math.abs(p.y - q.y) < 0.5 && Math.abs(r.y - t.y) < 0.5 && Math.abs(p.y - r.y) < 2;
+      const span = (u: number, v: number, w: number, z: number) => Math.min(Math.max(u, v), Math.max(w, z)) - Math.max(Math.min(u, v), Math.min(w, z));
+      if (vertical && span(p.y, q.y, r.y, t.y) > 2) return true;
+      if (horizontal && span(p.x, q.x, r.x, t.x) > 2) return true;
+    }
+  }
+  return false;
+}

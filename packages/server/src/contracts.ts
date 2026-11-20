@@ -26,7 +26,8 @@ export interface FileFacts {
   /** Sum of indentation levels over code lines (the "complexity" used by hotspots). */
   complexity: number;
   maxIndent: number;
-  todos: Array<{tag: string; line: number; text: string}>;
+  /** `owner`: the parenthetical after the tag ('TODO(ana):', 'TODO(https://…/issues/12):'), when there is one. */
+  todos: Array<{tag: string; line: number; text: string; owner?: string}>;
 }
 /** `to` is a repo-relative path, or 'ext:<package>' for an external dependency. */
 export interface ImportEdge { from: string; to: string; kind: string }
@@ -46,6 +47,15 @@ export interface RepoIndex {
    * created since). Optional only so hand-written fakes stay small; the index from createRepoIndex always has it.
    */
   has?(path: string): Promise<boolean>;
+  /**
+   * The name `path` (repo-relative, forward slashes; './' and a trailing '/' are dropped) has in the inventory: the
+   * path itself when it is a file or a directory of the inventory as written ('' for the root), the spelling on disk
+   * when it is a case variant of one on a case-insensitive file system ('readme.md' -> 'README.md', 'SRC' -> 'src'),
+   * and undefined when it names nothing of the project, by the same rule as has(). Whoever serves, opens, shows or
+   * queries a path the model wrote uses this name, so every source and every label agree on one spelling (V071).
+   * Optional only so hand-written fakes stay small; the index from createRepoIndex always has it.
+   */
+  canonical?(path: string): Promise<string | undefined>;
   /** Drop memoized results (called when the working tree changes). */
   invalidate(): void;
 }
@@ -57,6 +67,16 @@ export interface RepoIndex {
 export async function inInventory(index: RepoIndex, path: string): Promise<boolean> {
   if (index.has) return index.has(path);
   return (await index.files()).some(file => file.path === path);
+}
+
+/**
+ * The inventory's spelling of a repo-relative path (RepoIndex.canonical): the on-disk name of a case variant, the path
+ * itself otherwise. An index without canonical() (a hand-written fake) answers with the path as written; so does one
+ * that fails. Use it before showing, opening or querying a path the model wrote.
+ */
+export async function canonicalPath(index: RepoIndex, path: string): Promise<string> {
+  if (!index.canonical) return path;
+  return (await index.canonical(path).catch(() => undefined)) ?? path;
 }
 
 export interface RepoContext {

@@ -47,7 +47,7 @@ const SWIFT_SYSTEM = new Set(
     'CoreVideo CoreAudio CoreBluetooth CoreML Observation MapKit AVFoundation AVKit WebKit StoreKit CryptoKit Network Security SwiftData Charts ' +
     'Darwin Glibc Accelerate Metal MetalKit SpriteKit SceneKit ARKit RealityKit Vision NaturalLanguage PhotosUI Photos UserNotifications WidgetKit ' +
     'QuartzCore Cocoa WatchKit CloudKit GameKit HealthKit Intents PDFKit SafariServices AuthenticationServices LocalAuthentication SystemConfiguration ' +
-    'UniformTypeIdentifiers RegexBuilder _Concurrency Synchronization Distributed').split(' '),
+    'UniformTypeIdentifiers RegexBuilder _Concurrency Synchronization Distributed PackageDescription PackagePlugin').split(' '),
 );
 const JVM_BUILTIN = /^(java|javax|jdk|sun|kotlin|scala)\./;
 const JVM_TLD = new Set(['com', 'org', 'io', 'net', 'dev', 'app', 'me', 'co', 'edu', 'gov', 'de', 'uk', 'fr']);
@@ -77,6 +77,8 @@ function closest(candidates: readonly string[], from: string): string {
 }
 
 const under = (path: string, dir: string) => dir === '' || path === dir || path.startsWith(dir + '/');
+/** A Python distribution or module name as PEP 503 compares them: lower case, runs of '-', '_' and '.' as one '_'. */
+const pyName = (name: string): string => name.toLowerCase().replace(/[-_.]+/g, '_');
 
 /** How binding an import is: erased types, then lazy `import()`, then everything that runs when the file loads. */
 const strength = (kind: string): number => (kind === 'type' ? 0 : kind === 'dynamic' ? 1 : 2);
@@ -116,7 +118,17 @@ export function resolveImports(files: readonly FileEntry[], facts: ReadonlyMap<s
   const classIndex = new Map<string, string[]>();
   const namespaceFiles = new Map<string, string[]>();
   const rubyLib = new Map<string, string[]>();
+  // Swift modules are imported by target name. Package.swift names them (its `path:` may be a folder of another name,
+  // and two targets may share a folder name); the folder after Sources/ or Tests/ is the fallback for the rest.
   const swiftModules = new Map<string, string>();
+  const swiftDirs = new Set<string>();
+  for (const pkg of manifests.packages) {
+    for (const target of pkg.targets ?? []) {
+      if (swiftModules.has(target.name) || !dirSet.has(target.dir)) continue;
+      swiftModules.set(target.name, target.dir);
+      swiftDirs.add(target.dir);
+    }
+  }
   const headerIndex = new Map<string, string[]>();
   for (const [path, fact] of facts) {
     const stem = baseName(path).replace(/\.[^.]+$/, '');
@@ -147,7 +159,8 @@ export function resolveImports(files: readonly FileEntry[], facts: ReadonlyMap<s
       }
       case 'swift': {
         const m = /(?:^|\/)(?:Sources|Tests)\/([^/]+)\//.exec(path);
-        if (m && !swiftModules.has(m[1]!)) swiftModules.set(m[1]!, path.slice(0, m.index + m[0].length - 1));
+        const dir = m ? path.slice(0, m.index + m[0].length - 1) : undefined;
+        if (m && dir !== undefined && !swiftModules.has(m[1]!) && !swiftDirs.has(dir)) swiftModules.set(m[1]!, dir);
         break;
       }
       case 'c': {
@@ -235,10 +248,41 @@ export function resolveImports(files: readonly FileEntry[], facts: ReadonlyMap<s
   };
 
   // ---- Python
-  const pythonTopLevel = (path: string) => {
-    const dir = dirName(path);
-    const home = baseName(path) === '__init__.py' ? dirName(dir) : dir;
-    return pythonRoots.has(home);
+  const isPackageDir = (dir: string) => fileSet.has(dir ? `${dir}/__init__.py` : '__init__.py');
+  /** Import names of the dependencies the Python manifests at or above a directory declare (PEP 503 normalized). */
+  const pyDeclared: Array<{dir: string; names: ReadonlySet<string>}> = manifests.packages
+    .filter(pkg => pkg.ecosystem === 'pypi')
+    .map(pkg => ({dir: pkg.dir, names: new Set(pkg.deps.map(pyName))}));
+  const declaredAbove = (from: string, top: string): boolean => pyDeclared.some(declared => under(from, declared.dir) && declared.names.has(pyName(top)));
+  /**
+   * Directory an absolute import of `module` must start from to reach `pick`: the pick's module path without the
+   * module's own segments ('a2a' -> '.../src/a2ui/a2a/__init__.py' starts from '.../src/a2ui').
+   */
+  const anchorOf = (pick: string, module: string): string => {
+    const parts = pick.replace(/\.pyi?$/, '').split('/');
+    if (parts.at(-1) === '__init__') parts.pop();
+    return parts.slice(0, Math.max(0, parts.length - module.split('.').length)).join('/');
+  };
+  /**
+   * Whether `import <module>` in `from` can reach `pick` in Python 3, where there are no implicit relative imports:
+   * the module's first segment must sit in a directory on the import path. That is a declared Python root (a manifest
+   * directory or its src/), the importer's own directory (a script's directory is on the path), or, for a dotted name,
+   * any directory that is not itself a package. The importer's own package and its ancestors are never reached this
+   * way: inside a2ui/a2a/, `a2a` is the external `a2a` and the package itself is `a2ui.a2a` (V025).
+   *
+   * When the importer's directory is a package (it has an __init__.py), a script run from it still imports its sibling
+   * module files by their bare names (`from engine import X` next to engine.py), unless the name is a dependency a
+   * manifest above declares; a sibling package there is taken for the external package of that name, as above.
+   */
+  const reachable = (from: string, pick: string, module: string): boolean => {
+    const anchor = anchorOf(pick, module);
+    if (pythonRoots.has(anchor)) return true;
+    const dir = dirName(from);
+    if (anchor === dir) {
+      if (!isPackageDir(dir)) return true;
+      return !module.includes('.') && baseName(pick) !== '__init__.py' && !declaredAbove(from, module);
+    }
+    return module.includes('.') && !isPackageDir(anchor);
   };
   const resolvePy = (from: string, imp: ScannedImport): Target => {
     const spec = imp.spec;
@@ -263,19 +307,24 @@ export function resolveImports(files: readonly FileEntry[], facts: ReadonlyMap<s
       const hit = rest ? moduleFile(joinPath(base, rest)) : moduleFile(base);
       return hit ? {file: hit} : 'unresolved';
     }
-    for (const name of imp.names ?? []) {
-      const candidates = pyIndex.get(`${spec}.${name}`);
-      if (candidates && (spec.includes('.') || !PYTHON_STDLIB.has(spec))) return {file: closest(candidates, from)};
-    }
     const top = spec.split('.')[0]!;
-    for (let module = spec; ; module = module.slice(0, module.lastIndexOf('.'))) {
-      const candidates = pyIndex.get(module);
-      if (candidates) {
-        const pick = closest(candidates, from);
-        // A single-segment match is only trusted for a sibling or a module at a package root: `import utils`
-        // must not bind to some unrelated deep/utils.py.
-        if (module.includes('.') || (!PYTHON_STDLIB.has(module) && (dirName(pick) === dir || pythonTopLevel(pick)))) return {file: pick};
+    // A one-segment name the standard library owns is never taken for a local module.
+    const pickFor = (module: string): string | undefined => {
+      if (!module.includes('.') && PYTHON_STDLIB.has(module)) return undefined;
+      const candidates = pyIndex.get(module)?.filter(path => reachable(from, path, module));
+      return candidates && candidates.length > 0 ? closest(candidates, from) : undefined;
+    };
+    if (spec.includes('.') || !PYTHON_STDLIB.has(spec)) {
+      for (const name of imp.names ?? []) {
+        const pick = pickFor(`${spec}.${name}`);
+        if (pick) return {file: pick};
       }
+    }
+    // `import utils` must not bind to some unrelated deep/utils.py, nor `from a2a import x` to the importer's own
+    // package a2a: see reachable().
+    for (let module = spec; ; module = module.slice(0, module.lastIndexOf('.'))) {
+      const pick = pickFor(module);
+      if (pick) return {file: pick};
       if (!module.includes('.')) break;
     }
     return PYTHON_STDLIB.has(top) ? 'builtin' : {ext: top};

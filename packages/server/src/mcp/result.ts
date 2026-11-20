@@ -5,7 +5,7 @@
 // commit subjects, dataset summaries, rows) passes through shield(), so it can never start a line with `viewer:`;
 // only the lines of the event queue do, and they are appended after the shielded body. And once a `show` has
 // committed, formatting its result cannot turn it into a failure.
-import {flatten, formatProblems, NOTHING_RENDERED, oneLine, SpecError} from '../spec/errors.ts';
+import {escapeInvisible, flattenBreaks, formatProblems, jsonQuote, NOTHING_RENDERED, oneLine, readsAsViewerLine, SpecError} from '../spec/errors.ts';
 import type {DatasetState, ShowOutcome} from '../session/session.ts';
 
 export interface ToolResult {
@@ -14,15 +14,14 @@ export interface ToolResult {
   [key: string]: unknown;
 }
 
-const VIEWER_LINE = /^\s*viewer\s*:/i;
-
 /**
- * Makes a body safe to sit above genuine `viewer:` lines: a line that would read as one is JSON-quoted, so it
- * starts with a quotation mark. Carriage returns and the Unicode line separators are flattened first, since some
- * readers break lines on them.
+ * Makes a body safe to sit above genuine `viewer:` lines. Carriage returns and the Unicode line separators are
+ * flattened first, since some readers break lines on them. A line that a reader would take for a `viewer:` line once
+ * look-alike letters, fullwidth forms and invisible characters are seen through (finding V016) is JSON-quoted, so it
+ * starts with a quotation mark; in every line, the invisible and direction-changing characters are written out.
  */
 export function shield(body: string): string {
-  return flatten(body, true).split('\n').map(line => (VIEWER_LINE.test(line) ? JSON.stringify(line) : line)).join('\n');
+  return flattenBreaks(body, true).split('\n').map(line => (readsAsViewerLine(line) ? jsonQuote(line) : escapeInvisible(line))).join('\n');
 }
 
 /** A successful result: the shielded body, then what the user did in the tab (`viewer:` lines), if anything. */
@@ -122,9 +121,13 @@ export interface ShowReport {
   events: string[];
 }
 
-/** The line every successful `show` starts with. It alone is a complete, true answer. */
+/**
+ * The line every successful `show` starts with. It alone is a complete, true answer. The view's route is a bare label
+ * (`#/overview`), not a link: a link without the session token opens "No session" (finding V045). The one link
+ * printed is the one that opens the live session, whenever no connected tab shows the view already.
+ */
 export function okLine(outcome: Pick<ShowOutcome, 'id' | 'url' | 'tab' | 'openUrl'>, elapsedMs: number): string {
-  return `ok ${outcome.id} ${outcome.url} tab=${outcome.tab} ${Math.max(0, Math.round(elapsedMs))}ms${outcome.tab === 'none' ? ` open ${outcome.openUrl}` : ''}`;
+  return `ok ${outcome.id} ${outcome.url} tab=${outcome.tab} ${Math.max(0, Math.round(elapsedMs))}ms${outcome.tab !== 'live' ? ` open ${outcome.openUrl}` : ''}`;
 }
 
 /**
@@ -143,11 +146,19 @@ export function showText(report: ShowReport): string {
   const warnings = [...outcome.warnings, ...(report.late ?? [])];
   const ds: Array<{ref: string; summary: string}> = [];
   let unchanged = 0;
+  // Finding V003: what a source says about its own data ('4 files over 2 MB counted by size only', 'graph cut to 150
+  // of 900 nodes') is a caveat of that dataset, not a part the tab could not draw; it rides on the dataset's line,
+  // once per result, and never on the `warn` channel, which is for what the model can fix (decision D14).
+  const caveats = new Set<string>();
   for (const {ref, state, told} of report.datasets) {
     if (state?.status === 'error') warnings.push(`${ref}: ${state.error?.code ?? 'E_INTERNAL'} ${state.error?.message ?? ''}`.trim());
     else if (told && state?.status === 'ready') unchanged++;
-    else ds.push({ref: clip(ref, 120), summary: state?.status === 'ready' ? oneLine(state.summary || 'ready', 160) : 'pending'});
-    for (const warning of state?.warnings ?? []) warnings.push(warning);
+    else {
+      const notes = (state?.warnings ?? []).map(warning => oneLine(warning, 120)).filter(note => note && !caveats.has(note));
+      for (const note of notes) caveats.add(note);
+      const summary = state?.status === 'ready' ? oneLine(state.summary || 'ready', 160) : 'pending';
+      ds.push({ref: clip(ref, 120), summary: notes.length > 0 ? clip(`${summary}; ${notes.join('; ')}`, 280) : summary});
+    }
   }
 
   const distinct = [...new Set(warnings.map(warning => oneLine(warning, 200)).filter(Boolean))];

@@ -30,6 +30,12 @@ export interface SourceMeta {
   /** rows: default columns in display order. */
   fields?: Field[];
   roles?: Roles;
+  /**
+   * Rows of another shape that an argument value selects, keyed 'arg=value' ('by=module' on git.churn): their fields
+   * and roles. fieldsFor() picks the set a given ref returns, so a field name a spec asks of 'git.churn by=module' is
+   * checked against module, commits, ... and not against the per-file fields.
+   */
+  variants?: Readonly<Record<string, {fields: Field[]; roles?: Roles}>>;
   /** Name of the data shape in datasets.ts. */
   shape: string;
   /** Max items bound into the data model. */
@@ -56,12 +62,12 @@ export const SOURCES: readonly SourceMeta[] = [
     fields: [f('path', 'path', 'File', 1), f('lang', 'lang'), f('loc', 'num', 'LOC', 1), f('bytes', 'bytes', undefined, 3), f('commits', 'bar'), f('complexity', 'heat', 'Indentation', 3)],
     roles: {label: 'path', value: 'loc'}},
   {name: 'files.langs', kind: 'rows', shape: 'LangRow[]', budget: 40, wt: true,
-    doc: 'Language mix.',
+    doc: "Lines of code per language, largest first; text files of no known language are one 'Unclassified' row; past 40 rows the rest fold into one 'N more languages' row.",
     fields: [f('lang', 'lang', 'Language', 1), f('files', 'num'), f('loc', 'num', 'LOC', 1), f('pct', 'pct', '%')],
     roles: {label: 'lang', value: 'loc', x: 'lang', y: ['loc']}},
   // repo
   {name: 'repo.kpis', kind: 'rows', shape: 'StatItem[]', budget: 8, wt: true,
-    doc: 'Files, LOC, languages, modules (packages declared by manifests when 2+, else directories holding source), file cycles (lazy import() excluded), commits (30d), contributors.'},
+    doc: "Files, Lines, Languages (the rows of files.langs but 'Unclassified'), Modules (as deps.modules groups files, before its 24-node cut), File cycles (the rows of deps.cycles; lazy import() excluded), Commits (30d), Contributors. On a shallow clone the last two count the commits it has, with unit 'or more' and no delta."},
   {name: 'repo.stack', kind: 'rows', shape: 'ChipItem[]', budget: 24, wt: true,
     doc: 'Detected languages, frameworks and tools as chips.'},
   {name: 'repo.packages', kind: 'rows', shape: 'Rows', budget: 500, wt: true,
@@ -76,9 +82,9 @@ export const SOURCES: readonly SourceMeta[] = [
     doc: "Import graph by module: 24 nodes by default (20 modules, up to 4 external packages); smaller directories fold into their parent's rest node ('x/*', '(other)' at the root). A small scope is drawn file by file.",
     args: {top: 'nodes in total: default 24, at most 48 by module, 150 file by file', focus: 'node id to centre', depth: 'hops around focus'}},
   {name: 'deps.files', kind: 'graph', shape: 'GraphData', budget: 150, target: 'path', targetRequired: true, wt: true,
-    doc: 'Imports and importers of one file (ego network).', args: {depth: 'hops, default 1'}},
+    doc: "Imports and importers of one file (ego network). A directory or a module id ('x/*') is drawn as deps.modules of it.", args: {depth: 'hops, default 1'}},
   {name: 'deps.cycles', kind: 'rows', shape: 'Rows', budget: 50, wt: true,
-    doc: 'Import cycles between files.', fields: [f('id', 'num', '#'), f('size', 'num', 'Files', 1), f('members', 'text', undefined, 1)]},
+    doc: 'Import cycles between files (file level; the module graph marks cycles between modules).', fields: [f('id', 'num', '#'), f('size', 'num', 'Files', 1), f('members', 'text', undefined, 1)]},
   {name: 'deps.external', kind: 'rows', shape: 'Rows', budget: 500, wt: true, args: {top: 'row limit'},
     doc: 'External packages by importer count.',
     fields: [f('package', 'text', undefined, 1), f('importers', 'bar', undefined, 1), f('ecosystem', 'chip')],
@@ -93,12 +99,16 @@ export const SOURCES: readonly SourceMeta[] = [
   {name: 'git.activity', kind: 'rows', shape: 'Rows', budget: 400, target: 'path', args: {since: 'default 365d'},
     doc: 'Commits per day.', fields: [f('date', 'date'), f('commits', 'num')], roles: {date: 'date', value: 'commits', x: 'date', y: ['commits']}},
   {name: 'git.timeline', kind: 'rows', shape: 'Rows', budget: 1600, target: 'path', wt: true, args: {since: 'default 365d'},
-    doc: "Commits per week per module; a commit counts once, under the module most of its files are in. Series may include '(root)' (top-level files) and '(removed)' (directories gone since). 200 buckets max, else months.",
+    doc: "Commits per week per module; a commit counts once, under the module most of its files are in. Series may include '(root)' (top-level files), '(removed)' (directories gone since) and '(no files)' (commits that touch none). 200 buckets max, else months.",
     fields: [f('week', 'date'), f('module', 'module', 'Main module'), f('commits', 'num', 'Commits by main module')], roles: {x: 'week', y: ['commits'], series: 'module'}},
   {name: 'git.churn', kind: 'rows', shape: 'ChurnRow[]', budget: 500, pageable: true, target: 'path', args: {top: 'row limit', since: 'e.g. 90d', by: 'file (default) or module: one row per module of deps.modules'},
-    doc: 'Commits, authors and ownership per file; first and last are ISO commit times.',
+    doc: 'Commits, authors and ownership per file; first and last are ISO commit times. by=module: one row per module of deps.modules (commits touching it, authors, files changed): churn by module.',
     fields: [f('path', 'path', 'File', 1), f('commits', 'bar', undefined, 1), f('authors', 'num'), f('owner', 'author'), f('ownership', 'pct', undefined, 3), f('last', 'date')],
-    roles: {label: 'path', value: 'commits', x: 'path', y: ['commits']}},
+    roles: {label: 'path', value: 'commits', x: 'path', y: ['commits']},
+    variants: {'by=module': {
+      fields: [f('module', 'module', 'Module', 1), f('commits', 'bar', undefined, 1), f('authors', 'num'), f('files', 'num', 'Files changed')],
+      roles: {label: 'module', value: 'commits', x: 'module', y: ['commits']},
+    }}},
   {name: 'git.hotspots', kind: 'rows', shape: 'HotspotRow[]', budget: 500, pageable: true, target: 'path', wt: true, args: {top: 'row limit', since: 'e.g. 90d'},
     doc: 'Churn x complexity ranking. complexity = summed indentation depth; sloc = non-blank lines; isTest flags tests.',
     fields: [f('path', 'path', 'File', 1), f('commits', 'bar', undefined, 1), f('complexity', 'bar', 'Indentation', 1), f('sloc', 'num', 'Lines', 3), f('score', 'heat'), f('owner', 'author')],
@@ -127,11 +137,11 @@ export const SOURCES: readonly SourceMeta[] = [
     doc: 'Symbol outline of one file; of a Markdown file, its headings.',
     fields: [f('name', 'symbol', undefined, 1), f('kind', 'chip'), f('line', 'num')]},
   {name: 'code.refs', kind: 'rows', shape: 'Rows', budget: 500, target: 'symbol', targetRequired: true, wt: true,
-    doc: 'Word-boundary matches of an identifier (git grep).',
+    doc: "Word-boundary matches of an identifier (git grep): the files that define it first (code in the repository's main language leads), then other code, then docs. 'code.refs <name> <path>' searches under a path.",
     fields: [f('file', 'path', 'Where', 1), f('text', 'code', undefined, 1)]},
   // `file` is a FileLoc with the line ('src/a.ts#L12'). roles.label lets List and the charts title a row by its text.
   {name: 'code.todos', kind: 'rows', shape: 'Rows', budget: 500, target: 'path', wt: true, args: {top: 'row limit'},
-    doc: 'TODO / FIXME / HACK comments.',
+    doc: "TODO / FIXME / HACK comments; 'TODO(x):' gives owner x.",
     fields: [f('tag', 'chip'), f('file', 'path', 'Where', 1), f('text', 'text', undefined, 1)],
     roles: {label: 'text'}},
 ];
@@ -144,6 +154,29 @@ export const SOURCE_BY_NAME: ReadonlyMap<string, SourceMeta> = new Map(SOURCES.m
  */
 export function acceptsArg(meta: SourceMeta, name: string): boolean {
   return Object.hasOwn(meta.args ?? {}, name) || (name === 'top' && meta.kind === 'rows');
+}
+
+/**
+ * The fields and roles of the rows a ref of this source returns: those of the variant an argument selects
+ * ('git.churn by=module'), else the source's own. Argument values match without regard to case.
+ */
+export function fieldsFor(meta: SourceMeta, args: Readonly<Record<string, string>> = {}): {fields?: Field[]; roles?: Roles} {
+  for (const [key, variant] of Object.entries(meta.variants ?? {})) {
+    const eq = key.indexOf('=');
+    const value = Object.hasOwn(args, key.slice(0, eq)) ? args[key.slice(0, eq)] : undefined;
+    if (value !== undefined && value.trim().toLowerCase() === key.slice(eq + 1)) return variant;
+  }
+  return {...(meta.fields ? {fields: meta.fields} : {}), ...(meta.roles ? {roles: meta.roles} : {})};
+}
+
+/**
+ * The variant selector ('by=module') whose rows have a field the source's own rows lack: what to suggest when a
+ * spec asks 'git.churn' for `module`. undefined when no variant has it, or the source's own rows do.
+ */
+export function variantWithField(meta: SourceMeta, field: string): string | undefined {
+  const key = field.trim().toLowerCase();
+  if (meta.fields?.some(f => f.key.toLowerCase() === key)) return undefined;
+  return Object.entries(meta.variants ?? {}).find(([, variant]) => variant.fields.some(f => f.key.toLowerCase() === key))?.[0];
 }
 
 export interface SourceRef {

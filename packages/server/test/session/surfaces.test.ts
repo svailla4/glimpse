@@ -1,7 +1,7 @@
 // SurfaceStore: drafts are detached, commit modes follow design 2.2 step 5, and at most twelve surfaces are kept.
 import {VIEW_BY_NAME, type A2uiMessage, type SourceRef, type SurfaceMeta} from '@glimpse/catalog';
 import {beforeAll, describe, expect, it} from 'vitest';
-import {dataModelOf, MAX_SURFACES, setPath, snapshotOf, SurfaceStore} from '../../src/session/surfaces.ts';
+import {dataModelOf, MAX_SURFACES, setPath, snapshotOf, SurfaceStore, titleOf} from '../../src/session/surfaces.ts';
 import {createRegistry} from '../../src/sources/registry.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
 import {expandMessages} from '../../src/spec/expand.ts';
@@ -291,5 +291,21 @@ describe('the selection in snapshots (finding F082)', () => {
     // a later spec write to /ui wins again
     apply(store, 'demo', `$/ui/file='src/c.ts'`);
     expect(dataModelOf(store.get('demo')!, META).ui).toEqual({sel: null, file: 'src/c.ts'});
+  });
+});
+
+// Finding V044: a long Page title (a file preset's path) was cut at 80 characters inside the file name.
+describe('surface titles', () => {
+  const root = (title: string) => new Map([['root', {id: 'root', component: 'Page', title}]]);
+  it('a long title loses whole leading path segments and keeps the file name', () => {
+    const path = `${'packages/very-long-directory-name/'.repeat(3)}src/session/surfaces.ts`;
+    const title = titleOf(root(path), 'file');
+    expect(title.length).toBeLessThanOrEqual(80);
+    expect(title).toMatch(/^…\/[^/]/);
+    expect(title.endsWith('src/session/surfaces.ts')).toBe(true);
+    expect(titleOf(root('Short title'), 'x')).toBe('Short title');
+    expect(titleOf(root('  '), 'fallback')).toBe('fallback');
+    // no path to cut at: the end is kept
+    expect(titleOf(root('x'.repeat(100) + 'END'), 'x')).toBe(`…${'x'.repeat(76)}END`);
   });
 });

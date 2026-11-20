@@ -2,7 +2,7 @@
 // Horizontal flex row. The children share the width by their `span` (default 1 each) and wrap unless `wrap=false`.
 import type * as C from '@glimpse/catalog';
 import {useRef} from 'react';
-import {useArrangement} from '../../kit/arrange.tsx';
+import {inVisualOrder, useArrangement} from '../../kit/arrange.tsx';
 import {ArrangeContext, useChildIds, useSurfaceId, type GlView} from '../../kit/index.ts';
 import css from './Row.module.css';
 import {gapPx, vars} from './shared.ts';
@@ -11,8 +11,9 @@ const ALIGN = {start: 'flex-start', center: 'center', end: 'flex-end', stretch: 
 
 export const RowView: GlView<typeof C.Row> = ({id, props, child}) => {
   const element = useRef<HTMLDivElement>(null);
-  const arrangement = useArrangement(useSurfaceId(), id, useChildIds(id), {container: element, flow: 'row', defaultSpan: 1});
-  const children = Array.isArray(props.children) ? props.children : [];
+  const childIds = useChildIds(id);
+  const arrangement = useArrangement(useSurfaceId(), id, childIds, {container: element, flow: 'row', defaultSpan: 1});
+  const children = inVisualOrder(arrangement, childIds, Array.isArray(props.children) ? props.children : []);
   const align = (props.align && ALIGN[props.align]) || 'stretch';
   return (
     <div className={css.row} ref={element} data-wrap={props.wrap === false ? undefined : ''} style={vars({'--gap': `${gapPx(props.gap, 12)}px`, '--align': align})}>

@@ -1,5 +1,6 @@
 @layer gl.components {
-  .row { display: flex; flex-direction: row; align-items: var(--align); gap: var(--gap); min-width: 0; }
+  /* Cells side by side: one without a size step keeps the height of what it shows (styles/base.css). */
+  .row { display: flex; flex-direction: row; align-items: var(--align); gap: var(--gap); min-width: 0; --gl-cell-fit: 1; }
   /* A wrapping row gives its cells a floor, so they move to the next line instead of being squeezed to nothing. */
   .row[data-wrap] { flex-wrap: wrap; --gl-cell-min: 120px; }
 }

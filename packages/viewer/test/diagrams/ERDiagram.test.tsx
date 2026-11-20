@@ -237,3 +237,16 @@ describe('ERDiagram', () => {
     expect(view.cell('e').querySelector('[data-gl-state="redline"]')).toBeNull();
   });
 });
+
+describe('ERDiagram: opens readable (design rule D18)', () => {
+  it('grows its plate to show three tables whole at 100%, where it opened at 72% with 8 px column types', async () => {
+    const orders = {name: 'orders', columns: [
+      {name: 'id', type: 'uuid', pk: true}, {name: 'user_id', type: 'uuid', fk: 'users.id'}, ...['status', 'currency', 'coupon', 'placed_at', 'paid_at', 'shipped_at', 'cancelled_at', 'ship_to', 'bill_to', 'total_cents'].map(name => ({name, type: 'timestamptz'})),
+    ]};
+    const view = renderExpress(`root=Page('T',[e])\ne=ERDiagram($/schema,title='Schema')`, {data: {'/schema': [...SCHEMA.tables, orders]}, size: {width: 724, height: 600}});
+    await screen.findByRole('img', {name: /^Entity-relationship diagram/});
+    const zoom = Number.parseInt(view.cell('e').querySelector('button[aria-label="Zoom out"]')!.previousElementSibling!.textContent!, 10);
+    expect(zoom).toBeGreaterThanOrEqual(91);
+  });
+});
+

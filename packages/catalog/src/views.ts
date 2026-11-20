@@ -22,25 +22,31 @@ const s = (v: string) => v.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 /** 'git.churn' + scope/args -> quoted ref literal. */
 const r = (source: string, target?: string, args: Record<string, string> = {}) =>
   `'${s(formatRef({source, target, args} as SourceRef))}'`;
+/**
+ * Files no import analysis reads (prose, data, patches, images) or with no extension at all (LICENSE, Dockerfile):
+ * their 'Imports and importers' graph is a single node (finding V050), so the file preset leaves it out.
+ */
+const NO_IMPORTS = /(?:^|\/)[^/.]+$|\.(?:md|mdx|markdown|txt|rst|adoc|diff|patch|json|jsonc|json5|ya?ml|toml|ini|cfg|conf|env|lock|csv|tsv|xml|svg|png|jpe?g|gif|webp|ico|pdf|log|snap)$/i;
+
 const pick = (args: Record<string, string>, ...keys: string[]) =>
   Object.fromEntries(keys.filter(k => args[k] != null).map(k => [k, args[k]!]));
 
 export const VIEWS: readonly ViewMeta[] = [
   {
-    name: 'overview', doc: 'Atlas of the repo: KPIs, stack, treemap, languages, module graph, cycles, activity, hotspots, packages.',
+    name: 'overview', doc: 'Atlas of the repo: KPIs, stack, treemap, languages, module graph, file cycles, activity, hotspots, packages.',
     slots: {'/notes': 'Markdown commentary shown under the stack chips.'},
     build: () => `$/notes=''
-root=Page($/meta/repo/name,[kpis,stack,notes,map,langs,deps,Plate('Cycles and external packages',[side],span=4),activity,hot,pkgs],'an atlas of the codebase')
+root=Page($/meta/repo/name,[kpis,stack,notes,map,langs,deps,Plate('File cycles and external packages',[side],span=4),activity,hot,pkgs],'an atlas of the codebase')
 kpis=Stats()
 stack=Chips()
 notes=Markdown($/notes)
 map=Treemap(title='Where the code is',size='l',span=7)
 langs=Plate('Languages',[SegmentedBar(),DataTable('files.langs')],span=5)
 deps=Graph(title='How modules depend on each other',size='l',span=8)
-side=Tabs(['Cycles','External'],[DataTable('deps.cycles'),List('deps.external top=12')])
+side=Tabs(['File cycles','External'],[DataTable('deps.cycles'),List('deps.external top=12')])
 activity=LineChart('git.timeline',mode='stacked',title='Activity by module',span=6)
 hot=DataTable('git.hotspots top=15','path commits:bar complexity:bar isTest:bool=Test owner',sort='-score',title='Hotspots',note='Commits x summed indentation depth, a proxy for complexity.',span=6)
-pkgs=DataTable('repo.packages',title='Packages')`,
+pkgs=DataTable('repo.packages',title='Packages',note='One row per manifest file.')`,
   },
   {
     name: 'tree', doc: 'File browser: tree with churn heat beside code, outline and treemap tabs.', target: 'path',
@@ -51,14 +57,14 @@ outline=SymbolOutline(size='fill')
 map=Treemap(${r('files.tree', t)},size='fill')`,
   },
   {
-    name: 'deps', doc: 'Architecture map: module graph, heaviest edges, cycles, dependency matrix, external packages.', target: 'path',
+    name: 'deps', doc: 'Architecture map: module graph, heaviest edges, file cycles, dependency matrix, external packages.', target: 'path',
     slots: {'/notes': 'Markdown commentary.'},
     build: t => `$/notes=''
 root=Page('Dependencies',[notes,graph,edges,cycles,matrix,ext]${t ? `,'${s(t)}'` : ''})
 notes=Markdown($/notes)
 graph=Graph(${r('deps.modules', t)},title='Module dependencies',size='xl',span=8)
 edges=DataTable('deps.matrix','from to weight:bar',sort='-weight',title='Heaviest edges',size='xl',span=4)
-cycles=DataTable('deps.cycles',title='Cycles',span=6)
+cycles=DataTable('deps.cycles',title='File cycles',note='Import cycles between files; the graph marks cycles between modules.',span=6)
 matrix=Heatmap('deps.matrix',title='Who imports whom',span=6)
 ext=BarChart('deps.external top=20',title='External packages')`,
   },
@@ -87,13 +93,14 @@ log=CommitList(${r('git.log', t)},title='Log',size='l',span=6)`,
     slots: {'/notes': 'Markdown commentary.', '/marks': "CodeNote[] shown in the code gutter: [{line,text,kind?}]."},
     build: t => {
       const path = parseFileLoc(t!).path;
+      const imports = !NO_IMPORTS.test(path);
       return `$/notes=''
 $/marks=[]
-root=Page('${s(path)}',[notes,Grid([code,Column([outline,log])],'2:1'),near])
+root=Page('${s(path)}',[notes,Grid([code,Column([outline,log])],'2:1')${imports ? ',near' : ''}])
 notes=Markdown($/notes)
 code=CodeView('${s(t!)}',notes=$/marks,size='fill')
-outline=SymbolOutline('${s(path)}',title='Outline',size='l')
-near=Graph(${r('deps.files', path)},focus='${s(path)}',title='Imports and importers',size='l')
+outline=SymbolOutline('${s(path)}',title='Outline',size='l')${imports ? `
+near=Graph(${r('deps.files', path)},focus='${s(path)}',title='Imports and importers',size='l')` : ''}
 log=CommitList(${r('git.log', path, {top: '10'})},title='Recent commits')`;
     },
   },
@@ -107,7 +114,7 @@ code=CodeView(title='Source',size='fill',span=7)`,
     name: 'stack', doc: 'Tooling: stack chips, packages, scripts, external dependencies, TODOs.',
     build: () => `root=Page('Stack',[chips,pkgs,scripts,ext,todos])
 chips=Chips()
-pkgs=DataTable('repo.packages',title='Packages',span=7)
+pkgs=DataTable('repo.packages',title='Packages',note='One row per manifest file.',span=7)
 scripts=DataTable('repo.scripts',title='Scripts',span=5)
 ext=BarChart('deps.external top=20',title='External packages',span=6)
 todos=DataTable('code.todos',title='TODO / FIXME',span=6)`,

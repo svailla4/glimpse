@@ -3,9 +3,9 @@ import type {GraphData, GraphEdge, GraphGroup, GraphNode, Rows, SourceRef, Trunc
 import {cutModules, DEFAULT_MODULES, findCycles, MAX_MODULES, parseModuleId, type ModuleCut} from '../../analyze/cluster.ts';
 import {repoModel, type RepoModel} from '../../analyze/index.ts';
 import {baseName, dirName, languageOf} from '../../analyze/languages.ts';
-import {codeLines, packageMember, sourceLines, targetKind} from '../../analyze/model.ts';
+import {codeLines, countModules, isPackageImport, manifestDirsOf, packageMember, sourceLines, targetKind} from '../../analyze/model.ts';
 import {ecosystemOf} from '../../analyze/resolve.ts';
-import {SourceError, type Source, type SourceResult} from '../../contracts.ts';
+import {SourceError, type FileEntry, type Source, type SourceResult} from '../../contracts.ts';
 import {byText, clampSummary, compact, define, depthOf, inScope, plural, rowsResult, scopeOf, topOf} from './shared.ts';
 
 const MAX_EDGES = 400;
@@ -66,13 +66,39 @@ interface Scope {
   hasDir(dir: string): boolean;
 }
 
-function scopeFor(model: RepoModel, target: string): Scope {
+const cutFiles = (files: readonly FileEntry[]) => files.map(file => ({path: file.path, weight: sourceLines(file)}));
+
+/** The cut a module graph of `scope` draws: what deps.modules computes for that target and `top`. */
+export function cutFor(model: RepoModel, scope: string, files: readonly FileEntry[], top: number | undefined): ModuleCut {
+  const limits = moduleLimits(top ?? DEFAULT_MODULE_NODES, scope !== '');
+  if (scope === '' && limits.clusters === DEFAULT_MODULES) return model.cut;
+  return cutModules(cutFiles(files), {root: parseModuleId(scope).dir, max: limits.clusters, manifestDirs: manifestDirsOf(model.manifests)});
+}
+
+/**
+ * What a scope contains. A rest cluster ('src/*', '(root)') is not a directory prefix: it is whatever a cut left in
+ * that directory, and the cut that made it may be the repository's or that of a scoped graph (drilling a rest node
+ * of `deps.modules typescript` sends an id the repository cut never produces). The cut is found again: the
+ * repository's, else that of the nearest enclosing directory whose graph has the id. An id no cut produces is read
+ * as its directory, so every node id a module graph draws is a target it accepts (V059).
+ */
+function scopeFor(model: RepoModel, target: string, top?: number): Scope {
   if (target === '') return {label: '', hasFile: () => true, hasDir: () => true};
-  // A rest cluster ('src/*', '(root)') is not a directory prefix: it is whatever the cut left in that directory.
-  if (target === '(root)' || target.endsWith('/*')) {
-    return {label: target, hasFile: path => model.cut.moduleOf(path) === target, hasDir: dir => model.cut.moduleOfDir(dir) === target};
+  const {dir, rest} = parseModuleId(target);
+  if (rest) {
+    const of = (cut: ModuleCut): Scope => ({label: target, hasFile: path => cut.moduleOf(path) === target, hasDir: sub => cut.moduleOfDir(sub) === target});
+    if (model.cut.ids.includes(target)) return of(model.cut);
+    for (let scope = dir; ; scope = dirName(scope)) {
+      const files = model.files.filter(file => inScope(file.path, scope));
+      if (files.length > 0) {
+        const cut = cutFor(model, scope, files, top);
+        if (cut.ids.includes(target)) return of(cut);
+      }
+      if (scope === '') break;
+    }
+    return {label: target, hasFile: path => inScope(path, dir), hasDir: sub => inScope(sub, dir)};
   }
-  return {label: target, hasFile: path => inScope(path, target), hasDir: dir => inScope(dir, target)};
+  return {label: target, hasFile: path => inScope(path, target), hasDir: sub => inScope(sub, target)};
 }
 
 function unparsedWarning(model: RepoModel): string[] {
@@ -251,7 +277,8 @@ interface Finished {
   cycles: number;
 }
 
-function finish(draft: Draft, model: RepoModel, scope: Scope, repoName: string, ref: SourceRef, budget: number): Finished {
+/** `anchor`: a node whose own edges survive the edge budget first (the file of deps.files). */
+function finish(draft: Draft, model: RepoModel, scope: Scope, repoName: string, ref: SourceRef, budget: number, anchor?: string): Finished {
   let truncated: Truncation | undefined;
   const total = draft.nodes.size + draft.outside.size + draft.externals.size;
 
@@ -345,10 +372,13 @@ function finish(draft: Draft, model: RepoModel, scope: Scope, repoName: string, 
   }
 
   // ---- edge budget
-  edges.sort((a, b) => b.weight - a.weight || byText(a.from, b.from) || byText(a.to, b.to));
+  const byWeight = (a: DraftEdge, b: DraftEdge) => b.weight - a.weight || byText(a.from, b.from) || byText(a.to, b.to);
+  edges.sort(byWeight);
   if (edges.length > MAX_EDGES) {
     truncated ??= {total: edges.length, returned: MAX_EDGES, strategy: 'topN', by: 'weight'};
-    edges = edges.slice(0, MAX_EDGES);
+    // The anchor's own imports and importers are kept first: the edges the summary counts are the ones drawn.
+    const own = (edge: DraftEdge) => Number(anchor !== undefined && (edge.from === anchor || edge.to === anchor));
+    edges = [...edges].sort((a, b) => own(b) - own(a) || byWeight(a, b)).slice(0, MAX_EDGES).sort(byWeight);
   }
 
   // ---- groups
@@ -415,49 +445,63 @@ function graphResult(finished: Finished, draft: Draft, scope: Scope, warnings: s
   };
 }
 
+/** The module graph of `target` ('' for the repository, a directory, or a cluster id): deps.modules. */
+function moduleGraph(model: RepoModel, repoName: string, ref: SourceRef, target: string, budget: number, name: string): SourceResult<GraphData> {
+  const top = topOf(ref);
+  const scope = scopeFor(model, target, top);
+  const files = target === '' ? model.files : model.files.filter(file => scope.hasFile(file.path));
+  if (target !== '' && files.length === 0) throw new SourceError('E_TARGET', `${name}: no files under "${target}"`);
+  const sources = files.filter(file => sourceLines(file) > 0).length;
+  // A module graph is legible by default: about two dozen nodes, the smaller directories folded into rest clusters.
+  // `top=N` asks for more (a finer cut), up to the hard cap.
+  const limits = moduleLimits(top ?? DEFAULT_MODULE_NODES, target !== '');
+  const cut = cutFor(model, target, files, top);
+  // Clusters are for telling parts apart; a scope that is one cluster, or small, is clearer file by file.
+  const level = cut.ids.length <= 1 || (target !== '' && sources <= FILE_LEVEL_FILES) ? 'file' : 'module';
+  const draft = buildDraft(model, scope, cut, level, level === 'module' ? limits : FILE_LIMITS);
+  const finished = finish(draft, model, scope, repoName, ref, level === 'module' ? budget : Math.min(top ?? budget, budget));
+  const extra: string[] = [];
+  if (level === 'module') {
+    // The cut folds the smaller directories into rest clusters: the graph shows `drawn` of the scope's modules, the
+    // number the Modules KPI gives for the repository (decision D16). A focus or a degree cut says more and wins.
+    const all = target === '' ? model.modules : countModules(files, model.manifests, parseModuleId(target).dir);
+    const drawn = finished.graph.nodes.filter(node => node.kind === 'cluster' && draft.nodes.has(node.id)).length;
+    if (all > drawn) {
+      extra.push(`${drawn} of ${plural(all, 'module')}, smaller ones folded`);
+      if (!finished.truncated || finished.truncated.strategy !== 'neighborhood') finished.truncated = {total: all, returned: drawn, strategy: 'treecut', by: 'loc'};
+    }
+  }
+  const warnings = graphWarnings(model);
+  if (sources === 0 && files.length > 0) warnings.push(`no source files under "${target || '.'}": nothing to draw`);
+  return graphResult(finished, draft, scope, warnings, extra);
+}
+
 export function depsSources(): Source[] {
   const modules = define('deps.modules', async (ctx, ref, _signal, meta) => {
     const model = await repoModel(ctx);
     const target = scopeOf(ref);
-    const scope = scopeFor(model, target);
-    const files = target === '' ? model.files : model.files.filter(file => scope.hasFile(file.path));
-    if (target !== '' && files.length === 0) throw new SourceError('E_TARGET', `${meta.name}: no files under "${target}"`);
     if (model.byPath.has(target)) throw new SourceError('E_TARGET', `${meta.name}: "${target}" is a file; use deps.files ${target}`);
-    const sources = files.filter(file => sourceLines(file) > 0).length;
-    // A module graph is legible by default: about two dozen nodes, the smaller directories folded into rest clusters.
-    // `top=N` asks for more (a finer cut), up to the hard cap.
-    const top = topOf(ref);
-    const limits = moduleLimits(top ?? DEFAULT_MODULE_NODES, target !== '');
-    const cut = target === '' && limits.clusters === DEFAULT_MODULES
-      ? model.cut
-      : cutModules(files.map(file => ({path: file.path, weight: sourceLines(file)})), {root: parseModuleId(target).dir, max: limits.clusters, manifestDirs: new Set(model.manifests.packages.map(pkg => pkg.dir))});
-    // Clusters are for telling parts apart; a scope that is one cluster, or small, is clearer file by file.
-    const level = cut.ids.length <= 1 || (target !== '' && sources <= FILE_LEVEL_FILES) ? 'file' : 'module';
-    const draft = buildDraft(model, scope, cut, level, level === 'module' ? limits : FILE_LIMITS);
-    const finished = finish(draft, model, scope, ctx.name, ref, level === 'module' ? meta.budget : Math.min(top ?? meta.budget, meta.budget));
-    const warnings = graphWarnings(model);
-    if (sources === 0 && files.length > 0) warnings.push(`no source files under "${target || '.'}": nothing to draw`);
-    return graphResult(finished, draft, scope, warnings);
+    return moduleGraph(model, ctx.name, ref, target, meta.budget, meta.name);
   });
 
   const filesGraph = define('deps.files', async (ctx, ref, _signal, meta) => {
     const model = await repoModel(ctx);
     const target = scopeOf(ref);
-    if (target === '') throw new SourceError('E_TARGET', `${meta.name} needs a file path, e.g. ${meta.name} src/index.ts`);
+    if (target === '') throw new SourceError('E_TARGET', `${meta.name} needs a file path, e.g. ${meta.name} src/index.ts (for a directory: deps.modules <dir>)`);
     const focus = model.byPath.get(target);
     if (!focus) {
-      const isDir = model.files.some(file => inScope(file.path, target));
-      throw new SourceError('E_TARGET', isDir ? `${meta.name}: "${target}" is a directory; use deps.modules ${target}` : `${meta.name}: no such file "${target}"`);
+      // A directory, or a cluster of a module graph (a drill from one), is drawn as its module graph: that is what
+      // was meant, and it costs no round trip (V006). The summary says so.
+      const isDir = parseModuleId(target).rest || model.files.some(file => inScope(file.path, target));
+      if (!isDir) throw new SourceError('E_TARGET', `${meta.name}: no such file "${target}"`);
+      const result = moduleGraph(model, ctx.name, {...ref, source: 'deps.modules', args: {}}, target, meta.budget, meta.name);
+      return {...result, summary: clampSummary(`a directory: drawn as deps.modules ${target}; ${result.summary}`)};
     }
     const depth = depthOf(ref) ?? 1;
     // Hops over file-to-file imports in both directions. An import of a package reaches the package directory, and
     // every file importing a package that a reached file belongs to is an importer of that file: the files directly
     // in a Go or C# package, every file beneath a Swift module (the rule RepoIndex.edges and diff.impact apply).
-    const reached = new Set<string>([target]);
-    let frontier = new Set<string>([target]);
-    let cappedAt: number | undefined;
-    const viaPackage = new Set<string>();
-    for (let hop = 0; hop < depth && frontier.size > 0; hop++) {
+    const hop = (frontier: ReadonlySet<string>, reached: ReadonlySet<string>): Set<string> => {
       const next = new Set<string>();
       const members = [...frontier].flatMap(path => model.byPath.get(path) ?? []);
       for (const link of model.links) {
@@ -465,22 +509,46 @@ export function depsSources(): Source[] {
         if (kind === 'ext') continue;
         if (frontier.has(link.from) && !reached.has(link.to)) next.add(link.to);
         if (reached.has(link.from)) continue;
-        if (frontier.has(link.to)) next.add(link.from);
-        else if (kind === 'dir' && members.some(file => packageMember(model, link, file))) {
-          next.add(link.from);
-          if (packageMember(model, link, focus)) viaPackage.add(link.from);
-        }
+        if (frontier.has(link.to) || (kind === 'dir' && members.some(file => packageMember(model, link, file)))) next.add(link.from);
       }
-      const before = reached.size;
-      for (const path of [...next].sort()) {
-        if (reached.size >= meta.budget - MAX_EXTERNAL_NODES) {
-          cappedAt ??= before + next.size;
-          break;
-        }
+      return next;
+    };
+    // The focus file's own imports and importers, counted before any node budget: the numbers the summary gives
+    // are the file's, never those of a cut graph (V024), and diff.impact counts the same importers.
+    const importsAll = new Set<string>();
+    const importersAll = new Set<string>();
+    const byName = new Set<string>();
+    for (const link of model.links) {
+      if (link.from === target) {
+        if (link.to !== target) importsAll.add(link.to);
+        continue;
+      }
+      if (link.to === target) {
+        importersAll.add(link.from);
+        if (!isPackageImport(link)) byName.add(link.from);
+      } else if (targetKind(model, link) === 'dir' && packageMember(model, link, focus)) importersAll.add(link.from);
+    }
+    // What the cut keeps: what the file imports and who imports it by name, before files that only import the whole
+    // package it belongs to; then by path.
+    const near = (path: string) => Number(byName.has(path) || importsAll.has(path) || !importersAll.has(path));
+    const order = (paths: Iterable<string>) => [...paths].sort((a, b) => near(b) - near(a) || byText(a, b));
+    const room = meta.budget - MAX_EXTERNAL_NODES;
+    const reached = new Set<string>([target]);
+    const everything = new Set<string>([target]);
+    let frontier: Set<string> = new Set([target]);
+    let wide: Set<string> = new Set([target]);
+    for (let step = 0; step < depth && (frontier.size > 0 || wide.size > 0); step++) {
+      const next = hop(frontier, reached);
+      for (const path of order(next)) {
+        if (reached.size >= room) break;
         reached.add(path);
       }
-      frontier = next;
+      frontier = new Set([...next].filter(path => reached.has(path)));
+      const further = hop(wide, everything);
+      for (const path of further) everything.add(path);
+      wide = further;
     }
+    const cappedAt = everything.size > reached.size ? everything.size : undefined;
     const scope: Scope = {label: '', hasFile: path => reached.has(path), hasDir: dir => reached.has(dir)};
     const draft: Draft = {level: 'file', nodes: new Map(), outside: new Map(), externals: new Map(), edges: [], leaving: 0, folded: new Set()};
     for (const id of reached) draft.nodes.set(id, model.byPath.has(id) ? fileNode(model, id) : packageNode(model, id));
@@ -500,18 +568,26 @@ export function depsSources(): Source[] {
       seen.add(`${link.from}\0${to}`);
       draft.edges.push({from: link.from, to, weight: 1, typeOnly: link.kind === 'type', eager: link.kind !== 'type' && link.kind !== 'dynamic'});
     }
-    const finished = finish(draft, model, scope, ctx.name, {...ref, args: {}}, meta.budget);
+    const finished = finish(draft, model, scope, ctx.name, {...ref, args: {}}, meta.budget, target);
     // The focus file leads, so a reader of the data finds it first.
     finished.graph.nodes.sort((a, b) => Number(b.id === target) - Number(a.id === target));
-    if (cappedAt !== undefined) finished.truncated = {total: cappedAt, returned: finished.graph.nodes.length, strategy: 'neighborhood', by: target};
-    const imports = finished.graph.edges.filter(edge => edge.from === target).length;
-    const importerIds = finished.graph.edges.filter(edge => edge.to === target).map(edge => edge.from);
-    const importers = importerIds.length;
+    const nodesShown = finished.graph.nodes.length;
+    const nodesAll = cappedAt === undefined ? nodesShown : cappedAt + finished.graph.nodes.filter(node => node.kind === 'external').length;
+    if (cappedAt !== undefined) {
+      finished.total = nodesAll;
+      finished.truncated = {total: nodesAll, returned: nodesShown, strategy: 'neighborhood', by: target};
+    }
+    const drawnImports = finished.graph.edges.filter(edge => edge.from === target).length;
+    const drawnImporters = finished.graph.edges.filter(edge => edge.to === target).length;
+    const imports = Math.max(importsAll.size, drawnImports);
+    const importers = importersAll.size;
+    const counted = (n: number, drawn: number) => `${n.toLocaleString('en-US')}${drawn < n ? ` (${drawn.toLocaleString('en-US')} drawn)` : ''}`;
     const warnings = graphWarnings(model);
+    if (cappedAt !== undefined) warnings.push(`graph cut to ${nodesShown} of ${nodesAll.toLocaleString('en-US')} nodes, importers by name first`);
     if (finished.graph.nodes.some(node => node.kind === 'package')) warnings.push('imports of a whole package are drawn to the package directory');
-    const wholePackage = importerIds.filter(id => viaPackage.has(id)).length;
+    const wholePackage = [...importersAll].filter(id => !byName.has(id)).length;
     if (wholePackage > 0) warnings.push(`${wholePackage} of ${plural(importers, 'importer')} import the whole package or module ${baseName(target)} belongs to, not this file by name`);
-    return graphResult(finished, draft, scope, warnings, [`${baseName(target)} imports ${imports}, imported by ${importers}`]);
+    return graphResult(finished, draft, scope, warnings, [`${baseName(target)} imports ${counted(imports, drawnImports)}, imported by ${counted(importers, drawnImporters)}`]);
   });
 
   const cycles = define('deps.cycles', async (ctx, ref, _signal, meta) => {
@@ -560,9 +636,11 @@ export function depsSources(): Source[] {
     }
     const rows: Rows = [...weights.values()].sort((a, b) => b.weight - a.weight || byText(a.from, b.from) || byText(a.to, b.to));
     const first = rows[0];
+    // The clusters of the repository graph: "20 of 495 modules" when the cut folds smaller ones, as deps.modules says.
+    const counted = model.modules > modules.size ? `${modules.size} of ${plural(model.modules, 'module')}` : plural(modules.size, 'module');
     return rowsResult(meta, ref, rows, {
       by: 'weight',
-      lead: first ? `${plural(modules.size, 'module')}; heaviest ${String(first.from)} -> ${String(first.to)} ${String(first.weight)}` : `${plural(modules.size, 'module')}, no imports between them`,
+      lead: first ? `${counted}; heaviest ${String(first.from)} -> ${String(first.to)} ${String(first.weight)}` : `${counted}, no imports between them`,
     });
   });
 

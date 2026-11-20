@@ -1,7 +1,9 @@
 @layer gl.components {
   .dir { fill: var(--gl-sunken); }
   .hatch { stroke: var(--gl-ink-3); stroke-width: 1; opacity: 0.5; }
-  .onLight, .onStrong { pointer-events: none; }
+  .onLight, .onLightDim, .onStrong, .onStrongDim { pointer-events: none; }
   .onLight { fill: var(--gl-ink); }
+  .onLightDim { fill: var(--gl-ink-2); }
   .onStrong { fill: var(--gl-surface); }
+  .onStrongDim { fill: var(--gl-surface); opacity: 0.8; }
 }

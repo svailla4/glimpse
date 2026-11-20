@@ -22,6 +22,8 @@ export interface History extends HistoryCounts {
   warnings: string[];
   /** What a reader of the totals (commits, contributors) must know. */
   totalWarnings: string[];
+  /** The totals are lower bounds: a shallow clone, or more commits than even the header stream reads. */
+  partial: boolean;
 }
 
 /** One set of counts per parsed log, so the tree, the list and the KPIs of one HEAD share it. */
@@ -79,6 +81,7 @@ export async function readHistory(ctx: RepoContext, signal: AbortSignal): Promis
       ...counts,
       warnings: [...shallow, ...(log.truncated ? [LIMIT_WARNING] : [])],
       totalWarnings: [...shallow, ...(all.truncated ? [`history limited to the latest ${HEADER_LIMIT.toLocaleString('en-US')} commits`] : [])],
+      partial: ctx.git.shallow || all.truncated,
     };
   } catch (error) {
     signal.throwIfAborted();

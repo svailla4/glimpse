@@ -3,7 +3,9 @@
 import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
-import {COMPONENTS, SOURCE_BY_NAME, SOURCES, VIEW_INDEX, formatRef, parseFileLoc, type A2uiMessage} from '../src/index.ts';
+import {
+  COMPONENTS, INSTRUCTIONS_BUDGET, INSTRUCTIONS_TARGET, SOURCE_BY_NAME, SOURCES, VIEW_INDEX, formatRef, parseFileLoc, serverInstructions, type A2uiMessage,
+} from '../src/index.ts';
 import {compileExpress, expandRefs, strictErrors} from '../testing/index.ts';
 import {readText} from './support.ts';
 
@@ -83,6 +85,19 @@ describe('README: what it lists is what exists', () => {
     }
     expect(section(readme, 'Security model')).toMatch(/127\.0\.0\.1/);
     expect(section(readme, 'Status and known limitations')).toMatch(/macOS only/);
+  });
+
+  it('gives the instructions length as it is, and the behaviour of this round: render reports, field repair, by=module', () => {
+    const now = serverInstructions().length.toLocaleString('en-US');
+    expect(section(readme, 'Development')).toContain(`| Server instructions | ${INSTRUCTIONS_TARGET.toLocaleString('en-US')} chars (hard limit ${INSTRUCTIONS_BUDGET.toLocaleString('en-US')}) | ${now} |`);
+    const tools = section(readme, 'Tools');
+    expect(tools).toMatch(/truthful empty state .* prints nothing/);
+    expect(tools).toMatch(/rides once on a later tool result as a `viewer: error` line, and only if it is still that component's state/);
+    expect(tools).toContain("`fixed x 'churn' -> 'commits'`");
+    expect(section(readme, 'Data sources')).toContain("`'git.churn by=module'`");
+    const graphs = SOURCES.filter(s => s.kind === 'graph').map(s => `\`${s.name}\``);
+    expect(section(readme, 'Data sources')).toContain(`Three sources are graphs (${graphs.join(', ')}) and are drawn with \`Graph\``);
+    expect(graphs).toHaveLength(3);
   });
 
   it('carries no absolute local path, user name or token', () => {

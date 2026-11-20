@@ -1,7 +1,8 @@
 import {afterEach, describe, expect, it} from 'vitest';
 import {
-  POSITIONS_KEY, READABLE_ZOOM, bandsOf, boundsOf, channelBetween, configurePositionStorage, fitText, inBand, labelAnchor, layoutDiagram, markPath,
-  midpoint, nearestInDirection, nearestOn, openingView, positionsKey, readPositions, roundedPath, routeAround, routeEdge, routeLoop, signatureOf, simplify,
+  LOOP_REACH, POSITIONS_KEY, READABLE_ZOOM, bandsOf, boundsOf, channelBetween, configurePositionStorage, fitText, inBand, labelAnchor, layoutDiagram,
+  loopLabel, markPath, midpoint, nearestInDirection, nearestOn, openingView, positionsKey, readPositions, roundedPath, routeAround, routeEdge, routeLoop,
+  seen, signatureOf, simplify,
   textWidth, wrapText, writePositions, MONO_11, UI_12,
   type Box, type LayoutSpec, type Point,
 } from '../../src/components/diagrams/edgekit/index.ts';
@@ -67,12 +68,30 @@ describe('routeEdge', () => {
     expect(diamond[0]).toEqual({x: 75, y: 75});
   });
 
-  it('draws a loop for an edge from a node to itself', () => {
+  it('draws a loop for an edge from a node to itself on a side across the flow, never past its ends along it', () => {
+    // Left to right: a handle above the node, out of its top and back into it.
     const lr = routeLoop(box(0, 0), 'LR');
     expect(orthogonal(lr)).toBe(true);
-    expect(lr[0]!.x).toBe(100);
+    expect(lr[0]!.y).toBe(0);
     expect(lr.at(-1)!.y).toBe(0);
-    expect(orthogonal(routeLoop(box(0, 0), 'TB'))).toBe(true);
+    for (const p of lr) {
+      expect(p.x).toBeGreaterThan(0);
+      expect(p.x).toBeLessThan(100);
+      expect(p.y).toBeGreaterThanOrEqual(-LOOP_REACH);
+    }
+    // Top to bottom: on the right, between the node's top and bottom.
+    const tb = routeLoop(box(0, 0), 'TB');
+    expect(orthogonal(tb)).toBe(true);
+    expect(tb[0]!.x).toBe(100);
+    expect(tb.at(-1)!.x).toBe(100);
+    for (const p of tb) expect(p.y > 0 && p.y < 40 && p.x <= 100 + LOOP_REACH).toBe(true);
+    // The other side, and onto a diamond's outline instead of its bounding box.
+    expect(routeLoop(box(0, 0), 'LR', {side: 1})[0]!.y).toBe(40);
+    expect(routeLoop(box(0, 0), 'LR', {shape: 'diamond'})[0]!.y).toBeGreaterThan(0);
+    // Its label stands beyond it, clear of the loop.
+    const at = loopLabel(lr, {w: 60, h: 16});
+    expect(at.y + 8).toBeLessThan(-LOOP_REACH);
+    expect(loopLabel(tb, {w: 60, h: 16}).x - 30).toBeGreaterThan(100 + LOOP_REACH);
   });
 });
 
@@ -193,7 +212,20 @@ describe('layoutDiagram', () => {
     const forth = laid.routes.get('0')!.points;
     expect(forth[0]!.x).toBe(api.x + api.w);
     expect(forth.at(-1)!.x).toBe(auth.x);
+    // Against the flow, the edge goes round the side: out of the top or bottom of auth, into the top or bottom of api.
     const back = laid.routes.get('1')!.points;
+    expect([auth.y, auth.y + auth.h]).toContain(back[0]!.y);
+    expect(back[0]!.x).toBeGreaterThan(auth.x);
+    expect(back[0]!.x).toBeLessThan(auth.x + auth.w);
+    expect([api.y, api.y + api.h]).toContain(back.at(-1)!.y);
+  });
+
+  it('runs a back edge of a wrapped graph one lane over, from side to side', () => {
+    const wrapped = layoutDiagram({...spec, wrap: true});
+    const api = wrapped.boxes.get('api')!;
+    const auth = wrapped.boxes.get('auth')!;
+    const forth = wrapped.routes.get('0')!.points;
+    const back = wrapped.routes.get('1')!.points;
     expect(back[0]!.x).toBe(auth.x);
     expect(back.at(-1)!.x).toBe(api.x + api.w);
     expect(back[0]!.y).not.toBe(forth.at(-1)!.y);
@@ -208,7 +240,9 @@ describe('layoutDiagram', () => {
     });
     expect(crossesApi).toBe(false);
     expect(route.label).toBeDefined();
-    expect(nearestOn(route.points, route.label!)).toEqual(route.label);
+    // On its line, or right beside it where the line itself is taken.
+    const near = nearestOn(route.points, route.label!);
+    expect(Math.hypot(near.x - route.label!.x, near.y - route.label!.y)).toBeLessThanOrEqual(16 / 2 + 3);
     expect(laid.routes.get('0')!.label).toBeUndefined();
   });
 
@@ -322,6 +356,37 @@ describe('openingView', () => {
     const left = anchor.x * view.k + view.x;
     const bottom = (anchor.y + anchor.h) * view.k + view.y;
     expect(left >= 150 || bottom <= 600 - 102).toBe(true);
+    // and no node is cut by the edge of the stage or half hidden under the inset (150 x 102 in the corner)
+    const area = (b: Box, r: Box) => Math.max(0, Math.min(b.x + b.w, r.x + r.w) - Math.max(b.x, r.x)) * Math.max(0, Math.min(b.y + b.h, r.y + r.h) - Math.max(b.y, r.y));
+    for (const b of boxes) {
+      const s = {x: b.x * view.k + view.x, y: b.y * view.k + view.y, w: b.w * view.k, h: b.h * view.k};
+      const visible = area(s, {x: 0, y: 0, w: 960, h: 600}) - area(s, {x: 0, y: 498, w: 150, h: 102});
+      expect(visible <= 1 || visible >= s.w * s.h - 1, `node at ${b.x},${b.y} is cut`).toBe(true);
+    }
+  });
+
+  it('opens on a part that cuts no node at the edge of the stage (a chain a little too wide to read whole)', () => {
+    // The session model's lifecycle chart in a span=7 plate: at 91% the last node stood half off the stage, and the
+    // count said all of them were in view.
+    const chain = Array.from({length: 5}, (_, i) => box(i * 180, 0, 120, 40));
+    const {view, whole} = openingView(boundsOf(chain), 700, 300, 0.91, chain, chain[0], undefined, 0.91);
+    expect(whole).toBe(false);
+    expect(view.k).toBe(0.91);
+    const left = (b: Box) => b.x * view.k + view.x;
+    const right = (b: Box) => (b.x + b.w) * view.k + view.x;
+    for (const b of chain) expect(right(b) <= 0 || left(b) >= 700 || (left(b) >= 0 && right(b) <= 700), `node at ${b.x} is cut`).toBe(true);
+    expect(chain.filter(b => seen(view, b, 700, 300))).toHaveLength(4);
+    // The node it starts from is on the stage.
+    expect(seen(view, chain[0]!, 700, 300)).toBe(true);
+  });
+
+  it('counts a node in view only when the stage shows it whole', () => {
+    const view = {x: 0, y: 0, k: 1};
+    expect(seen(view, box(10, 10), 400, 300)).toBe(true);
+    expect(seen(view, box(350, 10), 400, 300)).toBe(false);
+    expect(seen(view, box(-50, 10), 400, 300)).toBe(false);
+    // a node larger than the stage is in view when it fills it
+    expect(seen(view, box(-10, -10, 900, 900), 400, 300)).toBe(true);
   });
 });
 

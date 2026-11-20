@@ -103,6 +103,22 @@ describe('gallery', () => {
     }
   });
 
+  // Integrator item: in a repository where every file opens on a licence, the Code section showed only the licence.
+  it('starts the plates that read lines at the start line, given as an option or as #L<n> on the file', () => {
+    for (const root of [galleryRoot({file: 'src/x.ts', start: 41}), galleryRoot({file: 'src/x.ts#L41'})]) {
+      const built = (buildSurface('g', GALLERY_DATA + '\n' + root)[0] as Extract<A2uiMessage, {createSurface: unknown}>).createSurface.components.map(props);
+      expect(strictErrors(buildSurface('g', GALLERY_DATA + '\n' + root))).toEqual([]);
+      const by = (component: string) => built.filter(c => c.component === component);
+      expect(by('SymbolOutline')[0]!.file).toBe('src/x.ts');
+      expect(by('CodeView')[0]).toMatchObject({file: 'src/x.ts#L41-80', mark: 'L41-43', notes: [{line: 42}]});
+      expect(by('FileRef')[0]!.file).toBe('src/x.ts#L41-52');
+      expect(by('CodeTour')[0]!.data.map((stop: {file: string}) => stop.file)).toEqual(['src/x.ts#L41-52', 'src/x.ts#L53-70']);
+      expect(by('KeyValue')[0]!.data.Entry).toBe('src/x.ts');
+    }
+    expect(galleryRoot({file: 'src/x.ts', start: 1})).toBe(galleryRoot({file: 'src/x.ts'}));
+    expect(galleryRoot({file: 'src/x.ts', start: 0})).toBe(galleryRoot({file: 'src/x.ts'}));
+  });
+
   it('escapes the file it is given', () => {
     const root = galleryRoot({file: "it's/odd \\ file.ts"});
     const built = (buildSurface('g', GALLERY_DATA + '\n' + root)[0] as Extract<A2uiMessage, {createSurface: unknown}>).createSurface.components.map(props);

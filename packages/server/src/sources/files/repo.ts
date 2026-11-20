@@ -4,7 +4,7 @@ import {repoModel, type RepoModel} from '../../analyze/index.ts';
 import {languageOf} from '../../analyze/languages.ts';
 import {codeLines, declaredPackages} from '../../analyze/model.ts';
 import type {Source} from '../../contracts.ts';
-import {languageMix} from './files.ts';
+import {languageMix, UNCLASSIFIED} from './files.ts';
 import {readHistory} from './history.ts';
 import {compact, define, itemsResult, rowsResult, type SourceOptions} from './shared.ts';
 
@@ -61,7 +61,7 @@ function knownDependency(name: string) {
     ?? known(lower.split('.').slice(0, 2).join('.'));
 }
 
-/** The language mix without data, prose and configuration formats: the languages someone writes code in. */
+/** The language mix without data, prose and configuration formats: the languages someone writes code in (stack chips). */
 function codedLanguages(model: RepoModel): LangRow[] {
   const coded = new Set<string>();
   for (const file of model.files) {
@@ -76,30 +76,37 @@ export function repoSources(options: SourceOptions): Source[] {
     const [model, history] = await Promise.all([repoModel(ctx), readHistory(ctx, signal)]);
     signal.throwIfAborted();
     const lines = model.files.reduce((sum, file) => sum + codeLines(file), 0);
+    // Each number is the count another plate on the same page shows (decision D16): the Languages KPI the rows of
+    // files.langs (its catch-all of unknown text files aside), Modules the modules deps.modules and deps.matrix cut
+    // the repository into before a graph folds the smaller ones ("20 of N"), File cycles the rows of deps.cycles.
+    const languages = languageMix(model).filter(row => row.lang !== UNCLASSIFIED).length;
     const stats: StatItem[] = [
       {label: 'Files', value: model.files.length},
       {label: 'Lines', value: lines, format: 'compact'},
-      {label: 'Languages', value: codedLanguages(model).length},
-      // A count of what the repository declares, never the number of clusters a graph happens to draw.
-      {label: 'Modules', value: model.modules.count},
-      // File-level cycles: the rows of deps.cycles. A module graph counts its own, between clusters.
-      {label: 'Cycles', value: model.cycles.length, ...(model.cycles.length > 0 ? {tone: 'warn' as const} : {})},
+      {label: 'Languages', value: languages},
+      {label: 'Modules', value: model.modules},
+      // File level, and named so: a module graph marks cycles between modules, which is a different count.
+      {label: 'File cycles', value: model.cycles.length, ...(model.cycles.length > 0 ? {tone: 'warn' as const} : {})},
     ];
     const warnings = [...model.warnings];
     if (history) {
       const now = options.now() / 1000;
       const recent = history.times.filter(time => time > now - THIRTY_DAYS).length;
       const before = history.times.filter(time => time <= now - THIRTY_DAYS && time > now - 2 * THIRTY_DAYS).length;
-      // The same commits and authors git.log and git.authors list: one parsed history (git/log.ts).
-      stats.push({label: 'Commits (30d)', value: recent, delta: recent - before}, {label: 'Contributors', value: history.authors.size});
+      // The same commits and authors git.log and git.authors list: one parsed history (git/log.ts). A shallow clone
+      // holds only its latest commits, so the counts are lower bounds and a rise against the month before is the
+      // depth of the clone, not activity: no delta is drawn (V033).
+      const bound = history.partial ? {unit: 'or more'} : {};
+      stats.push(
+        {label: 'Commits (30d)', value: recent, ...bound, ...(history.partial ? {} : {delta: recent - before})},
+        {label: 'Contributors', value: history.authors.size, ...bound},
+      );
       warnings.push(...history.totalWarnings);
     } else warnings.push('no git history: commit and contributor counts are omitted');
     // Exact below 10,000, as the viewer shows them: a rounded "4.7k" next to "4,690 files" reads as a second count.
     const shownValue = (value: number) => (Math.abs(value) < 10_000 ? value.toLocaleString('en-US') : compact(value));
-    const lead = (shown: StatItem[]) => shown.map(stat => {
-      const value = typeof stat.value === 'number' ? shownValue(stat.value) : stat.value;
-      return stat.label === 'Modules' ? `${stat.label} ${value} (${model.modules.unit})` : stat.label === 'Cycles' ? `File cycles ${value}` : `${stat.label} ${value}`;
-    }).join(', ');
+    const lead = (shown: StatItem[]) =>
+      shown.map(stat => `${stat.label} ${typeof stat.value === 'number' ? shownValue(stat.value) : stat.value}${stat.unit ? ` ${stat.unit}` : ''}`).join(', ');
     return itemsResult(meta, ref, stats, 'label value', lead, warnings);
   });
 

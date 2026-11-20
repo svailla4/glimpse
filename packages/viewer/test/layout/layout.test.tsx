@@ -1,7 +1,7 @@
 // packages/viewer/test/layout/layout.test.tsx - Page, Section, Plate, Grid, Row and Column from real wire messages.
 import {act, fireEvent, screen, within} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
-import {parseCols} from '../../src/components/layout/Grid.tsx';
+import {parseCols, shareOf} from '../../src/components/layout/Grid.tsx';
 import {buildPatch, buildSurface, renderExpress, renderSpec} from '../harness.tsx';
 
 const redlines = (root: HTMLElement) => [...root.querySelectorAll('[data-gl-state="redline"]')].map(el => el.textContent);
@@ -180,14 +180,51 @@ describe('Grid', () => {
     expect(inner(view.cell('i')).getAttribute('data-tracks')).toBe('4');
   });
 
-  it('gives a child one track, or its span clamped to the track count', async () => {
-    const view = renderExpress(`root=Page('T',[g])\ng=Grid([Text('a',span=2),Text('b',span=9),Text('c')],'3')`);
+  it('gives a child one track while no child names a span', async () => {
+    const view = renderExpress(`root=Page('T',[g])\ng=Grid([Text('a'),Text('b'),Text('c')],'3')`);
     await view.settle();
     const g = inner(view.cell('g'));
     expect(style(g, '--gl-c0')).toBe('span 1');
-    expect(style(g, '--gl-c2')).toBe('span 2');
-    expect(style(g, '--gl-c9')).toBe('span 3');
-    expect(style(g, '--gl-c12')).toBe('span 3');
+    expect(g.hasAttribute('data-columns')).toBe(false);
+    expect([...g.querySelectorAll('.gl-cell')].map(cell => cell.getAttribute('data-span'))).toEqual([null, null, null]);
+  });
+
+  it('reads span on 12 columns, as the page does: span=6 twice is two halves, not two full rows (D17, V034)', async () => {
+    const view = renderExpress(
+      `root=Page('T',[g,h,i,j])\ng=Grid([Text('a',span=6),Text('b',span=6)])\nh=Grid([Text('c',span=6),Text('d',span=6)],'1:1')\ni=Grid([Text('map',span=8),Text('tree',span=4)],'2:1')\nj=Grid([Text('files'),Text('code',span=8)],'1:2')`,
+    );
+    await view.settle();
+    const spansOf = (id: string) => [...inner(view.cell(id)).querySelectorAll('.gl-cell')].map(cell => cell.getAttribute('data-span'));
+    for (const id of ['g', 'h', 'i', 'j']) {
+      const grid = inner(view.cell(id));
+      // the 12 columns of the page grid; the cells read data-span against them (styles/base.css)
+      expect(grid.getAttribute('data-columns'), id).toBe('12');
+      expect(style(grid, '--cols'), id).toBe('repeat(12, minmax(0, 1fr))');
+      expect(style(grid, '--gl-c6'), id).toBe('');
+    }
+    expect(spansOf('g')).toEqual(['6', '6']);
+    expect(spansOf('h')).toEqual(['6', '6']);
+    expect(spansOf('i')).toEqual(['8', '4']);
+    // a child that names no span takes the share its track would have had: 1 of 1:2 is 4 of 12
+    expect(spansOf('j')).toEqual(['4', '8']);
+    // and a span of 12 is the whole row
+    expect(shareOf([1, 1], 0)).toBe(6);
+    expect(shareOf([2, 1], 1)).toBe(4);
+    expect(shareOf([1, 1, 1, 1], 5)).toBe(3);
+  });
+
+  it('follows a patch that adds or drops the spans of its children', async () => {
+    const spec = `root=Page('T',[g])\ng=Grid([a,b])\na=Text('a')\nb=Text('b')`;
+    const view = renderExpress(spec);
+    await view.settle();
+    expect(inner(view.cell('g')).hasAttribute('data-columns')).toBe(false);
+    view.send(buildPatch('test', buildSurface('test', spec), `a=Text('a',span=7)\nb=Text('b',span=5)`));
+    await view.settle();
+    expect(inner(view.cell('g')).getAttribute('data-columns')).toBe('12');
+    expect([view.cell('a').getAttribute('data-span'), view.cell('b').getAttribute('data-span')]).toEqual(['7', '5']);
+    view.send(buildPatch('test', buildSurface('test', spec), `a=Text('a')\nb=Text('b')`));
+    await view.settle();
+    expect(inner(view.cell('g')).hasAttribute('data-columns')).toBe(false);
   });
 
   it('falls back to the default tracks on a malformed `cols`, renders with no children, and follows a patch', async () => {

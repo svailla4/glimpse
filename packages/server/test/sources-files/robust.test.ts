@@ -186,7 +186,7 @@ describe('names that are also properties of every object', () => {
   it('every source answers, and nothing inherited is taken for a language or a framework', async () => {
     const refs: Record<string, string> = {'deps.files': 'deps.files src/index.ts', 'code.symbols': 'code.symbols src/index.ts', 'code.refs': 'code.refs app'};
     for (const name of MINE) checkResult(name, await run(ctx, refs[name] ?? name));
-    expect(((await run(ctx, 'files.langs')).data as Array<{lang: string}>).map(row => row.lang).sort()).toEqual(['JSON', 'Other', 'TypeScript']);
+    expect(((await run(ctx, 'files.langs')).data as Array<{lang: string}>).map(row => row.lang).sort()).toEqual(['JSON', 'TypeScript', 'Unclassified']);
     const files = (await run(ctx, 'files.list')).data as Array<{path: string; lang?: string}>;
     for (const path of ['constructor', 'toString', 'hasOwnProperty', 'src/a.constructor', 'src/b.__proto__']) expect(files.find(file => file.path === path), path).toMatchObject({path, loc: 1});
     for (const path of ['constructor', 'toString', 'hasOwnProperty', 'src/a.constructor', 'src/b.__proto__']) expect(files.find(file => file.path === path)?.lang, path).toBeUndefined();

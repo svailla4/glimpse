@@ -59,6 +59,9 @@
     white-space: nowrap;
   }
   .refMore { flex: none; color: var(--gl-ink-2); }
+  /* A ref loses its start, not its end: the tail tells branches apart ('…a2ui-renderer', '…a2ui-v0.9'). */
+  .ref { direction: rtl; text-align: left; }
+  .ref > bdi { direction: ltr; }
 
   .author, .authorGap { flex: none; width: 18px; height: 18px; box-sizing: border-box; }
   .author {
@@ -73,7 +76,9 @@
   }
   .date { flex: none; width: 6ch; text-align: right; }
 
-  .changes { flex: none; display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; width: 148px; }
+  /* Every row reserves the width of the list's widest counts (--gl-commit-counts, set by the list), so the author and
+     age columns stay put whatever one commit's counts are. */
+  .changes { flex: none; display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; width: calc(48px + var(--gl-commit-counts, 86px)); }
   .bars {
     flex: none;
     display: flex;
@@ -83,7 +88,7 @@
   }
   .barAdd { height: 100%; background: var(--gl-good); }
   .barDel { height: 100%; background: var(--gl-critical); }
-  .counts { flex: none; min-width: 11ch; text-align: right; font: 11px/16px var(--gl-font-mono); font-feature-settings: 'tnum' 1, 'zero' 1; white-space: nowrap; }
+  .counts { flex: none; width: var(--gl-commit-counts, 86px); overflow: hidden; text-align: right; font: 11px/16px var(--gl-font-mono); font-feature-settings: 'tnum' 1, 'zero' 1; white-space: nowrap; }
   .add { color: var(--gl-good); }
   .del { color: var(--gl-critical); }
   .zero { color: var(--gl-ink-3); }
@@ -94,7 +99,7 @@
 
   @container (max-width: 519px) {
     .bars { display: none; }
-    .changes { width: auto; }
+    .changes { width: var(--gl-commit-counts, 86px); }
   }
   @container (max-width: 399px) {
     .changes, .refs { display: none; }

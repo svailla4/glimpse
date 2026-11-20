@@ -97,10 +97,24 @@ describe('a generated repository of more than 5,000 files', () => {
     expect(tree.more).toBeUndefined();
     expect(rollups).toBeGreaterThan(10);
     expect(result.summary).toMatch(/^5,241 files, [\d.]+k loc, \d+ rollups \(1500 of [\d,]+ nodes\)$/);
-    // the flat directory shows its 40 largest files and counts the rest
+    // The budget goes to the largest entries wherever they sit (V038): the flat directory's 3,001-line hub is shown,
+    // its 600 two-line leaves are what rolls up, and no shown file is smaller than one rolled up beside it.
     const flat = tree.children?.find(child => child.path === 'flat');
-    expect(flat?.children).toHaveLength(40);
-    expect(flat?.more).toEqual({files: FLAT_FILES + 1 - 40, loc: (FLAT_FILES + 1 - 40) * 2});
+    expect(flat?.children?.[0]?.path).toBe('flat/hub.ts');
+    expect((flat?.children?.length ?? 0) + (flat?.more?.files ?? 0)).toBe(FLAT_FILES + 1);
+    let smallestShown = Number.POSITIVE_INFINITY;
+    const below = (node: DirNode) => {
+      for (const child of node.children ?? []) {
+        smallestShown = Math.min(smallestShown, child.loc);
+        below(child);
+      }
+    };
+    for (const top of tree.children ?? []) below(top);
+    const leaf = 2;
+    // a breadth-first cut listed 40 of the shallow two-line leaves and rolled up the deeper, larger package files
+    expect(flat?.children?.length).toBeLessThan(40);
+    expect(smallestShown).toBeGreaterThan(leaf);
+    expect(flat?.more?.loc).toBe((flat?.more?.files ?? 0) * leaf);
   });
 
   it('files.tree <dir> shows every entry of the directory asked for, so a rollup can be opened and none sits at the scope root (F026)', async () => {
@@ -134,16 +148,17 @@ describe('a generated repository of more than 5,000 files', () => {
     expect([...used].sort()).toEqual([...model.cut.ids].sort());
   });
 
-  it('the Modules KPI counts what the repository declares, not the clusters a graph draws', async () => {
+  it('the Modules KPI is the number of modules the module graph is a cut of, never the cap (D16)', async () => {
     const result = await run(ctx, 'repo.kpis');
     const kpis = result.data as Array<{label: string; value: number}>;
     const modules = kpis.find(stat => stat.label === 'Modules')?.value;
-    // 520 manifests: the number repo.packages lists, far past any cap on clusters
-    expect(modules).toBe(MANIFESTS);
-    expect(modules).toBe((await run(ctx, 'repo.packages')).total);
-    expect(modules).not.toBe(MAX_MODULES);
-    expect(modules).not.toBe(DEFAULT_MODULES);
-    expect(result.summary).toContain(`Modules ${MANIFESTS} (packages)`);
+    // The graph draws DEFAULT_MODULES clusters and says of how many: the KPI is that number, not a cap.
+    const graph = await run(ctx, 'deps.modules');
+    expect(graph.truncated).toEqual({total: modules, returned: DEFAULT_MODULES, strategy: 'treecut', by: 'loc'});
+    expect(graph.summary).toContain(`${DEFAULT_MODULES} of ${modules!.toLocaleString('en-US')} modules`);
+    expect((await run(ctx, 'deps.matrix')).summary).toContain(`${DEFAULT_MODULES} of ${modules!.toLocaleString('en-US')} modules`);
+    expect(modules).toBeGreaterThan(MAX_MODULES);
+    expect(result.summary).toContain(`Modules ${modules!.toLocaleString('en-US')},`);
   });
 
   it('deps.modules is legible by default (about two dozen nodes) and top= raises it to the hard cap', async () => {
@@ -161,7 +176,7 @@ describe('a generated repository of more than 5,000 files', () => {
     expect(graph.nodes.filter(node => node.kind === 'cluster').reduce((sum, node) => sum + (node.files ?? 0), 0)).toBe(RING_FILES + FLAT_FILES + 1 + 2 * PAIRS);
     // the ring of packages is one cycle at module level
     expect(graph.nodes.filter(node => node.cycle).length).toBeGreaterThan(15);
-    expect(result.summary).toMatch(/^24 nodes \d+ edges, 1 module cycle; level module$/);
+    expect(result.summary).toMatch(/^24 nodes \d+ edges, 1 module cycle; level module; 20 of [\d,]+ modules, smaller ones folded$/);
 
     const fine = await run(ctx, 'deps.modules top=48');
     checkResult('deps.modules', fine);
