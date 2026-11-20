@@ -1,11 +1,14 @@
 /* packages/viewer/src/styles/base.css - Linework base: page, the 12-column grid and the cell every component is
    rendered in (design 8.3, 8.4). Kit looks (plate frame, states, entity text, tooltip) are in kit.css.
 
-   Sizing contract with kit/implement.tsx: the direct child of a .gl-cell is the plate frame (.gl-frame) or, without
-   a title, a plain .gl-body. `.gl-cell[data-size] > :is(.gl-frame, .gl-body)` gives that child the height of the
-   size step, and the frame passes the rest under its header on to its own .gl-body. A view root with `height: 100%`
-   therefore fills the box in both cases. Without a frame the sized .gl-body is a flex column, so a toolbar row
-   the view renders in place (PlateAside, the scope row) takes its height out of the box instead of adding to it.
+   Sizing contract with kit/implement.tsx (decision D20, content-sized plates): the direct child of a .gl-cell is the
+   plate frame (.gl-frame) or, without a title, a plain .gl-body; a view always sits in a .gl-body (the frame's body
+   is one). That box is as tall as the view and, with a size step, never taller than it: `max-height: var(--gl-h)`,
+   the number useSizeCap() gives the view. A view that scrolls sizes itself to min(its content, useSizeCap()), so it
+   neither leaves blank paper nor makes the box scroll. Charts and Split are the exception: their size step is the
+   height of the box (they draw to it, they share it out). Without a frame the sized .gl-body is a flex column, so a
+   toolbar row the view renders in place (PlateAside, the scope row) takes its height out of the box instead of
+   adding to it.
 
    Cells and their container. @a2ui/react puts a `display: contents` host element with an unstable tag name between
    a container and the cells of its children, so a container never selects its children. It talks to them through
@@ -15,8 +18,8 @@
      --gl-cell-min    min-width of the cells of a wrapping Row
      --gl-c0          grid-column of a cell without `span` (Grid: `span 1`); the default is the full row
      --gl-c1 .. 12    grid-column of a cell with that `span` (Grid clamps the span to its track count)
-     --gl-cell-fit    1 where the cells sit side by side in rows (the page grid, a Grid, a Row): a cell without a size
-                      step keeps the height of what it shows instead of growing to the tallest of its row
+     --gl-cell-fit    1 where the cells sit side by side in rows (the page grid, a Grid, a Row): a plate keeps the
+                      height of what it shows instead of growing to the tallest of its row (D20)
 
    Layers: every stylesheet of the viewer puts its rules in a layer declared by tokens.css. Component CSS Modules
    (Name.module.css) wrap their whole content in `@layer gl.components { ... }`; kit modules use `@layer gl.kit`.
@@ -77,34 +80,38 @@
     --gl-c0: initial; --gl-c1: initial; --gl-c2: initial; --gl-c3: initial; --gl-c4: initial; --gl-c5: initial; --gl-c6: initial;
     --gl-c7: initial; --gl-c8: initial; --gl-c9: initial; --gl-c10: initial; --gl-c11: initial; --gl-c12: initial;
   }
-  .gl-cell[data-size] > :is(.gl-frame, .gl-body) { height: var(--gl-h); }
-  /* In a row, a component without a size step is as tall as what it shows: its plate does not grow to the tallest
-     neighbour of the row and leave blank paper inside the frame (a short table or an empty state beside a tall
-     chart). The cell still stretches (it has no looks of its own). Where the browser can size against the content, a
-     plate other than a chart still grows by up to 64 px, so neighbours of nearly the same height keep one bottom
-     line. Elsewhere (a Split pane, a tab panel) it fills its box as before. Layout containers always fill their cell:
-     what they hold decides for itself. */
-  .gl-cell:not([data-size]):not([data-family='layout']) > :is(.gl-frame, .gl-body) { flex: calc(1 - var(--gl-fit)) 1 auto; }
-  @supports (max-height: calc-size(fit-content, size + 1px)) {
-    .gl-cell:not([data-size]):not([data-family='layout'], [data-family='chart']) > :is(.gl-frame, .gl-body) {
-      flex: 1 1 auto;
-      max-height: calc-size(fit-content, size + 64px + (1 - var(--gl-fit)) * 100000px);
-    }
-  }
-  /* A chart without a size step is as tall as it draws, in a Grid, a Row and a Column alike. */
-  .gl-cell[data-family='chart']:not([data-size]) > :is(.gl-frame, .gl-body) { flex: 0 0 auto; }
+  /* Content-sized plates (decision D20). A component's box is as tall as what it shows, and its size step is the most
+     its view may take (`--gl-h` here, useSizeCap() in the view): the view's box is the plate's body (under the
+     header) or, without a plate, the cell's .gl-body. A scroller (table, tree, code view) is min(content, cap) tall
+     and a diagram works its height out from its layout, so a short one leaves no blank paper under it.
+     In a row (the page grid, a Grid, a Row: --gl-fit) a plate does not grow to the tallest neighbour of its row
+     either: the cell stretches (it has no looks of its own), the plate keeps the height of what it shows. Elsewhere
+     (a Split pane, a tab panel) it fills its box as before. Layout containers always fill their cell: what they
+     hold decides for itself. */
+  .gl-cell:not([data-family='layout']) > :is(.gl-frame, .gl-body) { flex: calc(1 - var(--gl-fit)) 1 auto; }
+  .gl-cell[data-size] > .gl-frame > .gl-frame-body,
+  .gl-cell[data-size] > .gl-body { max-height: var(--gl-h); }
   /* Without a plate, what a view puts above its content (the in-place aside, the scope row) shares the sized box
      with it: the box is a column, the rows keep their height and the view takes what is left. */
   .gl-cell[data-size] > .gl-body { display: flex; flex-direction: column; }
   .gl-cell[data-size] > .gl-body > * { flex: 0 1 auto; min-height: 0; }
   .gl-cell[data-size] > .gl-body > :is(.gl-aside, .gl-scope) { flex: none; }
-  /* A component with nothing to show does not hold its size step open: 96 px, or the height of its row. */
-  .gl-cell[data-size]:not([data-family='layout']):has(
-    > .gl-body > .gl-empty,
-    > .gl-body > * > .gl-empty:only-child,
-    > .gl-frame > .gl-frame-body > .gl-empty,
-    > .gl-frame > .gl-frame-body > * > .gl-empty:only-child
-  ) > :is(.gl-frame, .gl-body) { height: auto; min-height: 96px; }
+  /* A chart draws to the box it is given and a Split shares its height out between its panes: for them the size
+     step is the height of that box, not a maximum. A chart is as tall as it draws, in a Grid, a Row and a Column
+     alike. */
+  .gl-cell[data-size]:is([data-family='chart'], [data-family='layout']) > .gl-frame > .gl-frame-body,
+  .gl-cell[data-size]:is([data-family='chart'], [data-family='layout']) > .gl-body { height: var(--gl-h); }
+  .gl-cell[data-family='chart'] > :is(.gl-frame, .gl-body) { flex: 0 0 auto; }
+  /* A cell without a size step of its own reads none from a sized container around it. */
+  .gl-cell:not([data-size]) { --gl-h: initial; }
+  /* While a sized component drafts it holds its size step: kit.css, next to the other drafting heights (the state's
+     own looks are in the gl.kit layer, which a rule here could not win against). */
+  /* A chart with nothing to show does not hold its size step open: 96 px. (Other components are content-sized.) */
+  .gl-cell[data-size][data-family='chart']:has(> .gl-body > .gl-empty, > .gl-body > * > .gl-empty:only-child) > .gl-body,
+  .gl-cell[data-size][data-family='chart']:has(> .gl-frame > .gl-frame-body > .gl-empty, > .gl-frame > .gl-frame-body > * > .gl-empty:only-child) > .gl-frame > .gl-frame-body {
+    height: auto;
+    min-height: 96px;
+  }
 
   /* Below 1000 px of page width (a window under about 1064 px) a plate is half or full width; below 720 px everything
      is one column. A window of 1100 px and wider keeps the spans the spec asked for (decision D17). */

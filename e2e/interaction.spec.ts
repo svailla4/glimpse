@@ -209,29 +209,51 @@ test('a dragged graph node stays where it was put until Re-layout (design 12.1.B
   const node = page.locator('[data-gl="Graph"] svg [data-node]').first();
   await expect(node).toBeVisible();
   const id = await node.getAttribute('data-node');
+  const drawn = page.locator(`[data-gl="Graph"] svg [data-node="${id}"]`);
   const centre = async () => {
-    const box = (await page.locator(`[data-gl="Graph"] svg [data-node="${id}"]`).boundingBox())!;
+    const box = (await drawn.boundingBox())!;
     return {x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2)};
   };
+  // Where the node is in the drawing (React Flow's node position), whatever the view: dragged near the stage's edge,
+  // the view pans along, so the screen alone cannot say whether the node kept its place.
+  const placed = () => drawn.evaluate(element => {
+    const match = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(element.closest<HTMLElement>('.react-flow__node')?.style.transform ?? '');
+    return match ? {x: Math.round(Number(match[1])), y: Math.round(Number(match[2]))} : {x: Number.NaN, y: Number.NaN};
+  });
+  // Whole on the stage: not cut off by the plate's edge.
+  const onStage = () => drawn.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    const stage = element.closest('[role="img"]')!.getBoundingClientRect();
+    return box.left >= stage.left - 1 && box.right <= stage.right + 1 && box.top >= stage.top - 1 && box.bottom <= stage.bottom + 1;
+  });
   const start = await centre();
+  const startAt = await placed();
   await expect(page.getByRole('button', {name: 'Re-layout'})).toHaveCount(0);
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
   await page.mouse.move(start.x + 40, start.y + 30, {steps: 4});
   await page.mouse.move(start.x + 90, start.y + 60, {steps: 4});
   await page.mouse.up();
-  const dropped = await centre();
-  expect(Math.abs(dropped.x - start.x) + Math.abs(dropped.y - start.y)).toBeGreaterThan(40);
+  const droppedAt = await placed();
+  expect(Math.abs(droppedAt.x - startAt.x) + Math.abs(droppedAt.y - startAt.y)).toBeGreaterThan(40);
   await expect(page.getByRole('button', {name: 'Re-layout'})).toBeVisible();
 
   await page.reload();
   await expectSettled(page);
   await expect(page.getByRole('button', {name: 'Re-layout'})).toBeVisible();
-  const restored = await centre();
-  expect(Math.abs(restored.x - dropped.x) + Math.abs(restored.y - dropped.y)).toBeLessThan(12);
+  await expect(drawn).toBeVisible();
+  const restoredAt = await placed();
+  expect(Math.abs(restoredAt.x - droppedAt.x) + Math.abs(restoredAt.y - droppedAt.y)).toBeLessThan(2);
+  // The plate and its opening view are made for the drawing as arranged: the node dragged below the automatic drawing
+  // is on the stage after the reload, not cut off under the plate's edge (it was, before).
+  expect(await onStage(), 'the dragged node is on the stage after a reload').toBe(true);
 
   await page.getByRole('button', {name: 'Re-layout'}).click();
   await expect(page.getByRole('button', {name: 'Re-layout'})).toHaveCount(0);
-  const reset = await centre();
-  expect(Math.abs(reset.x - start.x) + Math.abs(reset.y - start.y)).toBeLessThan(12);
+  await expect.poll(placed).toEqual(startAt);
+  // ...and the automatic drawing opens as it first did
+  await expect.poll(async () => {
+    const reset = await centre();
+    return Math.abs(reset.x - start.x) + Math.abs(reset.y - start.y);
+  }).toBeLessThan(12);
 });

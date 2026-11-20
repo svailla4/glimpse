@@ -1,12 +1,13 @@
 // code.symbols, code.refs, code.todos: what is inside the files.
 import {readFileSync} from 'node:fs';
 import type {Rows} from '@glimpse/catalog';
+import {parseModuleId} from '../../analyze/cluster.ts';
 import {repoModel, type RepoModel} from '../../analyze/index.ts';
 import {MAX_READ_BYTES} from '../../analyze/inventory.ts';
 import {languageOf} from '../../analyze/languages.ts';
 import {SourceError, type RepoContext, type Source} from '../../contracts.ts';
 import {filesIn, languageMix} from './files.ts';
-import {byText, define, inScope, plural, rowsResult, scopeOf} from './shared.ts';
+import {byText, define, inScope, leadOf, plural, rowsResult, scopeOf} from './shared.ts';
 
 interface Match {
   path: string;
@@ -92,7 +93,14 @@ export function codeSources(): Source[] {
     if (target === '') throw new SourceError('E_TARGET', `${meta.name} needs a file path, e.g. ${meta.name} src/index.ts`);
     const model = await repoModel(ctx);
     const file = model.byPath.get(target);
-    if (!file) throw new SourceError('E_TARGET', `${meta.name}: no such file "${target}"`);
+    if (!file) {
+      // A directory or a module of a graph holds files, each with its own outline: say which call lists them.
+      const kind = model.files.some(entry => inScope(entry.path, target)) ? 'a directory'
+        : parseModuleId(target).rest && filesIn(model, target, meta.name).length > 0 ? 'a module of a graph' : undefined;
+      throw new SourceError('E_TARGET', kind
+        ? `${meta.name} reads one file, and "${target}" is ${kind}: files.list ${target} lists its files`
+        : `${meta.name}: no such file "${target}"`);
+    }
     const rows = (model.facts.get(target)?.symbols ?? []) as unknown as Rows;
     const warnings: string[] = [];
     if (file.binary) warnings.push('binary file: no outline');
@@ -116,19 +124,20 @@ export function codeSources(): Source[] {
     if (word.length > 200 || /[\0\r\n]/.test(word)) throw new SourceError('E_TARGET', `${meta.name}: "${word.slice(0, 40)}" is not an identifier`);
     const scope = rest.length > 0 ? scopeOf({...ref, target: rest.join(' ')}) : '';
     const model = await repoModel(ctx);
-    if (scope !== '') filesIn(model, scope, meta.name);
+    // The files of the scope, a module id of a graph included ('src/*'); E_TARGET when it names nothing.
+    const inside = scope === '' ? undefined : new Set(filesIn(model, scope, meta.name).map(file => file.path));
     const found = (await grepWithGit(ctx, word, signal)) ?? (await grepInProcess(ctx, model, word, signal));
     // Only files of the inventory count, so both searches agree and nothing generated floods the list.
     const matches = found.filter(match => {
       const file = model.byPath.get(match.path);
-      return file !== undefined && !file.generated && !file.binary && inScope(match.path, scope);
+      return file !== undefined && !file.generated && !file.binary && (inside === undefined || inside.has(match.path));
     });
     if (matches.length === 0) throw new SourceError('E_TARGET', `${meta.name}: no matches for "${word}"${scope ? ` under "${scope}"` : ''}`);
     // A definition is a declaration in source code: a Markdown heading or a class in a fenced example is not (V035).
     const isCode = (path: string) => languageOf(path)?.kind === 'code';
     const defines = (path: string) => isCode(path) && model.facts.get(path)?.symbols.some(symbol => symbol.name === word && symbol.kind !== 'heading') === true;
     // When several languages define the name, the one the repository is mostly written in leads, then non-tests.
-    const weight = new Map(languageMix(model).map((row, index) => [row.lang, index]));
+    const weight = new Map(languageMix(model.files).map((row, index) => [row.lang, index]));
     const langRank = (path: string) => weight.get(model.byPath.get(path)?.lang ?? '') ?? Number.MAX_SAFE_INTEGER;
     const definedIn = [...new Set(matches.map(match => match.path))].filter(defines)
       .sort((a, b) => langRank(a) - langRank(b) || Number(model.byPath.get(a)?.isTest) - Number(model.byPath.get(b)?.isTest) || byText(a, b));
@@ -157,7 +166,7 @@ export function codeSources(): Source[] {
         tags.set(todo.tag, (tags.get(todo.tag) ?? 0) + 1);
       }
     }
-    const lead = [...tags].sort((a, b) => b[1] - a[1] || byText(a[0], b[0])).map(([tag, n]) => `${n} ${tag}`).join(', ');
+    const lead = leadOf(scope, [...tags].sort((a, b) => b[1] - a[1] || byText(a[0], b[0])).map(([tag, n]) => `${n} ${tag}`).join(', '));
     return rowsResult(meta, ref, rows, {by: 'file', lead});
   });
 

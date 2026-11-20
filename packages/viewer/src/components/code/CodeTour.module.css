@@ -5,7 +5,8 @@
     grid-template-columns: minmax(0, 34fr) minmax(0, 66fr);
     outline: none;
   }
-  .tour[data-fit='cap'] { height: 420px; }
+  /* As tall as the longer of its two panes, up to its cap (`.code[data-fit='cap']` in codekit, D20): a row of `1fr` in a
+     grid without a height takes its content's height and is held to the grid's max-height, and then each pane scrolls. */
   .tour[data-stack] { grid-template-rows: minmax(0, 2fr) minmax(0, 3fr); grid-template-columns: minmax(0, 1fr); }
   .tour:focus-visible { outline: 2px solid var(--gl-accent); outline-offset: 2px; }
   .stops { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--gl-rule); }

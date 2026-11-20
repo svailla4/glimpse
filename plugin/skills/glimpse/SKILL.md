@@ -22,7 +22,7 @@ Graphs (deps.modules, deps.files, diff.impact) need Graph().
 ROWS you write: Stats|KeyValue [{label,value}] Layers [{name,items:['a','b']}] ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}]
 CODE: CodeView('src/a.ts#L10-40') and DiffView('main..HEAD') read from disk; DiffView() is the live working tree; files are 'path#L10-20' everywhere.
 LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it, so FileTree() beside CodeView() is a file browser.
-SHARED, not listed below: span=1..12 on everything (12-column grid); title= (draws a numbered plate), note=, size=s|m|l|xl|fill on Text, Markdown, Chips, Stats, KeyValue, Steps, List, Data, Charts, Diagrams, Code (not Sparkline, CodeBlock).
+SHARED, not listed below: span=1..12 on all (12-column grid); title= (numbered plate), note=, size=s|m|l|xl|fill (only a max height) on Text, Markdown, Chips, Stats, KeyValue, Steps, List, Data, Charts, Diagrams, Code (not Sparkline, CodeBlock).
 Components (? optional; catalog{} lists more):
 Layout: Page|Section(title, children, subtitle?) Plate(title, children, note?) Grid(children, cols?, gap?) Row|Column(children, gap?, align?) Tabs(labels, children) Split(start, end, ratio?)
 Content: Text(text, tone?) Markdown(text) Callout(text, kind?, title?, file?) KeyValue(data, cols?) Chips|Stats(data?) FileRef(file, label?) Steps(data) Stat(value, label?, delta?) List(data, limit?)
@@ -48,7 +48,7 @@ Call `show` with `id`: `auth` and this `spec`:
 ```
 root=Page('How auth works',[intro,deps,churn,tour],'src/auth')
 intro=Markdown('Login goes through **AuthService**; tokens are cached for 15 minutes. See [[src/auth/service.ts#L20]].')
-deps=Graph('deps.modules src/auth',title='What it depends on',size='l',span=7)
+deps=Graph('deps.modules src/auth',title='What it depends on',span=7)
 churn=DataTable('git.churn src/auth top=15',title='Most changed files',span=5)
 tour=CodeTour([{file:'src/auth/service.ts#L20-58',title:'Entry point',note:'Validates credentials and issues the token.'},{file:'src/auth/cache.ts#L5-30',note:'Token cache with a TTL.'}],title='Reading order')
 ```
@@ -106,7 +106,7 @@ Call `show` with `id`: `compare` and this `spec`:
 root=Page('auth vs api',[Grid([a,b],'1:1'),edges])
 a=Column([Text('src/auth','lead'),Treemap('files.tree src/auth',size='m'),DataTable('git.hotspots src/auth top=8')])
 b=Column([Text('src/api','lead'),Treemap('files.tree src/api',size='m'),DataTable('git.hotspots src/api top=8')])
-edges=Graph('deps.modules src',title='How they connect',size='l')
+edges=Graph('deps.modules src',title='How they connect')
 ```
 
 ## Rules of thumb

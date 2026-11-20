@@ -14,9 +14,10 @@
     font-feature-settings: 'tnum' 1, 'zero' 1;
     tab-size: 4;
   }
-  /* a sized cell is filled; an unsized one grows with its content up to the family default, then scrolls */
+  /* A code view is as tall as its lines up to its cap (the cell's size step or the family default: useCapStyle in
+     lines.tsx, decision D20), then scrolls. One inside another view (the file of a CodeTour stop) fills its pane. */
   .code[data-fit='fill'] { height: 100%; }
-  .code[data-fit='cap'] { max-height: 420px; }
+  .code[data-fit='cap'] { min-height: 0; max-height: var(--gl-cap, 420px); }
   .code[data-boxed] { border: 1px solid var(--gl-rule); }
   .code[data-well] { --gl-code-bg: var(--gl-sunken); }
 

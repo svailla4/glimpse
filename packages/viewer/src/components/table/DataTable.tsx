@@ -1,6 +1,6 @@
 import type * as C from '@glimpse/catalog';
 import {parseFileLoc, type DataRow, type Dataset, type Rows} from '@glimpse/catalog';
-import {memo, useDeferredValue, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode} from 'react';
+import {memo, useDeferredValue, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject} from 'react';
 import {
   DataGate, Empty, Icon, PathText, PlateAside, REPORT_CODES, Redline, fmtNum, useCatSlots, useDataset, useHostActions, useReportState, useSelection, useSize,
   type DataState, type GlView, type GlViewProps,
@@ -15,7 +15,7 @@ import {
   rowEntity, rowFile, selectionMark, sortRows,
   type Column, type NormalRows, type SelectionMark, type SortSpec, type TableItem,
 } from './rows.ts';
-import {columnBox, columnTracks, columnWidths, floorWidth, measureColumns, typicalKey, type ColumnBox} from './widths.ts';
+import {columnBoxFrom, columnTracks, columnWidths, distinctDepths, floorWidth, measureColumns, type ColumnBox} from './widths.ts';
 
 type Props = GlViewProps<typeof C.DataTable>['props'];
 
@@ -38,7 +38,7 @@ export const DataTableView: GlView<typeof C.DataTable> = ({id, props}) => {
   const gated = useMemo<DataState<Rows>>(() => (remote ? {...state, truncated: undefined, total: undefined} : state), [state, remote]);
   const normal = useMemo(() => (state.status === 'ready' ? normalizeRows(state.data) : undefined), [state]);
   return (
-    <Shell sized={props.size !== undefined}>
+    <Shell>
       <DataGate state={gated} id={`DataTable#${id}`}>
         {data =>
           normal ? (
@@ -109,8 +109,25 @@ function categoryKeys(rows: readonly DataRow[], columns: readonly Column[], afte
   return out;
 }
 
+/** Per path column, per path, the directories its label needs to differ from the other rows (distinctDepths). */
+function pathDepths(rows: readonly DataRow[], columns: readonly Column[]): ReadonlyMap<string, ReadonlyMap<string, number>> {
+  const out = new Map<string, Map<string, number>>();
+  for (const column of columns) {
+    if (column.kind !== 'path') continue;
+    const values = rows.map(row => row[column.key]);
+    const depths = distinctDepths(values);
+    const byValue = new Map<string, number>();
+    values.forEach((value, i) => {
+      const depth = depths[i];
+      if (typeof value === 'string' && depth !== undefined && depth > 0) byValue.set(value, depth);
+    });
+    if (byValue.size > 0) out.set(column.key, byValue);
+  }
+  return out;
+}
+
 const boxOf = (column: Column, lineKey: string | undefined, stats: ReadonlyMap<string, number>): ColumnBox =>
-  column.key === lineKey ? LINE_BOX : columnBox(column, stats.get(widthKey(column.key)), stats.get(widthKey(typicalKey(column.key))));
+  column.key === lineKey ? LINE_BOX : columnBoxFrom(column, stats, widthKey);
 
 /** Priority-3 columns give way, right to left, while the plate is too narrow for every column's floor. */
 function fitColumns(columns: readonly Column[], width: number, lineKey: string | undefined, stats: ReadonlyMap<string, number>): Column[] {
@@ -135,6 +152,73 @@ function Chevron(p: {open: boolean}): JSX.Element {
     <svg className={s.chevron} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" data-open={p.open || undefined}>
       <path d="M4.5 2.5 8 6l-3.5 3.5" />
     </svg>
+  );
+}
+
+/**
+ * How many columns are cut off at either side of a table that scrolls sideways (round 4: at 760 px the gallery table
+ * hid TREND, DELTA and OK behind a scroll nothing pointed at). Counted from the header cells on every scroll and
+ * resize of the scroller.
+ */
+function useHiddenColumns(scrollRef: RefObject<HTMLDivElement | null>, key: string): {left: number; right: number} {
+  const [hidden, setHidden] = useState({left: 0, right: 0});
+  // `key` changes when the columns or their widths do: the effect measures again.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const update = () => {
+      const box = element.getBoundingClientRect();
+      const visibleRight = box.left + element.clientWidth;
+      let left = 0;
+      let right = 0;
+      if (element.scrollWidth - element.clientWidth > 1) {
+        for (const head of element.querySelectorAll<HTMLElement>('[role="columnheader"]')) {
+          const cell = head.getBoundingClientRect();
+          if (cell.left < box.left - 1) left++;
+          if (cell.right > visibleRight + 1) right++;
+        }
+      }
+      setHidden(prev => (prev.left === left && prev.right === right ? prev : {left, right}));
+    };
+    update();
+    element.addEventListener('scroll', update, {passive: true});
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : undefined;
+    observer?.observe(element);
+    return () => {
+      element.removeEventListener('scroll', update);
+      observer?.disconnect();
+    };
+  }, [scrollRef, key]);
+  return hidden;
+}
+
+/**
+ * The sign that a table goes on sideways: over the end of its header row, the number of columns out of view and a
+ * chevron. A click scrolls a page that way. Out of the tab order, like the plate's other header controls: the keyboard
+ * reaches cut columns through the widgets of a row.
+ */
+function ScrollMore(p: {side: 'left' | 'right'; count: number; scrollRef: RefObject<HTMLDivElement | null>}): JSX.Element {
+  const columns = `${p.count} ${p.count === 1 ? 'column' : 'columns'}`;
+  const onClick = () => {
+    const element = p.scrollRef.current;
+    if (!element) return;
+    const page = Math.max(48, element.clientWidth - 64);
+    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    element.scrollBy({left: p.side === 'right' ? page : -page, behavior: still ? 'auto' : 'smooth'});
+  };
+  return (
+    <button
+      type="button"
+      className={s.more}
+      data-side={p.side}
+      data-gl-table-more={p.side}
+      tabIndex={-1}
+      aria-label={`${columns} to the ${p.side}: scroll ${p.side}`}
+      title={`${columns} to the ${p.side}`}
+      onClick={onClick}
+    >
+      {p.side === 'right' ? <><span>+{p.count}</span><Icon name="chevron-right" /></> : <><Icon name="chevron-right" /><span>+{p.count}</span></>}
+    </button>
   );
 }
 
@@ -301,6 +385,7 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
     if (grew) setSeenMax({rows, max: columnStats(visibleRows, allColumns, new Map(max))});
   });
   useScrollFade(scrollRef, `${count}:${rowHeight}:${minWidth}:${width}`);
+  const hidden = useHiddenColumns(scrollRef, `${template}:${columns.length}:${width}`);
 
   // Categories are coloured in order of first appearance: the dataset's own rows first, then rows paged in later.
   const ownKeys = useMemo(() => categoryKeys(rows, allColumns), [rows, allColumns]);
@@ -308,9 +393,11 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
   const langCat = useCatSlots('lang', keys.lang);
   const moduleCat = useCatSlots('module', keys.module);
   const chipCat = useCatSlots(undefined, keys.chip);
+  // The rows of a path column that share a file name keep the directory that tells them apart (kit PathText).
+  const depths = useMemo(() => pathDepths(rows, allColumns), [rows, allColumns]);
   const ctx = useMemo<CellContext>(
-    () => ({componentId: id, ds, max, cat: {lang: langCat.color, module: moduleCat.color, chip: chipCat.color}}),
-    [id, ds, max, langCat, moduleCat, chipCat],
+    () => ({componentId: id, ds, max, depths, cat: {lang: langCat.color, module: moduleCat.color, chip: chipCat.color}}),
+    [id, ds, max, depths, langCat, moduleCat, chipCat],
   );
 
   const toTop = () => {
@@ -430,13 +517,13 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
   // The root is always mounted, so its width is measured from the first render whatever the rows turn out to hold.
   if (allColumns.length === 0) {
     return (
-      <div className={s.root} ref={rootRef} data-sized={props.size ? '' : undefined} data-gl-table="">
+      <div className={s.root} ref={rootRef} data-gl-table="">
         <Empty message="rows have no fields: DataTable takes a list of {field: value} rows" code="W_SHAPE" />
       </div>
     );
   }
   return (
-    <div className={s.root} ref={rootRef} data-sized={props.size ? '' : undefined} data-gl-table="">
+    <div className={s.root} ref={rootRef} data-gl-table="">
       {showSearch || notes.length > 0 || pager.error ? (
         <PlateAside>
           {pager.error ? <span className={s.failed} role="alert">rows failed to load: {pager.error}</span> : null}
@@ -470,6 +557,7 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
           ) : null}
         </PlateAside>
       ) : null}
+      <div className={s.frame}>
       <div
         className={s.scroll}
         ref={scrollRef}
@@ -540,6 +628,9 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
           </div>
           {count === 0 ? <div className={s.none} data-gl-table-none="">{searching ? `no rows match “${query.trim()}”` : 'no rows'}</div> : null}
         </div>
+      </div>
+      {hidden.left > 0 ? <ScrollMore side="left" count={hidden.left} scrollRef={scrollRef} /> : null}
+      {hidden.right > 0 ? <ScrollMore side="right" count={hidden.right} scrollRef={scrollRef} /> : null}
       </div>
       <span className={s.live} aria-live="polite">{searching ? `${fmtNum(matched)} rows match` : ''}</span>
     </div>

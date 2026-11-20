@@ -57,6 +57,19 @@ export function inScope(path: string, scope: string): boolean {
   return scope === '' || path === scope || path.startsWith(scope + '/');
 }
 
+/**
+ * 'in web' for a path scope, '' for the repository: every source that honours a path says so in its summary, so a
+ * result that leaves it out is one that read the whole repository (and a test can tell).
+ */
+export function scopeNote(scope: string, before = ''): string {
+  return scope === '' ? '' : `${before}in ${scope}`;
+}
+
+/** The lead of a summary: the scope first, then what the source says ('in web; top react 12 importers'). */
+export function leadOf(scope: string, text: string): string {
+  return [scopeNote(scope), text].filter(Boolean).join('; ');
+}
+
 /** 1234 -> '1.2k', 48200 -> '48.2k', 3400000 -> '3.4M'. */
 export function compact(value: number): string {
   const abs = Math.abs(value);

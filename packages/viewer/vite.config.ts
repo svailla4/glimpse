@@ -4,8 +4,11 @@
 // The server serves that directory under a strict Content-Security-Policy (script-src 'self'; style-src 'self'):
 // nothing here may emit an inline <script> or <style>.
 //
-// Cascade layers (design 8.4). The order gl.tokens < gl.base < gl.kit < gl.components must hold in every CSS file
-// the build emits, whatever order modules are imported in and whichever lazy chunk loads first. glimpseLayers():
+// Cascade layers (design 8.4). The order xyflow < gl.tokens < gl.base < gl.kit < gl.components must hold in every CSS
+// file the build emits, whatever order modules are imported in and whichever lazy chunk loads first. `xyflow` is the
+// layer React Flow's own stylesheet (@xyflow/react/dist/base.css, imported by the lazy diagrams chunk only) puts all
+// its rules in: ordered first, the library's defaults lose to every Linework rule without !important, and they cannot
+// touch the --gl-* tokens (base.css sets only --xy-* properties, on .react-flow). glimpseLayers():
 // - puts the layer-order statement at the top of every emitted CSS file (the minifier drops the one in tokens.css
 //   when it looks redundant, and a layer that is merely seen first would otherwise sort first);
 // - fails the build when a CSS Module under src/ declares no gl.* layer: component modules wrap their content in
@@ -29,7 +32,18 @@ export const SHIMS = [
   {find: /^@a2ui\/web_core\/v0_9\/basic_catalog$/, replacement: shim('a2ui-basic-catalog')},
 ];
 
-const LAYER_ORDER = '@layer gl.tokens,gl.base,gl.kit,gl.components;';
+/** Exported for test/build.test.ts. styles/tokens.css declares the same order for the dev server. */
+export const LAYER_ORDER = '@layer xyflow,gl.tokens,gl.base,gl.kit,gl.components;';
+
+/**
+ * React Flow (D19) and the runtime it brings, in a lazy chunk of its own (assets/xyflow-<hash>.js and .css): measured
+ * on its own line in scripts/budgets.mjs, and cached across releases that change only diagram code. Only the d3
+ * modules React Flow alone uses are captured: d3-interpolate and d3-color are shared with the charts' d3-scale and
+ * stay where rolldown puts them, so loading a chart never loads React Flow. `includeDependenciesRecursively: false`
+ * is required: otherwise the group also swallows what its modules import (react, react-dom) and becomes eager.
+ * Exported for test/build.test.ts.
+ */
+export const XYFLOW_CHUNK = /node_modules[\\/](?:@xyflow[\\/]|d3-(?:zoom|drag|selection|transition|dispatch|ease|timer)[\\/]|zustand[\\/]|classcat[\\/]|react-compiler-runtime[\\/])/;
 
 function glimpseLayers(): Plugin {
   return {
@@ -77,5 +91,16 @@ export default defineConfig({
     // Fonts and other files stay as files; a data: URI font would need a wider font-src in the CSP.
     assetsInlineLimit: 0,
     chunkSizeWarningLimit: 700,
+    rolldownOptions: {
+      // react-compiler-runtime (a React Flow 13 dependency) opens with "use no memo", a hint for the React Compiler,
+      // which this build does not run; bundling drops it harmlessly. Every other log goes through.
+      onLog(level, log, handler) {
+        if (log.code === 'MODULE_LEVEL_DIRECTIVE' && /[\\/]react-compiler-runtime[\\/]/.test(log.id ?? log.message)) return;
+        handler(level, log);
+      },
+      output: {
+        codeSplitting: {includeDependenciesRecursively: false, groups: [{name: 'xyflow', test: XYFLOW_CHUNK}]},
+      },
+    },
   },
 });

@@ -117,9 +117,14 @@ export function useListNav({count, rowHeight, scrollRef, offsetTop = 0}: ListNav
       setActiveState(next);
       // A row already in full view stays where it is; any other is brought to the middle, clear of the faded edges.
       const element = scrollRef.current;
-      const top = offsetTop + next * rowHeight;
-      const inView = element !== null && top >= element.scrollTop + offsetTop && top + rowHeight <= element.scrollTop + element.clientHeight - EDGE;
-      if (!inView) virtualizer.scrollToIndex(next, {align: 'center'});
+      if (!element) {
+        virtualizer.scrollToIndex(next, {align: 'center'});
+        return;
+      }
+      const pad = Number.parseFloat(getComputedStyle(element).paddingTop) || 0;
+      const top = pad + offsetTop + next * rowHeight;
+      const inView = top >= element.scrollTop + offsetTop && top + rowHeight <= element.scrollTop + element.clientHeight - EDGE;
+      if (!inView) virtualizer.scrollToOffset(revealOffset(next, {rowHeight, offsetTop, pad, viewport: element.clientHeight, max: element.scrollHeight - element.clientHeight}));
     },
     [count, virtualizer, scrollRef, offsetTop, rowHeight],
   );
@@ -153,6 +158,19 @@ export function useListNav({count, rowHeight, scrollRef, offsetTop = 0}: ListNav
   );
 
   return {items: virtualizer.getVirtualItems(), totalSize: virtualizer.getTotalSize(), offsetTop, active, setActive, reveal, handleKey};
+}
+
+/**
+ * The scroll offset that brings row `index` to the middle of a list with whole rows only: the row at the top edge
+ * (under a sticky header `offsetTop` high, below the scroller's top padding `pad`) is never cut in half, so a tree
+ * that opens on a selected file starts with a row a reader can read (round 4: the tree preset opened with its top row
+ * sliced under the caption). At the very end of the list the last row is whole instead.
+ */
+export function revealOffset(index: number, box: {rowHeight: number; offsetTop: number; pad: number; viewport: number; max: number}): number {
+  const {rowHeight, offsetTop, pad, viewport, max} = box;
+  const centred = pad + index * rowHeight - (viewport - offsetTop - rowHeight) / 2;
+  const whole = pad + Math.round((centred - pad) / rowHeight) * rowHeight;
+  return Math.max(0, Math.min(Math.max(0, max), whole));
 }
 
 /** First and last index on screen, leaving out the active row when it is only mounted to keep focus. */

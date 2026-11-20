@@ -54,6 +54,10 @@ export async function serveStatic(res: ServerResponse, pathname: string, viewerD
     'content-type': TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
     'content-length': info.size,
     'cache-control': 'public, max-age=31536000, immutable',
+    // A dedicated worker runs under the CSP of its own response, not the page's: without this header the layout
+    // workers (assets/*.worker-<hash>.js; ELK among them, decision D19) would run with no policy at all. They get
+    // the page's policy unchanged: neither needs eval. Other assets ignore the header.
+    'content-security-policy': CSP,
   });
   createReadStream(file).on('error', () => res.destroy()).pipe(res);
 }

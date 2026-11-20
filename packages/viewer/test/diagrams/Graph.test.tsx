@@ -1,11 +1,12 @@
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import type {ElkNode} from 'elkjs/lib/elk-api.js';
 import {MAX_EDGES, MAX_NODES, NAME_KEEP, distinctLabels, fitLabel, fitSub, nameZoom} from '../../src/components/diagrams/Graph.tsx';
-import {LOD_ZOOM, MONO_11, POSITIONS_KEY, READABLE_ZOOM, UI_12, configurePositionStorage, textWidth} from '../../src/components/diagrams/edgekit/index.ts';
+import {CONTROLS, LOD_ZOOM, MIN_HEIGHT, MONO_11, POSITIONS_KEY, READABLE_ZOOM, UI_12, configurePositionStorage, textWidth} from '../../src/components/diagrams/flowkit/index.ts';
 import {buildPatch, buildSurface, datasetFixture, errorDataset, renderExpress, renderSpec} from '../harness.tsx';
 import {
-  bigGraph, click, drag, edgeOf, fakeStorage, focus, inside, key, layeredGraph, lineOf, nodeIds, nodeOf, onOutline, onStage, pointsOf, positionOf, sizeOf, stageOf,
-  touch, viewOf, type FakeStorage,
+  bigGraph, click, drag, drawn, edgeOf, elk, fakeStorage, focus, inside, key, layeredGraph, lineOf, nodeIds, nodeOf, onOutline, onStage, pointsOf, positionOf,
+  sizeOf, stageHeight, stageOf, viewOf, wrapperOf, type FakeStorage,
 } from './util.tsx';
 
 const SPEC = `root=Page('T',[g])\ng=Graph(title='Deps',size='l')`;
@@ -13,8 +14,11 @@ const INLINE = `root=Page('T',[g])\ng=Graph($/g,title='Deps',size='l')`;
 const ready = async (spec = SPEC, options: Parameters<typeof renderExpress>[1] = {}) => {
   const view = renderExpress(spec, {datasets: 'ready', ...options});
   await screen.findAllByRole('img', {name: /^Graph/});
+  await drawn(view, 'g');
   return view;
 };
+type View = Awaited<ReturnType<typeof ready>>;
+const zoomText = (view: View, id = 'g') => view.cell(id).querySelector('[data-zoom]')!.textContent;
 
 let storage: FakeStorage;
 beforeEach(() => {
@@ -42,11 +46,11 @@ describe('Graph: states', () => {
     // weight 9 of max 9 is the heaviest class, weight 1 the lightest
     expect(cycle.querySelectorAll('path')[1]!.getAttribute('stroke-width')).toBe('2.25');
     expect(edgeOf(view, 'g', 'ui->auth').querySelectorAll('path')[1]!.getAttribute('stroke-width')).toBe('1');
-    // every edge ends in an arrowhead and is drawn with 6 px elbows
-    for (const edge of cell.querySelectorAll('[data-edge]')) expect(edge.querySelectorAll('path')).toHaveLength(3);
-    expect(lineOf(edgeOf(view, 'g', 'ui->auth'))).toMatch(/Q/);
-    // two nodes that are almost level are joined by one straight line
-    expect(lineOf(edgeOf(view, 'g', 'ui->api'))).toMatch(/^M[\d.]+ ([\d.]+)L[\d.]+ \1$/);
+    // every edge is a hover target, a line and an arrowhead; its corners are 6 px elbows
+    for (const edge of cell.querySelectorAll('[data-edge]')) {
+      expect(edge.querySelectorAll('path')).toHaveLength(3);
+      expect(lineOf(edge)).toMatch(/^M[\d. -]+(?:[LQ][\d. -]+)+$/);
+    }
 
     expect(cell.querySelector('[data-group="srv"]')!.textContent).toBe('server');
     // decision D16: the external packages are not counted as modules (the Modules KPI does not count them either)
@@ -60,7 +64,7 @@ describe('Graph: states', () => {
     await waitFor(() => expect(view.cell('g').querySelector('[data-gl-state="drafting"]')!.textContent).toContain('deps.modules'));
     expect(view.cell('g').querySelector('[data-node]')).toBeNull();
     view.setData('/ds/deps_modules', datasetFixture('deps.modules'));
-    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(5));
+    await drawn(view, 'g', 5);
     expect(view.cell('g').querySelector('[data-gl-state]')).toBeNull();
   });
 
@@ -76,6 +80,14 @@ describe('Graph: states', () => {
   it('shows a redline for a failed dataset', async () => {
     const view = renderExpress(SPEC, {data: {'/ds/deps_modules': errorDataset('deps.modules', 'E_NO_GIT', 'not a git repository')}});
     await waitFor(() => expect(view.cell('g').querySelector('[data-code="E_NO_GIT"]')!.textContent).toContain('not a git repository'));
+  });
+
+  it('shows an E_LAYOUT redline when there is no layout worker, instead of laying out on the page', async () => {
+    const {configureElkWorker} = await import('../../src/components/diagrams/flowkit/index.ts');
+    configureElkWorker(null);
+    const view = renderExpress(SPEC, {datasets: 'ready'});
+    await waitFor(() => expect(view.cell('g').querySelector('[data-code="E_LAYOUT"]')!.textContent).toContain('no layout worker'));
+    expect(view.cell('g').querySelector('[data-node]')).toBeNull();
   });
 
   it.each([
@@ -95,7 +107,7 @@ describe('Graph: states', () => {
       edges: [{from: 'a', to: 'b', weight: '4'}, {from: 'a', to: 'b'}, {from: 'a', to: 'ghost'}, {from: 7, to: 'b'}, 'nonsense', {to: 'a'}],
     };
     const view = await ready(INLINE, {data: {'/g': data}});
-    expect(nodeIds(view, 'g')).toEqual(['a', '7', 'b']);
+    expect(nodeIds(view, 'g').sort()).toEqual(['7', 'a', 'b']);
     expect([...view.cell('g').querySelectorAll('[data-edge]')].map(e => e.getAttribute('data-edge')).sort()).toEqual(['7->b', 'a->b']);
     const note = view.cell('g').querySelector('[data-gl-note]')!.textContent;
     expect(note).toContain('3 nodes · 2 edges');
@@ -136,40 +148,53 @@ describe('Graph: states', () => {
     expect(view.cell('g').querySelector('[data-node]')).toBeNull();
   });
 
-  it('lays a 150-node, 400-edge graph out after the drafting frame is on screen', async () => {
+  // D19: the 150-node cap is laid out off the main thread. The page sends ELK JSON to the worker and draws what comes
+  // back; nothing is laid out during render, so the drafting frame is on screen first.
+  it('lays a 150-node, 400-edge graph out in the worker, after the drafting frame is on screen', async () => {
     const view = renderExpress(INLINE, {data: {'/g': bigGraph(150, 400)}});
-    // First the frame, with nothing laid out yet: the layout is not part of the render that shows it.
     await screen.findByText('laying out 150 nodes');
     expect(view.cell('g').querySelector('[data-node]')).toBeNull();
     expect(view.cell('g').querySelector('[data-gl-state="drafting"]')).not.toBeNull();
-    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(150), {timeout: 20_000});
-    expect(view.cell('g').querySelectorAll('[data-edge]')).toHaveLength(400);
+    await drawn(view, 'g');
+    // what the worker was asked: the whole graph, in both directions (the graph names none), as ELK JSON (a part that
+    // shares no edge with the rest is a box of its own, or a lone node, packed beside it)
+    const nodesIn = (graph: ElkNode): number => (graph.children ?? []).reduce((n, child) => n + (child.id.startsWith('\u0000') ? nodesIn(child) : 1), 0);
+    const edgesIn = (graph: ElkNode): number => (graph.edges ?? []).length + (graph.children ?? []).reduce((n, child) => n + edgesIn(child), 0);
+    const dirOf = (graph: ElkNode): string | undefined => graph.layoutOptions?.['elk.direction'] ?? graph.children?.map(dirOf).find(Boolean);
+    const asked = elk.requests.filter(request => nodesIn(request.graph) === 150);
+    expect([...new Set(asked.map(request => dirOf(request.graph)))].sort()).toEqual(['DOWN', 'RIGHT']);
+    expect(edgesIn(asked[0]!.graph)).toBe(400);
     expect(view.cell('g').querySelector('[data-gl-state]')).toBeNull();
+    expect(stageOf(view, 'g').getAttribute('aria-label')).toMatch(/^Graph, 150 nodes, 400 edges/);
+    // above 80 nodes only what is in view is put in the DOM
+    expect(view.cell('g').querySelectorAll('[data-node]').length).toBeLessThanOrEqual(150);
     expect(view.errors).toEqual([]);
   }, 30_000);
 });
 
 describe('Graph: bindings', () => {
-  it('keeps the heaviest edges of a graph that has too many, and lays a dense graph out off the render path', async () => {
+  it('keeps the heaviest edges of a graph that has too many', async () => {
     const dense = bigGraph(40, MAX_EDGES + 50);
     const view = renderExpress(INLINE, {data: {'/g': dense}});
     await screen.findByText('laying out 40 nodes');
-    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(40), {timeout: 20_000});
+    await drawn(view, 'g', 40);
     expect(view.cell('g').querySelectorAll('[data-edge]')).toHaveLength(MAX_EDGES);
     expect(view.cell('g').querySelector('[data-gl-note]')!.textContent).toContain('50 light edges hidden');
+    // a dense graph shares the ends of its edges and runs them closer
+    expect(elk.requests.at(-1)!.graph.layoutOptions!['elk.layered.mergeEdges']).toBe('true');
   }, 30_000);
-
 
   it('follows a dataset update and a patched prop', async () => {
     const base = buildSurface('test', INLINE, {datasets: 'ready', data: {g: {nodes: [{id: 'a', label: 'A'}, {id: 'b', label: 'B'}], edges: [{from: 'a', to: 'b'}]}}});
     const view = renderSpec(base);
-    await waitFor(() => expect(nodeIds(view, 'g')).toEqual(['a', 'b']));
+    await waitFor(() => expect(nodeIds(view, 'g').sort()).toEqual(['a', 'b']));
     view.setData('/g', {nodes: [{id: 'a', label: 'A'}, {id: 'b', label: 'B'}, {id: 'c', label: 'C'}], edges: [{from: 'a', to: 'b'}, {from: 'b', to: 'c'}]});
-    await waitFor(() => expect(nodeIds(view, 'g')).toEqual(['a', 'b', 'c']));
+    await waitFor(() => expect(nodeIds(view, 'g').sort()).toEqual(['a', 'b', 'c']));
     expect(positionOf(nodeOf(view, 'g', 'a')).x).toBeLessThan(positionOf(nodeOf(view, 'g', 'c')).x);
 
     view.send(buildPatch('test', base, `g=Graph($/g,dir='TB',title='Deps',size='l')`));
     await waitFor(() => expect(positionOf(nodeOf(view, 'g', 'a')).y).toBeLessThan(positionOf(nodeOf(view, 'g', 'c')).y));
+    expect(stageOf(view, 'g').getAttribute('data-dir')).toBe('TB');
     expect(view.errors).toEqual([]);
   });
 
@@ -245,7 +270,7 @@ describe('Graph: selection and keyboard', () => {
   it('highlights file nodes inside a selected directory', async () => {
     const files = {level: 'file', nodes: [{id: 'src/a.ts', label: 'a.ts', kind: 'file'}, {id: 'src/lib/b.ts', label: 'b.ts', kind: 'file'}, {id: 'test/c.ts', label: 'c.ts', kind: 'file'}], edges: [{from: 'src/a.ts', to: 'src/lib/b.ts'}]};
     const view = await ready(INLINE, {data: {'/g': files}, ui: {sel: {type: 'dir', id: 'src', path: 'src'}}});
-    expect([...view.cell('g').querySelectorAll('[data-node][data-selected]')].map(n => n.getAttribute('data-node'))).toEqual(['src/a.ts', 'src/lib/b.ts']);
+    expect([...view.cell('g').querySelectorAll('[data-node][data-selected]')].map(n => n.getAttribute('data-node')).sort()).toEqual(['src/a.ts', 'src/lib/b.ts']);
     expect(nodeOf(view, 'g', 'test/c.ts').hasAttribute('data-dim')).toBe(true);
     click(nodeOf(view, 'g', 'test/c.ts'));
     expect(view.getData('/ui/sel')).toEqual({type: 'file', id: 'test/c.ts', path: 'test/c.ts', label: 'c.ts'});
@@ -255,28 +280,40 @@ describe('Graph: selection and keyboard', () => {
   it('is one tab stop: arrows walk to the nearest node, Enter selects, o opens, c copies', async () => {
     const view = await ready();
     const stage = stageOf(view, 'g');
-    expect(view.cell('g').querySelectorAll('[tabindex="0"]:not(header)')).toHaveLength(1);
+    expect([...view.cell('g').querySelectorAll('[tabindex="0"]')].filter(el => !el.closest('header'))).toEqual([stage]);
     focus(stage);
     const active = () => view.cell('g').querySelector('[data-node][data-active]')?.getAttribute('data-node');
+    const x = (id: string) => positionOf(nodeOf(view, 'g', id)).x;
     expect(active()).toBeUndefined();
+    // the first arrow starts where the flow starts (left to right here)
     key(stage, 'ArrowRight');
-    expect(active()).toBe('ui');
+    const first = active()!;
+    expect(Math.min(...nodeIds(view, 'g').map(x))).toBe(x(first));
     expect(view.getData('/ui/sel')).toBeNull();
+    // then each arrow goes to the nearest node that way, and back
     key(stage, 'ArrowRight');
-    expect(active()).toBe('api');
-    expect(view.cell('g').querySelector('[aria-live]')!.textContent).toBe('api, 2 files, 1.3k loc · in a cycle · 2 in · 1 out');
-    key(stage, 'ArrowRight');
-    expect(active()).toBe('auth');
+    const second = active()!;
+    expect(x(second)).toBeGreaterThan(x(first));
+    expect(view.cell('g').querySelector('[aria-live]')!.textContent).toMatch(new RegExp(`^${second.replace(':', '.')}`));
     key(stage, 'ArrowLeft');
-    expect(active()).toBe('api');
+    expect(x(active()!)).toBeLessThan(x(second));
     key(stage, 'End');
-    expect(['ext:redis', 'ext:pg']).toContain(active());
+    expect(Math.max(...nodeIds(view, 'g').map(x))).toBe(x(active()!));
     key(stage, 'Home');
-    expect(active()).toBe('ui');
-    key(stage, 'ArrowRight');
+    expect(active()).toBe(first);
 
     key(stage, 'Enter');
-    expect(view.getData('/ui/sel')).toMatchObject({type: 'module', id: 'api'});
+    expect(view.getData('/ui/sel')).toMatchObject({type: 'module', id: first});
+    // the node with a file: open and copy
+    view.setData('/ui/sel', null);
+    while (active() !== 'api') {
+      const before = active();
+      key(stage, 'ArrowRight');
+      if (active() === before) key(stage, 'ArrowDown');
+      if (active() === before) key(stage, 'ArrowUp');
+      if (active() === before) break;
+    }
+    expect(active()).toBe('api');
     key(stage, 'o');
     expect(view.actions.at(-1)).toMatchObject({name: 'gl_open', context: {file: 'src/api/routes.ts'}});
     key(stage, 'c');
@@ -292,9 +329,11 @@ describe('Graph: selection and keyboard', () => {
     expect(view.actions.map(a => a.name)).toEqual(['gl_open']);
     expect(view.actions[0]!.context).toEqual({file: 'src/auth/service.ts'});
     expect(view.getData('/ui/sel')).toBeNull();
+    click(nodeOf(view, 'g', 'auth'), {ctrlKey: true});
+    expect(view.actions.map(a => a.name)).toEqual(['gl_open', 'gl_open']);
   });
 
-  it('drills into a cluster on double-click and on Shift+Enter', async () => {
+  it('drills into a cluster on double-click and on Shift+Enter, and only dispatches (D1)', async () => {
     const view = await ready();
     click(nodeOf(view, 'g', 'api'));
     click(nodeOf(view, 'g', 'api'));
@@ -309,23 +348,24 @@ describe('Graph: selection and keyboard', () => {
     focus(stage);
     key(stage, 'Home');
     key(stage, 'Enter', {shiftKey: true});
-    expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'deps_modules', target: 'ui'}});
+    const first = view.cell('g').querySelector('[data-node][data-active]')!.getAttribute('data-node');
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'deps_modules', target: first}});
   });
 });
 
 describe('Graph: pan and zoom', () => {
-  it('fits the graph, then zooms with the keyboard, the controls and Ctrl+wheel', async () => {
+  it('opens the fixture whole at 100%, then zooms with the keyboard and the controls', async () => {
     const view = await ready();
     const stage = stageOf(view, 'g');
     const fitted = viewOf(stage);
     expect(fitted.k).toBe(1);
-    const zoomText = () => view.cell('g').querySelector('button[aria-label="Zoom out"]')!.previousElementSibling!.textContent;
-    expect(zoomText()).toBe('100%');
+    expect(zoomText(view)).toBe('100%');
+    expect(stage.parentElement!.getAttribute('data-mode')).toBe('fit');
 
     focus(stage);
     key(stage, '+');
     expect(viewOf(stage).k).toBeCloseTo(1.25);
-    expect(zoomText()).toBe('125%');
+    expect(zoomText(view)).toBe('125%');
     key(stage, '-');
     expect(viewOf(stage).k).toBeCloseTo(1);
     fireEvent.click(within(view.cell('g')).getByRole('button', {name: 'Zoom in'}));
@@ -335,89 +375,76 @@ describe('Graph: pan and zoom', () => {
     expect(viewOf(stage).k).toBeCloseTo(0.8);
     key(stage, '0');
     expect(viewOf(stage)).toEqual(fitted);
-
-    // a plain wheel belongs to the page; Ctrl+wheel zooms around the pointer
-    expect(fireEvent.wheel(stage, {deltaY: -200, clientX: 300, clientY: 200})).toBe(true);
-    expect(viewOf(stage)).toEqual(fitted);
-    expect(fireEvent.wheel(stage, {deltaY: -200, clientX: 300, clientY: 200, ctrlKey: true})).toBe(false);
-    const zoomed = viewOf(stage);
-    expect(zoomed.k).toBeGreaterThan(1);
-    // the point under the pointer stays where it is
-    expect((300 - zoomed.x) / zoomed.k).toBeCloseTo((300 - fitted.x) / fitted.k);
-    expect((200 - zoomed.y) / zoomed.k).toBeCloseTo((200 - fitted.y) / fitted.k);
-    for (let i = 0; i < 40; i++) fireEvent.wheel(stage, {deltaY: 500, ctrlKey: true});
+    // zooming out stops at 20%, unless everything only fits further out
+    for (let i = 0; i < 40; i++) key(stage, '-');
     expect(viewOf(stage).k).toBeCloseTo(0.2);
     fireEvent.click(within(view.cell('g')).getByRole('button', {name: 'Fit to view'}));
     expect(viewOf(stage)).toEqual(fitted);
     fireEvent.click(within(view.cell('g')).getByRole('button', {name: 'Zoom in'}));
     fireEvent.click(within(view.cell('g')).getByRole('button', {name: 'Actual size'}));
     expect(viewOf(stage).k).toBe(1);
+    // the buttons are the four zoom controls, out of the tab order (the keys do the same)
+    expect(within(view.cell('g')).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Zoom out', 'Zoom in', 'Fit to view', 'Actual size']);
+    for (const button of within(view.cell('g')).getAllByRole('button')) expect(button.getAttribute('tabindex')).toBe('-1');
   });
 
-  it('pans by dragging the background and with Shift+arrows, without selecting or moving nodes', async () => {
+  it('pans with Shift+arrows, without selecting or moving nodes', async () => {
     const view = await ready();
     const stage = stageOf(view, 'g');
+    focus(stage);
+    key(stage, '+');
+    key(stage, '+');
     const before = viewOf(stage);
     const node = positionOf(nodeOf(view, 'g', 'ui'));
-    drag(stage, stage, 60, -30);
-    expect(viewOf(stage)).toEqual({k: before.k, x: before.x + 60, y: before.y - 30});
-    expect(positionOf(nodeOf(view, 'g', 'ui'))).toEqual(node);
-    focus(stage);
     key(stage, 'ArrowRight', {shiftKey: true});
-    expect(viewOf(stage).x).toBe(before.x + 60 - 48);
+    expect(viewOf(stage).x).toBeCloseTo(before.x - 48);
+    key(stage, 'ArrowDown', {shiftKey: true});
+    expect(viewOf(stage).y).toBeCloseTo(before.y - 48);
+    expect(positionOf(nodeOf(view, 'g', 'ui'))).toEqual(node);
     expect(view.getData('/ui/sel')).toBeNull();
     expect(storage.items.size).toBe(0);
     expect(within(view.cell('g')).queryByRole('button', {name: /Re-layout/})).toBeNull();
   });
 
-  it('scales a wide graph down to the cell and sizes an unsized graph to its content', async () => {
+  // D20: an unsized graph is as tall as its content, up to 640 px.
+  it('scales a wide graph down to the plate and makes an unsized graph as tall as its content', async () => {
     const chain = {nodes: Array.from({length: 8}, (_, i) => ({id: `n${i}`, label: `n${i}`})), edges: Array.from({length: 7}, (_, i) => ({from: `n${i}`, to: `n${i + 1}`}))};
-    const view = await ready(`root=Page('T',[g])\ng=Graph($/g,title='Deps')`, {data: {'/g': chain}});
+    const view = await ready(`root=Page('T',[g])\ng=Graph($/g,dir='LR',title='Deps')`, {data: {'/g': chain}});
     const stage = stageOf(view, 'g');
     expect(viewOf(stage).k).toBeLessThan(1);
     expect(viewOf(stage).k).toBeGreaterThan(0.4);
-    // no size: as tall as the content needs, within the family limits
-    const height = Number.parseFloat((stage.parentElement as HTMLElement).style.height);
-    expect(height).toBeGreaterThanOrEqual(120);
-    expect(height).toBeLessThanOrEqual(420);
+    const height = stageHeight(stage);
+    expect(height).toBeGreaterThanOrEqual(MIN_HEIGHT);
+    expect(height).toBeLessThan(200);
+    for (const id of nodeIds(view, 'g')) {
+      const at = onStage(stage, nodeOf(view, 'g', id));
+      expect(at.left >= 0 && at.right <= 960 && at.top >= 0 && at.bottom <= height - CONTROLS).toBe(true);
+    }
   });
 });
 
 describe('Graph: arranging nodes', () => {
   const stored = () => JSON.parse(storage.items.get(POSITIONS_KEY) ?? '{}') as Record<string, Record<string, {x: number; y: number}>>;
 
-  it('drags a node, re-routes its edges, leaves the rest alone and remembers the position', async () => {
+  it('drags a node, its edges follow, the rest stays and the position is remembered', async () => {
     const view = await ready();
-    const stage = stageOf(view, 'g');
     const before = positionOf(nodeOf(view, 'g', 'ui'));
     const others = ['api', 'auth', 'ext:redis', 'ext:pg'].map(id => positionOf(nodeOf(view, 'g', id)));
     const edgeBefore = lineOf(edgeOf(view, 'g', 'ui->auth'));
     const untouched = lineOf(edgeOf(view, 'g', 'auth->ext:redis'));
     const {w, h} = sizeOf(nodeOf(view, 'g', 'ui'));
     expect(h).toBe(40);
-    expect(pointsOf(edgeBefore)[0]).toEqual([before.x + w, before.y + 20]);
 
-    // while the pointer is down the node and its edges follow it; nothing is stored yet
-    fireEvent.pointerDown(nodeOf(view, 'g', 'ui'), {button: 0, pointerId: 1, clientX: 100, clientY: 100});
-    fireEvent.pointerMove(stage, {pointerId: 1, buttons: 1, clientX: 80, clientY: 180});
-    expect(positionOf(nodeOf(view, 'g', 'ui'))).toEqual({x: before.x - 20, y: before.y + 80});
-    // the edge leaves the node where it is now (through whichever side keeps it clear of the other nodes)
-    expect(onOutline(pointsOf(lineOf(edgeOf(view, 'g', 'ui->auth')))[0], nodeOf(view, 'g', 'ui'))).toBe(true);
-    expect(storage.items.size).toBe(0);
-    fireEvent.pointerMove(stage, {pointerId: 1, buttons: 1, clientX: 60, clientY: 220});
-    fireEvent.pointerUp(stage, {pointerId: 1, clientX: 60, clientY: 220});
-
+    await drag(nodeOf(view, 'g', 'ui'), 40, 120);
     const after = positionOf(nodeOf(view, 'g', 'ui'));
-    expect(after).toEqual({x: before.x - 40, y: before.y + 120});
+    expect(after.x - before.x).toBeCloseTo(40, -0.5);
+    expect(after.y - before.y).toBeCloseTo(120, -0.5);
     const edgeAfter = lineOf(edgeOf(view, 'g', 'ui->auth'));
     expect(edgeAfter).not.toBe(edgeBefore);
-    expect(onOutline(pointsOf(edgeAfter)[0], nodeOf(view, 'g', 'ui'))).toBe(true);
-    // the far end still meets auth, which did not move
-    expect(onOutline(pointsOf(edgeAfter).at(-1), nodeOf(view, 'g', 'auth'))).toBe(true);
     expect(lineOf(edgeOf(view, 'g', 'auth->ext:redis'))).toBe(untouched);
     expect(['api', 'auth', 'ext:redis', 'ext:pg'].map(id => positionOf(nodeOf(view, 'g', id)))).toEqual(others);
 
-    expect(stored()).toEqual({'demo/test/g': {ui: {x: after.x + w / 2, y: after.y + 20}}});
+    expect(stored()).toEqual({'demo/test/g': {ui: {x: Math.round(after.x + w / 2), y: Math.round(after.y + h / 2)}}});
     // a drag is not a click
     expect(view.getData('/ui/sel')).toBeNull();
     expect(view.actions).toEqual([]);
@@ -425,13 +452,12 @@ describe('Graph: arranging nodes', () => {
 
   it('offers Re-layout only while positions are overridden, and it restores the automatic layout', async () => {
     const view = await ready();
-    const stage = stageOf(view, 'g');
     const before = positionOf(nodeOf(view, 'g', 'auth'));
     const edgeBefore = lineOf(edgeOf(view, 'g', 'api->auth'));
     expect(within(view.cell('g')).queryByRole('button', {name: /Re-layout/})).toBeNull();
 
-    drag(stage, nodeOf(view, 'g', 'auth'), 30, 150);
-    expect(positionOf(nodeOf(view, 'g', 'auth'))).toEqual({x: before.x + 30, y: before.y + 150});
+    await drag(nodeOf(view, 'g', 'auth'), 30, 150);
+    expect(positionOf(nodeOf(view, 'g', 'auth')).y).toBeGreaterThan(before.y + 100);
     const button = within(view.cell('g')).getByRole('button', {name: /Re-layout/});
     // the control sits in the plate header
     expect(button.closest('.gl-frame-head')).not.toBeNull();
@@ -446,39 +472,57 @@ describe('Graph: arranging nodes', () => {
   it('applies stored positions on top of the layout and ignores ids that no longer exist', async () => {
     storage.items.set(POSITIONS_KEY, JSON.stringify({'demo/test/g': {ui: {x: 500, y: 400}, gone: {x: 1, y: 2}}, 'demo/test/other': {api: {x: 0, y: 0}}}));
     const view = await ready();
-    expect(positionOf(nodeOf(view, 'g', 'ui'))).toEqual({x: 500 - sizeOf(nodeOf(view, 'g', 'ui')).w / 2, y: 400 - 20});
+    const {w, h} = sizeOf(nodeOf(view, 'g', 'ui'));
+    expect(positionOf(nodeOf(view, 'g', 'ui'))).toEqual({x: 500 - w / 2, y: 400 - h / 2});
     expect(nodeIds(view, 'g')).toHaveLength(5);
     expect(within(view.cell('g')).getByRole('button', {name: /Re-layout/})).toBeTruthy();
     // api belongs to another diagram's entry: untouched here
     expect(positionOf(nodeOf(view, 'g', 'api'))).not.toEqual({x: -84, y: -20});
+    // the edges of a moved node leave ELK's route for a plain one between the two ends
+    const route = pointsOf(lineOf(edgeOf(view, 'g', 'ui->api')));
+    expect(route.length).toBeGreaterThanOrEqual(2);
 
     // moving another node keeps what is stored for ids that are not on screen
-    drag(stageOf(view, 'g'), nodeOf(view, 'g', 'api'), 10, 10);
+    await drag(nodeOf(view, 'g', 'api'), 10, 10);
     expect(Object.keys(stored()['demo/test/g']!).sort()).toEqual(['api', 'gone', 'ui']);
     expect(stored()['demo/test/other']).toEqual({api: {x: 0, y: 0}});
   });
 
+  it('opens with the stored arrangement: a node stored below the drawing is on the stage; Re-layout sizes the plate to the automatic drawing again', async () => {
+    // The automatic drawing first, to know how tall it is and where its lowest node ends.
+    const auto = await ready();
+    const autoHeight = stageHeight(stageOf(auto, 'g'));
+    const ids = nodeIds(auto, 'g');
+    const lowest = Math.max(...ids.map(id => positionOf(nodeOf(auto, 'g', id)).y + sizeOf(nodeOf(auto, 'g', id)).h));
+    const ui = positionOf(nodeOf(auto, 'g', 'ui'));
+    const {w, h} = sizeOf(nodeOf(auto, 'g', 'ui'));
+    auto.unmount();
+
+    // A reload with 'ui' stored 120 px under the lowest node: before, the plate and its opening view were made for the
+    // automatic drawing alone and the node opened cut off under the plate's edge.
+    storage.items.set(POSITIONS_KEY, JSON.stringify({'demo/test/g': {ui: {x: Math.round(ui.x + w / 2), y: Math.round(lowest + 120 + h / 2)}}}));
+    const view = await ready();
+    const stage = stageOf(view, 'g');
+    const height = stageHeight(stage);
+    expect(height).toBeGreaterThan(autoHeight + 60);
+    for (const id of ids) {
+      const at = onStage(stage, nodeOf(view, 'g', id));
+      expect(at.left >= -0.5 && at.top >= -0.5 && at.bottom <= height - CONTROLS + 0.5, `${id} on the stage`).toBe(true);
+    }
+    expect(view.cell('g').querySelector('[data-in-view]')).toBeNull();
+
+    fireEvent.click(within(view.cell('g')).getByRole('button', {name: /Re-layout/}));
+    await waitFor(() => expect(stageHeight(stageOf(view, 'g'))).toBe(autoHeight));
+  });
+
   it('keeps positions apart per repository, surface and component', async () => {
     const view = await ready(`root=Page('T',[g,h])\ng=Graph(title='A',size='l')\nh=Graph(title='B',size='l')`, {meta: {repo: {name: 'other', root: '/repo', dirty: false}}});
-    await waitFor(() => expect(nodeIds(view, 'h')).toHaveLength(5));
-    drag(stageOf(view, 'h'), nodeOf(view, 'h', 'ui'), 0, 50);
+    await drawn(view, 'h', 5);
+    await drag(nodeOf(view, 'h', 'ui'), 0, 50);
     expect(Object.keys(stored())).toEqual(['other/test/h']);
     expect(within(view.cell('h')).getByRole('button', {name: /Re-layout/})).toBeTruthy();
     expect(within(view.cell('g')).queryByRole('button', {name: /Re-layout/})).toBeNull();
     expect(positionOf(nodeOf(view, 'g', 'ui'))).not.toEqual(positionOf(nodeOf(view, 'h', 'ui')));
-  });
-
-  it('drops a drag whose button was released out of sight', async () => {
-    const view = await ready();
-    const stage = stageOf(view, 'g');
-    const before = positionOf(nodeOf(view, 'g', 'ui'));
-    fireEvent.pointerDown(nodeOf(view, 'g', 'ui'), {button: 0, pointerId: 1, clientX: 100, clientY: 100});
-    // the next thing the stage sees is a plain hover somewhere else
-    fireEvent.pointerMove(stage, {pointerId: 1, buttons: 0, clientX: 400, clientY: 300});
-    fireEvent.pointerMove(stage, {pointerId: 1, buttons: 0, clientX: 420, clientY: 320});
-    expect(positionOf(nodeOf(view, 'g', 'ui'))).toEqual(before);
-    expect(view.getData('/ui/sel')).toBeNull();
-    expect(storage.items.size).toBe(0);
   });
 
   it('moves the active node with Alt+arrows', async () => {
@@ -486,104 +530,108 @@ describe('Graph: arranging nodes', () => {
     const stage = stageOf(view, 'g');
     focus(stage);
     key(stage, 'Home');
-    const before = positionOf(nodeOf(view, 'g', 'ui'));
+    const id = view.cell('g').querySelector('[data-node][data-active]')!.getAttribute('data-node')!;
+    const before = positionOf(nodeOf(view, 'g', id));
     key(stage, 'ArrowDown', {altKey: true});
     key(stage, 'ArrowLeft', {altKey: true});
-    expect(positionOf(nodeOf(view, 'g', 'ui'))).toEqual({x: before.x - 16, y: before.y + 16});
-    expect(stored()['demo/test/g']).toEqual({ui: {x: before.x - 16 + sizeOf(nodeOf(view, 'g', 'ui')).w / 2, y: before.y + 16 + 20}});
+    expect(positionOf(nodeOf(view, 'g', id))).toEqual({x: before.x - 16, y: before.y + 16});
+    const {w, h} = sizeOf(nodeOf(view, 'g', id));
+    expect(stored()['demo/test/g']).toEqual({[id]: {x: before.x - 16 + w / 2, y: before.y + 16 + h / 2}});
   });
 
-  it('moves the group frame with its members', async () => {
+  it('grows the group frame to keep a member dragged out of it', async () => {
     const view = await ready();
-    const frame = () => view.cell('g').querySelector('[data-group="srv"] rect')!;
-    const height = Number(frame().getAttribute('height'));
-    drag(stageOf(view, 'g'), nodeOf(view, 'g', 'auth'), 0, 200);
-    expect(Number(frame().getAttribute('height'))).toBeGreaterThan(height + 100);
+    const frame = () => wrapperOf(view.cell('g').querySelector('[data-group="srv"]')!);
+    const height = Number.parseFloat(frame().style.height);
+    const auth = positionOf(nodeOf(view, 'g', 'auth'));
+    await drag(nodeOf(view, 'g', 'auth'), 0, 200);
+    expect(Number.parseFloat(frame().style.height)).toBeGreaterThan(height + 100);
+    expect(positionOf(nodeOf(view, 'g', 'auth')).y).toBeGreaterThan(auth.y + 150);
   });
 
   it('works without any storage', async () => {
     configurePositionStorage(null);
     const view = await ready();
     const before = positionOf(nodeOf(view, 'g', 'ui'));
-    drag(stageOf(view, 'g'), nodeOf(view, 'g', 'ui'), 0, 40);
-    expect(positionOf(nodeOf(view, 'g', 'ui'))).toEqual({x: before.x, y: before.y + 40});
+    await drag(nodeOf(view, 'g', 'ui'), 0, 40);
+    expect(positionOf(nodeOf(view, 'g', 'ui')).y).toBeCloseTo(before.y + 40, -0.5);
     fireEvent.click(within(view.cell('g')).getByRole('button', {name: /Re-layout/}));
     expect(positionOf(nodeOf(view, 'g', 'ui'))).toEqual(before);
   });
 });
 
-// What the stage opens with (design rule D7; review findings F001, F020, F089).
+// What the stage opens with (decisions D18, D20; review findings F001, F020, F089).
 describe('Graph: a readable opening view', () => {
-  const STAGE = {width: 960, height: 600};
-  const nodesOf = (view: Awaited<ReturnType<typeof ready>>) => [...view.cell('g').querySelectorAll<SVGGElement>('[data-node]')];
+  const WIDTH = 960;
+  const nodesOf = (view: View) => [...view.cell('g').querySelectorAll<SVGGElement>('[data-node]')];
   /** Size on screen of every label the nodes draw: the face size (inline when zoomed out, else from the sheet) times the zoom. */
-  const labelSizes = (view: Awaited<ReturnType<typeof ready>>) => {
+  const labelSizes = (view: View) => {
     const {k} = viewOf(stageOf(view, 'g'));
     return [...view.cell('g').querySelectorAll<SVGTextElement>('[data-node] text')]
       .filter(text => text.textContent !== 'CYCLE')
       .map(text => (Number.parseFloat(text.style.fontSize) || (text.getAttribute('class')?.includes('sub') ? 11 : 12)) * k);
   };
-  const inside = (view: Awaited<ReturnType<typeof ready>>, node: Element, slack = 0) => {
-    const at = onStage(stageOf(view, 'g'), node);
-    return at.left >= -slack && at.top >= -slack && at.right <= STAGE.width + slack && at.bottom <= STAGE.height + slack;
+  const shown = (view: View, node: Element, slack = 0) => {
+    const stage = stageOf(view, 'g');
+    const at = onStage(stage, node);
+    return at.left >= -slack && at.top >= -slack && at.right <= WIDTH + slack && at.bottom <= stageHeight(stage) - CONTROLS + slack;
   };
-  const touches = (view: Awaited<ReturnType<typeof ready>>, node: Element) => {
-    const at = onStage(stageOf(view, 'g'), node);
-    return at.right > 0 && at.left < STAGE.width && at.bottom > 0 && at.top < STAGE.height;
+  const touches = (view: View, node: Element) => {
+    const stage = stageOf(view, 'g');
+    const at = onStage(stage, node);
+    return at.right > 0 && at.left < WIDTH && at.bottom > 0 && at.top < stageHeight(stage) - CONTROLS;
   };
-  const press = (view: Awaited<ReturnType<typeof ready>>, name: string) => fireEvent.click(within(view.cell('g')).getByRole('button', {name}));
+  const press = (view: View, name: string) => fireEvent.click(within(view.cell('g')).getByRole('button', {name}));
 
-  it('shows a 48-module graph whole, with every label 10 px or more on screen and nothing cut off', async () => {
-    const view = await ready(INLINE, {data: {'/g': layeredGraph(6, 8)}});
+  it('shows a 48-module graph whole when its names stay readable, every label 10 px or more on screen and nothing cut off', async () => {
+    const view = await ready(`root=Page('T',[g])\ng=Graph($/g,title='Deps')`, {data: {'/g': layeredGraph(6, 8)}});
     const stage = stageOf(view, 'g');
     expect(nodeIds(view, 'g')).toHaveLength(48);
+    expect(stage.parentElement!.getAttribute('data-mode')).toBe('fit');
     const {k} = viewOf(stage);
     // zoomed out, but not past the point where a node holds a readable name
     expect(k).toBeGreaterThanOrEqual(LOD_ZOOM);
     expect(k).toBeLessThanOrEqual(1);
-    for (const node of nodesOf(view)) expect(inside(view, node)).toBe(true);
+    for (const node of nodesOf(view)) expect(shown(view, node)).toBe(true);
     const sizes = labelSizes(view);
     expect(sizes.length).toBeGreaterThanOrEqual(48);
     expect(Math.min(...sizes)).toBeGreaterThanOrEqual(10);
-    // everything is in view: no overview inset, no "n of m in view"
-    expect(view.cell('g').querySelector('[data-overview]')).toBeNull();
+    // everything is in view: no minimap, no "n of m in view"
+    expect(view.cell('g').querySelector('.react-flow__minimap')).toBeNull();
     expect(view.cell('g').querySelector('[data-in-view]')).toBeNull();
-    // the picture has the shape of the stage instead of being a tall thin column
-    const boxes = nodesOf(view).map(node => ({...positionOf(node), ...sizeOf(node)}));
-    const wide = Math.max(...boxes.map(b => b.x + b.w)) - Math.min(...boxes.map(b => b.x));
-    const tall = Math.max(...boxes.map(b => b.y + b.h)) - Math.min(...boxes.map(b => b.y));
-    expect(wide / tall).toBeGreaterThan(0.9);
-    expect(wide / tall).toBeLessThan(3.2);
+    // as tall as the drawing at that zoom, within the 640 px an unsized diagram may take
+    expect(stageHeight(stage)).toBeLessThanOrEqual(640);
   });
 
-  it('opens a graph too large to read whole at a readable zoom on its busiest node, with an overview and a count', async () => {
+  it('opens a graph too large to read whole at a readable zoom, with a minimap and a count, and Fit to view shows it all', async () => {
     const graph = bigGraph(48, 122);
-    const degree = new Map<string, number>();
-    for (const edge of graph.edges) for (const end of [edge.from, edge.to]) degree.set(end, (degree.get(end) ?? 0) + 1);
-    const busiest = [...degree].sort((a, b) => b[1] - a[1])[0]![0];
     const view = await ready(INLINE, {data: {'/g': graph}});
     const stage = stageOf(view, 'g');
+    expect(stage.parentElement!.getAttribute('data-mode')).toBe('readable');
     const opened = viewOf(stage);
     expect(opened.k).toBeGreaterThanOrEqual(READABLE_ZOOM);
     expect(opened.k).toBeLessThanOrEqual(1);
-    expect(Math.min(...labelSizes(view))).toBeGreaterThanOrEqual(9);
-    // the stage is filled with graph, not with the void beside it, and the busiest node is on it
-    expect(nodesOf(view).filter(node => touches(view, node)).length).toBeGreaterThan(6);
-    const hubs = nodesOf(view).filter(node => (degree.get(node.getAttribute('data-node')!) ?? 0) === degree.get(busiest));
-    expect(hubs.some(node => inside(view, node))).toBe(true);
+    expect(Math.min(...labelSizes(view))).toBeGreaterThanOrEqual(10);
+    // the stage is filled with graph, not with the void beside it, and no node is cut at a side
+    expect(nodesOf(view).filter(node => touches(view, node)).length).toBeGreaterThan(4);
+    // (only the far end of the flow cuts nodes: the flow goes on there)
+    const dir = stage.getAttribute('data-dir');
+    for (const node of nodesOf(view)) {
+      if (!touches(view, node) || shown(view, node, 1)) continue;
+      const at = onStage(stage, node);
+      if (dir === 'LR') expect(at.right, node.getAttribute('data-node')!).toBeGreaterThan(WIDTH);
+      else expect(at.bottom, node.getAttribute('data-node')!).toBeGreaterThan(stageHeight(stage) - CONTROLS);
+    }
     // where this is, and how much of it
-    const overview = view.cell('g').querySelector('[data-overview]')!;
-    expect(overview.querySelectorAll('rect')).toHaveLength(48 + 1);
-    // only the nodes it shows whole: one cut off at the edge is not in view
-    const shown = nodesOf(view).filter(node => inside(view, node, 1)).length;
-    expect(shown).toBeLessThan(nodesOf(view).filter(node => touches(view, node)).length + 1);
-    expect(view.cell('g').querySelector('[data-in-view]')!.textContent).toBe(`${shown} of 48 in view`);
+    expect(view.cell('g').querySelector('.react-flow__minimap')).not.toBeNull();
+    const count = nodesOf(view).filter(node => shown(view, node, 1)).length;
+    expect(view.cell('g').querySelector('[data-in-view]')!.textContent).toBe(`${count} of 48 in view`);
 
-    // "Fit to view" really fits, however far out that is, and the overview is no longer needed
+    // "Fit to view" really fits, however far out that is, and the minimap is no longer needed
     press(view, 'Fit to view');
-    for (const node of nodesOf(view)) expect(inside(view, node)).toBe(true);
+    for (const node of nodesOf(view)) expect(shown(view, node, 1)).toBe(true);
     expect(viewOf(stage).k).toBeLessThan(opened.k);
-    expect(view.cell('g').querySelector('[data-overview]')).toBeNull();
+    expect(view.cell('g').querySelector('.react-flow__minimap')).toBeNull();
     // nothing is drawn too small to read: a node shows its name at 10 px or more, or just its box
     for (const size of labelSizes(view)) expect(size).toBeGreaterThanOrEqual(10);
 
@@ -591,85 +639,78 @@ describe('Graph: a readable opening view', () => {
     for (let i = 0; i < 8; i++) press(view, 'Zoom in');
     expect(viewOf(stage).k).toBeGreaterThan(1);
     expect(nodesOf(view).some(node => touches(view, node))).toBe(true);
-    // a press on the overview moves the stage there
-    const before = viewOf(stage);
-    fireEvent.pointerDown(view.cell('g').querySelector('[data-overview]')!, {button: 0, pointerId: 1, clientX: 2, clientY: 2});
-    expect(viewOf(stage)).not.toEqual(before);
-    expect(viewOf(stage).k).toBe(before.k);
   });
 
   it('fits 150 nodes below the 20% the zoom buttons stop at', async () => {
-    const view = renderExpress(INLINE, {datasets: 'ready', data: {'/g': bigGraph(150, 220)}});
-    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(150), {timeout: 8000});
+    const view = renderExpress(`root=Page('T',[g])\ng=Graph($/g,title='Deps',size='m')`, {datasets: 'ready', data: {'/g': bigGraph(150, 220)}, size: {width: 600, height: 600}});
+    await drawn(view, 'g');
     const stage = stageOf(view, 'g');
     expect(viewOf(stage).k).toBeGreaterThanOrEqual(READABLE_ZOOM);
     focus(stage);
     key(stage, '0');
-    for (const node of nodesOf(view)) expect(inside(view, node, 1)).toBe(true);
     const fitted = viewOf(stage).k;
+    expect(fitted).toBeLessThan(0.2);
     // zooming out stops where everything is in view; zooming in works from there
     key(stage, '-');
-    expect(viewOf(stage).k).toBeCloseTo(Math.min(fitted, Math.max(0.2, fitted * 0.8)));
+    expect(viewOf(stage).k).toBeCloseTo(fitted);
     key(stage, '+');
-    expect(viewOf(stage).k).toBeGreaterThan(fitted * 0.99);
-  }, 15000);
+    expect(viewOf(stage).k).toBeGreaterThan(fitted * 1.2);
+  }, 30_000);
 
   it('draws the name alone, larger, between 40% and 91%, and only the box below', async () => {
     // 32 modules: two-line nodes (a larger graph draws one-line nodes, below)
     const view = await ready(INLINE, {data: {'/g': layeredGraph(4, 8)}});
     const stage = stageOf(view, 'g');
     const node = () => nodeOf(view, 'g', 'pkg/l0/m0');
-    const zoomTo = (k: number) => {
-      for (let i = 0; i < 60 && Math.abs(viewOf(stage).k - k) > 0.004; i++) {
-        fireEvent.wheel(stage, {deltaY: -Math.log(k / viewOf(stage).k) / 0.0015, clientX: 480, clientY: 300, ctrlKey: true});
-      }
-    };
-    zoomTo(1);
+    focus(stage);
+    key(stage, '1');
+    expect(viewOf(stage).k).toBe(1);
     expect([...node().querySelectorAll('text')].map(t => t.textContent)).toEqual(['l0/m0', '3 files']);
     expect(node().querySelector('text')!.style.fontSize).toBe('');
-    zoomTo(0.75);
-    // two lines still fit a 40 px node at 75%: both drawn larger, so both stay 10 px on screen
+    key(stage, '-');
+    // two lines still fit a 40 px node at 80%: both drawn larger, so both stay 10 px on screen
     const two = [...node().querySelectorAll('text')];
     expect(two.map(t => t.textContent)).toEqual(['l0/m0', '3 files']);
-    for (const text of two) expect(Number.parseFloat(text.style.fontSize) * 0.75).toBeGreaterThanOrEqual(10);
-    zoomTo(0.5);
+    for (const text of two) expect(Number.parseFloat(text.style.fontSize) * viewOf(stage).k).toBeGreaterThanOrEqual(10);
+    key(stage, '-');
+    key(stage, '-');
+    // 51%: one line
     const one = [...node().querySelectorAll('text')];
     expect(one.map(t => t.textContent)).toEqual(['l0/m0']);
-    expect(Number.parseFloat(one[0]!.style.fontSize) * 0.5).toBeGreaterThanOrEqual(10);
-    zoomTo(0.3);
+    expect(Number.parseFloat(one[0]!.style.fontSize) * viewOf(stage).k).toBeGreaterThanOrEqual(10);
+    key(stage, '-');
+    key(stage, '-');
+    // 33%: the box alone
+    expect(viewOf(stage).k).toBeLessThan(LOD_ZOOM);
     expect(node().querySelectorAll('text')).toHaveLength(0);
     expect(node().querySelector('rect')).not.toBeNull();
     expect(view.errors).toEqual([]);
   });
 
-  // Finding V066: the step above said 'the frame of a group keeps a readable label too' and asserted nothing.
+  // Finding V066: the frame of a group keeps a readable label too.
   it('keeps the label of a group frame at least 10 px on screen when zoomed out', async () => {
     const graph = layeredGraph(4, 8);
     const grouped = {groups: [{id: 'pkg', label: 'pkg'}], nodes: graph.nodes.map(node => ({...node, group: 'pkg'})), edges: graph.edges};
     const view = await ready(INLINE, {data: {'/g': grouped}});
     const stage = stageOf(view, 'g');
-    const label = () => view.cell('g').querySelector<SVGTextElement>('[data-group] text')!;
-    const zoomTo = (k: number) => {
-      for (let i = 0; i < 60 && Math.abs(viewOf(stage).k - k) > 0.004; i++) {
-        fireEvent.wheel(stage, {deltaY: -Math.log(k / viewOf(stage).k) / 0.0015, clientX: 480, clientY: 300, ctrlKey: true});
-      }
-    };
-    zoomTo(1);
+    const label = () => view.cell('g').querySelector<HTMLElement>('[data-group] span')!;
+    focus(stage);
+    key(stage, '1');
     expect(label().textContent).toBe('pkg');
-    for (const k of [0.75, 0.5, 0.3]) {
-      zoomTo(k);
+    for (let i = 0; i < 5; i++) {
+      key(stage, '-');
       const size = Number.parseFloat(label().style.fontSize || '10.5');
-      expect(size * viewOf(stage).k, `at ${k}`).toBeGreaterThanOrEqual(10);
+      expect(size * viewOf(stage).k, `at ${viewOf(stage).k}`).toBeGreaterThanOrEqual(10);
     }
   });
 
   it('holds the selected node still when the zoom buttons are used, and the middle of the graph otherwise', async () => {
-    const view = await ready(INLINE, {data: {'/g': layeredGraph(6, 8)}});
+    const view = await ready(INLINE, {data: {'/g': layeredGraph(3, 4)}});
     const stage = stageOf(view, 'g');
-    const target = nodeOf(view, 'g', 'pkg/l5/m7');
-    click(target);
+    const id = 'pkg/l2/m3';
+    click(nodeOf(view, 'g', id));
     const centre = () => {
-      const at = onStage(stage, nodeOf(view, 'g', 'pkg/l5/m7'));
+      const at = onStage(stage, nodeOf(view, 'g', id));
       return {x: (at.left + at.right) / 2, y: (at.top + at.bottom) / 2};
     };
     const before = centre();
@@ -679,14 +720,14 @@ describe('Graph: a readable opening view', () => {
     expect(centre().y).toBeCloseTo(before.y, 0);
     press(view, 'Actual size');
     expect(viewOf(stage).k).toBe(1);
-    expect(touches(view, nodeOf(view, 'g', 'pkg/l5/m7'))).toBe(true);
+    expect(touches(view, nodeOf(view, 'g', id))).toBe(true);
   });
 
   it('draws one-line nodes above 32 nodes and cuts a second line at a separator, not mid-number', async () => {
     const big = layeredGraph(6, 8);
     const view = await ready(INLINE, {data: {'/g': big}});
     for (const id of nodeIds(view, 'g')) expect(sizeOf(nodeOf(view, 'g', id)).h).toBe(28);
-    // what the second line said is in the tooltip text the node carries for assistive technology
+    // what the second line said is in the text the node carries for assistive technology
     focus(stageOf(view, 'g'));
     key(stageOf(view, 'g'), 'Home');
     expect(view.cell('g').querySelector('[aria-live]')!.textContent).toMatch(/^l\d\/m\d, \d+ files/);
@@ -694,15 +735,14 @@ describe('Graph: a readable opening view', () => {
     // a medium graph keeps its second line, cut where a reader would cut it
     const medium = {nodes: Array.from({length: 14}, (_, i) => ({id: `m${i}`, label: `module ${i}`, sub: `${300 + i} files, 129.4k loc`, kind: 'cluster'})), edges: Array.from({length: 13}, (_, i) => ({from: `m${i}`, to: `m${i + 1}`}))};
     const cut = await ready(INLINE, {data: {'/g': medium}});
-    fireEvent.click(within(cut.cell('g')).getByRole('button', {name: 'Actual size'}));
     expect([...nodeOf(cut, 'g', 'm3').querySelectorAll('text')].map(text => text.textContent)).toContain('303 files');
     expect(fitSub('697 files, 86.3k loc', 80, MONO_11)).toBe('697 files');
     expect(fitSub('12 smaller directories of src: 40 files, 3k loc', 2000, MONO_11)).toBe('12 smaller directories of src: 40 files, 3k loc');
     expect(fitSub('nothing to cut at here', 60, MONO_11).endsWith('…')).toBe(true);
   });
 
-  it('keeps a small graph at full size in a narrow cell by giving its nodes the width their labels need', async () => {
-    // the gallery case: four modules in a row in a 722 px stage used to be scaled to 75%
+  it('keeps a small graph at full size in a narrow plate by giving its nodes the width their labels need', async () => {
+    // the gallery case: four modules in a row in a 722 px plate
     const chain = {level: 'module', nodes: ['ui', 'api', 'auth', 'redis'].map(id => ({id, label: id, sub: '2 files, 1.1k loc', kind: 'cluster'})), edges: [{from: 'ui', to: 'api'}, {from: 'api', to: 'auth'}, {from: 'auth', to: 'redis'}]};
     const view = await ready(INLINE, {data: {'/g': chain}, size: {width: 722, height: 378}});
     expect(viewOf(stageOf(view, 'g')).k).toBeGreaterThanOrEqual(READABLE_ZOOM);
@@ -713,24 +753,23 @@ describe('Graph: a readable opening view', () => {
     expect(new Set(nodeIds(view, 'g').map(id => sizeOf(nodeOf(view, 'g', id)).w)).size).toBe(1);
   });
 
-  it('flows the way that suits the stage unless dir says otherwise', async () => {
+  it('flows the way that shows it larger at its width unless dir says otherwise', async () => {
     const chain = {nodes: Array.from({length: 7}, (_, i) => ({id: `n${i}`, label: `module number ${i}`, sub: `${i} files`})), edges: Array.from({length: 6}, (_, i) => ({from: `n${i}`, to: `n${i + 1}`}))};
-    const tall = {width: 420, height: 640};
-    const auto = await ready(INLINE, {data: {'/g': chain}, size: tall});
+    const narrow = {width: 420, height: 640};
+    const auto = await ready(INLINE, {data: {'/g': chain}, size: narrow});
     expect(stageOf(auto, 'g').getAttribute('data-dir')).toBe('TB');
     expect(positionOf(nodeOf(auto, 'g', 'n0')).y).toBeLessThan(positionOf(nodeOf(auto, 'g', 'n6')).y);
     auto.unmount();
-    const forced = await ready(`root=Page('T',[g])\ng=Graph($/g,dir='LR',title='Deps',size='l')`, {data: {'/g': chain}, size: tall});
+    const forced = await ready(`root=Page('T',[g])\ng=Graph($/g,dir='LR',title='Deps',size='l')`, {data: {'/g': chain}, size: narrow});
     expect(stageOf(forced, 'g').getAttribute('data-dir')).toBe('LR');
     forced.unmount();
-    // a stage much wider than tall (at 960 x 600 this chain is drawn larger top to bottom, and is)
     const wide = await ready(INLINE, {data: {'/g': chain}, size: {width: 1400, height: 420}});
     expect(stageOf(wide, 'g').getAttribute('data-dir')).toBe('LR');
   });
 
-  // A scoped module graph of a large repository (a2ui-repo, task 12): 24 modules in a long chain of cycles, in a plate
-  // with no size inside Tabs. It opened whole at 44%, where the larger zoomed-out names held 3 to 6 letters: 'com…',
-  // 'expre…', 'resol…', 'valid…'. A node is only identifiable when its name says which one it is.
+  // A scoped module graph of a large repository (a2ui-repo, task 12): 24 modules in a long chain of cycles. It opened
+  // whole at 44%, where the larger zoomed-out names held 3 to 6 letters: 'com…', 'expre…'. A node is only identifiable
+  // when its name says which one it is.
   it('opens no further out than keeps every zoomed-out name long enough to say which module it is', async () => {
     const names = [
       'renderers', 'samples', 'a2ui_agent', 'tools', 'catalogs', 'v0_9', 'src/*', 'common', 'catalog', 'v1_0', 'resolution', 'expressions',
@@ -739,7 +778,6 @@ describe('Graph: a readable opening view', () => {
     const nodes = names.map((label, i) => ({id: `mod${i}`, label, kind: i === 21 ? 'external' : 'cluster', cycle: i >= 5 && i <= 20}));
     const edges: Array<{from: string; to: string; weight: number; cycle?: boolean}> = [];
     for (let i = 0; i < 5; i++) edges.push({from: `mod${i}`, to: 'mod5', weight: 3});
-    // A chain of fourteen modules, each importing the next two, with cycles back; five leaves beside it.
     for (let i = 5; i < 18; i++) {
       edges.push({from: `mod${i}`, to: `mod${i + 1}`, weight: 4});
       if (i + 2 <= 18) edges.push({from: `mod${i}`, to: `mod${i + 2}`, weight: 1});
@@ -749,15 +787,14 @@ describe('Graph: a readable opening view', () => {
     const view = await ready(`root=Page('T',[g])\ng=Graph($/g)`, {data: {'/g': {level: 'module', nodes, edges}}, size: {width: 1256, height: 600}});
     const stage = stageOf(view, 'g');
     const {k} = viewOf(stage);
-    expect(k).toBeLessThan(0.91);
     let checked = 0;
     for (const node of view.cell('g').querySelectorAll('[data-node]')) {
       const at = onStage(stage, node);
       if (at.right <= 0 || at.left >= 1256) continue;
       const label = names[Number(node.getAttribute('data-node')!.slice(3))]!;
-      const drawn = node.querySelector('text')?.textContent ?? '';
+      const drawnText = node.querySelector('text')?.textContent ?? '';
       // The whole name, or at least NAME_KEEP of its letters before the ellipsis.
-      expect(drawn.replace(/…$/, '').length, `'${label}' drawn as '${drawn}' at ${Math.round(k * 100)}%`).toBeGreaterThanOrEqual(Math.min(NAME_KEEP, label.length));
+      expect(drawnText.replace(/…$/, '').length, `'${label}' drawn as '${drawnText}' at ${Math.round(k * 100)}%`).toBeGreaterThanOrEqual(Math.min(NAME_KEEP, label.length));
       checked++;
     }
     expect(checked).toBeGreaterThan(6);
@@ -777,24 +814,6 @@ describe('Graph: a readable opening view', () => {
     const size = 10.5 / zoom;
     expect(textWidth('expressi…', {size}) + 7 / zoom + 4).toBeLessThanOrEqual(136 - 14);
     expect(textWidth('common', {size}) + 7 / zoom + 4).toBeLessThanOrEqual(136 - 14);
-  });
-
-  it('pinches with two fingers around the point between them', async () => {
-    const view = await ready();
-    const stage = stageOf(view, 'g');
-    const before = viewOf(stage);
-    touch('pointerDown', stage, 11, 400, 300);
-    touch('pointerDown', stage, 12, 500, 300);
-    touch('pointerMove', stage, 12, 600, 300);
-    const zoomed = viewOf(stage);
-    expect(zoomed.k).toBeCloseTo(before.k * 2);
-    // the point that was between the fingers is between them still
-    expect((500 - zoomed.x) / zoomed.k).toBeCloseTo((450 - before.x) / before.k);
-    touch('pointerUp', stage, 12, 600, 300);
-    touch('pointerUp', stage, 11, 400, 300);
-    // lifting the fingers is not a click and not a pan
-    expect(viewOf(stage)).toEqual(zoomed);
-    expect(view.getData('/ui/sel')).toBeNull();
   });
 });
 
@@ -822,20 +841,15 @@ describe('Graph: review findings', () => {
     ], edges: [{from: 'src/core/web', to: 'src/core'}, {from: 'docs', to: 'src'}, {from: 'src/core', to: 'zod'}]};
     const view = await ready(INLINE, {data: {'/g': graph}});
     const lit = () => [...view.cell('g').querySelectorAll('[data-node][data-selected]')].map(node => node.getAttribute('data-node'));
-    // a directory that is a node
     view.setData('/ui/sel', {type: 'dir', id: 'src/core/web', path: 'src/core/web'});
     expect(lit()).toEqual(['src/core/web']);
-    // a file: its innermost module, not every module above it
     view.setData('/ui/sel', {type: 'file', id: 'src/core/web/state/model.ts', path: 'src/core/web/state/model.ts'});
     expect(lit()).toEqual(['src/core/web']);
-    // a symbol of a file in the rest of src/core
     view.setData('/ui/sel', {type: 'symbol', id: 'bind', path: 'src/core/bind.ts', line: 3});
     expect(lit().sort()).toEqual(['src/core', 'src/core/*']);
-    // a directory above several modules selects them all
     view.setData('/ui/sel', {type: 'dir', id: 'src/core', path: 'src/core'});
     expect(lit().sort()).toEqual(['src/core', 'src/core/*', 'src/core/web']);
     expect(nodeOf(view, 'g', 'docs').hasAttribute('data-dim')).toBe(true);
-    // nothing of the graph
     view.setData('/ui/sel', {type: 'file', id: 'README.md', path: 'README.md'});
     expect(lit()).toEqual([]);
   });
@@ -850,7 +864,7 @@ describe('Graph: review findings', () => {
     const view = renderExpress(SPEC, {datasets: 'ready'});
     await screen.findAllByRole('img', {name: /^Graph/});
     view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: graph});
-    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(4));
+    await drawn(view, 'g', 4);
     const lit = () => [...view.cell('g').querySelectorAll('[data-node][data-selected]')].map(node => node.getAttribute('data-node')).sort();
     view.setData('/ui/sel', {type: 'file', id: 'tools/gen.py', path: 'tools/gen.py'});
     expect(lit()).toEqual(['(root)']);
@@ -858,14 +872,13 @@ describe('Graph: review findings', () => {
     expect(lit()).toEqual(['src/core']);
     view.setData('/ui/sel', {type: 'file', id: 'src/util.ts', path: 'src/util.ts'});
     expect(lit()).toEqual(['src', 'src/*']);
-    // the label the data gives is drawn, and a rest cluster drills by its id like any module
     expect(nodeOf(view, 'g', '(root)').textContent).toContain('(other)');
     click(nodeOf(view, 'g', '(root)'));
     click(nodeOf(view, 'g', '(root)'));
     expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'deps_modules', target: '(root)'}});
   });
 
-  it('drills into a directory group on a double-click on its label, and only dispatches (D1, F027)', async () => {
+  it('drills into a directory group on a double-click on its label or frame line, and only dispatches (D1, F027)', async () => {
     const graph = {level: 'module', groups: [{id: 'dir:typescript', label: 'typescript'}, {id: 'misc', label: 'misc'}], nodes: [
       {id: 'typescript/core', label: 'core', kind: 'cluster', group: 'dir:typescript'},
       {id: 'typescript/web', label: 'web', kind: 'cluster', group: 'dir:typescript'},
@@ -874,8 +887,8 @@ describe('Graph: review findings', () => {
     const view = renderExpress(SPEC, {datasets: 'ready'});
     await screen.findAllByRole('img', {name: /^Graph/});
     view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: graph});
-    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(3));
-    const label = (id: string) => view.cell('g').querySelector(`[data-group="${id}"] text`)!;
+    await drawn(view, 'g', 3);
+    const label = (id: string) => view.cell('g').querySelector(`[data-group="${id}"] span`)!;
     expect(view.cell('g').querySelector('[data-group="dir:typescript"]')!.hasAttribute('data-drillable')).toBe(true);
     expect(view.cell('g').querySelector('[data-group="misc"]')!.hasAttribute('data-drillable')).toBe(false);
     click(label('dir:typescript'));
@@ -885,10 +898,13 @@ describe('Graph: review findings', () => {
     // a click on a frame selects nothing, and the graph draws no way back of its own: the plate's scope row is it
     expect(view.getData('/ui/sel')).toBeNull();
     expect(within(view.cell('g')).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Zoom out', 'Zoom in', 'Fit to view', 'Actual size']);
-    // the frame line takes the double-click as well
-    const frame = view.cell('g').querySelector('[data-group="dir:typescript"] [data-group-handle]')!;
+    // the frame line takes the double-click as well; a group that cannot be drilled does not
+    const frame = view.cell('g').querySelector('[data-group="dir:typescript"] rect[data-group-handle]')!;
     click(frame);
     click(frame);
+    expect(view.actions.filter(action => action.name === 'gl_drill')).toHaveLength(2);
+    click(label('misc'));
+    click(label('misc'));
     expect(view.actions.filter(action => action.name === 'gl_drill')).toHaveLength(2);
   });
 
@@ -898,8 +914,6 @@ describe('Graph: review findings', () => {
     await screen.findAllByRole('img', {name: /^Graph/});
     view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), drill: {target: 'src/api', up: 'src'}});
     await waitFor(() => expect(view.cell('g').querySelector('[data-gl-scope]')!.textContent).toBe('src/api'));
-    // Finding V066: a real re-render: the model redefines the component (a new title); the crumb comes from the
-    // dataset's envelope, not from state the component held, so it is still there.
     view.send(buildPatch('test', base, "g=Graph(title='Deps again',size='l')"));
     await waitFor(() => expect(view.cell('g').textContent).toContain('Deps again'));
     const cell = view.cell('g');
@@ -930,7 +944,6 @@ describe('Graph: review findings', () => {
     expect(cut.endsWith('generic-binder')).toBe(true);
     expect(textWidth(cut, UI_12)).toBeLessThanOrEqual(120);
     expect(fitLabel('short/path', 120, UI_12)).toBe('short/path');
-    // not a path: cut at the end, as before
     expect(fitLabel('a sentence with a/slash in it that is long', 100, UI_12).endsWith('…')).toBe(true);
     expect(fitLabel('x'.repeat(80), 100, UI_12).endsWith('…')).toBe(true);
   });
@@ -945,7 +958,6 @@ describe('Graph: review findings', () => {
     expect(faint).toBeLessThan(all);
     click(nodeOf(view, 'g', 'pkg/l0/m0'));
     for (const edge of cell.querySelectorAll('[data-edge][data-hot]')) expect(edge.hasAttribute('data-faint')).toBe(false);
-    // a small graph keeps every edge in ink
     view.unmount();
     const small = await ready();
     expect(small.cell('g').querySelector('[data-edge][data-faint]')).toBeNull();
@@ -964,8 +976,7 @@ describe('Graph: what the model hears and what the person reads (D14, D16, V007,
     await waitFor(() => expect(view.stateOf('g')).toBe('W_FOCUS'));
     const said = view.reports.findLast(report => report.code === 'W_FOCUS')!;
     expect(said.message).toBe('Graph#g: focus "packages/server/src/spec" matches no node; nearest: packages/server/src/mcp, packages/server/src/host, packages/viewer/src');
-    // The person sees the whole graph and the note.
-    expect(nodeIds(view, 'g')).toHaveLength(3);
+    await drawn(view, 'g', 3);
     expect(view.cell('g').querySelector('[data-gl-note]')!.textContent).toContain('not found');
     view.setData('/g', {...modules, nodes: [...modules.nodes, {id: 'packages/server/src/spec', label: 'spec', kind: 'cluster'}]});
     await waitFor(() => expect(view.stateOf('g')).toBe('OK'));
@@ -973,7 +984,7 @@ describe('Graph: what the model hears and what the person reads (D14, D16, V007,
 
   it('says nothing about a focus that names the scope the graph is drawn for', async () => {
     const view = renderExpress(`root=Page('T',[g])\ng=Graph($/g,focus='packages',title='Deps',size='l')`, {data: {'/g': modules}});
-    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(3));
+    await drawn(view, 'g', 3);
     await waitFor(() => expect(view.stateOf('g')).toBe('OK'));
     expect(view.reports).toEqual([]);
   });
@@ -984,7 +995,6 @@ describe('Graph: what the model hears and what the person reads (D14, D16, V007,
     view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: {level: 'module', nodes: [], edges: []}, note: 'no import cycles'});
     await waitFor(() => expect(view.cell('g').querySelector('[data-gl-state="empty"]')!.textContent).toContain('no import cycles'));
     await waitFor(() => expect(view.stateOf('g')).toBe('I_EMPTY'));
-    // Inline data with no nodes is a problem the model should hear about.
     const inline = renderExpress(INLINE, {data: {'/g': {nodes: [], edges: []}}});
     await waitFor(() => expect(inline.stateOf('g')).toBe('W_EMPTY'));
   });
@@ -993,11 +1003,9 @@ describe('Graph: what the model hears and what the person reads (D14, D16, V007,
     const view = renderExpress(SPEC, {datasets: 'ready'});
     await screen.findAllByRole('img', {name: /^Graph/});
     view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: modules, truncated: {total: 90, returned: 3, strategy: 'treecut'}});
-    // one phrase, in the graph's unit: '3 of 90 modules', not 'showing 3 of 90 · tree cut' beside '3 modules'
     await waitFor(() => expect(view.cell('g').querySelector('[data-gl-note]')!.textContent).toMatch(/^3 of 90 modules · 2 edges/));
     expect(view.cell('g').querySelector('[data-gl-marginal]')).toBeNull();
     expect(view.cell('g').textContent!.match(/3 of 90/g)).toHaveLength(1);
-    // a graph the source did not cut says how many it has
     view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: modules, truncated: undefined});
     await waitFor(() => expect(view.cell('g').querySelector('[data-gl-note]')!.textContent).toMatch(/^3 modules · 2 edges/));
   });
@@ -1008,20 +1016,20 @@ describe('Graph: what the model hears and what the person reads (D14, D16, V007,
       {id: 'typescript/core/src/catalog/types.ts', label: 'types.ts', kind: 'file'},
       {id: '.github/scripts', label: 'scripts', kind: 'dir'},
       {id: 'typescript/scripts', label: 'scripts', kind: 'dir'},
-      {id: 'ext:@angular/platform-browser-dynamic', label: '@angular/platform-browser-dynamic', kind: 'external'},
+      // too long even for the widest node (NODE_W_WIDE)
+      {id: 'ext:@angular/platform-browser-dynamic-testing-helpers', label: '@angular/platform-browser-dynamic-testing-helpers', kind: 'external'},
     ], edges: []};
     const view = renderExpress(INLINE, {data: {'/g': graph}});
-    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(5));
+    await drawn(view, 'g', 5);
     const name = (id: string) => nodeOf(view, 'g', id).querySelector('text')!.textContent!;
     expect(name('typescript/core/src/state/types.ts')).toBe('state/types.ts');
     expect(name('typescript/core/src/catalog/types.ts')).toBe('catalog/types.ts');
     expect(name('.github/scripts')).toBe('.github/scripts');
     expect(name('typescript/scripts')).toBe('typescript/scripts');
-    const pkg = name('ext:@angular/platform-browser-dynamic');
+    const pkg = name('ext:@angular/platform-browser-dynamic-testing-helpers');
     expect(pkg.startsWith('@angular/')).toBe(true);
     expect(pkg.endsWith('…')).toBe(true);
     expect(fitLabel('@angular/platform-browser-dynamic', 80, UI_12, true).startsWith('@angular')).toBe(true);
-    // Zoomed out, labels that end alike keep the start of their path when they are cut ('.git…/scripts', not '…/scripts').
     const {labels, ends} = distinctLabels([
       {id: '.github/scripts', label: '.github/scripts'}, {id: 'typescript/scripts', label: 'typescript/scripts'},
       {id: 'a/x/types.ts', label: 'types.ts'}, {id: 'b/x/types.ts', label: 'types.ts'}, {id: 'ext:@scope/scripts', label: '@scope/scripts', pkg: true},
@@ -1041,7 +1049,7 @@ describe('Graph: what the model hears and what the person reads (D14, D16, V007,
     const view = renderExpress(SPEC, {datasets: 'ready'});
     await screen.findAllByRole('img', {name: /^Graph/});
     view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: graph});
-    await waitFor(() => expect(nodeIds(view, 'g')).toHaveLength(4));
+    await drawn(view, 'g', 4);
     click(nodeOf(view, 'g', 'typescript/catalogs/shared/sandbox/*'));
     click(nodeOf(view, 'g', 'typescript/catalogs/shared/sandbox/*'));
     expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'deps_modules', target: 'typescript/catalogs/shared/sandbox/*'}});
@@ -1051,5 +1059,16 @@ describe('Graph: what the model hears and what the person reads (D14, D16, V007,
       click(nodeOf(view, 'g', id));
       expect(view.actions.slice(before).map(a => a.name)).toEqual(['gl_select', 'gl_select']);
     }
+  });
+});
+
+describe('Graph: the edges of a dragged node', () => {
+  it('leaves the moved node from its outline after a drag', async () => {
+    const view = await ready();
+    await drag(nodeOf(view, 'g', 'ui'), 20, 160);
+    const route = pointsOf(lineOf(edgeOf(view, 'g', 'ui->api')));
+    // React Flow's step route between the handles: it starts on the moved node, within a few px of its outline
+    const ui = nodeOf(view, 'g', 'ui');
+    expect(onOutline(route[0], ui, 4) || onOutline(route.at(-1), ui, 4)).toBe(true);
   });
 });

@@ -101,7 +101,7 @@ export const CommitListView: GlView<typeof C.CommitList> = ({id, props}) => {
   const gated = useMemo<DataState<CommitRow[]>>(() => (remote ? {...state, truncated: undefined, total: undefined} : state), [state, remote]);
   const normal = useMemo(() => (state.status === 'ready' ? normalizeRows(state.data) : undefined), [state]);
   return (
-    <Shell sized={props.size !== undefined}>
+    <Shell>
       <DataGate state={gated} id={`CommitList#${id}`}>
         {data =>
           normal ? (
@@ -282,7 +282,7 @@ function List({id, props, rows, skipped, ds, remote}: ListProps): JSX.Element {
   if (malformed > 0) notes.push(`${fmtNum(malformed)} malformed ${malformed === 1 ? 'row' : 'rows'}`);
 
   return (
-    <div className={s.root} data-sized={props.size ? '' : undefined} data-gl-commits="" style={{['--gl-commit-counts' as never]: `${countsWidth}px`}}>
+    <div className={s.root} data-gl-commits="" style={{['--gl-commit-counts' as never]: `${countsWidth}px`}}>
       {notes.length > 0 || pager.error ? (
         <PlateAside>
           {pager.error ? <span className={s.failed} role="alert">commits failed to load: {pager.error}</span> : null}

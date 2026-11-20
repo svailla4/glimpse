@@ -66,6 +66,21 @@ const KEY_KINDS: ReadonlyArray<readonly [RegExp, FieldKind]> = [
   [/^module$/i, 'module'],
 ];
 
+/** One path segment or more, then a name: no spaces, no scheme (`https:`), not a package scope (`@scope/name`). */
+const PATH_LIKE = /^(?![\w+.-]+:)(?!@)[^\s/][^\s]*\/[^\s/]+$/;
+
+/**
+ * A value that reads as a repository path: `src/a.ts`, `docs/guide/intro`, `web/x.tsx#L19`. A single slash between
+ * two words without an extension (`and/or`, `@ledger/site`, `km/h`) is not one. A column of such values is a path
+ * column whatever its name ('with', 'where'), so its cells keep the file name and give way at the directory (D12).
+ */
+export function looksLikePath(value: string): boolean {
+  if (!PATH_LIKE.test(value)) return false;
+  const file = value.replace(/#L\d+(?:-\d+)?$/, '');
+  if (file !== value) return true;
+  return /\.[A-Za-z0-9]{1,8}$/.test(file.slice(file.lastIndexOf('/') + 1)) || (file.match(/\//g)?.length ?? 0) >= 2;
+}
+
 function sniffKind(key: string, rows: readonly DataRow[]): FieldKind {
   let seen: FieldKind | undefined;
   const limit = Math.min(rows.length, SNIFF_ROWS);
@@ -77,7 +92,7 @@ function sniffKind(key: string, rows: readonly DataRow[]): FieldKind {
     else if (typeof value === 'boolean') kind = 'bool';
     else if (Array.isArray(value)) kind = value.length > 0 && value.every(v => typeof v === 'number') ? 'spark' : 'text';
     else if (isRecord(value)) kind = 'add' in value || 'del' in value ? 'delta' : 'text';
-    else if (typeof value === 'string') kind = KEY_KINDS.find(([re]) => re.test(key))?.[1] ?? (ISO_DATE.test(value) ? 'date' : 'text');
+    else if (typeof value === 'string') kind = KEY_KINDS.find(([re]) => re.test(key))?.[1] ?? (ISO_DATE.test(value) ? 'date' : looksLikePath(value) ? 'path' : 'text');
     else kind = 'text';
     if (seen !== undefined && seen !== kind) return 'text';
     seen = kind;

@@ -5,6 +5,7 @@ import {createServer} from 'node:http';
 import {join} from 'node:path';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
 import {tokenMatches} from '../../src/host/guard.ts';
+import {CSP} from '../../src/host/static.ts';
 import {isSafeRange, resolveInside} from '../../src/session/paths.ts';
 import {tempRoot, TOKEN, until} from '../session/fakes.ts';
 import {fakeViewer, json, raw, startFixture, type HostFixture} from './support.ts';
@@ -149,6 +150,22 @@ describe('no CORS, no cookies, hardening headers', () => {
       "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
     expect(shell.headers['cache-control']).toBe('no-store');
     expect(shell.headers['content-type']).toBe('text/html; charset=utf-8');
+  });
+
+  // A dedicated worker takes the CSP of its own response, not the page's (decision D19: the ELK layout worker). Before,
+  // /assets/* carried none, so a worker ran with no policy; now every asset carries the page's policy, relaxed nowhere.
+  it('a worker script runs under the same strict CSP as the shell, and no asset response relaxes it', async () => {
+    const shell = (await raw(port, '/', {auth: false})).headers['content-security-policy'];
+    expect(shell).toBe(CSP);
+    for (const directive of ["script-src 'self'", "default-src 'none'", "style-src 'self'", "connect-src 'self'"]) expect(CSP.split('; ')).toContain(directive);
+    expect(CSP).not.toMatch(/unsafe-|wasm-|blob:|\*/);
+    const worker = await raw(port, '/assets/elk.worker-abc123.js', {auth: false});
+    expect(worker.status).toBe(200);
+    expect(worker.headers['content-type']).toBe('text/javascript; charset=utf-8');
+    expect(worker.headers['content-security-policy']).toBe(CSP);
+    for (const path of ['/assets/index-abc123.js', '/assets/index-abc123.css']) {
+      expect((await raw(port, path, {auth: false})).headers['content-security-policy'], path).toBe(CSP);
+    }
   });
 
   it('binds the loopback interface only', () => {

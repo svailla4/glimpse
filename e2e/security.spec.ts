@@ -4,7 +4,8 @@ import {readdir, symlink, writeFile} from 'node:fs/promises';
 import {networkInterfaces} from 'node:os';
 import {join} from 'node:path';
 import {connect} from 'node:net';
-import {openViewer, pageState, raw, TOKEN, type RawResponse} from './support/glimpse.ts';
+import {expectSettled, openViewer, pageState, raw, TOKEN, type RawResponse} from './support/glimpse.ts';
+import {DIST} from './support/paths.ts';
 import {expect, test} from './support/test.ts';
 
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
@@ -133,6 +134,16 @@ test.describe('request guards', () => {
     expect.soft(script.headers['x-content-type-options']).toBe('nosniff');
     expect(script.body).not.toContain(TOKEN);
     expectNoLeak(script);
+    // A dedicated worker runs under the CSP of its own response: every asset, the layout workers included, carries
+    // the shell's policy, relaxed nowhere (decision D19: ELK needs no eval).
+    expect(script.headers['content-security-policy']).toBe(CSP);
+    const workers = (await readdir(join(DIST, 'viewer', 'assets'))).filter(name => /\.worker-[\w-]{8}\.js$/.test(name));
+    expect(workers.some(name => name.startsWith('elk.worker-')), 'the ELK layout worker is built').toBe(true);
+    for (const name of workers) {
+      const worker = await raw(port, `/assets/${name}`, {auth: false});
+      expect(worker.status, name).toBe(200);
+      expect(worker.headers['content-security-policy'], name).toBe(CSP);
+    }
 
     for (const path of ['/assets/../server.mjs', '/assets/..%2fserver.mjs', '/assets/%2e%2e/%2e%2e/server.mjs', '/assets/..%5c..%5cserver.mjs', '/assets/%00', '/assets/', '/server.mjs', '/index.html', '/favicon.ico', '/.git/config', '//etc/passwd']) {
       const response = await raw(port, path, {auth: false});
@@ -324,6 +335,34 @@ test.describe('hostile content', () => {
     expect(watched.requests.filter(url => !url.startsWith(`http://127.0.0.1:${glimpse.port()}/`) && !url.startsWith('data:'))).toEqual([]);
     expect(watched.problems).toEqual([]);
     expect(await watched.csp()).toEqual([]);
+  });
+
+  // Decision D19: ELK runs in a same-origin module worker. A dedicated worker gets the CSP of its own script's response,
+  // not the page's, and reports violations to itself; the watch records both. The worker must lay diagrams out under
+  // the shell's policy unchanged: no eval anywhere, and nothing it does is refused.
+  test('the ELK layout worker runs under the shell CSP, with no eval, and lays diagrams out without a violation', async ({page, glimpse, watched}) => {
+    const graph = "{nodes:[{id:'a',label:'a',group:'g'},{id:'b',label:'b',group:'g'},{id:'c',label:'c'}],edges:[{from:'a',to:'b'},{from:'b',to:'c',label:'calls'}],groups:[{id:'g',label:'group'}]}";
+    const spec = `root=Page('Worker',[Graph(${graph},title='Graph'),Flowchart('graph LR; A[a] --> B{b?}; B -->|yes| C([c])',title='Flow'),ERDiagram([{name:'t',columns:[{name:'id',pk:true}]},{name:'u',columns:[{name:'t_id',fk:'t.id'}]}],title='Tables')])`;
+    const shown = await glimpse.call('show', {id: 'worker', spec});
+    expect(shown.isError, shown.text).toBe(false);
+    await openViewer(page, glimpse);
+    await expectSettled(page);
+    for (const kind of ['Graph', 'Flowchart', 'ERDiagram']) await expect(page.locator(`[data-gl="${kind}"] [data-node]`).first(), kind).toBeVisible();
+    const elk = page.workers().find(worker => /\/assets\/elk\.worker-[\w-]{8}\.js$/.test(worker.url()));
+    expect(elk, `the ELK worker among ${page.workers().map(worker => worker.url()).join(', ')}`).toBeDefined();
+    expect(watched.problems).toEqual([]);
+    expect(await watched.csp(), 'violations in the page or a worker').toEqual([]);
+    // The probe runs as an ordinary task of the worker (an evaluation from the test harness may bypass the CSP).
+    const probe = await elk!.evaluate(() => new Promise<string>(resolve => setTimeout(() => {
+      try {
+        resolve(`eval allowed: ${new Function('return 1')()}`);
+      } catch (error) {
+        resolve((error as Error).name);
+      }
+    }, 0)));
+    expect(probe, 'string evaluation in the layout worker').toBe('EvalError');
+    // ...and the refusal reached the worker's own listener: the watch above would have seen a real one
+    await expect.poll(() => watched.csp()).toEqual([expect.stringMatching(/^worker script-src/)]);
   });
 
   test('viewer events cannot forge lines or instructions for the agent', async ({page, glimpse}) => {

@@ -157,3 +157,18 @@ describe('Layers', () => {
     expect(bands(view.cell('l')).map(band => band.getAttribute('data-layer'))).toEqual(['Interface', 'Domain']);
   });
 });
+
+// Decision D20: the tiers take their natural height, up to the plate's maximum height; past that they scroll.
+describe('Layers: content-sized', () => {
+  it.each([
+    ['no size: the diagram family\'s 640 px', SPEC, () => 640],
+    ['size l: 420 px', `root=Page('T',[l])\nl=Layers(${DATA},title='Tiers',size='l')`, () => 420],
+    ['size fill: the window less the masthead, never under 420 px', `root=Page('T',[l])\nl=Layers(${DATA},title='Tiers',size='fill')`, () => Math.max(420, window.innerHeight - 160)],
+  ])('takes %s as its maximum height', async (_name, spec, cap) => {
+    const view = await ready(spec);
+    const root = screen.getByRole('group', {name: /^Layers/});
+    expect(root.style.maxHeight).toBe(`${cap()}px`);
+    expect(root.style.height).toBe('');
+    expect(bands(view.cell('l'))).toHaveLength(3);
+  });
+});

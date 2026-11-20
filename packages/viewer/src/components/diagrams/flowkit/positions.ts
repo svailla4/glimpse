@@ -81,6 +81,8 @@ export function writePositions(key: string, positions: Positions): void {
 }
 
 export interface NodePositions {
+  /** The storage key: which diagram (repo, surface, component) these positions belong to. */
+  key: string;
   positions: Positions;
   /** Moves a node for now; nothing is stored until commit(). */
   move(id: string, centre: Point): void;
@@ -119,5 +121,6 @@ export function useNodePositions(componentId: string): NodePositions {
     writePositions(next.key, {});
     setState(next);
   }, []);
-  return useMemo(() => ({positions, move, commit, clear}), [positions, move, commit, clear]);
+  const currentKey = current.key;
+  return useMemo(() => ({key: currentKey, positions, move, commit, clear}), [currentKey, positions, move, commit, clear]);
 }

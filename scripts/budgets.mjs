@@ -15,7 +15,14 @@
 // What the browser pays for, gzip (default level, as Vite reports it; 1 kB = 1,000 bytes):
 //   eager viewer JS              <= 195 kB  the entry script and everything it imports statically (200 kB;
 //                                           the same figure as packages/viewer/test/build.test.ts)
-//   each lazy chunk              <= 120 kB  every other script
+//   lines of their own (decision D19: the diagram engine; each is its measured size plus about 15 %, see OWN_LINES):
+//     ELK layout worker          <= 515 kB  assets/elk.worker-<hash>.js, the whole ELK engine (447.8 kB measured)
+//     React Flow chunk           <=  90 kB  assets/xyflow-<hash>.js, once a view imports React Flow (77.6 kB measured)
+//     React Flow stylesheet      <= 2.5 kB  assets/xyflow-<hash>.css (2.2 kB measured)
+//     diagrams chunk             <=  36 kB  assets/diagrams-<hash>.js (31.3 kB measured, the ELK + React Flow views;
+//                                           25.4 kB at the Install phase, before the wrap/widen pass, the window
+//                                           search, routing for dragged edges and the minimap placement)
+//   each other lazy chunk        <= 120 kB  every other script
 // Exits 1 when a budget is exceeded or a measurement could not be taken.
 import {existsSync} from 'node:fs';
 import {readdir, readFile} from 'node:fs/promises';
@@ -29,6 +36,19 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // requires).
 const {INSTRUCTIONS_TARGET} = await import(pathToFileURL(join(root, 'packages', 'catalog', 'src', 'docs.ts')).href);
 const LIMITS = {instructions: INSTRUCTIONS_TARGET, definitions: 1500, preset: 1200, eager: 195_000, lazy: 120_000};
+/**
+ * Viewer files with a line of their own, by file name (gzip, like the rest). A script that matches one is held to it
+ * instead of the generic lazy line: the ELK worker would never fit that one, and the others get a tighter line so the
+ * diagram engine cannot grow unnoticed. `required`: the build must contain the file. The React Flow chunk appears
+ * once a view imports React Flow; until then (and should it ever be renamed) the generic lazy line still holds it.
+ * The measurements are from the build that set the line (D19 Install phase); keep about 15 % above the measurement.
+ */
+const OWN_LINES = [
+  {name: 'ELK layout worker', file: /^elk\.worker-[\w-]{8}\.js$/, limit: 515_000, required: true},
+  {name: 'React Flow chunk', file: /^xyflow-[\w-]{8}\.js$/, limit: 90_000, required: false},
+  {name: 'React Flow stylesheet', file: /^xyflow-[\w-]{8}\.css$/, limit: 2_500, required: true},
+  {name: 'diagrams chunk', file: /^diagrams-[\w-]{8}\.js$/, limit: 36_000, required: true},
+];
 
 const argv = process.argv.slice(2);
 const option = name => {
@@ -69,8 +89,10 @@ async function measureViewer() {
     return;
   }
   const assets = join(viewer, 'assets');
-  const scripts = (await readdir(assets)).filter(name => name.endsWith('.js'));
-  const source = new Map(await Promise.all(scripts.map(async name => [name, await readFile(join(assets, name))])));
+  const files = await readdir(assets);
+  const scripts = files.filter(name => name.endsWith('.js'));
+  const owned = files.filter(name => OWN_LINES.some(line => line.file.test(name)));
+  const source = new Map(await Promise.all([...new Set([...scripts, ...owned])].map(async name => [name, await readFile(join(assets, name))])));
   // Static imports only (`from"./x.js"`, `import"./x.js"`); `import("./x.js")` is what makes a chunk lazy.
   const staticImports = name => [...source.get(name).toString('utf8').matchAll(/(?:\bfrom|\bimport)\s*["']\.\/([^"']+\.js)["']/g)].map(match => match[1]).filter(file => source.has(file));
   const eager = new Set();
@@ -86,7 +108,15 @@ async function measureViewer() {
   const gz = name => gzipSync(source.get(name)).length;
   const eagerBytes = [...eager].reduce((sum, name) => sum + gz(name), 0);
   check('viewer', `eager JS (${[...eager].map(name => name.replace(/-[\w-]{8}\.js$/, '')).join(' + ')})`, eagerBytes, LIMITS.eager, 'B gz');
-  for (const name of scripts.filter(file => !eager.has(file)).sort((a, b) => gz(b) - gz(a))) check('viewer', `lazy chunk ${name}`, gz(name), LIMITS.lazy, 'B gz');
+  for (const line of OWN_LINES) {
+    const matches = owned.filter(name => line.file.test(name));
+    if (matches.length === 0 && line.required) failures.push(`viewer/assets has no ${line.name} (${line.file.source})`);
+    // Each of these must stay lazy: neither in the eager import graph nor fetched by index.html (a stylesheet link).
+    for (const name of matches.filter(file => eager.has(file) || html.includes(`/assets/${file}`))) failures.push(`${name} (${line.name}) is loaded eagerly`);
+    for (const name of matches) check('viewer', `${line.name} ${name}`, gz(name), line.limit, 'B gz');
+  }
+  const ownLine = name => OWN_LINES.some(line => line.file.test(name));
+  for (const name of scripts.filter(file => !eager.has(file) && !ownLine(file)).sort((a, b) => gz(b) - gz(a))) check('viewer', `lazy chunk ${name}`, gz(name), LIMITS.lazy, 'B gz');
 }
 
 // ---------------------------------------------------------------- what the agent reads

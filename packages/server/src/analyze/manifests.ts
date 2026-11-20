@@ -295,6 +295,16 @@ const TOOL_PATHS: Array<[RegExp, string]> = [
   [/(^|\/)\.pre-commit-config\.yaml$/, 'pre-commit'],
 ];
 
+/**
+ * Tooling recognised from file paths alone (Manifests.tools), in a fixed order: of the whole repository, or of the
+ * files under a path when repo.stack is scoped to one.
+ */
+export function toolsOf(paths: Iterable<string>): string[] {
+  const tools = new Set<string>();
+  for (const path of paths) for (const [pattern, tool] of TOOL_PATHS) if (!tools.has(tool) && pattern.test(path)) tools.add(tool);
+  return TOOL_PATHS.map(([, tool]) => tool).filter((tool, index, all) => tools.has(tool) && all.indexOf(tool) === index);
+}
+
 /** True for a path readManifests would read: lets the caller know which files matter. */
 export function isManifestPath(path: string): boolean {
   return MANIFEST_NAME.test(baseName(path)) && !SKIP_DIR.test(path);
@@ -306,11 +316,9 @@ export function isManifestPath(path: string): boolean {
  */
 export function readManifests(paths: readonly string[], read: Reader, repoName: string): Manifests {
   const out: Manifests = {packages: [], tsPaths: [], tsBaseUrls: [], tools: [], warnings: []};
-  const tools = new Set<string>();
   let failed = 0;
   let seen = 0;
   for (const path of paths) {
-    for (const [pattern, tool] of TOOL_PATHS) if (!tools.has(tool) && pattern.test(path)) tools.add(tool);
     if (!isManifestPath(path) || seen >= MAX_MANIFESTS) continue;
     seen++;
     const source = read(path);
@@ -321,7 +329,7 @@ export function readManifests(paths: readonly string[], read: Reader, repoName: 
       failed++;
     }
   }
-  out.tools = TOOL_PATHS.map(([, tool]) => tool).filter((tool, index, all) => tools.has(tool) && all.indexOf(tool) === index);
+  out.tools = toolsOf(paths);
   if (failed > 0) out.warnings.push(`${failed} manifest${failed === 1 ? '' : 's'} could not be parsed`);
   // Root first, then by directory and name, so tables read top-down.
   const order = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);

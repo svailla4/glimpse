@@ -1,0 +1,382 @@
+/* The stage shared by Graph, Flowchart and ERDiagram (decision D19): React Flow drawn in the Linework style. React
+   Flow's own stylesheet (base.css) sits in @layer xyflow, below every gl.* layer, so these rules win without
+   !important. Its --xy-* properties are set from the --gl-* tokens here, on the stage only. */
+@layer gl.components {
+  /* The paper under the diagram: the plate surface inside a frame, the page otherwise. */
+  .shell {
+    --dg-paper: var(--gl-bg);
+  }
+  :global(.gl-frame) .shell {
+    --dg-paper: var(--gl-surface);
+  }
+  /* React Flow's variables are set here, on what holds both the canvas and the controls and minimap beside it. */
+  .root {
+    position: relative;
+    overflow: hidden;
+    /* The bar under the canvas that holds the zoom controls (CONTROLS in sizing.ts). */
+    --dg-controls: 32px;
+    --xy-background-color: transparent;
+    --xy-background-pattern-color: var(--gl-rule);
+    --xy-edge-stroke: var(--gl-ink-3);
+    --xy-minimap-background-color: var(--dg-paper);
+    --xy-minimap-mask-background-color: color-mix(in srgb, var(--gl-ink) 8%, transparent);
+    --xy-minimap-mask-stroke-color: var(--gl-ink-3);
+    --xy-minimap-mask-stroke-width: 1;
+    --xy-minimap-node-background-color: var(--gl-ink-3);
+    --xy-minimap-node-stroke-color: transparent;
+    --xy-minimap-node-stroke-width: 0;
+  }
+  .root[data-failed] {
+    overflow: visible;
+  }
+  .note {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font: 11px/16px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    color: var(--gl-ink-3);
+    white-space: nowrap;
+  }
+
+  .stage {
+    position: absolute;
+    inset: 0 0 var(--dg-controls) 0;
+    outline: none;
+  }
+  .stage:focus-visible {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: -2px;
+  }
+  .flow {
+    /* One finger pans and two pinch the stage, not the page. */
+    touch-action: none;
+  }
+  .grid {
+    pointer-events: none;
+  }
+
+  /* ---- nodes */
+  .nodeSvg {
+    display: block;
+    overflow: visible;
+  }
+  .node {
+    cursor: pointer;
+    transition: opacity var(--gl-t-state) var(--gl-ease);
+  }
+  .node[data-dim] {
+    opacity: 0.35;
+  }
+  .ring {
+    fill: none;
+    stroke: var(--gl-accent);
+    stroke-width: 2;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .stage:focus-visible .node[data-active] .ring {
+    visibility: visible;
+  }
+  /* Handles are where edges meet a node, never something to drag a connection from. */
+  .handle {
+    width: 1px;
+    height: 1px;
+    min-width: 0;
+    min-height: 0;
+    border: 0;
+    background: transparent;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* ---- group frames: a dashed outline with a faint wash, its label in the band ELK keeps above the members */
+  .frameNode {
+    pointer-events: none;
+  }
+  .frame {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border: 1px dashed var(--gl-rule-strong);
+    background: color-mix(in srgb, var(--gl-sunken) 28%, transparent);
+    pointer-events: none;
+  }
+  /* In the band above the members; zoomed out, a larger label grows upwards out of the frame. */
+  .frameLabel {
+    position: absolute;
+    bottom: calc(100% - 21px);
+    left: 9px;
+    max-width: calc(100% - 18px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 500 10.5px/1.15 var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--gl-ink-3);
+    pointer-events: none;
+  }
+  /* A group that can be opened: its label and its frame line take the double-click. */
+  .frame[data-drillable] .frameLabel {
+    pointer-events: auto;
+    cursor: zoom-in;
+  }
+  .frameSvg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+  /* Only the frame line takes the pointer, not the inside (that pans the stage). */
+  .frameHit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 10;
+    pointer-events: stroke;
+    cursor: zoom-in;
+  }
+  .frame[data-drillable]:hover {
+    border-color: var(--gl-ink-3);
+  }
+  .frame[data-drillable]:hover .frameLabel {
+    color: var(--gl-ink);
+  }
+
+  /* ---- edges */
+  .edge {
+    transition: opacity var(--gl-t-state) var(--gl-ease);
+  }
+  .edge[data-dim] {
+    opacity: 0.35;
+  }
+  .hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 12;
+    pointer-events: stroke;
+  }
+  .line {
+    fill: none;
+    stroke: var(--gl-ink-3);
+    pointer-events: none;
+    transition: stroke var(--gl-t-hover) var(--gl-ease);
+  }
+  .mark {
+    fill: none;
+    stroke: var(--gl-ink-3);
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
+  /* One of many light edges: the rule colour, so the heavy ones lead. */
+  .edge[data-faint] .line,
+  .edge[data-faint] .mark {
+    stroke: var(--gl-rule-strong);
+  }
+  .edge:hover .line,
+  .edge:hover .mark {
+    stroke: var(--gl-ink);
+  }
+  .edge[data-dashed] .line {
+    stroke-dasharray: 3 3;
+  }
+  .edge[data-cycle] .line {
+    stroke: var(--gl-critical);
+    stroke-dasharray: 3 3;
+  }
+  .edge[data-cycle] .mark {
+    stroke: var(--gl-critical);
+  }
+  .edge[data-hot] .line,
+  .edge[data-hot] .mark {
+    stroke: var(--gl-accent);
+  }
+
+  /* Edge labels sit on their edge, above every line, under the nodes. */
+  .label {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--dg-paper);
+    font: 11px/13px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    color: var(--gl-ink-2);
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity var(--gl-t-state) var(--gl-ease);
+  }
+  .labelLine {
+    display: block;
+  }
+  .label[data-hot] {
+    color: var(--gl-ink);
+  }
+  .label[data-dim] {
+    opacity: 0.35;
+  }
+
+  /* ---- controls, the zoom readout and the minimap */
+  .controls:global(.react-flow__panel) {
+    margin: 0;
+    right: 6px;
+    bottom: 0;
+    height: var(--dg-controls);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .inView,
+  .zoom {
+    font: 10.5px/16px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    letter-spacing: 0.04em;
+    color: var(--gl-ink-3);
+    white-space: nowrap;
+  }
+  .inView {
+    margin-right: 8px;
+    text-transform: uppercase;
+  }
+  .zoom {
+    margin-right: 6px;
+  }
+  /* base.css sizes the buttons and leaves their look to the browser: every visual property is set here. */
+  .control:global(.react-flow__controls-button) {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--gl-rule);
+    border-radius: var(--gl-r-1);
+    background: var(--gl-surface);
+    color: var(--gl-ink-2);
+    cursor: pointer;
+    transition: border-color var(--gl-t-hover) var(--gl-ease), color var(--gl-t-hover) var(--gl-ease);
+  }
+  .control:global(.react-flow__controls-button):hover {
+    border-color: var(--gl-ink);
+    color: var(--gl-ink);
+  }
+  .control:global(.react-flow__controls-button) svg {
+    max-width: none;
+    max-height: none;
+    width: 14px;
+    height: 14px;
+    fill: none;
+  }
+  /* In the corner of the canvas that covers no node and no label of the opening view (minimapSpot in Diagram.tsx):
+     bottom right when it can, above the controls bar. */
+  .minimap:global(.react-flow__panel) {
+    margin: 8px;
+    border: 1px solid var(--gl-rule-strong);
+    border-radius: var(--gl-r-1);
+    background: var(--dg-paper);
+    cursor: crosshair;
+    transition: opacity 120ms ease-out;
+  }
+  .minimapBottom:global(.react-flow__panel) {
+    bottom: var(--dg-controls);
+  }
+  /* Finding V049: once the reader pans, nodes may pass under the minimap. While the pointer is over the diagram it
+     fades so they show through; pointing at it brings it back. */
+  .stage:hover ~ .minimap {
+    opacity: 0.3;
+  }
+  .minimap:hover {
+    opacity: 1;
+  }
+  /* No free corner (or a short canvas): a strip in the controls bar, left of the controls, over nothing. */
+  .minimapStrip:global(.react-flow__panel) {
+    margin: 0;
+    left: 6px;
+    bottom: calc((var(--dg-controls) - 24px) / 2);
+    border: 1px solid var(--gl-rule-strong);
+    border-radius: var(--gl-r-1);
+    background: var(--dg-paper);
+    cursor: crosshair;
+  }
+  .minimapStrip :global(.react-flow__minimap-svg) {
+    display: block;
+  }
+  .minimapNode {
+    fill: var(--gl-ink-3);
+  }
+  .minimapFrame {
+    fill: none;
+    stroke: var(--gl-rule-strong);
+    stroke-width: 2;
+  }
+
+  .relayout {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid var(--gl-rule-strong);
+    border-radius: var(--gl-r-1);
+    background: transparent;
+    color: var(--gl-ink-2);
+    font: 11px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color var(--gl-t-hover) var(--gl-ease), color var(--gl-t-hover) var(--gl-ease);
+  }
+  .relayout:hover {
+    border-color: var(--gl-ink);
+    color: var(--gl-ink);
+  }
+  .relayout:focus-visible {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: 2px;
+  }
+
+  .live {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .tip {
+    display: grid;
+    gap: 2px;
+    max-width: 320px;
+  }
+  .tipTitle {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .tipDetail {
+    font: 11px/16px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    color: var(--gl-ink-2);
+    overflow-wrap: anywhere;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .node,
+    .edge,
+    .label,
+    .line {
+      transition: none;
+    }
+  }
+}

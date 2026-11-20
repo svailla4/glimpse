@@ -192,12 +192,17 @@ describe('DataTable: columns and cells', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
-  it('fills a sized cell, and keeps its toolbar in place when there is no plate', async () => {
+  // Decision D20: the size step is the most a table may take, not a height it fills: a short table leaves no blank
+  // paper under its rows. Shell hands the cap to the view as --gl-cap; the root's max-height reads it.
+  it('takes the cap of its size step (D20), and keeps its toolbar in place when there is no plate', async () => {
     const many = Array.from({length: 30}, (_, i) => ({name: `n${i}`}));
     const view = renderExpress(`root=Page('T',[t,u])\nt=DataTable($/many,size='m')\nu=DataTable($/many,title='Framed')`, {data: {'/many': many}});
     await ready(view);
-    expect(view.cell('t').querySelector('[data-gl-table]')!.hasAttribute('data-sized')).toBe(true);
-    expect(view.cell('u').querySelector('[data-gl-table]')!.hasAttribute('data-sized')).toBe(false);
+    const capOf = (id: string) => (view.cell(id).querySelector('[data-gl-table]')!.parentElement as HTMLElement).style.getPropertyValue('--gl-cap');
+    expect(capOf('t')).toBe('280px');
+    expect(capOf('u')).toBe('420px');
+    // no table root fills its cell any more: the flag that made it do so is gone
+    expect(view.cell('t').querySelector('[data-gl-table]')!.hasAttribute('data-sized')).toBe(false);
     // unframed: the search box sits above the rows, inside the view; framed: in the plate header
     expect(view.cell('t').querySelector('[data-gl-table] .gl-aside input[type="search"]')).not.toBeNull();
     expect(view.cell('u').querySelector('.gl-frame-head input[type="search"]')).not.toBeNull();

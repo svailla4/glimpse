@@ -3,16 +3,18 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    max-height: 420px;
+    min-height: 0;
+    /* min(rows, cap): the cap comes from the cell's size step (table/shell.tsx, decision D20) */
+    max-height: var(--gl-cap, 420px);
     /* The sticky header covers the rows that scroll under it, so the table paints its own surface. */
     background: var(--gl-surface);
     font: 12.5px/18px var(--gl-font-ui);
     color: var(--gl-ink);
   }
-  .root[data-sized] { flex: 1 1 0; min-height: 0; max-height: none; }
 
+  /* The scroller and the signs that it goes on sideways (.more), which sit over the ends of its header row. */
+  .frame { position: relative; display: flex; flex: 0 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
   .scroll { flex: 0 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
-  .root[data-sized] .scroll { flex: 1 1 0; }
   /* More rows below or more columns to the right: that edge fades, so a cut row or column reads as "scroll". */
   .scroll[data-more-y] { mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent); }
   .scroll[data-more-x] { mask-image: linear-gradient(to right, black calc(100% - 24px), transparent); }
@@ -21,6 +23,32 @@
     mask-composite: intersect;
   }
   .inner { position: relative; }
+
+  /* Columns out of view at a side: `+3 ›` over that end of the header row, on the header's own surface so the label
+     never sits on a cut header, with a short fade into the row (round 4: the fade alone went unnoticed). */
+  .more {
+    all: unset;
+    position: absolute;
+    top: 0;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    box-sizing: border-box;
+    height: calc(var(--gl-row, 28px) - 1px);
+    padding: 0 8px 0 18px;
+    background: linear-gradient(to right, transparent, var(--gl-surface) 14px);
+    font: 500 11px/16px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    color: var(--gl-ink-2);
+    cursor: pointer;
+    transition: color var(--gl-t-hover) var(--gl-ease);
+  }
+  .more[data-side='right'] { right: 0; }
+  .more[data-side='left'] { left: 0; padding: 0 18px 0 8px; background: linear-gradient(to left, transparent, var(--gl-surface) 14px); }
+  .more :global(.gl-icon) { color: currentColor; }
+  .more[data-side='left'] :global(.gl-icon) { transform: scaleX(-1); }
+  .more:hover { color: var(--gl-ink); }
 
   .head, .row {
     display: grid;
@@ -135,6 +163,6 @@
   .live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   @media (prefers-reduced-motion: reduce) {
-    .row, .group, .chevron, .headButton, .search { transition: none; }
+    .row, .group, .chevron, .headButton, .search, .more { transition: none; }
   }
 }

@@ -5,20 +5,19 @@ import type {DataRow} from '@glimpse/catalog';
 import {act, fireEvent, waitFor} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
 import type {Column} from '../../src/components/table/rows.ts';
-import {columnBox, columnWidths, floorWidth, measureColumns, typicalKey} from '../../src/components/table/widths.ts';
+import {columnBoxFrom, columnWidths, floorWidth, labelWidths, measureColumns} from '../../src/components/table/widths.ts';
 import {renderExpress, type RenderedSpec} from '../harness.tsx';
 
 const col = (key: string, kind: Column['kind'], label = key): Column => ({key, label, kind, priority: 2});
 /** Width of every column of `rows` in a table `width` px wide, by key. */
 function layout(columns: Column[], rows: DataRow[], width: number): Record<string, number> {
   const needs = measureColumns(rows, columns);
-  const boxes = columns.map(column => columnBox(column, needs.get(column.key), needs.get(typicalKey(column.key))));
+  const boxes = columns.map(column => columnBoxFrom(column, needs));
   const widths = columnWidths(boxes, width);
   return Object.fromEntries(columns.map((column, i) => [column.key, Math.round(widths[i]!)]));
 }
 const boxOf = (column: Column, rows: DataRow[]) => {
-  const needs = measureColumns(rows, [column]);
-  return columnBox(column, needs.get(column.key), needs.get(typicalKey(column.key)));
+  return columnBoxFrom(column, measureColumns(rows, [column]));
 };
 const wantOf = (column: Column, rows: DataRow[]) => boxOf(column, rows).want;
 
@@ -74,17 +73,17 @@ describe('DataTable: text columns get the spare width first (integrator list: Pa
     expect(box.want).toBeGreaterThanOrEqual(24 + 7 * 6.9);
   });
 
-  it('a TODO text is not cut more than its location; the tag chip is as wide as it needs', () => {
+  it('a TODO text gets the width once its location names the file; the tag chip is as wide as it needs', () => {
     const columns = [col('tag', 'chip'), col('file', 'path', 'Where'), col('text', 'text')];
     const rows: DataRow[] = [
       {tag: 'TODO', file: 'typescript/renderers/lit/src/0.8/ui/root.ts#L208', text: 'Description is currently not used in the Maps. Remove it once the composer is gone.'},
     ];
     const widths = layout(columns, rows, 610);
     expect(widths.tag).toBeLessThan(76);
-    // both are longer than the plate allows: they end up equally wide (the path elides its directory, not its name)
-    expect(Math.abs(widths.file! - widths.text!)).toBeLessThanOrEqual(1);
-    // before this round the path column took twice the text's share of the spare width
-    expect(widths.text).toBeGreaterThan(220);
+    // the location shows `…/root.ts:208` at its floor; the text, which is the TODO, takes the rest (integrator list,
+    // round 4: the text was cut to the width of a location that only needed its file name)
+    expect(widths.file).toBe(168);
+    expect(widths.text).toBeGreaterThan(320);
   });
 
   it('cycle members (text) are served before the numbers beside them grow', () => {
@@ -106,6 +105,36 @@ describe('DataTable: text columns get the spare width first (integrator list: Pa
     const boxes = PACKAGES.map(column => boxOf(column, PACKAGE_ROWS));
     expect(columnWidths(boxes, 200)).toEqual(boxes.map(box => box.floor));
     expect(floorWidth(boxes)).toBeGreaterThan(200);
+  });
+
+  it('commands, long in most rows, get more width than package names that are long in a few (round 4, Scripts)', () => {
+    const columns = [col('package', 'text'), col('script', 'code'), col('command', 'code')];
+    const names = ['ledger-workspace', 'ledger-workspace', 'ledger-workspace', '@ledger/site', '@ledger/site', '@ledger/web-components-renderer', '@ledger/accounts-panel-conformance'];
+    const rows: DataRow[] = names.map((name, i) => ({package: name, script: `task:${i}`, command: `yarn workspaces foreach --all --topological --verbose run task:${i}`}));
+    const widths = layout(columns, rows, 482);
+    // before: the two text columns were raised to one level and ended equally wide (159 px each in the stack view)
+    expect(widths.command).toBeGreaterThan(widths.package! + 80);
+    // the usual package name is still whole: 'ledger-workspace' draws 100.9 px wide in the cells' face
+    expect(widths.package).toBeGreaterThanOrEqual(100.9);
+  });
+
+  it('a repeated file name gets its parent directory before an owner grows (round 4, History)', () => {
+    const columns = [col('path', 'path', 'File'), col('commits', 'bar'), col('authors', 'num'), col('owner', 'author'), col('ownership', 'pct'), col('last', 'date')];
+    const rows: DataRow[] = ['web_core', 'lit_core', 'web_agent', 'lit_agent', 'cli'].flatMap((pkg, i) => [
+      {path: `packages/${pkg}/CHANGELOG.md`, commits: 100 - i, authors: 9, owner: 'Ana Lima', ownership: 40.1, last: '2026-11-19'},
+      {path: `packages/${pkg}/src/index_${i}.ts`, commits: 50 - i, authors: 4, owner: 'Bo Chen', ownership: 51.3, last: '2026-11-18'},
+    ]);
+    const widths = layout(columns, rows, 618);
+    // `…/web_agent/CHANGELOG.md` is 24 characters of 12 px mono: every CHANGELOG row is told apart (before, the
+    // column stayed at its 168 px floor while the owner took the spare width, and two rows read `…/CHANGELOG.md`)
+    expect(widths.path).toBeGreaterThanOrEqual(24 * 7.2);
+  });
+
+  it('labels: a name shared by several files carries the parent directories that tell them apart', () => {
+    const widths = labelWidths(['a/b/web/CHANGELOG.md', 'a/b/lit/CHANGELOG.md', 'a/src/index.ts#L12', 'x/y/web/CHANGELOG.md', null]);
+    const chars = widths.map(width => Math.round(width / 7.25));
+    // `…/b/web/CHANGELOG.md` (x/y/web/ also has a web/CHANGELOG.md), `…/lit/CHANGELOG.md`, `…/index.ts:12`
+    expect(chars).toEqual(['…/b/web/CHANGELOG.md'.length, '…/lit/CHANGELOG.md'.length, '…/index.ts:12'.length, '…/y/web/CHANGELOG.md'.length, 0]);
   });
 
   it('the rendered grid gives the package name its width', async () => {

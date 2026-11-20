@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {COMPONENT_BY_NAME, SOURCE_BY_NAME, VIEW_BY_NAME, acceptsArg, VIEW_INDEX, VIEWS, formatRef, parseViewRef, partsOf, type A2uiMessage, type SourceRef} from '../src/index.ts';
 import {compileExpress, expandRefs} from '../testing/index.ts';
-import {PRESET_CALLS, presetSource} from './support.ts';
+import {PRESET_CALLS, corpus, presetSource} from './support.ts';
 
 function compiled(call: string) {
   const {view, source} = presetSource(call);
@@ -67,7 +67,11 @@ describe('preset views', () => {
 
   it('a target scopes the sources of tree, deps, hotspots and history', () => {
     expect(compiled('tree src/auth').refs).toEqual(['files.tree src/auth']);
-    expect(compiled('deps packages/server').refs).toContain('deps.modules packages/server');
+    // Every plate of a scoped deps page shows the scope, not the whole repository beside a scoped graph.
+    expect(compiled('deps packages/server').refs).toEqual([
+      'deps.cycles packages/server', 'deps.external packages/server top=20', 'deps.matrix packages/server', 'deps.modules packages/server',
+    ]);
+    expect(compiled('deps').refs).toEqual(['deps.cycles', 'deps.external top=20', 'deps.matrix', 'deps.modules']);
     expect(compiled('hotspots src since=90d').refs).toEqual(['files.tree src', 'git.coupling src', 'git.hotspots src since=90d', 'git.hotspots src since=90d top=50']);
     expect(compiled('history').refs).toEqual(['git.activity', 'git.authors top=10', 'git.churn top=50', 'git.log', 'git.timeline']);
   });
@@ -129,6 +133,36 @@ describe('preset views', () => {
       expect(JSON.stringify(surface.components[0]), path).not.toContain('near');
     }
     for (const path of ['src/core/index.ts', 'tools/stats.py', 'cmd/main.go']) expect(compiled(`file ${path}`).surface.components.find(c => c.id === 'near'), path).toBeDefined();
+  });
+
+  // D20: size is a maximum, so the overview's module graph may take the tallest step. At 'l' (420 px) a 24-node module
+  // graph of a large polyglot repository could only open in part (13 of 24 nodes in view); at 'xl' it opens whole with
+  // its text at 10 px or more, and a small graph still keeps the height of its drawing.
+  it('overview lets the module graph grow to the xl step', () => {
+    expect(compiled('overview').surface.components.find(c => c.id === 'deps')).toMatchObject({component: 'Graph', size: 'xl', span: 8});
+  });
+
+  // Review finding (swap round): presets, the gallery and the recipes gave diagrams size='l'. Under D20 that is a
+  // maximum of 420 px, below the 640 px a diagram grows to with no size: the file preset's graph opened with 18 of 44
+  // nodes cut, the gallery's ERD sliced through a table. What Glimpse writes itself teaches the model; none of it may
+  // cut a diagram short.
+  it('no preset, gallery, component example or recipe caps a diagram below its default height', () => {
+    const capped: string[] = [];
+    for (const {label, messages} of corpus()) {
+      for (const message of messages) {
+        const components = 'createSurface' in message ? message.createSurface.components : 'updateComponents' in message ? message.updateComponents.components : [];
+        for (const component of components as unknown as Array<{id: string; component: string; size?: unknown}>) {
+          if (COMPONENT_BY_NAME.get(component.component)?.family !== 'diagram') continue;
+          if (component.size === 's' || component.size === 'm' || component.size === 'l') capped.push(`${label}: ${component.component}#${component.id} size=${component.size}`);
+        }
+      }
+    }
+    expect(capped).toEqual([]);
+    // the presets that draw a graph beside other plates still give it its width
+    expect(compiled('file src/core/index.ts').surface.components.find(c => c.id === 'near')).not.toHaveProperty('size');
+    expect(compiled('diff main..HEAD').surface.components.find(c => c.id === 'impact')).toMatchObject({component: 'Graph', span: 7});
+    expect(compiled('diff main..HEAD').surface.components.find(c => c.id === 'impact')).not.toHaveProperty('size');
+    expect(compiled('feature').surface.components.find(c => c.id === 'impact')).not.toHaveProperty('size');
   });
 
   // F016: the Cycles / External tabs were the only unframed block of the overview.

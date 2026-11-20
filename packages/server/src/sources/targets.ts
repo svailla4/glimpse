@@ -46,9 +46,13 @@ export async function canonicalRef(ctx: RepoContext, ref: SourceRef): Promise<So
   return target === ref.target ? ref : {...ref, target};
 }
 
-/** A source whose target is a path, made to read it under the inventory's name. Other sources are returned as they are. */
+/**
+ * A source whose target is a path, made to read it under the inventory's name. That is every source but those of a
+ * range or a symbol: one that declares no target still reads a path when given one ('deps.external web'), as the ref
+ * form '<source> [path|range|symbol]' tells the model it may. Range and symbol sources are returned as they are.
+ */
 export function withCanonicalTarget(source: Source): Source {
   const kind = source.meta.target;
-  if (kind !== 'path' && kind !== 'path|range') return source;
+  if (kind === 'range' || kind === 'symbol') return source;
   return {meta: source.meta, run: async (ctx, ref, signal) => source.run(ctx, await canonicalRef(ctx, ref), signal)};
 }

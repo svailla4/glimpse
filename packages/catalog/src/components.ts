@@ -23,7 +23,7 @@ const SIZE_ALIASES = {xs: 's', sm: 's', small: 's', md: 'm', medium: 'm', lg: 'l
 const FRAME = {
   title: opt(p.text('Plate title; draws the numbered frame.')),
   note: opt(p.text('Caption under the plate.')),
-  size: opt(p.enum(['s', 'm', 'l', 'xl', 'fill'], 'Height 160/280/420/640px or fill the viewport.', SIZE_ALIASES)),
+  size: opt(p.enum(['s', 'm', 'l', 'xl', 'fill'], 'Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate.', SIZE_ALIASES)),
   ...CELL,
 };
 
@@ -128,7 +128,7 @@ export const Split = component('Split', {
   end: p.child('Right/bottom pane.'),
   ratio: opt(p.str("Initial ratio like '1:2'. Default '1:1'.")),
   dir: minor(opt(p.enum(['row', 'col'], 'Side by side or stacked.', {horizontal: 'row', h: 'row', column: 'col', vertical: 'col', v: 'col'}))),
-  size: minor(opt(p.enum(['s', 'm', 'l', 'xl', 'fill'], 'Height.', SIZE_ALIASES))),
+  size: minor(opt(p.enum(['s', 'm', 'l', 'xl', 'fill'], 'Height the two panes share (fixed, not a maximum).', SIZE_ALIASES))),
   ...CELL,
 });
 
@@ -426,7 +426,7 @@ export const Graph = component('Graph', {
   example: "Graph('deps.modules src/auth',title='How auth depends on the rest')",
 }, {
   data: opt(p.data<GraphData>('GraphData', '{nodes:[{id,label}],edges:[{from,to}],groups?}.', 'deps.modules')),
-  dir: opt(p.enum(['LR', 'TB'], 'Flow direction. Default LR.', DIR_ALIASES)),
+  dir: opt(p.enum(['LR', 'TB'], 'Flow direction. Default: whichever reads larger at the plate width, LR on a tie.', DIR_ALIASES)),
   focus: opt(p.text('Node id to centre; its neighbourhood is emphasised.')),
   depth: minor(opt(p.int('Hops shown around the focus. Default 1.', 1, 4))),
   ...FRAME,
@@ -438,7 +438,7 @@ export const Flowchart = component('Flowchart', {
   example: "Flowchart('Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429])')",
 }, {
   src: p.text("Statements split by ';' or newline: 'A[Label] --> B{Decision}', '-->|label|', '-.->' dashed. Shapes: [box] {diamond} ([pill]) [(store)] ((circle))."),
-  dir: opt(p.enum(['TB', 'LR'], 'Flow direction. Default TB.', DIR_ALIASES)),
+  dir: opt(p.enum(['TB', 'LR'], "Flow direction; wins over a src header ('graph LR'). Default: the header's, else whichever reads larger in its plate.", DIR_ALIASES)),
   ...FRAME,
 });
 
@@ -466,7 +466,7 @@ export const ERDiagram = component('ERDiagram', {
   example: "ERDiagram([{name:'users',columns:[{name:'id',type:'uuid',pk:true},{name:'email'}]},{name:'orders',columns:[{name:'id',pk:true},{name:'user_id',fk:'users.id'}]}],title='Data model')",
 }, {
   data: p.data<ErData>('ErData', "Tables [{name,columns:[{name,type?,pk?,fk?}]}], or {tables,relations}. fk:'users.id' draws the relation."),
-  dir: minor(opt(p.enum(['LR', 'TB'], 'Layout direction. Default LR.', DIR_ALIASES))),
+  dir: minor(opt(p.enum(['LR', 'TB'], 'Default: whichever reads larger.', DIR_ALIASES))),
   ...FRAME,
 });
 

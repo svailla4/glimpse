@@ -59,6 +59,33 @@ export function historyOf(log: Pick<GitLog, 'commits'>, headers: LogHeaders['hea
   return history;
 }
 
+/** What repo.kpis counts of history: commit times (seconds, newest first), authors, and whether they are lower bounds. */
+export interface Totals {
+  times: number[];
+  authors: ReadonlySet<string>;
+  partial: boolean;
+  warnings: string[];
+}
+
+/**
+ * The totals of the commits that touch a path: the commits git.log and git.authors list for the same path, read from
+ * the same shared history (renames followed). `dir` is the path git reads, `has` what lies in the scope: they differ
+ * for a module id of a graph ('src/*', the files of src/ outside its sub-modules), whose commits are those of its
+ * directory that touch one of its files. Called once readHistory has found a history to read.
+ */
+export async function scopedTotals(ctx: RepoContext, scope: {dir: string; has(path: string): boolean}, signal: AbortSignal): Promise<Totals> {
+  const log = await getLog(ctx, {path: scope.dir}, signal);
+  signal.throwIfAborted();
+  const shallow = ctx.git?.shallow === true;
+  const commits = log.commits.filter(commit => commit.files.some(file => scope.has(file)));
+  return {
+    times: commits.map(commit => commit.time),
+    authors: new Set(commits.map(commit => commit.author)),
+    partial: shallow || log.truncated,
+    warnings: [...(shallow ? [SHALLOW_WARNING] : []), ...(log.truncated ? [LIMIT_WARNING] : [])],
+  };
+}
+
 /** History of the repository, or undefined when there is none to read (not a git repository, or no commits yet). */
 export async function readHistory(ctx: RepoContext, signal: AbortSignal): Promise<History | undefined> {
   if (!ctx.git) return undefined;

@@ -5,7 +5,7 @@ import {
   Drafting, Empty, PlateAside, REPORT_CODES, Redline, fmtNum, toNumber, useFollowedFile, useHost, useHostActions, useRev, useSelection, type GlView,
 } from '../../kit/index.ts';
 import s from './SymbolOutline.module.css';
-import {Crumbs, cx} from './codekit/lines.tsx';
+import {Crumbs, cx, useCapStyle} from './codekit/lines.tsx';
 import k from './codekit/lines.module.css';
 import {useFetched} from './codekit/useFetched.ts';
 import {VirtualRows, type VirtualRowsHandle} from './codekit/VirtualRows.tsx';
@@ -72,16 +72,16 @@ export const SymbolOutlineView: GlView<typeof C.SymbolOutline> = ({id, props}) =
       path={shownPath}
       symbols={outline.symbols}
       dropped={outline.dropped}
-      fill={Boolean(props.size)}
       framed={typeof props.title === 'string' && props.title !== ''}
       busy={fetched.loading}
     />
   );
 };
 
-interface OutlineProps { id: string; path: string; symbols: Sym[]; dropped: number; fill: boolean; framed: boolean; busy: boolean }
+interface OutlineProps { id: string; path: string; symbols: Sym[]; dropped: number; framed: boolean; busy: boolean }
 
-function Outline({id, path, symbols, dropped, fill, framed, busy}: OutlineProps): ReactNode {
+function Outline({id, path, symbols, dropped, framed, busy}: OutlineProps): ReactNode {
+  const capStyle = useCapStyle();
   const {selected, select} = useSelection(id);
   const actions = useHostActions(id);
   const listId = useId();
@@ -177,7 +177,7 @@ function Outline({id, path, symbols, dropped, fill, framed, busy}: OutlineProps)
   );
 
   return (
-    <div className={cx(k.code, s.outline)} data-gl-code="outline" data-fit={fill ? 'fill' : 'cap'} data-boxed={framed ? undefined : ''} aria-busy={busy || undefined}>
+    <div className={cx(k.code, s.outline)} data-gl-code="outline" data-fit="cap" data-boxed={framed ? undefined : ''} aria-busy={busy || undefined} style={capStyle}>
       {framed ? <PlateAside><span className={k.bits}>{bits}</span></PlateAside> : <div className={k.head}><span className={k.bits}>{bits}</span></div>}
       {shown.length === 0 ? <div className={s.none} role="status">no symbol matches “{query}”</div> : null}
       <VirtualRows

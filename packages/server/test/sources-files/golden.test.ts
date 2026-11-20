@@ -95,7 +95,7 @@ describe('files.*', () => {
     const sub = await run(ctx, 'files.tree src/auth/');
     expect(sub.data).toMatchObject({name: 'auth', path: 'src/auth', dir: true, files: 3, loc: 107, commits: 4});
     expect((sub.data as DirNode).children?.map(child => child.path)).toEqual(['src/auth/service.ts', 'src/auth/session.ts', 'src/auth/tokens.ts']);
-    expect(sub.summary).toBe('3 files, 107 loc');
+    expect(sub.summary).toBe('3 files, 107 loc in src/auth');
     const file = await run(ctx, 'files.tree ./src/auth/service.ts#L10-20');
     expect(file.data).toEqual({name: 'service.ts', path: 'src/auth/service.ts', dir: false, files: 1, loc: 53, bytes: 1432, lang: 'TypeScript', complexity: 28, commits: 4, age: 15});
   });
@@ -121,7 +121,7 @@ describe('files.*', () => {
     const scoped = await run(ctx, 'files.list tools top=2');
     expect((scoped.data as Array<{path: string}>).map(row => row.path)).toEqual(['tools/stats.py', 'tools/report.py']);
     expect(scoped).toMatchObject({total: 6, truncated: {total: 6, returned: 2, strategy: 'topN', by: 'loc'}});
-    expect(scoped.summary).toBe('2/6 rows; fields path lang loc bytes commits complexity; top tools/stats.py 24 loc');
+    expect(scoped.summary).toBe('2/6 rows; fields path lang loc bytes commits complexity; in tools; top tools/stats.py 24 loc');
     expect(scoped.allRows).toHaveLength(2);
   });
 
@@ -272,7 +272,7 @@ describe('deps.*', () => {
       'test -> src/auth/service.ts',
     ]);
     expect(graph.groups).toEqual([{id: 'scope', label: 'src/auth'}]);
-    expect(result.summary).toBe('7 nodes 12 edges, 1 file cycle; level file; 4 imports out of src/auth');
+    expect(result.summary).toBe('7 nodes 12 edges, 1 file cycle; level file; in src/auth, 4 imports out of it');
     checkResult('deps.modules', result);
   });
 

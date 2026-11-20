@@ -1,6 +1,6 @@
-// Every preset view renders from the real analyzers without a redline, a console error or a CSP violation, and its
-// tool result stays inside the 1,200-character budget: on the fixture repository, on this repository and on
-// GLIMPSE_E2E_REPO when set.
+// Every preset view, the gallery included, renders from the real analyzers without a redline, a console error or a
+// CSP violation (in the page or in the layout worker), and its tool result stays inside the 1,200-character budget: on
+// the fixture repository, on this repository and on GLIMPSE_E2E_REPO when set.
 import {existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {expectSettled, expectSurface, openViewer, pageState, recordTiming} from './support/glimpse.ts';
@@ -21,7 +21,7 @@ for (const target of TARGETS) {
 
     test('every preset renders', async ({page, glimpse, watched, repoLabel}, testInfo) => {
       test.setTimeout(180_000);
-      const views = ['overview', 'tree', 'deps', 'hotspots', 'history', `file ${target.file}`, `symbol ${target.symbol}`, 'stack', 'diff', `diff ${target.range}`, 'feature'];
+      const views = ['overview', 'tree', 'deps', 'hotspots', 'history', `file ${target.file}`, `symbol ${target.symbol}`, 'stack', 'diff', `diff ${target.range}`, 'feature', 'gallery'];
       const first = await glimpse.call('show', {view: views[0]});
       expect(first.isError, first.text).toBe(false);
       await openViewer(page, glimpse);

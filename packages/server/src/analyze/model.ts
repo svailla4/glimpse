@@ -67,6 +67,20 @@ export function declaredPackages(manifests: Manifests): Manifests['packages'] {
   return manifests.packages.filter(pkg => pkg.ecosystem !== 'make');
 }
 
+/**
+ * The packages of a path scope ('' for the repository): those whose manifest lies under it; when it holds none, the
+ * nearest enclosing ones, i.e. the package the path belongs to (`enclosing` is then true). repo.packages,
+ * repo.scripts and repo.stack read a path this way.
+ */
+export function packagesOf<T extends {dir: string}>(packages: readonly T[], scope: string): {packages: T[]; enclosing: boolean} {
+  if (scope === '') return {packages: [...packages], enclosing: false};
+  const inside = packages.filter(pkg => pkg.dir === scope || pkg.dir.startsWith(`${scope}/`));
+  if (inside.length > 0) return {packages: inside, enclosing: false};
+  const encloses = (dir: string) => dir === '' || scope.startsWith(`${dir}/`);
+  const nearest = Math.max(-1, ...packages.filter(pkg => encloses(pkg.dir)).map(pkg => pkg.dir.length));
+  return {packages: packages.filter(pkg => encloses(pkg.dir) && pkg.dir.length === nearest), enclosing: true};
+}
+
 /** Directories with a manifest: the boundaries every module cut prefers. */
 export function manifestDirsOf(manifests: Manifests): ReadonlySet<string> {
   return new Set(manifests.packages.map(pkg => pkg.dir));

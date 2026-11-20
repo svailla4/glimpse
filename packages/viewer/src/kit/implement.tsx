@@ -6,10 +6,10 @@
 // The box a view is given (one rule for the frame, base.css and every view):
 //   .gl-cell > .gl-frame > ... .gl-body > view      framed: a non-layout component that takes `title` and has one
 //   .gl-cell > .gl-body > view                      everything else
-// base.css sizes the direct child of a cell that has data-size (`.gl-cell[data-size] > :is(.gl-frame, .gl-body)
-// { height: var(--gl-h) }`), and the frame lets its .gl-body take what is left under its header. So a view always
-// sits in a .gl-body, and whenever the cell has data-size that box has a definite height: `height: 100%` on the
-// view root fills it, with or without a title. Without data-size the box is as tall as the view makes it.
+// A view always sits in a .gl-body, which is as tall as the view makes it (decision D20, content-sized plates). The
+// size step is a maximum: base.css caps the .gl-body of a cell that has data-size at `--gl-h`, and a view that
+// scrolls reads the same number from useSizeCap() and makes itself min(its content, cap) tall. Charts and Split
+// are the exception: for them the size step is the height of the box (base.css), so `height: 100%` fills it.
 //
 // What a view may rely on, beyond GlViewProps:
 // - Ids. `id` is the view's own component id. The tokens in `props.children` / a `child` prop are opaque render
@@ -18,6 +18,7 @@
 // - The plate header. Controls and notes that belong in the header go through <PlateAside> (below).
 // - Errors. A view that throws shows a redline in its own cell. The boundary lets go of the error when the
 //   component's props change (new data, a patch), so a view comes back once what broke it is replaced.
+// - Its maximum height. useSizeCap() (sizeCap.ts) answers in px from the cell's `size` step and family (D20).
 // - Other chunks. A view of another chunk is reused through borrowView() (below), never by importing its file.
 // - Styles. Component CSS Modules wrap their content in `@layer gl.components { ... }`; the build checks it.
 import {Component, Suspense, createContext, lazy, useContext, useMemo, useState, type FC, type ReactNode} from 'react';
@@ -26,6 +27,7 @@ import {createComponentImplementation, useA2uiSurface, type ReactCatalogComponen
 import {hasFrame, type ChildToken, type Chunk, type ComponentDef, type PropMap, type ViewProps} from '@glimpse/catalog';
 import type {AnyComponentDef} from '@glimpse/catalog';
 import {CellReportContext, Subpart, useCellReporter} from './report.ts';
+import {FILL_MIN, FILL_OFFSET, SIZE_STEPS, SizeCellContext, type SizeCell, type SizeStep} from './sizeCap.ts';
 
 /** What every family view receives. */
 export interface GlViewProps<D> {
@@ -192,7 +194,11 @@ export function borrowView<D = AnyComponentDef>(load: () => Promise<ViewModule>,
   };
 }
 
-const SIZE_PX: Record<string, string> = {s: '160px', m: '280px', l: '420px', xl: '640px', fill: 'max(420px, calc(100vh - 160px))'};
+/** The cell's --gl-h by size step: the same numbers useSizeCap() answers with (sizeCap.ts). */
+const SIZE_PX: Record<string, string> = {
+  ...Object.fromEntries(Object.entries(SIZE_STEPS).map(([step, px]) => [step, `${px}px`])),
+  fill: `max(${FILL_MIN}px, calc(100vh - ${FILL_OFFSET}px))`,
+};
 
 /** Families whose view is one table, code view or diagram: the plate gives them the whole box (design 8.3). */
 export const FLUSH_FAMILIES: ReadonlySet<string> = new Set(['data', 'diagram', 'code']);
@@ -290,23 +296,27 @@ export function implement<N extends string, P extends PropMap>(
     const title: string = frameable && typeof props.title === 'string' ? props.title.trim() : '';
     const framed = title !== '';
     const cell = useMemo<CellInfo>(() => ({name: def.name, id, framed, flush: framed && flush}), [id, framed]);
+    const size: SizeStep | undefined = typeof props.size === 'string' && Object.hasOwn(SIZE_PX, props.size) ? props.size : undefined;
+    const sizeCell = useMemo<SizeCell>(() => ({size, family: def.family}), [size]);
     // The component's state for the host (decision D14): what the states inside this cell draw, as one report.
     const reporter = useCellReporter(def.name, id, useA2uiSurface()?.id);
     const body = (
       <CellContext.Provider value={cell}>
-        <CellReportContext.Provider value={reporter}>
-          <FramedContext.Provider value={framed ? id : null}>
-            <AsideContext.Provider value={framed ? (header ?? false) : null}>
-              <ScopeContext.Provider value={framed ? (scope ?? false) : null}>
-                <Boundary id={id} name={def.name} Redline={Redline} watch={props} onRetry={retry}>
-                  <Suspense fallback={<Drafting />}>
-                    <View id={id} props={props} child={child} />
-                  </Suspense>
-                </Boundary>
-              </ScopeContext.Provider>
-            </AsideContext.Provider>
-          </FramedContext.Provider>
-        </CellReportContext.Provider>
+        <SizeCellContext.Provider value={sizeCell}>
+          <CellReportContext.Provider value={reporter}>
+            <FramedContext.Provider value={framed ? id : null}>
+              <AsideContext.Provider value={framed ? (header ?? false) : null}>
+                <ScopeContext.Provider value={framed ? (scope ?? false) : null}>
+                  <Boundary id={id} name={def.name} Redline={Redline} watch={props} onRetry={retry}>
+                    <Suspense fallback={<Drafting />}>
+                      <View id={id} props={props} child={child} />
+                    </Suspense>
+                  </Boundary>
+                </ScopeContext.Provider>
+              </AsideContext.Provider>
+            </FramedContext.Provider>
+          </CellReportContext.Provider>
+        </SizeCellContext.Provider>
       </CellContext.Provider>
     );
     return (

@@ -5,7 +5,7 @@ import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {request, type IncomingHttpHeaders} from 'node:http';
 import {Client} from '@modelcontextprotocol/client';
 import {StdioClientTransport} from '@modelcontextprotocol/client/stdio';
-import {expect, type Page} from '@playwright/test';
+import {expect, type Page, type Worker} from '@playwright/test';
 import {BUNDLE, TIMINGS_FILE} from './paths.ts';
 
 export const TOKEN = 'e2e-token';
@@ -107,9 +107,12 @@ export async function startGlimpse(projectDir: string, env: Record<string, strin
 }
 
 export interface Watch {
-  /** Console errors, uncaught page errors and failed or off-host requests, in order. */
+  /** Console errors (of the page and of its workers), uncaught page errors and failed or off-host requests, in order. */
   problems: string[];
-  /** `securitypolicyviolation` events seen by the page so far. */
+  /**
+   * `securitypolicyviolation` events seen so far by the page and by its dedicated workers (the ELK layout worker runs
+   * under a CSP of its own, its script's response header, and reports there, not to the page).
+   */
   csp(): Promise<string[]>;
   /** Every request URL the page made. */
   requests: string[];
@@ -119,8 +122,24 @@ export interface Watch {
 export async function watch(page: Page): Promise<Watch> {
   const problems: string[] = [];
   const requests: string[] = [];
+  const workers: Worker[] = [];
   page.on('console', message => {
     if (message.type() === 'error') problems.push(`console: ${message.text().slice(0, 300)}`);
+  });
+  page.on('worker', worker => {
+    workers.push(worker);
+    worker.on('console', message => {
+      if (message.type() === 'error') problems.push(`worker console (${worker.url().replace(/^.*\//, '')}): ${message.text().slice(0, 300)}`);
+    });
+    // Armed as soon as the worker exists: its layouts start with the first diagram, after its script has loaded.
+    worker.evaluate(() => {
+      const seen: string[] = [];
+      (globalThis as unknown as {__glCsp: string[]}).__glCsp = seen;
+      globalThis.addEventListener('securitypolicyviolation', event => {
+        const violation = event as SecurityPolicyViolationEvent;
+        seen.push(`worker ${violation.violatedDirective} ${violation.blockedURI}`);
+      });
+    }).catch(() => {});
   });
   page.on('pageerror', error => problems.push(`pageerror: ${String(error.message).slice(0, 300)}`));
   page.on('request', req => {
@@ -138,10 +157,15 @@ export async function watch(page: Page): Promise<Watch> {
       seen.push(`${event.violatedDirective} ${event.blockedURI}`);
     });
   });
+  const read = () => (globalThis as unknown as {__glCsp?: string[]}).__glCsp ?? [];
   return {
     problems,
     requests,
-    csp: () => page.evaluate(() => (globalThis as unknown as {__glCsp?: string[]}).__glCsp ?? []),
+    csp: async () => [
+      ...(await page.evaluate(read)),
+      // a worker that has ended has nothing more to say
+      ...(await Promise.all(workers.map(worker => worker.evaluate(read).catch(() => [] as string[])))).flat(),
+    ],
   };
 }
 

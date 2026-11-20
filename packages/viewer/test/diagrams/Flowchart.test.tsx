@@ -1,16 +1,22 @@
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
-import {POSITIONS_KEY, configurePositionStorage} from '../../src/components/diagrams/edgekit/index.ts';
+import {headerDir} from '../../src/components/diagrams/Flowchart.tsx';
+import {CONTROLS, POSITIONS_KEY, configurePositionStorage} from '../../src/components/diagrams/flowkit/index.ts';
 import {buildPatch, buildSurface, renderExpress, renderSpec} from '../harness.tsx';
-import {click, drag, edgeOf, fakeStorage, focus, inside, key, lineOf, nodeIds, nodeOf, pointsOf, positionOf, runsAlong, stageOf, viewOf, type FakeStorage} from './util.tsx';
+import {
+  click, drag, drawn, edgeOf, elk, fakeStorage, focus, inside, key, lineOf, nodeIds, nodeOf, onStage, pointsOf, positionOf, runsAlong, sizeOf, stageHeight,
+  stageOf, viewOf, type FakeStorage,
+} from './util.tsx';
 
-const GALLERY = 'Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429]); H --> DB[(Postgres)]; H -.-> C((cache))';
+const GALLERY = 'flowchart TD; Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429]); H --> DB[(Postgres)]; H -.-> C((cache))';
 const spec = (src: string, props = '') => `root=Page('T',[f])\nf=Flowchart('${src}'${props},title='Flow',size='l')`;
 const ready = async (src: string, props = '') => {
   const view = renderExpress(spec(src, props));
   await screen.findByRole('img', {name: /^Flowchart/});
+  await drawn(view, 'f');
   return view;
 };
+const zoomOf = (view: ReturnType<typeof renderExpress>) => Number.parseInt(view.cell('f').querySelector('[data-zoom]')!.textContent!, 10);
 
 let storage: FakeStorage;
 beforeEach(() => {
@@ -44,12 +50,13 @@ describe('Flowchart', () => {
     // the flow runs down the page
     expect(positionOf(nodeOf(view, 'f', 'Req')).y).toBeLessThan(positionOf(nodeOf(view, 'f', 'RL')).y);
     expect(positionOf(nodeOf(view, 'f', 'RL')).y).toBeLessThan(positionOf(nodeOf(view, 'f', 'H')).y);
-    // an edge leaves the bottom of its source and arrives at the top of its target
+    // an edge leaves the bottom of its source and arrives at the top of its target: the diamond's top vertex
     const req = positionOf(nodeOf(view, 'f', 'Req'));
     const rl = positionOf(nodeOf(view, 'f', 'RL'));
     const line = pointsOf(lineOf(edgeOf(view, 'f', 'Req->RL')));
-    expect(line[0]![1]).toBeGreaterThan(req.y);
-    expect(line.at(-1)![1]).toBe(rl.y);
+    expect(line[0]![1]).toBeCloseTo(req.y + sizeOf(nodeOf(view, 'f', 'Req')).h, 0);
+    expect(line.at(-1)![1]).toBeCloseTo(rl.y, 0);
+    expect(line.at(-1)![0]).toBeCloseTo(rl.x + sizeOf(nodeOf(view, 'f', 'RL')).w / 2, 0);
     expect(stageOf(view, 'f').getAttribute('aria-label')).toBe('Flowchart, 6 steps, 5 connections: Request, Over limit?, Handler, 429, Postgres, cache');
     expect(view.errors).toEqual([]);
   });
@@ -58,6 +65,37 @@ describe('Flowchart', () => {
     const view = await ready(GALLERY, `,dir='LR'`);
     expect(positionOf(nodeOf(view, 'f', 'Req')).x).toBeLessThan(positionOf(nodeOf(view, 'f', 'RL')).x);
     expect(positionOf(nodeOf(view, 'f', 'RL')).x).toBeLessThan(positionOf(nodeOf(view, 'f', 'H')).x);
+  });
+
+  // The owner's demo: 'graph LR; ...' drew top to bottom, because the header's direction was dropped.
+  it.each([
+    ['graph LR', 'LR', 'RIGHT'],
+    ['flowchart LR', 'LR', 'RIGHT'],
+    ['graph TD', 'TB', 'DOWN'],
+    ['flowchart TB', 'TB', 'DOWN'],
+    ['graph RL', 'RL', 'LEFT'],
+    ['flowchart BT', 'BT', 'UP'],
+  ])('honours the direction of a "%s" header when dir is not given', async (header, dir, elkDir) => {
+    const view = await ready(`${header}; M[main.ts]-->A[AuthProvider]; A-->R[AppRoot]`);
+    expect(stageOf(view, 'f').getAttribute('data-dir')).toBe(dir);
+    expect(elk.requests.at(-1)!.graph.layoutOptions!['elk.direction']).toBe(elkDir);
+    const m = positionOf(nodeOf(view, 'f', 'M'));
+    const r = positionOf(nodeOf(view, 'f', 'R'));
+    if (dir === 'LR') expect(m.x).toBeLessThan(r.x);
+    if (dir === 'RL') expect(m.x).toBeGreaterThan(r.x);
+    if (dir === 'TB') expect(m.y).toBeLessThan(r.y);
+    if (dir === 'BT') expect(m.y).toBeGreaterThan(r.y);
+  });
+
+  it('lets dir win over the header, and reads a header after blank lines and comments', async () => {
+    const view = await ready('graph LR; A-->B; B-->C', `,dir='TB'`);
+    expect(stageOf(view, 'f').getAttribute('data-dir')).toBe('TB');
+    expect(positionOf(nodeOf(view, 'f', 'A')).y).toBeLessThan(positionOf(nodeOf(view, 'f', 'C')).y);
+    expect(headerDir('\n%% the start\n  graph LR\nA --> B')).toBe('LR');
+    expect(headerDir('graph lr; A --> B')).toBe('LR');
+    expect(headerDir('graph; A --> B')).toBeUndefined();
+    expect(headerDir('A --> B; graph LR')).toBeUndefined();
+    expect(headerDir('')).toBeUndefined();
   });
 
   it.each([
@@ -76,7 +114,7 @@ describe('Flowchart', () => {
   it('keeps the two edges of a cycle apart', async () => {
     const view = await ready('A --> B; B --> A');
     expect(lineOf(edgeOf(view, 'f', 'A->B'))).not.toBe(lineOf(edgeOf(view, 'f', 'B->A')));
-    // The way back goes round the side in a corridor of its own: the two never share a stretch of line.
+    // The way back goes round the side: the two never share a stretch of line.
     const forth = pointsOf(lineOf(edgeOf(view, 'f', 'A->B'))).map(([x, y]) => ({x, y}));
     const back = pointsOf(lineOf(edgeOf(view, 'f', 'B->A'))).map(([x, y]) => ({x, y}));
     expect(runsAlong(forth, back)).toBe(false);
@@ -153,23 +191,20 @@ describe('Flowchart', () => {
 
   it('lets nodes be dragged: edges follow, the position is stored, Re-layout brings the layout back', async () => {
     const view = await ready(GALLERY);
-    const stage = stageOf(view, 'f');
     const before = positionOf(nodeOf(view, 'f', 'E'));
     const edgeBefore = lineOf(edgeOf(view, 'f', 'RL->E'));
     const other = lineOf(edgeOf(view, 'f', 'H->DB'));
     expect(within(view.cell('f')).queryByRole('button', {name: /Re-layout/})).toBeNull();
 
-    drag(stage, nodeOf(view, 'f', 'E'), -90, 40);
+    const {k} = viewOf(stageOf(view, 'f'));
+    await drag(nodeOf(view, 'f', 'E'), 90, 40);
+    // 90 px on screen is 90 / k in the drawing (onto free paper: a node dropped on another is moved off it)
     const after = positionOf(nodeOf(view, 'f', 'E'));
-    expect(after).toEqual({x: before.x - 90, y: before.y + 40});
-    const edgeAfter = lineOf(edgeOf(view, 'f', 'RL->E'));
-    expect(edgeAfter).not.toBe(edgeBefore);
-    // the edge still starts at the diamond and now ends on top of the moved pill
-    expect(pointsOf(edgeAfter)[0]).toEqual(pointsOf(edgeBefore)[0]);
-    expect(pointsOf(edgeAfter).at(-1)![1]).toBe(after.y);
-    expect(pointsOf(edgeAfter).at(-1)![0]).toBe(pointsOf(edgeBefore).at(-1)![0] - 90);
+    expect(after.x).toBeCloseTo(before.x + 90 / k, -0.5);
+    expect(after.y).toBeCloseTo(before.y + 40 / k, -0.5);
+    expect(lineOf(edgeOf(view, 'f', 'RL->E'))).not.toBe(edgeBefore);
     expect(lineOf(edgeOf(view, 'f', 'H->DB'))).toBe(other);
-    // its label moved with it
+    // its label is still drawn
     expect(view.cell('f').querySelectorAll('[data-edge-label]')).toHaveLength(2);
     const stored = JSON.parse(storage.items.get(POSITIONS_KEY)!);
     expect(Object.keys(stored)).toEqual(['demo/test/f']);
@@ -186,8 +221,8 @@ describe('Flowchart', () => {
     storage.items.set(POSITIONS_KEY, JSON.stringify({'demo/test/f': {B: {x: 300, y: 300}, Old: {x: 0, y: 0}}}));
     const view = await ready('A --> B');
     const b = nodeOf(view, 'f', 'B');
-    const size = b.querySelector('rect')!;
-    expect(positionOf(b)).toEqual({x: 300 - Number(size.getAttribute('width')) / 2, y: 300 - Number(size.getAttribute('height')) / 2});
+    const {w, h} = sizeOf(b);
+    expect(positionOf(b)).toEqual({x: 300 - w / 2, y: 300 - h / 2});
     expect(within(view.cell('f')).getByRole('button', {name: /Re-layout/})).toBeTruthy();
   });
 
@@ -204,50 +239,79 @@ describe('Flowchart', () => {
   });
 });
 
-describe('Flowchart: opens readable (design rule D18, V005)', () => {
-  const zoomOf = (view: ReturnType<typeof renderExpress>) => Number.parseInt(view.cell('f').querySelector('button[aria-label="Zoom out"]')!.previousElementSibling!.textContent!, 10);
+describe('Flowchart: content-sized and readable (decisions D18, D20, V005)', () => {
   const LOGIN = 'Start([Open login page]) --> Form[Enter email and password]\\nForm --> Submit[Submit credentials]\\nSubmit --> Check{Credentials valid?}\\nCheck -->|yes| Session[Create session]\\nSession --> Done([Signed in])\\nCheck -->|no| Fail[Show error and count the attempt]\\nFail -->|retry| Form';
   const STATES = 'Start((start)) -->|show with root=| Created\\nCreated -->|show without root=| Patched\\nPatched -->|show without root=| Patched\\nCreated -->|show with root=| Replaced\\nPatched -->|show with root=| Replaced\\nReplaced -->|show without root=| Patched\\nCreated -->|removed| Deleted\\nPatched -->|removed| Deleted\\nReplaced -->|removed| Deleted';
 
-  it('grows an unsized plate to show a tall chart whole at 100% instead of shrinking its 11 px labels', async () => {
+  it('makes an unsized plate as tall as a tall chart, up to 640 px, at 100% instead of shrinking its 11 px labels', async () => {
     const view = renderExpress(`root=Page('T',[f])\nf=Flowchart('${LOGIN}',dir='TB',title='Login')`, {size: {width: 618, height: 600}});
     await screen.findByRole('img', {name: /^Flowchart/});
+    await drawn(view, 'f');
     expect(zoomOf(view)).toBe(100);
-    const stage = view.cell('f').querySelector<HTMLElement>('svg[role="img"]')!.parentElement!;
-    expect(Number.parseFloat(stage.style.height)).toBeGreaterThan(420);
+    const height = stageHeight(stageOf(view, 'f'));
+    expect(height).toBeGreaterThan(420);
+    expect(height).toBeLessThanOrEqual(640);
   });
 
-  // 724 px: the span=7 plate of a 1440 px page, where the chart opened at 91% with only the 'D' of 'Deleted' on the
-  // stage and the footer said '5 of 5 in view'.
-  it.each([560, 724])('opens a chart too wide for its %s px plate with readable labels, on a part that cuts no node, counting the nodes it shows', async width => {
+  // The owner's demo: a short chart opened in a 640 px stage with most of it empty paper.
+  it('makes a small chart open fitted and centred, every node inside, the plate no taller than the chart', async () => {
+    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart('graph LR; A[Request] --> B[Handler] --> C[Store]',title='Small')`);
+    await screen.findByRole('img', {name: /^Flowchart/});
+    await drawn(view, 'f');
+    const stage = stageOf(view, 'f');
+    expect(stage.parentElement!.getAttribute('data-mode')).toBe('fit');
+    const height = stageHeight(stage);
+    expect(height).toBeLessThan(200);
+    const canvas = height - CONTROLS;
+    const boxes = nodeIds(view, 'f').map(id => onStage(stage, nodeOf(view, 'f', id)));
+    for (const box of boxes) expect(box.left >= 0 && box.right <= 960 && box.top >= 0 && box.bottom <= canvas).toBe(true);
+    // centred: as much paper left as right, and above as below
+    const left = Math.min(...boxes.map(b => b.left));
+    const right = 960 - Math.max(...boxes.map(b => b.right));
+    expect(Math.abs(left - right)).toBeLessThanOrEqual(2);
+    const top = Math.min(...boxes.map(b => b.top));
+    const bottom = canvas - Math.max(...boxes.map(b => b.bottom));
+    expect(Math.abs(top - bottom)).toBeLessThanOrEqual(2);
+    expect(viewOf(stage).k).toBe(1);
+  });
+
+  // 724 px: the span=7 plate of a 1440 px page, where the chart opened at 91% with '3 of 5 in view': its edge labels
+  // held the opening zoom at 91% (they did not grow when zoomed out) and each label cost a whole layer gap. Now the
+  // labels grow below 91% (the floor is the 12 px node names: 84%), a labelled gap is the usual gap plus the label, and
+  // the view cuts no node: it opens whole when that reads, else on a window of whole nodes with the minimap.
+  it.each([560, 724, 960])('opens the labelled states chart in its %s px plate with every text 10 px or more on screen and no node cut', async width => {
     const view = renderExpress(`root=Page('T',[f])\nf=Flowchart('${STATES}',dir='LR',title='States')`, {size: {width, height: 600}});
     await screen.findByRole('img', {name: /^Flowchart/});
-    expect(zoomOf(view)).toBeGreaterThanOrEqual(91);
+    await drawn(view, 'f');
     const stage = stageOf(view, 'f');
-    const {x, y, k} = viewOf(stage);
-    // An unsized plate is as tall as the chart needs: its height is set on the stage's box.
-    const height = Number.parseFloat(stage.parentElement!.style.height);
-    expect(height).toBeGreaterThan(0);
-    let shown = 0;
+    const mode = stage.parentElement!.getAttribute('data-mode');
+    const {k} = viewOf(stage);
+    expect(k).toBeGreaterThanOrEqual(0.84);
+    const canvas = stageHeight(stage) - CONTROLS;
+    let whole = 0;
     for (const node of view.cell('f').querySelectorAll('[data-node]')) {
-      // The ring the shell draws around every node is 4 px out on each side.
-      const ring = node.lastElementChild!;
-      const at = positionOf(node);
-      const [left, right] = [at.x * k + x, (at.x + Number(ring.getAttribute('width')) - 8) * k + x];
-      const [top, bottom] = [at.y * k + y, (at.y + Number(ring.getAttribute('height')) - 8) * k + y];
-      const cut = (left < -0.5 && right > 0.5) || (left < width - 0.5 && right > width + 0.5);
-      expect(cut, `${node.getAttribute('data-node')} is cut at the edge of the stage`).toBe(false);
-      expect((top < -0.5 && bottom > 0.5) || (top < height - 0.5 && bottom > height + 0.5), `${node.getAttribute('data-node')} is cut at the top or bottom`).toBe(false);
-      if (left >= -0.5 && right <= width + 0.5 && top >= -0.5 && bottom <= height + 0.5) shown++;
+      const at = onStage(stage, node);
+      const inside = at.left >= -0.5 && at.right <= width + 0.5 && at.top >= -0.5 && at.bottom <= canvas + 0.5;
+      const out = at.right <= 0.5 || at.left >= width - 0.5 || at.bottom <= 0.5 || at.top >= canvas - 0.5;
+      expect(inside || out, `${node.getAttribute('data-node')} is cut`).toBe(true);
+      if (inside) whole++;
     }
-    expect(shown).toBeLessThan(5);
-    expect(view.cell('f').querySelector('[data-in-view]')!.textContent).toBe(`${shown} of 5 in view`);
+    if (mode === 'fit') expect(whole).toBe(5);
+    else {
+      expect(whole).toBeGreaterThanOrEqual(3);
+      expect(view.cell('f').querySelector('[data-in-view]')!.textContent).toMatch(new RegExp(`^${whole}( of |/)5`));
+      expect(view.cell('f').querySelector('.react-flow__minimap')).not.toBeNull();
+    }
+    // node names are 12 px; an edge label is 11 px down to 91% and grows below it, so it stays 10 px on screen
+    expect(12 * k).toBeGreaterThanOrEqual(10);
+    const labels = [...view.cell('f').querySelectorAll<HTMLElement>('[data-edge-label]')];
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) expect((Number.parseFloat(label.style.fontSize) || 11) * k, label.textContent!).toBeGreaterThanOrEqual(10);
   });
 
   it('draws a long edge label on two lines', async () => {
     const view = await ready('A -->|show with id and spec, no root| B');
     const label = view.cell('f').querySelector('[data-edge-label]')!;
-    expect([...label.querySelectorAll('tspan')].map(t => t.textContent)).toEqual(['show with id and', 'spec, no root']);
+    expect([...label.querySelectorAll('span')].map(t => t.textContent)).toEqual(['show with id and', 'spec, no root']);
   });
 });
-

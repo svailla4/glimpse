@@ -5,7 +5,7 @@ import {
   Drafting, Empty, Icon, PathText, REPORT_CODES, Redline, fmtNum, toNumber, useFollowedFile, useHost, useHostActions, useRev, useSelection, useSize, type GlView,
 } from '../../kit/index.ts';
 import s from './DiffView.module.css';
-import {coerceLine, cx, textCols, TokenSpans, type CharMarks} from './codekit/lines.tsx';
+import {coerceLine, cx, textCols, TokenSpans, useCapStyle, type CharMarks} from './codekit/lines.tsx';
 import k from './codekit/lines.module.css';
 import {useFetched} from './codekit/useFetched.ts';
 import {VirtualRows, type VirtualRowsHandle} from './codekit/VirtualRows.tsx';
@@ -177,7 +177,6 @@ export const DiffViewView: GlView<typeof C.DiffView> = ({id, props}) => {
       files={diff.files}
       dropped={diff.dropped}
       given={props.mode}
-      fill={Boolean(props.size)}
       boxed={!(typeof props.title === 'string' && props.title !== '')}
       busy={fetched.loading}
     />
@@ -191,12 +190,11 @@ interface DiffPanelProps {
   files: FileEntry[];
   dropped: number;
   given: 'auto' | Mode | undefined;
-  fill: boolean;
   boxed: boolean;
   busy: boolean;
 }
 
-function DiffPanel({id, range, files, dropped, given, fill, boxed, busy}: DiffPanelProps): ReactNode {
+function DiffPanel({id, range, files, dropped, given, boxed, busy}: DiffPanelProps): ReactNode {
   const host = useHost();
   const rev = useRev();
   const {selected, select} = useSelection(id);
@@ -237,6 +235,7 @@ function DiffPanel({id, range, files, dropped, given, fill, boxed, busy}: DiffPa
     for (const hunk of hunks ?? []) for (const line of hunk.lines) max = Math.max(max, line.o ?? 0, line.n ?? 0);
     return String(max).length;
   }, [hunks]);
+  const capStyle = useCapStyle({'--gl-digits': digits});
   const cols = useMemo(() => {
     let max = 0;
     for (const hunk of hunks ?? []) for (const line of hunk.lines) max = Math.max(max, line.cols);
@@ -401,12 +400,12 @@ function DiffPanel({id, range, files, dropped, given, fill, boxed, busy}: DiffPa
       className={cx(k.code, s.diff)}
       data-gl-code="diff"
       data-mode={mode}
-      data-fit={fill ? 'fill' : 'cap'}
+      data-fit="cap"
       data-boxed={boxed ? '' : undefined}
       data-stack={width > 0 && width < STACK_BELOW ? '' : undefined}
       data-multi={multi ? '' : undefined}
       aria-busy={busy || undefined}
-      style={{['--gl-digits' as never]: digits}}
+      style={capStyle}
       onKeyDown={onKeyDown}
     >
       <span ref={probe} className={s.probe} aria-hidden="true">{'0'.repeat(20)}</span>

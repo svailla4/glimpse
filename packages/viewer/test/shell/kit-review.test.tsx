@@ -6,7 +6,7 @@ import {act, fireEvent, render, within} from '@testing-library/react';
 import {useEffect, useRef, useState} from 'react';
 import {describe, expect, it, vi} from 'vitest';
 import {
-  DataGate, Drafting, Empty, Frame, KitProvider, PathText, PlateAside, Redline, Subpart, assignSlots, borrowView, catVar, dropDirs, elidePath, fileEntity,
+  DataGate, Drafting, Empty, Frame, KitProvider, PathText, PlateAside, Redline, Subpart, assignSlots, borrowView, catVar, dropDirs, elidePath, fileEntity, nameTail,
   isFrameable, isOtherKey, matchSelection, reportCode, splitPath, useCatSlots, useDataset, useHostActions, useLinkStatus, useReportState, useRows,
   useSelection, useSize, useTooltip, widthBoxOf, type GlView,
 } from '../../src/kit/index.ts';
@@ -48,12 +48,13 @@ describe('PathText keeps the file name (D12, F083)', () => {
     expect(dropDirs(dir, 12)).toBe(5);
     // no room even for `…/`: the stylesheet cuts what is there
     expect(dropDirs(dir, 1)).toBe(0);
-    // in a box with room for 23 characters of the 42 the directory has, it shows `…/react/src/resolution/`
+    // in a box with room for 23 characters of the 42 the directory has, it shows `…/react/src/resolution/` (the box
+    // has a pixel to spare: an exact fit counts one character less, see fit.test.tsx)
     const widths = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
       return this.classList.contains('gl-path-dir') ? (this.textContent?.length ?? 0) * 7 : 0;
     });
     const room = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
-      return this.classList.contains('gl-path-dir') ? Math.min(23 * 7, (this.textContent?.length ?? 0) * 7) : 0;
+      return this.classList.contains('gl-path-dir') ? Math.min(23 * 7 + 1, (this.textContent?.length ?? 0) * 7) : 0;
     });
     const {container} = render(<PathText file={`${dir}generic-binder.ts#L12`} />);
     widths.mockRestore();
@@ -112,6 +113,43 @@ describe('PathText keeps the file name (D12, F083)', () => {
     expect(crumbs.querySelector('.gl-path-dir')?.textContent).toBe('…/src/processing/');
     expect(crumbs.textContent).toBe('…/src/processing/message-processor.ts');
     expect(crumbs.title).toBe(`${dir}message-processor.ts`);
+  });
+
+  // Round 4 (integrator list): with every directory dropped, the `…/` box could still shrink to nothing, so a cell
+  // showed './generic-binder.test.ts' or 'message-processor.test…' with no lead at all. A long name now keeps its end.
+  it('a long file name is cut in its middle, keeping the word before its extension and the extension', () => {
+    expect(nameTail('message-processor.test.ts')).toBe('message-processor.'.length);
+    expect(nameTail('contact_form_example_test.json')).toBe('contact_form_example_'.length);
+    expect(nameTail('AccountsPanelReport.tsx')).toBe('AccountsPanelRep'.length);
+    expect(nameTail('Makefile.in.longer_than')).toBeGreaterThan(3);
+    // short names are never split
+    expect(nameTail('CHANGELOG.md')).toBe(-1);
+    const {container} = render(<PathText file="web/core/src/processing/message-processor.test.ts" />);
+    const base = container.querySelector('.gl-path-base')!;
+    expect(base.textContent).toBe('message-processor.test.ts');
+    expect(base.hasAttribute('data-split')).toBe(true);
+    expect(base.querySelector('.gl-path-head')?.textContent).toBe('message-processor.');
+    expect(base.querySelector('.gl-path-tail')?.textContent).toBe('test.ts');
+    // a label (a tree node's name) is never split
+    const {container: label} = render(<PathText file="src/a/very_long_name_of_a_node.ts" label="very_long_name_of_a_node.ts" />);
+    expect(label.querySelector('.gl-path-base')?.hasAttribute('data-split')).toBe(false);
+  });
+
+  it('keeps `…/` once every directory is dropped, however narrow the cell', () => {
+    const dir = 'web/core/src/resolution/';
+    const widths = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('gl-path-dir') ? (this.textContent?.length ?? 0) * 7 : 0;
+    });
+    // the name leaves the directory the 2.5ch minimum: room for `…/` and nothing more
+    const room = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('gl-path-dir') ? Math.min(18, (this.textContent?.length ?? 0) * 7) : 0;
+    });
+    const {container} = render(<PathText file={`${dir}generic-binder.test.ts`} />);
+    widths.mockRestore();
+    room.mockRestore();
+    const lead = container.querySelector('.gl-path-dir')!;
+    expect(lead.textContent).toBe('…/');
+    expect(lead.getAttribute('data-dropped')).toBe('4');
   });
 
   it('splitPath and elidePath never give up the basename', () => {

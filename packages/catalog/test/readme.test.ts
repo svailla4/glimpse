@@ -42,6 +42,9 @@ describe('README: the example specs', () => {
     const create = messages[0] as Extract<A2uiMessage, {createSurface: unknown}>;
     const components = create.createSurface.components as unknown as Array<Record<string, unknown>>;
     expect(components[0]).toMatchObject({id: 'root', component: 'Page'});
+    // a diagram grows to 640 px by itself: size s, m or l only cuts it short (review finding, swap round)
+    const diagrams = new Set<string>(COMPONENTS.filter(def => def.family === 'diagram').map(def => def.name));
+    expect(components.filter(c => diagrams.has(String(c.component)) && ['s', 'm', 'l'].includes(String(c.size))).map(c => c.id)).toEqual([]);
     const files: string[] = [];
     for (const component of components) {
       if (['CodeView', 'FileRef', 'SymbolOutline'].includes(String(component.component)) && typeof component.file === 'string') files.push(component.file);

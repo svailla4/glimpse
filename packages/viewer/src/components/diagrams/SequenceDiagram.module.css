@@ -7,17 +7,10 @@
   :global(.gl-frame) .root {
     --sq-paper: var(--gl-surface);
   }
-  .root[data-sized] {
-    height: 100%;
-  }
+  /* As tall as the steps, up to the plate's maximum height (set inline from useSizeCap, decision D20). */
   .scroll {
     overflow: auto;
-    max-height: 420px;
     outline: none;
-  }
-  .root[data-sized] .scroll {
-    height: 100%;
-    max-height: none;
   }
   .scroll:focus-visible {
     outline: 2px solid var(--gl-accent);

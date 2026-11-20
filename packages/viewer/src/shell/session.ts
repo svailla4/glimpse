@@ -28,8 +28,14 @@ export interface SessionSnapshot {
   session: SessionInfo | undefined;
   /** Surfaces of the session in the order they were created: the tabs. */
   surfaces: readonly SurfaceInfo[];
-  /** Id of the surface to show; undefined while there is none. */
+  /** Id of the surface to show; undefined while there is none, or while `missing` is set. */
   focus: string | undefined;
+  /**
+   * A view the address bar asked for (`#/<surfaceId>`, when the tab opens or a link is followed) that the session
+   * does not hold: it was closed, or dropped to make room for newer views. The tab says so instead of showing another
+   * view in its place. It is cleared when that view is shown again, the person picks a tab or the agent shows a view.
+   */
+  missing?: string;
   /** Changes whenever a surface object is created or deleted, so a renderer reads surface() again. */
   generation: number;
   /** Why the link ended, when the transport knows (status 'ended' only). */
@@ -115,6 +121,11 @@ export function createViewerSession(transport: Transport, options: SessionOption
   let epoch: string | undefined;
   /** What the person or the host last asked to see; `snapshot.focus` is the surface that can actually be shown. */
   let wanted: string | undefined = options.route;
+  /**
+   * Whether `wanted` came from the address bar and named a view the session did not hold: the tab then says the view
+   * is gone (`snapshot.missing`) rather than falling back to another one, as it does when a view on screen is closed.
+   */
+  let lost = false;
   let created = 0;
   /** Counts surface objects coming and going; published as `generation`. */
   let shape = 0;
@@ -126,10 +137,14 @@ export function createViewerSession(transport: Transport, options: SessionOption
     const next = {...snapshot, ...patch, generation: shape};
     next.surfaces = [...next.surfaces].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
     const known = next.surfaces.some(info => info.id === wanted);
-    // Fall back to the most recently updated surface when the wanted one does not (or no longer) exist.
-    next.focus = known ? wanted : [...next.surfaces].sort((a, b) => b.updatedAt - a.updatedAt)[0]?.id;
+    if (known) lost = false;
+    // A view the address asked for and the session does not hold is said to be gone. Otherwise fall back to the most
+    // recently updated surface when the wanted one does not (or no longer) exist: the one on screen was closed.
+    next.focus = known ? wanted : lost ? undefined : [...next.surfaces].sort((a, b) => b.updatedAt - a.updatedAt)[0]?.id;
+    next.missing = !known && lost ? wanted : undefined;
     const same =
-      next.status === snapshot.status && next.end === snapshot.end && next.session === snapshot.session && next.focus === snapshot.focus && next.generation === snapshot.generation &&
+      next.status === snapshot.status && next.end === snapshot.end && next.session === snapshot.session && next.focus === snapshot.focus &&
+      next.missing === snapshot.missing && next.generation === snapshot.generation &&
       next.surfaces.length === snapshot.surfaces.length &&
       next.surfaces.every((info, i) => {
         const before = snapshot.surfaces[i];
@@ -302,17 +317,26 @@ export function createViewerSession(transport: Transport, options: SessionOption
           const listed = new Set(surfaces.map(info => info.id));
           apply([...processor.model.surfacesMap.keys()].filter(id => !listed.has(id)).map(surfaceId => ({version: V, deleteSurface: {surfaceId}})));
         }
-        // A new host says what to show, except on the first hello when the address bar names a surface it has (a
-        // reload stays where it was). A reconnect to the same host leaves the person on the tab they chose.
-        const routed = !greeted && wanted !== undefined && surfaces.some(info => info.id === wanted);
-        if (restarted && !routed && event.focus) wanted = event.focus;
+        // A new host says what to show, except on the first hello when the address bar names a surface (a reload
+        // stays where it was): one the host no longer holds is said to be gone, not replaced by another view. A
+        // reconnect to the same host leaves the person on the tab they chose.
+        const routed = !greeted && wanted !== undefined;
+        if (routed && !surfaces.some(info => info.id === wanted)) lost = true;
+        else if (restarted && !routed && event.focus) {
+          wanted = event.focus;
+          lost = false;
+        }
         greeted = true;
         update({session: event.session, surfaces});
         break;
       }
       case 'a2ui': {
         apply(Array.isArray(event.messages) ? event.messages : []);
-        if (event.focus) wanted = event.focus;
+        // The agent showed a view: it is what the tab shows next, whatever the address asked for before.
+        if (event.focus) {
+          wanted = event.focus;
+          lost = false;
+        }
         update({surfaces: Array.isArray(event.surfaces) ? event.surfaces : snapshot.surfaces});
         break;
       }
@@ -362,8 +386,12 @@ export function createViewerSession(transport: Transport, options: SessionOption
     surface: id => processor?.getSurface(id),
     instance: id => instances.get(id) ?? 0,
     focus(id) {
-      if (wanted === id && snapshot.focus === id) return;
+      // A tab and the keys name a surface of the list; a followed `#/<id>` link may name one the session no longer
+      // holds. Before the first hello nothing is known yet: the hello decides (see onEvent).
+      const held = snapshot.surfaces.some(info => info.id === id);
+      if (wanted === id && (held ? snapshot.focus === id : snapshot.missing === id)) return;
       wanted = id;
+      lost = greeted && !held;
       update({});
     },
     close: id => act('gl_close', id),

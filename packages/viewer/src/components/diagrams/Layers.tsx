@@ -2,7 +2,7 @@
 import type * as C from '@glimpse/catalog';
 import {parseFileLoc, type EntityRef, type LayerItem} from '@glimpse/catalog';
 import {useEffect, useMemo, useRef, useState, type KeyboardEvent} from 'react';
-import {DataGate, EntityLink, PlateAside, Redline, fmtNum, matchSelection, useDataset, useSelection, type GlView} from '../../kit/index.ts';
+import {DataGate, EntityLink, PlateAside, Redline, fmtNum, matchSelection, useDataset, useSelection, useSizeCap, type GlView} from '../../kit/index.ts';
 import css from './Layers.module.css';
 
 /** Items drawn per band; the rest are counted in a last box. */
@@ -51,8 +51,10 @@ export function cleanLayers(data: readonly unknown[]): CleanLayers {
   return {bands, dropped, hiddenBands: Math.max(0, data.length - MAX_BANDS)};
 }
 
-function LayersBody(p: {id: string; data: unknown; sized: boolean}) {
+function LayersBody(p: {id: string; data: unknown}) {
   const {id} = p;
+  // As tall as its tiers, up to the plate's maximum height (decision D20); past that it scrolls.
+  const cap = useSizeCap();
   const rootRef = useRef<HTMLDivElement>(null);
   const {selected} = useSelection(id);
   const clean = useMemo(() => (Array.isArray(p.data) ? cleanLayers(p.data) : undefined), [p.data]);
@@ -118,7 +120,7 @@ function LayersBody(p: {id: string; data: unknown; sized: boolean}) {
   const ariaLabel = `Layers, ${clean.bands.length} ${clean.bands.length === 1 ? 'tier' : 'tiers'}, ${items} ${items === 1 ? 'item' : 'items'}: ${clean.bands.slice(0, 8).map(band => band.name.slice(0, 40)).join(', ')}`;
 
   return (
-    <div ref={rootRef} className={css.root} data-sized={p.sized || undefined} role="group" aria-label={ariaLabel} onKeyDown={onKeyDown}>
+    <div ref={rootRef} className={css.root} style={{maxHeight: cap}} role="group" aria-label={ariaLabel} onKeyDown={onKeyDown}>
       {notes.length > 0 ? <PlateAside><span className={css.marginal} data-gl-note="">{notes.join(' · ')}</span></PlateAside> : null}
       {clean.bands.map((band, b) => (
         <section key={b} className={css.band} data-layer={band.name} data-first={b === 0 || undefined} aria-label={band.name}>
@@ -159,7 +161,7 @@ export const LayersView: GlView<typeof C.Layers> = ({id, props}) => {
   const state = useDataset<LayerItem[]>(props.data);
   return (
     <DataGate state={state} id={`Layers#${id}`}>
-      {data => <LayersBody id={id} data={data} sized={props.size != null} />}
+      {data => <LayersBody id={id} data={data} />}
     </DataGate>
   );
 };

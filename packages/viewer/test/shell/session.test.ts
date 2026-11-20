@@ -64,17 +64,53 @@ describe('viewer session', () => {
     expect(session.getSnapshot().focus).toBe('b');
   });
 
-  it('ignores a route the host does not know and falls back to the most recently updated surface', () => {
+  // Review finding (swap round): with more than 12 views shown, a #/overview link showed another view, with the address
+  // still saying #/overview and nothing on screen saying the overview had been dropped.
+  it('says a view the address names and the host does not hold is missing, instead of showing another one', () => {
     const {transport, session} = connect({route: 'gone'});
     const a = info('a');
     const b = info('b');
-    transport.hello('e1', [a, b]);
-    expect(session.getSnapshot().focus).toBe('b');
+    transport.hello('e1', [a, b], 'b');
+    expect(session.getSnapshot()).toMatchObject({focus: undefined, missing: 'gone'});
     session.focus('a');
-    expect(session.getSnapshot().focus).toBe('a');
-    // the focused surface is deleted: the other one takes over
+    expect(session.getSnapshot()).toMatchObject({focus: 'a', missing: undefined});
+    // a followed link to a view that is gone
+    session.focus('gone');
+    expect(session.getSnapshot()).toMatchObject({focus: undefined, missing: 'gone'});
+    // the agent shows it again: it is on screen
+    const gone = info('gone');
+    transport.frame('gone', snapshot('gone', PAGE_A), [a, b, gone]);
+    expect(session.getSnapshot()).toMatchObject({focus: 'gone', missing: undefined});
+  });
+
+  it('a view the agent shows replaces the missing-view notice', () => {
+    const {transport, session} = connect();
+    const a = info('a');
+    transport.hello('e1', [a], 'a');
+    session.focus('overview');
+    expect(session.getSnapshot().missing).toBe('overview');
+    const c = info('c');
+    transport.frame('c', snapshot('c', PAGE_B), [a, c], 'c');
+    expect(session.getSnapshot()).toMatchObject({focus: 'c', missing: undefined});
+    // a patch of a view that names no focus leaves the notice alone
+    session.focus('overview');
+    transport.frame('a', [{version: V, updateDataModel: {surfaceId: 'a', path: '/note', value: 'x'}}], [a, c]);
+    expect(session.getSnapshot()).toMatchObject({focus: undefined, missing: 'overview'});
+  });
+
+  it('a closed view on screen gives way to the most recently updated one, and a link before the hello waits for it', () => {
+    const {transport, session} = connect();
+    // a link followed while connecting: the hello says whether the view is held
+    session.focus('a');
+    expect(session.getSnapshot().focus).toBeUndefined();
+    expect(session.getSnapshot().missing).toBeUndefined();
+    const a = info('a');
+    const b = info('b');
+    transport.hello('e1', [a, b], 'b');
+    expect(session.getSnapshot()).toMatchObject({focus: 'a', missing: undefined});
+    // the view on screen is closed (its tab's close button, or dropped for a newer one): the other one takes over
     transport.frame('a', [{version: V, deleteSurface: {surfaceId: 'a'}}], [b]);
-    expect(session.getSnapshot().focus).toBe('b');
+    expect(session.getSnapshot()).toMatchObject({focus: 'b', missing: undefined});
   });
 
   it('a hello with a new epoch disposes the processor and applies the replay', () => {

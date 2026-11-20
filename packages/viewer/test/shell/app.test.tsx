@@ -118,6 +118,53 @@ describe('App shell', () => {
     expect(tab('Beta').getAttribute('aria-selected')).toBe('true');
   });
 
+  // Review finding (swap round): with more than 12 views shown, following #/overview showed another view under the
+  // address #/overview, and nothing said the overview had been dropped.
+  it('a #/id link to a view the session no longer holds says so, keeps the address, and a tab or ] leaves it', () => {
+    const {transport, container} = mount();
+    twoSurfaces(transport);
+    act(() => {
+      window.history.replaceState(null, '', '#/overview');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    const notice = container.querySelector('[data-gl-state="empty"]');
+    expect(notice?.textContent).toContain('view “overview” is no longer open');
+    expect(notice?.textContent).toContain('ask the agent to show it again, or pick a view above');
+    expect(window.location.hash).toBe('#/overview');
+    expect(container.querySelectorAll('[data-gl="Page"]')).toHaveLength(0);
+    expect(screen.queryByText('beta text')).toBeNull();
+    expect(screen.getAllByRole('tab').filter(el => el.getAttribute('aria-selected') === 'true')).toEqual([]);
+    // the strip stays reachable with Tab
+    expect(tab('Alpha').tabIndex).toBe(0);
+    expect(tab('Beta').tabIndex).toBe(-1);
+    expect(document.title).toBe('Glimpse');
+    key(']');
+    expect(tab('Alpha').getAttribute('aria-selected')).toBe('true');
+    expect(window.location.hash).toBe('#/a');
+    expect(container.querySelector('[data-gl-state="empty"]')).toBeNull();
+
+    act(() => {
+      window.history.replaceState(null, '', '#/overview');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    fireEvent.click(tab('Beta'));
+    expect(screen.getByText('beta text')).toBeTruthy();
+    expect(window.location.hash).toBe('#/b');
+  });
+
+  it('a tab opened or reloaded on a view the host no longer holds says so', () => {
+    const {transport, container} = mount({route: 'overview'});
+    window.history.replaceState(null, '', '#/overview');
+    const {a, b} = twoSurfaces(transport);
+    expect(container.querySelector('[data-gl-state="empty"]')?.textContent).toContain('view “overview” is no longer open');
+    expect(window.location.hash).toBe('#/overview');
+    // the agent shows a view: it replaces the notice
+    const c = info('c', 'Gamma');
+    act(() => transport.frame('c', snapshot('c', `root=Page('Gamma',[Text('gamma text')])`), [a, b, c], 'c'));
+    expect(screen.getByText('gamma text')).toBeTruthy();
+    expect(window.location.hash).toBe('#/c');
+  });
+
   it('t toggles the theme and d the density, on <html> and in localStorage', () => {
     const {transport} = mount();
     twoSurfaces(transport);

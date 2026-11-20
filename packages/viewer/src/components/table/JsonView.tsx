@@ -148,7 +148,7 @@ const JsonRow = memo(function JsonRow({index, top, line, active}: {index: number
 export const JsonViewView: GlView<typeof C.JsonView> = ({id, props}) => {
   const state = useDataset<unknown>(props.data);
   return (
-    <Shell sized={props.size !== undefined}>
+    <Shell>
       <DataGate state={state} id={`JsonView#${id}`}>
         {data => <Tree props={props} data={data} />}
       </DataGate>
@@ -226,7 +226,7 @@ function Tree({props, data}: {props: Props; data: unknown}): JSX.Element {
 
   const rootSize = Array.isArray(data) ? `${fmtNum(data.length)} ${data.length === 1 ? 'item' : 'items'}` : isRecord(data) ? `${fmtNum(Object.keys(data).length)} keys` : undefined;
   return (
-    <div className={s.root} data-sized={props.size ? '' : undefined} data-gl-json="">
+    <div className={s.root} data-gl-json="">
       {rootSize ? <PlateAside><span className={s.note} data-gl-json-note="">{rootSize}</span></PlateAside> : null}
       <div className={s.scroll} ref={scrollRef} role="tree" aria-label={props.title || 'JSON'} onKeyDown={onKeyDown} onMouseDown={onReach} onFocus={onReach} onClick={onClick}>
         <div className={s.body} style={{height: nav.totalSize}}>

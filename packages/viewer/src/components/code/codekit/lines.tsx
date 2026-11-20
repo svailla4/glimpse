@@ -1,9 +1,17 @@
 // Token lines as the server sends them (design 5.7): [text, class] pairs, never markup. Everything here treats that
 // JSON as untrusted: a line that is not an array of pairs becomes plain text, an unknown class becomes class 0.
 import {TOKEN_CLASSES, type TokenLine} from '@glimpse/catalog';
-import {memo, type ReactNode} from 'react';
-import {DirText} from '../../../kit/index.ts';
+import {memo, type CSSProperties, type ReactNode} from 'react';
+import {DirText, useSizeCap} from '../../../kit/index.ts';
 import s from './lines.module.css';
+
+/**
+ * The style that gives a code view (`.code[data-fit='cap']`) its maximum height (decision D20): the cell's size step,
+ * or the family default without one. The view is as tall as its lines and scrolls only past that, sized or not.
+ */
+export function useCapStyle(extra?: Record<`--${string}`, string | number>): CSSProperties {
+  return {'--gl-cap': `${useSizeCap()}px`, ...extra} as CSSProperties;
+}
 
 /** Character ranges [from, to) inside one line (word-level diff marks). */
 export type CharMarks = ReadonlyArray<readonly [number, number]>;

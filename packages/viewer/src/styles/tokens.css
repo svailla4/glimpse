@@ -1,5 +1,7 @@
-/* packages/viewer/src/styles/tokens.css - Linework tokens (Vellum | Cyanotype). Token names are frozen. */
-@layer gl.tokens, gl.base, gl.kit, gl.components;
+/* packages/viewer/src/styles/tokens.css - Linework tokens (Vellum | Cyanotype). Token names are frozen.
+   `xyflow` is React Flow's own layer (its base.css, loaded with the diagrams chunk): declared first, it sorts below
+   every gl.* layer. vite.config.ts (LAYER_ORDER) repeats this statement at the top of every built stylesheet. */
+@layer xyflow, gl.tokens, gl.base, gl.kit, gl.components;
 :root { color-scheme: light dark; }
 :root[data-theme='light'] { color-scheme: light; }
 :root[data-theme='dark']  { color-scheme: dark; }

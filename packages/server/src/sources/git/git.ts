@@ -2,13 +2,14 @@
 // The git.* sources. All of them read the one shared history parse (git/log.ts); none runs its own `git log`,
 // except git.log for a change range, which is short by nature.
 import {SOURCE_BY_NAME, type ChurnRow, type CommitRow, type Field, type HotspotRow, type Roles, type SourceMeta, type SourceRef} from '@glimpse/catalog';
+import {parseModuleId} from '../../analyze/cluster.ts';
 import {repoModel} from '../../analyze/index.ts';
-import {languageOf} from '../../analyze/languages.ts';
+import {isReleaseNotes, languageOf} from '../../analyze/languages.ts';
 import {locate, repoPath} from '../../code/file.ts';
 import {SourceError, type RepoContext, type Source} from '../../contracts.ts';
 import {commitStats, getHeaders, getLog, inScope, LIMIT_WARNING, LOG_LIMIT, rangeLog, refNames, type GitLog, type LogCommit, type LogHeader} from '../../git/log.ts';
 import {RANGE_PATTERN, resolveCommit, resolveRange} from '../../git/range.ts';
-import {cutFor} from '../files/deps.ts';
+import {cutFor, scopedFiles} from '../files/deps.ts';
 import {withCanonicalTarget} from '../targets.ts';
 import {cutRows, dayOf, isoOf, pathOf, plural, requireGit, round, SHALLOW_WARNING, sinceOf, topOf, type Since} from './args.ts';
 
@@ -44,11 +45,26 @@ const meta = (name: string): SourceMeta => {
 
 interface History {
   log: GitLog;
-  /** Path scope; '' for the whole repository. */
+  /** Path scope as written: a directory, a file or a module id of a graph ('src/*'); '' for the whole repository. */
   scope: string;
+  /** True for a path inside the scope. */
+  has(path: string): boolean;
   since?: Since;
   top?: number;
   warnings: string[];
+}
+
+/**
+ * What a path target covers. A directory or a file is a prefix of the paths git reports. A module id of a graph
+ * ('src/*': the files of src/ outside its sub-modules; '(root)') is no path git knows: its history is read from its
+ * directory and kept to the files the module holds, as deps.modules draws it, so every module a graph, deps.matrix
+ * or git.churn by=module names is a target the git sources accept. An id that holds no file is E_TARGET.
+ */
+async function areaOf(ctx: RepoContext, scope: string, name: string): Promise<{dir: string; has(path: string): boolean}> {
+  const {dir, rest} = parseModuleId(scope);
+  if (scope === '' || !rest) return {dir: scope, has: path => inScope(path, scope)};
+  const {where} = scopedFiles(await repoModel(ctx), scope, name);
+  return {dir, has: path => where.hasFile(path)};
 }
 
 async function pathExists(ctx: RepoContext, path: string, log: GitLog): Promise<boolean> {
@@ -68,14 +84,17 @@ async function history(ctx: RepoContext, ref: SourceRef, signal: AbortSignal, no
   const git = requireGit(ctx);
   const narrow = options.narrow !== false;
   const scope = pathOf(ref.target);
+  const {dir, has} = await areaOf(ctx, scope, ref.source);
   const top = topOf(ref);
   const since = narrow ? sinceOf(ref, nowMs, options.defaultDays) : undefined;
-  const log = await getLog(ctx, narrow ? {path: scope, since: since?.cutoff} : {}, signal);
-  if (scope && !log.commits.some(commit => commit.files.some(file => inScope(file, scope))) && !(await pathExists(ctx, scope, log))) {
+  let log = await getLog(ctx, narrow ? {path: dir, since: since?.cutoff} : {}, signal);
+  // A module id: the commits of its directory that touch one of its files.
+  if (narrow && dir !== scope) log = {...log, commits: log.commits.filter(commit => commit.files.some(has))};
+  if (scope && !log.commits.some(commit => commit.files.some(has)) && !(await pathExists(ctx, dir, log))) {
     throw new SourceError('E_TARGET', `no such path: ${scope}`);
   }
   const warnings = [...(git.shallow ? [SHALLOW_WARNING] : []), ...(log.truncated ? [LIMIT_WARNING] : [])];
-  return {log, scope, top, warnings, ...(since ? {since} : {})};
+  return {log, scope, has, top, warnings, ...(since ? {since} : {})};
 }
 
 /**
@@ -243,7 +262,7 @@ function gitTimeline(nowMs: () => number): Source {
       for (const commit of commits) {
         const perModule = new Map<string, number>();
         for (const file of commit.files) {
-          if (!inScope(file, h.scope)) continue;
+          if (!h.has(file)) continue;
           const name = await moduleOf(file);
           perModule.set(name, (perModule.get(name) ?? 0) + 1);
         }
@@ -333,12 +352,12 @@ interface FileStat {
   last: number;
 }
 
-/** Commits, authors and dates per file that still exists at HEAD and lies inside the scope. */
-function fileStats(log: GitLog, scope: string): FileStat[] {
+/** Commits, authors and dates per file that still exists at HEAD and lies inside the scope (`has`). */
+function fileStats(log: GitLog, has: (path: string) => boolean): FileStat[] {
   const stats = new Map<string, FileStat>();
   for (const commit of log.commits) {
     for (const path of commit.files) {
-      if (!log.alive.has(path) || !inScope(path, scope)) continue;
+      if (!log.alive.has(path) || !has(path)) continue;
       let stat = stats.get(path);
       if (!stat) {
         stat = {path, commits: 0, authors: new Map(), first: commit.time, last: commit.time};
@@ -351,6 +370,28 @@ function fileStats(log: GitLog, scope: string): FileStat[] {
     }
   }
   return [...stats.values()];
+}
+
+/** Why a file is left out of the per-file rankings of churn and coupling. */
+type LeftOut = 'generated' | 'notes';
+
+/**
+ * The files the per-file rankings of churn and coupling leave out, and why: generated files of the inventory
+ * (lockfiles, minified bundles, build output, files marked as generated) change with every release or dependency bump,
+ * and changelogs (isReleaseNotes) are written along with whatever else a commit changes. Either tops a list of the
+ * files people change most, or pairs with everything, while saying nothing about the code. Never the file the scope
+ * names: it was asked for by name.
+ */
+async function leftOutOf(ctx: RepoContext, scope: string): Promise<(path: string) => LeftOut | undefined> {
+  const files = await ctx.index.files();
+  const generated = new Set(files.filter(file => file.generated).map(file => file.path));
+  return path => (path === scope ? undefined : generated.has(path) ? 'generated' : isReleaseNotes(path) ? 'notes' : undefined);
+}
+
+/** '22 generated files and 9 changelogs left out', or '' when nothing was. */
+function leftOutNote(counts: Readonly<Record<LeftOut, number>>): string {
+  const parts = [counts.generated > 0 ? plural(counts.generated, 'generated file') : '', counts.notes > 0 ? plural(counts.notes, 'changelog') : ''].filter(Boolean);
+  return parts.length > 0 ? `${parts.join(' and ')} left out` : '';
 }
 
 /** The author with the most commits to a file (ties: by name) and their share in percent. */
@@ -377,14 +418,21 @@ function moduleChurnShape(source: SourceMeta): {fields: Field[]; roles: Roles} {
  */
 async function moduleChurn(ctx: RepoContext, h: History): Promise<Array<{module: string; commits: number; authors: number; files: number}>> {
   const model = await repoModel(ctx);
-  const files = h.scope ? model.files.filter(file => inScope(file.path, h.scope)) : model.files;
+  const files = h.scope ? model.files.filter(file => h.has(file.path)) : model.files;
   const cut = cutFor(model, h.scope, files, undefined);
+  // The cut of a module id ('src/*') is rooted at its directory: what it leaves unsplit is that module, not all of src.
+  const {dir, rest} = parseModuleId(h.scope);
+  const whole = rest && h.scope !== '' ? (dir === '' ? '.' : dir) : undefined;
+  const moduleOf = (path: string) => {
+    const id = cut.moduleOf(path);
+    return id === whole ? h.scope : id;
+  };
   const stats = new Map<string, {commits: number; authors: Set<string>; files: Set<string>}>();
   for (const commit of h.log.commits) {
     const touched = new Set<string>();
     for (const path of commit.files) {
-      if (!h.log.alive.has(path) || !inScope(path, h.scope)) continue;
-      const module = cut.moduleOf(path);
+      if (!h.log.alive.has(path) || !h.has(path)) continue;
+      const module = moduleOf(path);
       let stat = stats.get(module);
       if (!stat) {
         stat = {commits: 0, authors: new Set(), files: new Set()};
@@ -420,7 +468,16 @@ function gitChurn(nowMs: () => number): Source {
           detail: shown => [windowNote(h), shown[0] ? `top ${shown[0].module} ${plural(shown[0].commits, 'commit')}` : 'no commits'].filter(Boolean).join('; '),
         });
       }
-      const rows = fileStats(h.log, h.scope).sort(byCommitsThenPath).map((stat): ChurnRow => ({
+      // A lockfile, a build output or a changelog changes with every release or commit: it tops a list of the files
+      // people change most while saying nothing about the code. Such files are left out, and the summary says how many.
+      const leftOut = await leftOutOf(ctx, h.scope);
+      const counts: Record<LeftOut, number> = {generated: 0, notes: 0};
+      const kept = fileStats(h.log, h.has).filter(stat => {
+        const why = leftOut(stat.path);
+        if (why) counts[why]++;
+        return why === undefined;
+      });
+      const rows = kept.sort(byCommitsThenPath).map((stat): ChurnRow => ({
         // Full timestamps, like git.log's `date`: a bare day reads as midnight UTC and shows a commit of minutes ago as hours old.
         path: stat.path, commits: stat.commits, authors: stat.authors.size, ...ownerOf(stat), first: isoOf(stat.first), last: isoOf(stat.last),
       }));
@@ -428,7 +485,8 @@ function gitChurn(nowMs: () => number): Source {
         top: h.top,
         by: 'commits',
         warnings: h.warnings,
-        detail: shown => [windowNote(h), shown[0] ? `top ${shown[0].path} ${plural(shown[0].commits, 'commit')}` : 'no commits'].filter(Boolean).join('; '),
+        // What was left out comes before the top file, whose path can be long enough to fill the summary.
+        detail: shown => [windowNote(h), leftOutNote(counts), shown[0] ? `top ${shown[0].path} ${plural(shown[0].commits, 'commit')}` : 'no commits'].filter(Boolean).join('; '),
       });
     },
   };
@@ -446,7 +504,7 @@ function gitHotspots(nowMs: () => number): Source {
       // Only source files of a programming language rank: a lockfile, a changelog, a README or a YAML file changes
       // often and says nothing about risk. Prose and data have facts too (a heading outline, TODO tags), so having
       // facts is not the test; the language's kind is (V072).
-      const candidates = fileStats(h.log, h.scope).flatMap(stat => {
+      const candidates = fileStats(h.log, h.has).flatMap(stat => {
         const entry = entries.get(stat.path);
         const fact = facts.get(stat.path);
         if (!entry || !fact || entry.generated || entry.binary || languageOf(stat.path)?.kind !== 'code') return [];
@@ -505,7 +563,7 @@ function gitAuthors(nowMs: () => number): Source {
       for (const commit of h.log.commits) {
         const author = authors.get(commit.author);
         if (!author) continue;
-        for (const file of commit.files) if (inScope(file, h.scope)) author.files.add(file);
+        for (const file of commit.files) if (h.has(file)) author.files.add(file);
       }
       const rows = [...authors]
         .map(([author, stat]) => ({author, commits: stat.commits, files: stat.files.size, last: isoOf(stat.last)}))
@@ -530,7 +588,10 @@ function gitCoupling(nowMs: () => number): Source {
     async run(ctx, ref, signal) {
       // The whole history, not the scoped one: how often a file outside the scope changes decides the degree of a pair.
       const h = await history(ctx, ref, signal, nowMs(), {narrow: false});
-      const {log, scope} = h;
+      const {log, scope, has} = h;
+      // package.json and its lockfile always change together, and a changelog with whatever a commit changes, which
+      // says nothing: generated files and changelogs pair with nothing.
+      const leftOut = await leftOutOf(ctx, scope);
       const perFile = new Map<string, number>();
       const shared = new Map<string, number>();
       let sweeping = 0;
@@ -543,10 +604,10 @@ function gitCoupling(nowMs: () => number): Source {
         }
         for (const file of commit.files) perFile.set(file, (perFile.get(file) ?? 0) + 1);
         if (commit.files.length < 2) continue;
-        const files = commit.files.filter(file => log.alive.has(file)).sort();
+        const files = commit.files.filter(file => log.alive.has(file) && leftOut(file) === undefined).sort();
         for (let i = 0; i < files.length; i++) {
           for (let j = i + 1; j < files.length; j++) {
-            if (scope && !inScope(files[i]!, scope) && !inScope(files[j]!, scope)) continue;
+            if (scope && !has(files[i]!) && !has(files[j]!)) continue;
             const key = `${files[i]}\0${files[j]}`;
             shared.set(key, (shared.get(key) ?? 0) + 1);
           }
@@ -558,7 +619,7 @@ function gitCoupling(nowMs: () => number): Source {
         .map(([key, count]) => {
           const [first, second] = key.split('\0') as [string, string];
           // With a scope, the file inside it leads the pair.
-          const [a, b] = scope && !inScope(first, scope) ? [second, first] : [first, second];
+          const [a, b] = scope && !has(first) ? [second, first] : [first, second];
           return {a, b, shared: count, degree: round((count / Math.min(perFile.get(first) ?? count, perFile.get(second) ?? count)) * 100, 1)};
         })
         .sort((x, y) => y.shared * y.degree - x.shared * x.degree || (x.a < y.a ? -1 : x.a > y.a ? 1 : x.b < y.b ? -1 : 1));

@@ -2,11 +2,11 @@ import type * as C from '@glimpse/catalog';
 import {formatFileLoc, parseFileLoc, type StepItem, type TourStop} from '@glimpse/catalog';
 import {useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode} from 'react';
 import {
-  DataGate, Empty, Icon, PathText, Redline, Subpart, borrowView, fileEntity, fmtNum, useDataset, useFollowedFile, useSelection, useSize, type GlView,
+  DataGate, Empty, Icon, PathText, Redline, Subpart, borrowView, fileEntity, fmtNum, useDataset, useFollowedFile, useSelection, useSize, useSizeCap, type GlView,
 } from '../../kit/index.ts';
 import s from './CodeTour.module.css';
 import {CodeFile} from './CodeView.tsx';
-import {cx} from './codekit/lines.tsx';
+import {cx, useCapStyle} from './codekit/lines.tsx';
 import k from './codekit/lines.module.css';
 
 const STACK_BELOW = 720;
@@ -59,18 +59,26 @@ export const CodeTourView: GlView<typeof C.CodeTour> = ({id, props}) => {
     <DataGate state={state} id={`CodeTour#${id}`}>
       {data => {
         if (!Array.isArray(data)) return <Redline code="E_SHAPE" id={`CodeTour#${id}`} message={`expected TourStop[] ([{file, note}]), received ${typeof data}`} />;
-        return <Tour id={id} data={data} fill={Boolean(props.size)} framed={typeof props.title === 'string' && props.title !== ''} />;
+        return <Tour id={id} data={data} framed={typeof props.title === 'string' && props.title !== ''} />;
       }}
     </DataGate>
   );
 };
 
-function Tour({id, data, fill, framed}: {id: string; data: unknown[]; fill: boolean; framed: boolean}): ReactNode {
+function Tour({id, data, framed}: {id: string; data: unknown[]; framed: boolean}): ReactNode {
   const {stops, dropped} = useMemo(() => readStops(data), [data]);
   const {select} = useSelection(id);
   const followed = useFollowedFile(undefined);
   const root = useRef<HTMLDivElement | null>(null);
-  const {width} = useSize(root);
+  const {width, height} = useSize(root);
+  const capStyle = useCapStyle();
+  const cap = useSizeCap();
+  // As tall as its stops and the stop's file, up to the cap (D20). It never shrinks while the reader steps through
+  // it: a stop with a shorter file would otherwise pull the page up under the reader at every step.
+  const ratchetKey = `${cap}|${width > 0 && width < STACK_BELOW}|${stops.length}`;
+  const [tallest, setTallest] = useState({key: ratchetKey, px: 0});
+  if (tallest.key !== ratchetKey) setTallest({key: ratchetKey, px: 0});
+  else if (Math.floor(height) > tallest.px) setTallest({key: ratchetKey, px: Math.floor(height)});
   const [picked, setPicked] = useState(0);
   const active = Math.min(picked, Math.max(0, stops.length - 1));
   const stop = stops[active];
@@ -115,9 +123,10 @@ function Tour({id, data, fill, framed}: {id: string; data: unknown[]; fill: bool
       aria-keyshortcuts="ArrowLeft ArrowRight j k"
       tabIndex={0}
       data-gl-code="tour"
-      data-fit={fill ? 'fill' : 'cap'}
+      data-fit="cap"
       data-boxed={framed ? undefined : ''}
       data-stack={width > 0 && width < STACK_BELOW ? '' : undefined}
+      style={{...capStyle, minHeight: tallest.px > 0 ? tallest.px : undefined}}
       onKeyDown={onKeyDown}
     >
       <div className={s.stops}>

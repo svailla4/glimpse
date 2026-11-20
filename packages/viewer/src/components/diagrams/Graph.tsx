@@ -5,12 +5,19 @@ import {useCallback, useMemo, type ReactNode} from 'react';
 import {
   DataGate, Empty, Redline, elidePath, emptyCodeOf, fmtNum, useCatSlots, useDataset, useHostActions, useReportState, type GlView,
 } from '../../kit/index.ts';
-import {Diagram, MONO_11, UI_12, fitText, textWidth, type DiagramEdge, type DiagramGroup, type DiagramNode, type Dir, type Face, type NodeFlags} from './edgekit/index.ts';
+import {
+  Diagram, FULL_ZOOM, MONO_11, UI_12, fitText, textWidth, zoomStep,
+  type DiagramEdge, type DiagramGroup, type DiagramNode, type Dir, type Face, type NodeFlags,
+} from './flowkit/index.ts';
 import css from './Graph.module.css';
 
-/** Nodes of one graph share a width: what the longest label needs, between these two. */
+/**
+ * Nodes of one graph share a width (what the longest label needs, between the first two), and a node whose name needs
+ * more is wider, up to NODE_W_WIDE: a name is cut only past that.
+ */
 const NODE_W_MIN = 112;
 const NODE_W_MAX = 168;
+const NODE_W_WIDE = 240;
 const NODE_H = 28;
 const NODE_H_SUB = 40;
 /** From the spine to the label, and from the label to the right edge. */
@@ -24,8 +31,8 @@ export const COMPACT_FROM = 32;
 /** Up to this many nodes there is room to spare: a second line may widen the nodes instead of being cut. */
 const ROOMY_UNTIL = 12;
 /** Tighter than the diagram default, so a module graph fills its plate at a readable zoom. */
-const NODESEP = 16;
-const RANKSEP = 40;
+const NODE_GAP = 16;
+const LAYER_GAP = 40;
 /** With more edges than this, the lightest third is drawn in the rule colour so the heavy ones lead. */
 const FAINT_FROM = 40;
 /** Group ids the dependency sources give directory groups: the rest is the directory a drill goes to. */
@@ -326,15 +333,77 @@ const SPINE_SLOTS = ['module', 'lang'] as const;
 
 /** How a label is cut: a path from the front, a package name at the end, a disambiguated path at both ends. */
 type Cut = 'path' | 'name' | 'ends';
-const cutLabel = (text: string, maxWidth: number, face: Face, cut: Cut) =>
-  cut === 'ends' ? fitBothEnds(text, maxWidth, face) : fitLabel(text, maxWidth, face, cut === 'name');
+const SEPARATOR = /[./\-_ ]/;
+
+/**
+ * `text` cut to `maxWidth` keeping what follows `from` (the part that tells it from a node whose name starts alike):
+ * 'surface-group…​.test.ts', not 'surface-group-model…' for two nodes. The start gives way first, then the kept tail
+ * from its own start.
+ */
+export function fitKeepingTail(text: string, maxWidth: number, face: Face, from: number): string {
+  if (textWidth(text, face) <= maxWidth) return text;
+  const tail = text.slice(from);
+  const chars = [...tail];
+  if (textWidth(`…${tail}`, face) > maxWidth) {
+    for (let i = 1; i < chars.length; i++) {
+      const kept = `…${chars.slice(i).join('')}`;
+      if (textWidth(kept, face) <= maxWidth) return kept;
+    }
+    return fitText(text, maxWidth, face);
+  }
+  const head = [...text.slice(0, from)];
+  for (let n = head.length; n >= 1; n--) {
+    const cut = `${head.slice(0, n).join('')}…${tail}`;
+    if (textWidth(cut, face) <= maxWidth) return cut;
+  }
+  return `…${tail}`;
+}
+
+/** Names that share at least this many leading characters could be cut alike. */
+const SHARED_START = 6;
+
+/**
+ * For names (not paths: a path is cut from the front) that start like another node's, where each one's own part
+ * starts: at the last separator ('.', '-', '_', space) within the longest start it shares with another. A cut keeps
+ * that part, at any zoom, so two nodes never read alike ('surface-components-mo…' twice). Keyed by node id.
+ */
+export function tailsOf(nodes: ReadonlyArray<{id: string; label: string}>): Map<string, number> {
+  const out = new Map<string, number>();
+  const names = nodes.filter(node => !node.label.includes('/'));
+  for (const node of names) {
+    let common = 0;
+    for (const other of names) {
+      if (other === node || other.label === node.label) continue;
+      let i = 0;
+      while (i < Math.min(node.label.length, other.label.length) && node.label[i] === other.label[i]) i++;
+      common = Math.max(common, i);
+    }
+    if (common < SHARED_START) continue;
+    let from = common;
+    while (from > 0 && !SEPARATOR.test(node.label[from - 1]!)) from--;
+    // Back to the separator itself, so '.test.ts' keeps its dot.
+    out.set(node.id, Math.max(0, from - 1));
+  }
+  return out;
+}
+
+const cutLabel = (text: string, maxWidth: number, face: Face, cut: Cut, keepFrom?: number) =>
+  keepFrom !== undefined
+    ? fitKeepingTail(text, maxWidth, face, keepFrom)
+    : cut === 'ends' ? fitBothEnds(text, maxWidth, face) : fitLabel(text, maxWidth, face, cut === 'name');
 
 interface NodeDraw {
   /** The full label, for the cut a zoomed-out node makes itself. */
   label: string;
   cut: Cut;
+  /** Where the part that tells this name from a like one starts: a cut keeps it (tailsOf). */
+  keepFrom?: number;
+  /** Width of the marks (cycle, status) beside the name at full detail. */
+  marks: number;
   rawSub?: string;
   name: string;
+  /** The width `name` was cut for. */
+  cutFor: number;
   sub?: string;
   spine: string;
   external: boolean;
@@ -389,7 +458,7 @@ function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
         <rect className={css.spine} width={spine} height={node.h} style={{fill: d.spine}} />
         {flags.lod === 'name' ? (
           <text className={css.far} x={x} y={twoLines ? node.h / 2 - subSize / 2 - 1 / flags.k : node.h / 2} style={{fontSize: size}}>
-            {cutLabel(d.label, room - (d.cycle ? mark + FAR_MARK_GAP : 0), {size}, d.cut)}
+            {cutLabel(d.label, room - (d.cycle ? mark + FAR_MARK_GAP : 0), {size}, d.cut, d.keepFrom)}
           </text>
         ) : null}
         {twoLines ? <text className={css.farSub} x={x} y={node.h / 2 + size / 2 + 1 / flags.k} style={{fontSize: subSize}}>{fitSub(d.rawSub!, room, {size: subSize, mono: true})}</text> : null}
@@ -399,11 +468,13 @@ function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
   }
   const statusX = node.w - 8;
   const cycleX = statusX - (d.status ? 14 : 0);
+  // A node the diagram made wider than its name was cut for (Diagram's widen) cuts it again for its width.
+  const name = node.w === d.cutFor ? d.name : cutLabel(d.label, node.w - LABEL_X - LABEL_END - d.marks, UI_12, d.cut, d.keepFrom);
   return (
     <g className={css.body} data-selected={flags.selected || undefined} data-focus={flags.focus || undefined} data-external={d.external || undefined}>
       <rect className={css.box} width={node.w} height={node.h} />
       <rect className={css.spine} width={4} height={node.h} style={{fill: d.spine}} />
-      <text className={css.name} x={13} y={d.sub ? 17 : node.h / 2 + 4}>{d.name}</text>
+      <text className={css.name} x={13} y={d.sub ? 17 : node.h / 2 + 4}>{name}</text>
       {d.sub ? <text className={css.sub} x={13} y={31}>{d.sub}</text> : null}
       {d.cycle ? <text className={css.cycle} x={cycleX} y={13}>CYCLE</text> : null}
       {d.status ? <text className={css.status} x={statusX} y={14} style={{fill: d.status.ink}}>{d.status.glyph}</text> : null}
@@ -413,8 +484,26 @@ function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
   );
 }
 
+/**
+ * The width a node needs to show its whole name, and its whole second line, at `zoom`: its full face from FULL_ZOOM up,
+ * else its 'name' face (whose second line is drawn when the node is tall enough for two).
+ */
+function widenNode(node: DiagramNode<NodeDraw>, zoom: number): number {
+  const d = node.data;
+  if (zoom >= FULL_ZOOM) {
+    // At full detail no wider than NODE_W_WIDE, as in a small graph: past that a name is cut.
+    return Math.min(NODE_W_WIDE, Math.ceil(Math.max(LABEL_X + textWidth(d.label, UI_12) + d.marks + LABEL_END, d.rawSub ? LABEL_X + textWidth(d.rawSub, MONO_11) + LABEL_END : 0)));
+  }
+  const k = zoomStep(zoom);
+  const mark = d.cycle ? FAR_MARK / k + FAR_MARK_GAP : 0;
+  const size = faceFor(FAR_LABEL, k);
+  const subSize = faceFor(FAR_SUB, k);
+  const twoLines = d.rawSub !== undefined && size + subSize + 6 / k <= node.h;
+  return Math.ceil(Math.max(FAR_X + textWidth(d.label, {size}) + mark, twoLines ? FAR_X + textWidth(d.rawSub!, {size: subSize, mono: true}) : 0) + FAR_END + 2);
+}
+
 function GraphBody(p: {
-  id: string; data: unknown; dsKey?: string; dir?: Dir; focus?: string; depth: number; sized: boolean;
+  id: string; data: unknown; dsKey?: string; dir?: Dir; focus?: string; depth: number;
   /** What to say, and report, when the data has no nodes (decision D14): the source's reason makes it I_EMPTY. */
   empty: {code: string; message: string; detail?: string};
   /** The source cut the graph: it drew `returned` of `total` (modules for deps.modules, decision D16). */
@@ -454,28 +543,53 @@ function GraphBody(p: {
     const maxFan = Math.max(1, ...graph.nodes.map(node => Math.max(node.fanIn ?? 0, node.fanOut ?? 0)));
     const maxWeight = Math.max(0, ...graph.edges.map(edge => edge.weight ?? 0));
     const marks = (node: CleanNode) => (node.cycle ? 42 : 0) + (node.status ? 14 : 0);
+    // A second line that only repeats the frame the node is drawn in ('…/src/state' in the src/state group) is left
+    // out: the name gets the node to itself.
+    const groupPath = new Map(graph.groups.map(group => [group.id, group.label]));
+    const subOf = (node: CleanNode) => {
+      if (!node.sub || node.group === undefined) return node.sub;
+      const path = node.sub.replace(/\/+$/, '');
+      return path === groupPath.get(node.group) || `${DIR_GROUP}${path}` === node.group ? undefined : node.sub;
+    };
     // One width for the graph: what its longest name asks for, so short names make a compact picture. In a larger
     // graph a second line that is longer is cut at a separator instead of widening every node.
     const roomy = graph.nodes.length <= ROOMY_UNTIL;
+    const compact = graph.nodes.length > COMPACT_FROM;
+    const need = (label: string, node: CleanNode, withSub: boolean) => {
+      const sub = subOf(node);
+      return Math.max(LABEL_X + textWidth(label, UI_12) + marks(node) + LABEL_END, withSub && sub ? LABEL_X + textWidth(sub, MONO_11) + LABEL_END : 0);
+    };
     let width = NODE_W_MIN;
     for (const node of graph.nodes) {
-      width = Math.max(width, LABEL_X + textWidth(node.label, UI_12) + marks(node) + LABEL_END, roomy && node.sub ? LABEL_X + textWidth(node.sub, MONO_11) + LABEL_END : 0);
+      width = Math.max(width, need(node.label, node, roomy));
       if (width >= NODE_W_MAX) break;
     }
     width = Math.min(NODE_W_MAX, Math.ceil(width / 4) * 4);
-    const compact = graph.nodes.length > COMPACT_FROM;
     // Two nodes that would read alike (two '…/scripts', two 'types.ts') say which is which (V048).
     const isPkg = (node: CleanNode) => node.kind === 'external' || node.kind === 'package';
     const distinct = distinctLabels(
       graph.nodes.map(node => ({id: node.id, label: node.label, file: node.file, pkg: isPkg(node)})),
-      (label, pkg) => fitLabel(label, width - LABEL_X - LABEL_END, UI_12, pkg),
+      (label, pkg) => fitLabel(label, NODE_W_WIDE - LABEL_X - LABEL_END, UI_12, pkg),
     );
+    // In a small graph a node whose name or second line needs more than the shared width is wider, up to NODE_W_WIDE.
+    // A larger one keeps the shared width (wider nodes would make it open further out) and the diagram widens its
+    // nodes into the width the plate has to spare (widenNode): 'create_compliance_rep…' and cut second lines no more.
+    const widthOf = new Map(graph.nodes.map(node => {
+      const label = distinct.labels.get(node.id) ?? node.label;
+      return [node.id, roomy ? Math.min(NODE_W_WIDE, Math.max(width, Math.ceil(need(label, node, true) / 4) * 4)) : width];
+    }));
+    const cutOf = (node: CleanNode): Cut => (distinct.ends.has(node.id) ? 'ends' : isPkg(node) ? 'name' : 'path');
+    const roomOf = (node: CleanNode) => widthOf.get(node.id)! - LABEL_X - LABEL_END - marks(node);
+    // Names that start alike keep, when cut, the part that tells them apart ('surface-group…​.test.ts').
+    const tails = tailsOf(graph.nodes.map(node => ({id: node.id, label: distinct.labels.get(node.id) ?? node.label})));
     const nodes: Array<DiagramNode<NodeDraw>> = graph.nodes.map(node => {
       const status = node.status ? STATUS[node.status] : undefined;
-      const room = width - LABEL_X - LABEL_END - marks(node);
+      const w = widthOf.get(node.id)!;
+      const room = roomOf(node);
       const place = placeOf(node);
       const label = distinct.labels.get(node.id) ?? node.label;
-      const cut: Cut = distinct.ends.has(node.id) ? 'ends' : isPkg(node) ? 'name' : 'path';
+      const cut = cutOf(node);
+      const sub = subOf(node);
       const facts = [
         node.sub,
         node.cycle ? 'in a cycle' : undefined,
@@ -485,8 +599,8 @@ function GraphBody(p: {
       ].filter(Boolean);
       return {
         id: node.id,
-        w: width,
-        h: node.sub && !compact ? NODE_H_SUB : NODE_H,
+        w,
+        h: sub && !compact ? NODE_H_SUB : NODE_H,
         group: node.group,
         entity: entityOf(node),
         // A module or directory node stands for everything under its directory, whatever file it opens.
@@ -497,9 +611,12 @@ function GraphBody(p: {
         data: {
           label,
           cut,
-          rawSub: compact ? undefined : node.sub,
-          name: cutLabel(label, room, UI_12, cut),
-          sub: node.sub && !compact ? fitSub(node.sub, width - LABEL_X - LABEL_END, MONO_11) : undefined,
+          keepFrom: tails.get(node.id),
+          marks: marks(node),
+          rawSub: compact ? undefined : sub,
+          name: cutLabel(label, room, UI_12, cut, tails.get(node.id)),
+          cutFor: w,
+          sub: sub && !compact ? fitSub(sub, w - LABEL_X - LABEL_END, MONO_11) : undefined,
           spine: status?.ink ?? cat.color(node.slotKey),
           external: node.kind === 'external',
           cycle: node.cycle === true,
@@ -509,9 +626,15 @@ function GraphBody(p: {
         },
       };
     });
+    // An edge between two frames runs round them, close to their lines: drawn heavy it reads as a second frame. Such
+    // an edge is at most of middle weight, and a light one (weight 1) is drawn in the rule colour.
+    const groupOfNode = new Map(graph.nodes.map(node => [node.id, node.group]));
+    const framed = graph.groups.length > 0;
     const edges: DiagramEdge[] = graph.edges.map((edge, i) => {
       const share = maxWeight > 0 && edge.weight !== undefined ? edge.weight / maxWeight : 0;
+      const across = framed && groupOfNode.get(edge.from) !== groupOfNode.get(edge.to);
       const facts = [edge.label, edge.weight !== undefined ? `weight ${fmtNum(edge.weight)}` : undefined, edge.cycle ? 'part of a cycle' : undefined, edge.dashed ? 'dynamic' : undefined];
+      const width = share > 2 / 3 ? 2.25 : share > 1 / 3 ? 1.5 : 1;
       return {
         key: String(i),
         from: edge.from,
@@ -519,8 +642,8 @@ function GraphBody(p: {
         label: edge.label,
         dashed: edge.dashed,
         cycle: edge.cycle,
-        width: share > 2 / 3 ? 2.25 : share > 1 / 3 ? 1.5 : 1,
-        faint: maxWeight > 0 && graph.edges.length > FAINT_FROM && share <= 1 / 3 && !edge.cycle,
+        width: across ? Math.min(1.5, width) : width,
+        faint: !edge.cycle && ((maxWeight > 0 && graph.edges.length > FAINT_FROM && share <= 1 / 3) || (across && (edge.weight ?? 1) <= 1 && graph.edges.length > FAINT_FROM / 2)),
         detail: facts.filter(Boolean).join(' · ') || undefined,
       };
     });
@@ -589,17 +712,16 @@ function GraphBody(p: {
       edges={model.edges}
       groups={model.groups}
       dir={p.dir}
-      wrap
       lod
       lodZoom={model.lodZoom}
-      nodesep={NODESEP}
-      ranksep={RANKSEP}
-      sized={p.sized}
+      nodeGap={NODE_GAP}
+      layerGap={LAYER_GAP}
       ariaLabel={ariaLabel}
       note={summary.join(' · ')}
       focus={shown.focused ? focus : undefined}
       anchor={busiest && (busiest.fanIn ?? 0) + (busiest.fanOut ?? 0) > 0 ? busiest.id : hubOf(graph)}
       renderNode={drawNode}
+      widen={widenNode}
       onDrill={onDrill}
       onDrillGroup={onDrillGroup}
     />
@@ -632,7 +754,6 @@ export const GraphView: GlView<typeof C.Graph> = ({id, props}) => {
           dir={props.dir === 'TB' || props.dir === 'LR' ? props.dir : undefined}
           focus={props.focus || undefined}
           depth={depth}
-          sized={props.size != null}
           empty={empty}
         />
       )}

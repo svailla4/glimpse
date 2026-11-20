@@ -216,3 +216,19 @@ describe('planSequence', () => {
     expect(many.hidden).toBe(25);
   });
 });
+
+// Decision D20: a sequence diagram is as tall as its steps, up to the plate's maximum height; past that it scrolls.
+describe('SequenceDiagram: content-sized', () => {
+  it.each([
+    ['no size: the diagram family\'s 640 px', '', 640],
+    ['size m: 280 px', ",size='m'", 280],
+    ['size s: 160 px', ",size='s'", 160],
+  ])('takes %s as its maximum height', async (_name, size, cap) => {
+    const view = renderExpress(`root=Page('T',[s])\ns=SequenceDiagram('${GALLERY}',title='Seq'${size})`);
+    const scroll = await screen.findByRole('img', {name: /^Sequence diagram/});
+    expect(scroll.style.maxHeight).toBe(`${cap}px`);
+    // no fixed height of its own: as tall as its steps up to that
+    expect(scroll.style.height).toBe('');
+    expect(view.errors).toEqual([]);
+  });
+});

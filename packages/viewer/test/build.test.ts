@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {gzipSync} from 'node:zlib';
 import {build, type Rollup} from 'vite';
 import {beforeAll, describe, expect, it} from 'vitest';
-import {SHIMS} from '../vite.config.ts';
+import {LAYER_ORDER, SHIMS, XYFLOW_CHUNK} from '../vite.config.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 let files: Array<Rollup.OutputAsset | Rollup.OutputChunk> = [];
@@ -112,11 +112,75 @@ describe('viewer build', () => {
     expect(warned).toHaveLength(1);
   });
 
-  it('every stylesheet starts with the layer order, so gl.tokens < gl.base < gl.kit < gl.components always holds', () => {
+  it('every stylesheet starts with the layer order, so xyflow < gl.tokens < gl.base < gl.kit < gl.components always holds', () => {
+    expect(LAYER_ORDER).toBe('@layer xyflow,gl.tokens,gl.base,gl.kit,gl.components;');
     const sheets = files.filter(file => file.fileName.endsWith('.css'));
     expect(sheets.length).toBeGreaterThan(0);
     for (const sheet of sheets) {
-      expect(text(sheet).replace(/^@charset\s+"[^"]*";/, ''), sheet.fileName).toMatch(/^@layer gl\.tokens,gl\.base,gl\.kit,gl\.components;/);
+      expect(text(sheet).replace(/^@charset\s+"[^"]*";/, '').startsWith(LAYER_ORDER), sheet.fileName).toBe(true);
     }
   });
+
+  // ---- the diagram engine (decision D19) ---------------------------------------------------------------------
+  // The figures are scripts/budgets.mjs's own lines (OWN_LINES); change both together.
+  const ELK_WORKER_GZIP = 515_000;
+  const XYFLOW_CSS_GZIP = 2_500;
+  const named = (pattern: RegExp) => files.filter(file => pattern.test(file.fileName));
+
+  it('ELK runs only in its own same-origin worker file, which needs no eval', () => {
+    const [worker, ...more] = named(/^assets\/elk\.worker-[\w-]{8}\.js$/);
+    expect(worker, 'assets/elk.worker-<hash>.js').toBeDefined();
+    expect(more).toEqual([]);
+    const code = text(worker!);
+    expect(code).toContain('org.eclipse.elk');
+    // The worker runs under the page's CSP (script-src 'self', no 'unsafe-eval'): nothing in it may evaluate strings.
+    expect(code).not.toMatch(/\beval\s*\(|\bFunction\s*\(|setTimeout\s*\(\s*["'`]|importScripts/);
+    expect(gzipSync(code).length, `ELK worker is ${(gzipSync(code).length / 1000).toFixed(1)} kB gzip`).toBeLessThanOrEqual(ELK_WORKER_GZIP);
+    // The page side holds no ELK (there is no main-thread fallback) and starts the worker by its hashed URL.
+    const chunks = files.filter((file): file is Rollup.OutputChunk => file.type === 'chunk');
+    expect(chunks.filter(chunk => chunk.code.includes('org.eclipse.elk') || Object.keys(chunk.modules).some(id => id.includes('/node_modules/elkjs/'))).map(chunk => chunk.fileName)).toEqual([]);
+    expect(chunks.filter(chunk => chunk.code.includes(`/${worker!.fileName}`)).map(chunk => chunk.fileName.replace(/-[\w-]{8}\.js$/, ''))).toEqual(['assets/diagrams']);
+  });
+
+  it('React Flow and its stylesheet load with the diagrams only, below every Linework layer', () => {
+    const eagerModules = eagerChunks().flatMap(chunk => Object.keys(chunk.modules));
+    expect(eagerModules.filter(id => XYFLOW_CHUNK.test(id) || /\/node_modules\/elkjs\//.test(id))).toEqual([]);
+    const html = text(files.find(file => file.fileName === 'index.html')!);
+    expect(html).not.toMatch(/xyflow|elk/);
+    const [sheet, ...more] = named(/^assets\/xyflow-[\w-]{8}\.css$/);
+    expect(sheet, 'assets/xyflow-<hash>.css').toBeDefined();
+    expect(more).toEqual([]);
+    const css = text(sheet!);
+    expect(gzipSync(css).length).toBeLessThanOrEqual(XYFLOW_CSS_GZIP);
+    // Every rule of React Flow's sheet is inside @layer xyflow (an unlayered rule would beat every gl.* layer), and
+    // it sets no Linework token.
+    expect(topLevelBlocks(css.slice(LAYER_ORDER.length))).toEqual(['@layer xyflow']);
+    expect(css).not.toContain('--gl-');
+    // Once a view imports React Flow, its script is a lazy chunk of its own that charts never load.
+    const flow = named(/^assets\/xyflow-[\w-]{8}\.js$/) as Rollup.OutputChunk[];
+    for (const chunk of flow) expect(Object.keys(chunk.modules).filter(id => /\/node_modules\/(?:react|react-dom|d3-(?:scale|array|shape|hierarchy))\//.test(id))).toEqual([]);
+    const charts = files.find((file): file is Rollup.OutputChunk => file.type === 'chunk' && /^assets\/charts-/.test(file.fileName));
+    expect(charts?.imports.filter(name => /xyflow-/.test(name))).toEqual([]);
+  });
 });
+
+/** The distinct preludes of the top-level blocks of a stylesheet (`@layer xyflow`, `.a`, ...), in order of first appearance. */
+function topLevelBlocks(css: string): string[] {
+  const preludes = new Set<string>();
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < css.length; i++) {
+    const c = css[i];
+    if (c === '{') {
+      if (depth === 0) preludes.add(css.slice(start, i).trim());
+      depth++;
+    } else if (c === '}') {
+      depth--;
+      if (depth === 0) start = i + 1;
+    } else if (c === ';' && depth === 0) {
+      preludes.add(css.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  return [...preludes];
+}

@@ -160,7 +160,7 @@ describe('a monorepo', () => {
     expect(graph.level).toBe('file');
     expect(graph.nodes.filter(node => node.kind === 'cluster').map(node => node.id)).toEqual(['packages/core', 'apps/web']);
     expect(graph.edges.filter(edge => edge.from === 'packages/ui/src/index.tsx').map(edge => edge.to)).toEqual(['packages/core', 'ext:react']);
-    expect(result.summary).toBe('13 nodes 3 edges, 0 file cycles; level file; 2 imports out of packages/ui');
+    expect(result.summary).toBe('13 nodes 3 edges, 0 file cycles; level file; in packages/ui, 2 imports out of it');
   });
 });
 

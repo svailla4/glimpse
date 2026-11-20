@@ -207,7 +207,7 @@ export const FileTreeView: GlView<typeof C.FileTree> = ({id, props}) => {
     : undefined;
   const tree = useMemo(() => (state.status === 'ready' ? buildTree(state.data) : undefined), [state]);
   return (
-    <Shell sized={props.size !== undefined}>
+    <Shell>
       <DataGate state={state} id={`FileTree#${id}`}>
         {data =>
           tree ? (
@@ -517,7 +517,7 @@ function TreeBody({id, props, tree, drill, refocus, drilled}: BodyProps): JSX.El
     return scopeIsSelected && mark === 'within' ? undefined : mark;
   };
   return (
-    <div className={s.root} data-sized={props.size ? '' : undefined} data-gl-tree="">
+    <div className={s.root} data-gl-tree="">
       {tree.dropped > 0 ? (
         <PlateAside>
           <span className={s.note} data-gl-tree-note="">{fmtNum(tree.dropped)} malformed {tree.dropped === 1 ? 'entry' : 'entries'} dropped</span>

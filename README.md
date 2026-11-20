@@ -141,7 +141,7 @@ viewer: select file packages/server/src/mcp/show.ts (server-package)
 
 ## Writing a custom spec
 
-A spec is [A2UI Express](https://a2ui.org): nested calls, positional arguments in signature order, then `name=value`. `root=Page(...)` starts a view; `name=Comp(...)` defines a named part that can be used as a child and patched later; `$/path=value` sets data and `$/path` as an argument binds to it. `span=1..12` places anything on a 12-column grid, `title=` draws a numbered plate, `size=s|m|l|xl|fill` sets its height. The view's `id` is a short name of letters, digits, `_` and `-`.
+A spec is [A2UI Express](https://a2ui.org): nested calls, positional arguments in signature order, then `name=value`. `root=Page(...)` starts a view; `name=Comp(...)` defines a named part that can be used as a child and patched later; `$/path=value` sets data and `$/path` as an argument binds to it. `span=1..12` places anything on a 12-column grid, `title=` draws a numbered plate, `size=s|m|l|xl|fill` sets its maximum height (a plate is as tall as its content, up to that; a diagram grows to 640 px by itself, so on a diagram `size=` only limits it). The view's `id` is a short name of letters, digits, `_` and `-`.
 
 The three examples below were run against this repository exactly as written (`show` with the `id` shown and the block as `spec`); a test compiles them and checks that the files they name exist.
 
@@ -150,7 +150,7 @@ The three examples below were run against this repository exactly as written (`s
 ```
 root=Page('The server package',[intro,deps,churn],'packages/server')
 intro=Markdown('Requests enter in **mcp/show.ts**; see [[packages/server/src/mcp/show.ts#L1]].')
-deps=Graph('deps.modules packages/server',title='What depends on what',size='l',span=7)
+deps=Graph('deps.modules packages/server',title='What depends on what',span=7)
 churn=DataTable('git.churn packages/server top=10',title='Most changed files',span=5)
 ```
 
@@ -190,7 +190,7 @@ The catalog prefers accepting a reasonable guess to documenting the one right sp
 | Code (5) | `CodeBlock` `CodeView` `DiffView` `CodeTour` `SymbolOutline` |
 | Input (2) | `Button` `Ask` |
 
-Charts and diagrams are Glimpse's own SVG on `d3-scale`, `d3-shape`, `d3-hierarchy` and `dagre`; tables and code views are virtualised; syntax highlighting is done by the server (Shiki) and sent as token classes, never as markup.
+Charts are Glimpse's own SVG on `d3-scale`, `d3-shape` and `d3-hierarchy`. `Graph`, `Flowchart` and `ERDiagram` are laid out by [ELK](https://eclipse.dev/elk/) (`elkjs`, layered: group frames sized around their members, orthogonal edges routed across them, ports for table columns) in a Web Worker, and drawn with [React Flow](https://reactflow.dev) (`@xyflow/react`) in the same hairline style; both load only when a page first shows one of these diagrams. `SequenceDiagram` and `Layers` are drawn directly in SVG and HTML. A diagram is as tall as it is at the scale that fits the plate's width, up to the plate's maximum: when all of it is readable there (text at 10 px or more on screen) it opens fitted and centred, otherwise at a readable zoom with pan, zoom and a minimap. Tables and code views are virtualised; syntax highlighting is done by the server (Shiki) and sent as token classes, never as markup.
 
 ## Data sources
 
@@ -268,15 +268,16 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 
 ### Budgets
 
-`npm run budgets` fails when one is exceeded. Two limits keep headroom under the design's hard figure, so that the next component or source still fits; the catalog tests and a viewer build test hold the same two.
+`npm run budgets` fails when one is exceeded. Two limits keep headroom under the design's hard figure, so that the next component or source still fits; the catalog tests and a viewer build test hold the same two. The diagram engine has lines of its own, about 15 % above what it measures, and stays out of the eager scripts.
 
 | Budget | Limit | Now |
 |---|---|---|
-| Server instructions | 3,750 chars (hard limit 4,000) | 3,744 |
+| Server instructions | 3,750 chars (hard limit 4,000) | 3,749 |
 | `show` + `catalog` definitions | 1,500 chars | 1,147 |
-| Largest preset result (`overview`) | 1,200 chars | 1,097 |
-| Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 191.8 kB |
-| Largest lazy chunk, gzip | 120 kB | 52.0 kB |
+| Largest preset result (`overview`) | 1,200 chars | 1,095 |
+| Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 193.6 kB |
+| Largest other lazy chunk, gzip | 120 kB | 46.8 kB |
+| Diagram engine, gzip: ELK worker, React Flow, diagrams chunk | 515 kB, 90 kB, 36 kB | 447.8 kB, 77.7 kB, 31.3 kB |
 
 ## Status and known limitations
 

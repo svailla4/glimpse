@@ -129,6 +129,13 @@ describe('source refs', () => {
     expect(sourceDoc('git.log')).toContain("'git.log [path|range] [top=] [since=]'");
   });
 
+  it('documents a path target on every source that reads one at run time, so catalog{} tells the model', () => {
+    for (const name of ['files.langs', 'repo.kpis', 'repo.stack', 'repo.packages', 'repo.scripts', 'deps.cycles', 'deps.external', 'deps.matrix']) {
+      expect(SOURCE_BY_NAME.get(name)?.target, name).toBe('path');
+      expect(sourceDoc(name), name).toMatch(new RegExp(`^'${name.replace('.', '\\.')} \\[path\\]`));
+    }
+  });
+
   it('every ref in the conformance corpus passes the checks the spec pipeline applies before running a source', () => {
     const datasetsOf = (message: A2uiMessage): unknown[] => {
       if ('createSurface' in message) return Object.values((message.createSurface.dataModel?.ds as object | undefined) ?? {});

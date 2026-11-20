@@ -6,7 +6,7 @@ import {baseName, dirName, languageOf} from '../../analyze/languages.ts';
 import {codeLines, countModules, isPackageImport, manifestDirsOf, packageMember, sourceLines, targetKind} from '../../analyze/model.ts';
 import {ecosystemOf} from '../../analyze/resolve.ts';
 import {SourceError, type FileEntry, type Source, type SourceResult} from '../../contracts.ts';
-import {byText, clampSummary, compact, define, depthOf, inScope, plural, rowsResult, scopeOf, topOf} from './shared.ts';
+import {byText, clampSummary, compact, define, depthOf, inScope, leadOf, plural, rowsResult, scopeNote, scopeOf, topOf} from './shared.ts';
 
 const MAX_EDGES = 400;
 const MAX_EXTERNAL_NODES = 8;
@@ -60,7 +60,7 @@ interface Draft {
 }
 
 /** What a scope contains: the whole repository, a directory, or the files of one cluster of the repository cut. */
-interface Scope {
+export interface Scope {
   label: string;
   hasFile(path: string): boolean;
   hasDir(dir: string): boolean;
@@ -101,10 +101,40 @@ function scopeFor(model: RepoModel, target: string, top?: number): Scope {
   return {label: target, hasFile: path => inScope(path, target), hasDir: sub => inScope(sub, target)};
 }
 
-function unparsedWarning(model: RepoModel): string[] {
+/**
+ * The files a path target names, read as deps.modules reads it: '' for the repository, a directory, a file, or a module
+ * id of a graph ('src/*'). E_TARGET when it names nothing, so a mistyped path is never the whole repository.
+ */
+export function scopedFiles(model: RepoModel, target: string, name: string): {files: readonly FileEntry[]; where: Scope} {
+  const where = scopeFor(model, target);
+  if (target === '') return {files: model.files, where};
+  const files = model.files.filter(file => where.hasFile(file.path));
+  if (files.length === 0) throw new SourceError('E_TARGET', `${name}: no files under "${target}"`);
+  return {files, where};
+}
+
+/**
+ * The modules a path target holds, as deps.modules cuts them before a graph folds the smaller ones ("20 of N"): the
+ * repository's count, that of a directory or module id, and 1 for a file, which lies in one module.
+ */
+export function modulesIn(model: RepoModel, target: string, files: readonly FileEntry[]): number {
+  if (target === '') return model.modules;
+  if (model.byPath.has(target)) return 1;
+  return countModules(files, model.manifests, parseModuleId(target).dir);
+}
+
+/** The file cycles with a member among `files` (all of them when undefined): the rows of deps.cycles for a path. */
+export function cyclesThrough(model: RepoModel, files: readonly FileEntry[] | undefined): string[][] {
+  if (!files) return model.cycles;
+  const inside = new Set(files.map(file => file.path));
+  return model.cycles.filter(members => members.some(member => inside.has(member)));
+}
+
+/** `files`: those the result is about (the repository's, or those under a path). */
+function unparsedWarning(files: readonly FileEntry[]): string[] {
   const unparsed = new Map<string, number>();
   let total = 0;
-  for (const file of model.files) {
+  for (const file of files) {
     const lines = sourceLines(file);
     if (lines === 0) continue;
     total += lines;
@@ -114,9 +144,12 @@ function unparsedWarning(model: RepoModel): string[] {
   return missed.length > 0 ? [`imports are not analysed for ${missed.slice(0, 3).join(', ')}: those files appear without edges`] : [];
 }
 
-/** What a reader of a graph must know about its coverage. Inventory warnings belong to the files.* sources. */
-function graphWarnings(model: RepoModel): string[] {
-  const warnings = unparsedWarning(model);
+/**
+ * What a reader of a graph must know about its coverage. Inventory warnings belong to the files.* sources. `files`:
+ * those the graph is drawn from, when it is scoped to a path.
+ */
+function graphWarnings(model: RepoModel, files: readonly FileEntry[] = model.files): string[] {
+  const warnings = unparsedWarning(files);
   if (model.imports && model.unresolved && model.unresolved / model.imports > 0.1) {
     warnings.push(`${model.unresolved} of ${model.imports} imports matched no file (aliases or generated code)`);
   }
@@ -433,7 +466,7 @@ function graphResult(finished: Finished, draft: Draft, scope: Scope, warnings: s
     // Cycles between clusters and cycles between files are different counts: each is named for what it counts.
     `${plural(graph.nodes.length, 'node')} ${plural(graph.edges.length, 'edge')}, ${plural(finished.cycles, graph.level === 'module' ? 'module cycle' : 'file cycle')}`,
     `level ${graph.level}`,
-    ...(scope.label !== '' && draft.leaving > 0 ? [`${plural(draft.leaving, 'import')} out of ${scope.label}`] : []),
+    ...(scope.label !== '' ? [`in ${scope.label}${draft.leaving > 0 ? `, ${plural(draft.leaving, 'import')} out of it` : ''}`] : []),
     ...extra,
   ];
   return {
@@ -471,7 +504,7 @@ function moduleGraph(model: RepoModel, repoName: string, ref: SourceRef, target:
       if (!finished.truncated || finished.truncated.strategy !== 'neighborhood') finished.truncated = {total: all, returned: drawn, strategy: 'treecut', by: 'loc'};
     }
   }
-  const warnings = graphWarnings(model);
+  const warnings = graphWarnings(model, files);
   if (sources === 0 && files.length > 0) warnings.push(`no source files under "${target || '.'}": nothing to draw`);
   return graphResult(finished, draft, scope, warnings, extra);
 }
@@ -492,10 +525,11 @@ export function depsSources(): Source[] {
     if (!focus) {
       // A directory, or a cluster of a module graph (a drill from one), is drawn as its module graph: that is what
       // was meant, and it costs no round trip (V006). The summary says so.
-      const isDir = parseModuleId(target).rest || model.files.some(file => inScope(file.path, target));
-      if (!isDir) throw new SourceError('E_TARGET', `${meta.name}: no such file "${target}"`);
+      const isDir = model.files.some(file => inScope(file.path, target));
+      const isModule = !isDir && parseModuleId(target).rest;
+      if (!isDir && !isModule) throw new SourceError('E_TARGET', `${meta.name}: no such file "${target}"`);
       const result = moduleGraph(model, ctx.name, {...ref, source: 'deps.modules', args: {}}, target, meta.budget, meta.name);
-      return {...result, summary: clampSummary(`a directory: drawn as deps.modules ${target}; ${result.summary}`)};
+      return {...result, summary: clampSummary(`${isModule ? 'a module' : 'a directory'}: drawn as deps.modules ${target}; ${result.summary}`)};
     }
     const depth = depthOf(ref) ?? 1;
     // Hops over file-to-file imports in both directions. An import of a package reaches the package directory, and
@@ -590,23 +624,33 @@ export function depsSources(): Source[] {
     return graphResult(finished, draft, scope, warnings, [`${baseName(target)} imports ${counted(imports, drawnImports)}, imported by ${counted(importers, drawnImporters)}`]);
   });
 
+  // deps.cycles, deps.external and deps.matrix read a path as what lies under it (a directory, a file or a module
+  // id such as 'src/*'): the cycles through it, the packages its files import, the imports between its modules.
   const cycles = define('deps.cycles', async (ctx, ref, _signal, meta) => {
     const model = await repoModel(ctx);
-    const rows: Rows = model.cycles.map((members, index) => ({
+    const scope = scopeOf(ref);
+    const {files} = scopedFiles(model, scope, meta.name);
+    const found = cyclesThrough(model, scope === '' ? undefined : files);
+    const rows: Rows = found.map((members, index) => ({
       id: index + 1,
       size: members.length,
       members: members.slice(0, MAX_CYCLE_MEMBERS).join(', ') + (members.length > MAX_CYCLE_MEMBERS ? `, +${members.length - MAX_CYCLE_MEMBERS} more` : ''),
     }));
-    const largest = model.cycles[0];
-    const lead = largest ? `largest ${plural(largest.length, 'file')}: ${largest.slice(0, 3).join(', ')}` : 'no import cycles';
-    return rowsResult(meta, ref, rows, {by: 'size', lead, warnings: unparsedWarning(model)});
+    const largest = found[0];
+    // Nothing to list reads as one phrase, as the empty plate shows it: 'no import cycles in web'.
+    const lead = largest ? leadOf(scope, `largest ${plural(largest.length, 'file')}: ${largest.slice(0, 3).join(', ')}`) : `no import cycles${scopeNote(scope, ' ')}`;
+    return rowsResult(meta, ref, rows, {by: 'size', lead, warnings: unparsedWarning(files)});
   });
 
   const external = define('deps.external', async (ctx, ref, _signal, meta) => {
     const model = await repoModel(ctx);
+    const scope = scopeOf(ref);
+    const {files, where} = scopedFiles(model, scope, meta.name);
+    // Only the importers under the path count: 'deps.external web' lists what the files of web/ import, not the
+    // packages of the whole repository.
     const packages = new Map<string, {package: string; ecosystem: string; importers: number}>();
     for (const link of model.links) {
-      if (!link.to.startsWith('ext:')) continue;
+      if (!link.to.startsWith('ext:') || !where.hasFile(link.from)) continue;
       const ecosystem = ecosystemOf(model.byPath.get(link.from)?.lang);
       const key = `${ecosystem}\0${link.to}`;
       const entry = packages.get(key) ?? {package: link.to.slice(4), ecosystem, importers: 0};
@@ -616,18 +660,25 @@ export function depsSources(): Source[] {
     const rows: Rows = [...packages.values()].sort((a, b) => b.importers - a.importers || byText(a.package, b.package))
       .map(entry => ({package: entry.package, importers: entry.importers, ecosystem: entry.ecosystem}));
     const first = rows[0];
-    return rowsResult(meta, ref, rows, {by: 'importers', ...(first ? {lead: `top ${String(first.package)} ${plural(Number(first.importers), 'importer')}`} : {}), warnings: unparsedWarning(model)});
+    const lead = first ? leadOf(scope, `top ${String(first.package)} ${plural(Number(first.importers), 'importer')}`) : scope ? `no external imports ${scopeNote(scope)}` : '';
+    return rowsResult(meta, ref, rows, {by: 'importers', ...(lead ? {lead} : {}), warnings: unparsedWarning(files)});
   });
 
   const matrix = define('deps.matrix', async (ctx, ref, _signal, meta) => {
     const model = await repoModel(ctx);
-    const modules = new Set(model.cut.ids);
+    const scope = scopeOf(ref);
+    const {files, where} = scopedFiles(model, scope, meta.name);
+    // The modules deps.modules draws for the same path: the repository cut, or the cut of the scope.
+    const cut = cutFor(model, scope, files, undefined);
+    const modules = new Set(cut.ids);
     const weights = new Map<string, {from: string; to: string; weight: number}>();
     for (const link of model.links) {
       const kind = targetKind(model, link);
       if (kind === 'ext') continue;
-      const from = model.cut.moduleOf(link.from);
-      const to = kind === 'file' ? model.cut.moduleOf(link.to) : model.cut.moduleOfDir(link.to);
+      // Imports between modules of the scope: both ends lie under the path.
+      if (!where.hasFile(link.from) || !(kind === 'file' ? where.hasFile(link.to) : where.hasDir(link.to))) continue;
+      const from = cut.moduleOf(link.from);
+      const to = kind === 'file' ? cut.moduleOf(link.to) : cut.moduleOfDir(link.to);
       if (from === to || !modules.has(from) || !modules.has(to)) continue;
       const key = `${from}\0${to}`;
       const entry = weights.get(key) ?? {from, to, weight: 0};
@@ -636,11 +687,14 @@ export function depsSources(): Source[] {
     }
     const rows: Rows = [...weights.values()].sort((a, b) => b.weight - a.weight || byText(a.from, b.from) || byText(a.to, b.to));
     const first = rows[0];
-    // The clusters of the repository graph: "20 of 495 modules" when the cut folds smaller ones, as deps.modules says.
-    const counted = model.modules > modules.size ? `${modules.size} of ${plural(model.modules, 'module')}` : plural(modules.size, 'module');
+    // The clusters of the graph: "20 of 495 modules" when the cut folds smaller ones, as deps.modules says. A file lies
+    // in one module, and has no imports between modules.
+    const all = modulesIn(model, scope, files);
+    const drawn = model.byPath.has(scope) ? 1 : modules.size;
+    const counted = all > drawn ? `${drawn} of ${plural(all, 'module')}` : plural(drawn, 'module');
     return rowsResult(meta, ref, rows, {
       by: 'weight',
-      lead: first ? `${counted}; heaviest ${String(first.from)} -> ${String(first.to)} ${String(first.weight)}` : `${counted}, no imports between them`,
+      lead: leadOf(scope, first ? `${counted}; heaviest ${String(first.from)} -> ${String(first.to)} ${String(first.weight)}` : `${counted}, no imports between them`),
     });
   });
 

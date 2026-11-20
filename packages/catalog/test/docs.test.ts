@@ -130,6 +130,17 @@ describe('component docs', () => {
     expect(doc.includes('  +frame: title= (draws the numbered plate) note= size=s|m|l|xl|fill')).toBe(frame);
   });
 
+  // Review finding (swap round): the docs said only "max height", so a model reasonably read size='l' as larger than
+  // the default and capped diagrams at 420 px, below the 640 px they grow to with no size.
+  it('say that size is only a maximum, and that a diagram with no size grows to 640px', () => {
+    expect(serverInstructions().split('\n').find(l => l.startsWith('SHARED'))).toContain('size=s|m|l|xl|fill (only a max height)');
+    for (const def of COMPONENTS.filter(hasFrame)) {
+      const doc = componentDoc(def.name)!;
+      expect(doc.includes('(max height; unsized diagrams grow to 640px)'), def.name).toBe(def.family === 'diagram');
+      expect(doc, def.name).toContain('(max height');
+    }
+  });
+
   it('frame components omit the shared props from their signature', () => {
     const table = COMPONENTS.find(c => c.name === 'DataTable')!;
     expect(hasFrame(table)).toBe(true);

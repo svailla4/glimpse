@@ -1,14 +1,12 @@
 /* Layers: horizontal bands separated by hairlines; a 140 px band label, boxes in a wrapping row, an italic note. */
 @layer gl.components {
+  /* As tall as the tiers, up to the plate's maximum height (set inline from useSizeCap, decision D20). */
   .root {
     display: flex;
     flex-direction: column;
     min-width: 0;
-    container: layers / inline-size;
-  }
-  .root[data-sized] {
-    height: 100%;
     overflow: auto;
+    container: layers / inline-size;
   }
   .band {
     display: grid;
@@ -20,11 +18,6 @@
   }
   .band[data-first] {
     border-top: 0;
-  }
-  /* In a sized plate the tiers share the height, but a tier is a band, not a panel: it stops growing at 96 px. */
-  .root[data-sized] .band {
-    flex: 1 0 auto;
-    max-height: 96px;
   }
   .name {
     margin: 0;

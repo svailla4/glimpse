@@ -1,6 +1,9 @@
 @layer gl.components {
-  .shell { display: flex; flex-direction: column; min-width: 0; }
-  .shell[data-sized] { height: 100%; }
+  /* The view root under it reads `max-height: var(--gl-cap)` (shell.tsx) and shrinks, with its scroller, when a note
+     in place above it takes part of a sized box. */
+  .shell { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .shell > :not(:global(.gl-state)) { flex: 0 1 auto; min-height: 0; }
+  .shell > :global(.gl-aside), .shell > :global(.gl-scope) { flex: none; }
   /* A flush plate has no padding of its own. A state that stands in for the view (drafting, empty, redline) is this
      wrapper's child, not the plate body's, so the kit's inset for flush plates is repeated here. */
   :global(.gl-frame[data-flush]) .shell > :global(.gl-state) { margin: 14px; }

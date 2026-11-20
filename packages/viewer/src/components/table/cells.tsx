@@ -20,6 +20,11 @@ export interface CellContext {
   cat: Readonly<Record<'lang' | 'module' | 'chip', (key: string | undefined) => string>>;
   /** Largest value per column key, for bars and heat swatches. */
   max: ReadonlyMap<string, number>;
+  /**
+   * Per path column, how many directories each path's label needs to differ from the other rows (distinctDepths):
+   * PathText keeps the one that differs, so two rows never read `…/CHANGELOG.md`.
+   */
+  depths?: ReadonlyMap<string, ReadonlyMap<string, number>>;
 }
 
 const isBlank = (value: unknown) => value === null || value === undefined || value === '' || (typeof value === 'number' && Number.isNaN(value));
@@ -197,7 +202,7 @@ export const CellContent = memo(function CellContent(p: {column: Column; row: Da
       return <span className={s.blank} role="img" aria-label="no">{DASH}</span>;
     }
     case 'path':
-      return typeof value === 'string' ? <Entity column={column} row={row} ctx={ctx}><PathText file={value} /></Entity> : <span className={s.text}>{text}</span>;
+      return typeof value === 'string' ? <Entity column={column} row={row} ctx={ctx}><PathText file={value} keep={ctx.depths?.get(column.key)?.get(value)} /></Entity> : <span className={s.text}>{text}</span>;
     case 'symbol':
       return <Entity column={column} row={row} ctx={ctx}><span className={s.mono}>{text}</span></Entity>;
     case 'commit':

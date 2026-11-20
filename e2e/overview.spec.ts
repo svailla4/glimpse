@@ -212,4 +212,33 @@ test.describe('legibility on this repository', () => {
     console.log(`overview module graph: ${labels.length} labels on screen, smallest drawn at ${smallest.toFixed(1)} px`);
     expect(smallest, 'smallest node label on screen, in px').toBeGreaterThanOrEqual(10);
   });
+
+  // Decisions D19 and D20: the same holds for every text the drawing shows, not only node names: second lines, group
+  // labels and edge labels too. Each is measured as its font size times the zoom of the drawing (the scale of the
+  // React Flow viewport), so a label the stage shrinks cannot pass on its own font size.
+  test('the module graph opens with all of its text at 10 px or more: names, second lines, group and edge labels', async ({page, glimpse}) => {
+    await glimpse.call('show', {view: 'overview'});
+    await openViewer(page, glimpse);
+    await expectSettled(page);
+    const stage = page.locator('.gl-cell[data-id="deps"] [role="img"]:has([data-node])');
+    await expect(stage.locator('[data-node]').first()).toBeVisible();
+    await page.evaluate(() => document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => resolve(undefined)))));
+    const texts = await stage.evaluate(element => {
+      const frame = element.getBoundingClientRect();
+      const viewport = element.querySelector('.react-flow__viewport');
+      const zoom = viewport ? new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a : 1;
+      const kinds: Array<[string, string]> = [['node', '[data-node] text'], ['group', '[data-group] span'], ['edge', '[data-edge-label] span']];
+      return {zoom, texts: kinds.flatMap(([kind, selector]) => [...element.querySelectorAll(selector)].map(node => {
+        const box = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        const shown = box.width > 0 && box.bottom > frame.top && box.top < frame.bottom && box.right > frame.left && box.left < frame.right && style.visibility !== 'hidden' && style.opacity !== '0';
+        return {kind, text: (node.textContent ?? '').trim(), size: parseFloat(style.fontSize) * zoom, shown};
+      }).filter(text => text.shown && text.text !== ''))};
+    });
+    const counts = Object.fromEntries(['node', 'group', 'edge'].map(kind => [kind, texts.texts.filter(text => text.kind === kind).length]));
+    const smallest = texts.texts.reduce((min, text) => (text.size < min.size ? text : min), texts.texts[0]!);
+    console.log(`overview module graph at ${(texts.zoom * 100).toFixed(0)}%: ${JSON.stringify(counts)} texts on screen, smallest '${smallest.text}' (${smallest.kind}) at ${smallest.size.toFixed(1)} px`);
+    expect(counts.node, 'node texts on screen').toBeGreaterThan(3);
+    for (const text of texts.texts) expect.soft(text.size, `${text.kind} '${text.text}' on screen, in px`).toBeGreaterThanOrEqual(10);
+  });
 });

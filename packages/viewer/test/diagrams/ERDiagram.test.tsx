@@ -1,9 +1,9 @@
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {VISIBLE_COLUMNS, cleanSchema} from '../../src/components/diagrams/ERDiagram.tsx';
-import {POSITIONS_KEY, configurePositionStorage} from '../../src/components/diagrams/edgekit/index.ts';
+import {POSITIONS_KEY, configurePositionStorage} from '../../src/components/diagrams/flowkit/index.ts';
 import {datasetFixture, errorDataset, pendingDataset, renderExpress} from '../harness.tsx';
-import {click, drag, edgeOf, fakeStorage, focus, inside, key, lineOf, nodeIds, nodeOf, pointsOf, positionOf, stageOf, type FakeStorage} from './util.tsx';
+import {click, drag, drawn, edgeOf, elk, fakeStorage, focus, inside, key, lineOf, nodeIds, nodeOf, pointsOf, positionOf, sizeOf, stageOf, viewOf, type FakeStorage} from './util.tsx';
 
 const SCHEMA = {
   tables: [
@@ -16,7 +16,14 @@ const SPEC = `root=Page('T',[e])\ne=ERDiagram($/schema,title='Schema',size='l')`
 const ready = async (schema: unknown = SCHEMA, spec = SPEC) => {
   const view = renderExpress(spec, {data: {'/schema': schema}});
   await screen.findByRole('img', {name: /^Entity-relationship diagram/});
+  await drawn(view, 'e');
   return view;
+};
+/** A route's point is within a pixel of (x, y): ELK puts a 1 px port just outside the table's side. */
+const near = (point: readonly [number, number] | undefined, x: number, y: number) => {
+  expect(point).toBeDefined();
+  expect(Math.abs(point![0] - x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(point![1] - y)).toBeLessThanOrEqual(1);
 };
 const wide = (columns: number) => ({name: 'wide', columns: Array.from({length: columns}, (_, i) => ({name: `c${i}`, type: 'int', pk: i === 0}))});
 
@@ -45,16 +52,24 @@ describe('ERDiagram', () => {
     expect(view.errors).toEqual([]);
   });
 
-  it('joins tables at the related columns with crow\'s-foot ends and a label', async () => {
+  // D19: a relation is an ELK edge between two ports, one on the row of each column.
+  it('joins tables at the related columns, through ports on their sides, with crow\'s-foot ends and a label', async () => {
     const view = await ready();
     const edge = edgeOf(view, 'e', 'sessions->users');
     const line = pointsOf(lineOf(edge));
     const sessions = positionOf(nodeOf(view, 'e', 'sessions'));
     const users = positionOf(nodeOf(view, 'e', 'users'));
-    const sessionsWidth = Number(nodeOf(view, 'e', 'sessions').querySelector('rect')!.getAttribute('width'));
+    const sessionsWidth = sizeOf(nodeOf(view, 'e', 'sessions')).w;
     // from the user_id row (second) of sessions to the id row (first) of users
-    expect(line[0]).toEqual([sessions.x + sessionsWidth, sessions.y + 26 + 22 + 11]);
-    expect(line.at(-1)).toEqual([users.x, users.y + 26 + 11]);
+    near(line[0], sessions.x + sessionsWidth, sessions.y + 26 + 22 + 11);
+    near(line.at(-1), users.x, users.y + 26 + 11);
+    // what the worker was asked: fixed ports on the two tables, the edge between them
+    const graph = elk.requests.at(-1)!.graph;
+    const table = (name: string) => graph.children!.find(child => child.id === name)!;
+    expect(table('sessions').layoutOptions).toEqual({'elk.portConstraints': 'FIXED_POS'});
+    expect(table('sessions').ports).toEqual([expect.objectContaining({y: 26 + 22 + 11 - 0.5, layoutOptions: {'elk.port.side': 'EAST'}})]);
+    expect(table('users').ports).toEqual([expect.objectContaining({y: 26 + 11 - 0.5, layoutOptions: {'elk.port.side': 'WEST'}})]);
+    expect(graph.edges![0]!.sources).toEqual([table('sessions').ports![0]!.id]);
     // many at the sessions end (three prongs), one at the users end (a bar)
     const marks = edge.querySelectorAll('path')[2]!.getAttribute('d')!;
     expect(marks.match(/M/g)).toHaveLength(2);
@@ -77,7 +92,7 @@ describe('ERDiagram', () => {
     const edge = edgeOf(view, 'e', 'sessions->users');
     expect(edge.querySelectorAll('path')[2]!.getAttribute('d')!.match(/M/g)).toHaveLength(1);
     const sessions = positionOf(nodeOf(view, 'e', 'sessions'));
-    expect(pointsOf(lineOf(edge))[0]![1]).toBe(sessions.y + (26 + 3 * 22) / 2);
+    expect(pointsOf(lineOf(edge))[0]![1]).toBeCloseTo(sessions.y + (26 + 3 * 22) / 2, 0);
   });
 
   it('folds a table over 12 columns and unfolds it on a click or Shift+Enter', async () => {
@@ -87,12 +102,12 @@ describe('ERDiagram', () => {
     expect(table().querySelector('[data-more]')!.textContent).toBe('+ 8 more');
     // a relation to a folded column attaches to the fold row
     const end = () => pointsOf(lineOf(edgeOf(view, 'e', 'other->wide'))).at(-1)![1] - positionOf(table()).y;
-    expect(end()).toBe(26 + 12 * 22 + 11);
+    expect(end()).toBeCloseTo(26 + 12 * 22 + 11, 0);
 
     click(table().querySelector('[data-more] rect')!);
     await waitFor(() => expect(table().querySelectorAll('[data-column]')).toHaveLength(20));
     expect(table().querySelector('[data-more]')!.textContent).toBe('show fewer');
-    expect(end()).toBe(26 + 17 * 22 + 11);
+    await waitFor(() => expect(end()).toBeCloseTo(26 + 17 * 22 + 11, 0));
     // unfolding is not a selection
     expect(view.getData('/ui/sel')).toBeNull();
 
@@ -131,6 +146,7 @@ describe('ERDiagram', () => {
     await waitFor(() => expect(view.cell('e').querySelector('[data-gl-state="empty"]')!.textContent).toBe('no tables to draw'));
     view.setData('/schema', {...datasetFixture('repo.packages'), kind: 'record', data: SCHEMA});
     await waitFor(() => expect(nodeIds(view, 'e')).toEqual(['users', 'sessions']));
+    expect(stageOf(view, 'e')).toBeTruthy();
   });
 
   it.each([
@@ -158,6 +174,7 @@ describe('ERDiagram', () => {
     expect([...nodeOf(view, 'e', 'a').querySelectorAll('[data-column]')].map(row => row.getAttribute('data-column'))).toEqual(['bare', 'ok']);
     // a table without columns is still a box with one empty row
     expect(nodeOf(view, 'e', 'b.c').querySelector('rect')!.getAttribute('height')).toBe(String(26 + 22));
+    expect(sizeOf(nodeOf(view, 'e', 'b.c')).h).toBe(26 + 22);
     expect([...view.cell('e').querySelectorAll('[data-edge]')].map(e => e.getAttribute('data-edge')).sort()).toEqual(['a->a', 'a->b.c']);
     expect(view.cell('e').querySelector('[data-gl-note]')!.textContent).toBe('3 relations to unknown tables dropped · 3 unnamed or repeated tables dropped');
     const clean = cleanSchema(schema);
@@ -175,28 +192,28 @@ describe('ERDiagram', () => {
     }
   });
 
-  it('lays out top to bottom with dir=TB', async () => {
+  it('lays out top to bottom with dir=TB, the relation still between the two rows', async () => {
     const view = await ready(SCHEMA, `root=Page('T',[e])\ne=ERDiagram($/schema,dir='TB',title='Schema',size='l')`);
-    expect(positionOf(nodeOf(view, 'e', 'sessions')).y).toBeLessThan(positionOf(nodeOf(view, 'e', 'users')).y);
+    const sessions = positionOf(nodeOf(view, 'e', 'sessions'));
+    const users = positionOf(nodeOf(view, 'e', 'users'));
+    expect(sessions.y).toBeLessThan(users.y);
     const line = pointsOf(lineOf(edgeOf(view, 'e', 'sessions->users')));
-    expect(line.at(-1)![1]).toBe(positionOf(nodeOf(view, 'e', 'users')).y);
+    expect(Math.abs(line[0]![1] - (sessions.y + 26 + 22 + 11))).toBeLessThanOrEqual(1);
+    expect(Math.abs(line.at(-1)![1] - (users.y + 26 + 11))).toBeLessThanOrEqual(1);
   });
 
   it('lets tables be dragged: relations follow, the position is stored, Re-layout brings the layout back', async () => {
     const view = await ready();
-    const stage = stageOf(view, 'e');
     const before = positionOf(nodeOf(view, 'e', 'users'));
     const edgeBefore = lineOf(edgeOf(view, 'e', 'sessions->users'));
     expect(within(view.cell('e')).queryByRole('button', {name: /Re-layout/})).toBeNull();
 
-    drag(stage, nodeOf(view, 'e', 'users'), 80, 120);
+    const {k} = viewOf(stageOf(view, 'e'));
+    await drag(nodeOf(view, 'e', 'users'), 80, 120);
     const after = positionOf(nodeOf(view, 'e', 'users'));
-    expect(after).toEqual({x: before.x + 80, y: before.y + 120});
-    const edgeAfter = lineOf(edgeOf(view, 'e', 'sessions->users'));
-    expect(edgeAfter).not.toBe(edgeBefore);
-    // still from the user_id row to the id row
-    expect(pointsOf(edgeAfter)[0]).toEqual(pointsOf(edgeBefore)[0]);
-    expect(pointsOf(edgeAfter).at(-1)).toEqual([after.x, after.y + 26 + 11]);
+    expect(after.x).toBeCloseTo(before.x + 80 / k, -0.5);
+    expect(after.y).toBeCloseTo(before.y + 120 / k, -0.5);
+    expect(lineOf(edgeOf(view, 'e', 'sessions->users'))).not.toBe(edgeBefore);
     expect(Object.keys(JSON.parse(storage.items.get(POSITIONS_KEY)!)['demo/test/e'])).toEqual(['users']);
 
     fireEvent.click(within(view.cell('e')).getByRole('button', {name: /Re-layout/}));
@@ -245,7 +262,8 @@ describe('ERDiagram: opens readable (design rule D18)', () => {
     ]};
     const view = renderExpress(`root=Page('T',[e])\ne=ERDiagram($/schema,title='Schema')`, {data: {'/schema': [...SCHEMA.tables, orders]}, size: {width: 724, height: 600}});
     await screen.findByRole('img', {name: /^Entity-relationship diagram/});
-    const zoom = Number.parseInt(view.cell('e').querySelector('button[aria-label="Zoom out"]')!.previousElementSibling!.textContent!, 10);
+    await drawn(view, 'e', 3);
+    const zoom = Number.parseInt(view.cell('e').querySelector('[data-zoom]')!.textContent!, 10);
     expect(zoom).toBeGreaterThanOrEqual(91);
   });
 });

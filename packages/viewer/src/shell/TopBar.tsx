@@ -165,12 +165,14 @@ export function TopBar(p: TopBarProps): JSX.Element {
   return (
     <header className={css.bar}>
       <div className={css.tabs} role="tablist" aria-label="Views" ref={tabs} onKeyDown={onKeyDown} data-clip-start={clip.start || undefined} data-clip-end={clip.end || undefined}>
-        {p.surfaces.map(info => {
+        {p.surfaces.map((info, index) => {
           const active = info.id === p.focus;
+          // The strip stays reachable with Tab when no view is on screen (a link to a closed one): the first tab takes it.
+          const entry = active || (index === 0 && !p.surfaces.some(item => item.id === p.focus));
           const name = fullTitle(info);
           return (
             <div className={css.tab} key={info.id} data-active={active || undefined}>
-              <button type="button" role="tab" className={css.tabButton} data-surface={info.id} aria-selected={active} aria-controls="gl-view" aria-label={name} tabIndex={active ? 0 : -1} title={info.view ? `${name} · ${info.view}` : name} onClick={() => p.onFocus(info.id)}>
+              <button type="button" role="tab" className={css.tabButton} data-surface={info.id} aria-selected={active} aria-controls="gl-view" aria-label={name} tabIndex={entry ? 0 : -1} title={info.view ? `${name} · ${info.view}` : name} onClick={() => p.onFocus(info.id)}>
                 {tabLabel(info)}
               </button>
               {live ? (

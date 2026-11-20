@@ -205,6 +205,14 @@
      however many wrappers the view puts around it. */
   .gl-frame[data-flush] > .gl-frame-body .gl-state { margin: 14px; }
   .gl-frame[data-flush] > .gl-frame-body :is(.gl-drafting, .gl-empty) { height: calc(100% - 28px); }
+  /* While a sized component drafts, what it will show is not known yet: it holds its size step, the most it may take
+     (a table of a real dataset usually reaches it), as it did before plates became content-sized (D20). The step is
+     the most the view box may take: the plate body's padding, or the inset a flush plate gives its states, is 14 px a
+     side. The drafting is the body's child (the chunk loads) or the only child of the view's root (the data loads). */
+  .gl-cell[data-size] > .gl-body > .gl-drafting,
+  .gl-cell[data-size] > .gl-body > * > .gl-drafting:only-child { min-height: var(--gl-h); }
+  .gl-cell[data-size] > .gl-frame > .gl-frame-body > .gl-drafting,
+  .gl-cell[data-size] > .gl-frame > .gl-frame-body > * > .gl-drafting:only-child { min-height: calc(var(--gl-h) - 28px); }
   /* While its chunk loads, a chart without a size step holds the height it will draw at (the height its own
      pending state reserves, charts/chartkit), so the page does not jump when it arrives. The two inline charts are a
      line high and keep the default. The body is the cell's child without a plate and the plate's body with one. */
@@ -236,9 +244,16 @@
   .gl-path-dir, .gl-path-line { color: var(--gl-ink-3); }
   .gl-path-dir { flex: 0 1000000 auto; min-width: 2.5ch; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
   .gl-path-dir > bdi { direction: ltr; }
-  /* Whole directories were dropped for `…/` (kit/entity.tsx): what is left fits, and sits against the name. */
-  .gl-path-dir[data-dropped] { min-width: auto; }
+  /* Whole directories were dropped for `…/` (kit/entity.tsx): what is left was measured to fit and never shrinks
+     again, so the mark that says the path goes on is never cut ('./name.ts'). A name that is still too long is cut
+     after it, in its middle. The box is exactly as wide as that text: the 2.5ch floor above would leave a gap
+     after a bare `…/` ('…/ name.ts'). */
+  .gl-path-dir[data-dropped] { flex: none; min-width: 0; }
   .gl-path-base { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--gl-ink); }
+  /* A long name gives way in its middle: its end (the word before the extension, the extension) stays whole. */
+  .gl-path-base[data-split] { display: flex; }
+  .gl-path-head { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .gl-path-tail { flex: none; }
   .gl-path-line { flex: none; }
   .gl-path-ext {
     display: inline-block;

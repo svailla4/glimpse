@@ -570,9 +570,10 @@ describe('history counted the same way in every git.* source', () => {
     // the start commit and the four edits touch packages/a; Ana and Ben; x.ts, y.ts and its package.json
     expect(a).toEqual({module: 'packages/a', commits: 5, authors: 2, files: 3});
     expect(result.data.find(row => row.module === 'packages/b')).toEqual({module: 'packages/b', commits: 2, authors: 2, files: 2});
-    // every changed file is in exactly one row
-    const perFile = (await run<ChurnRow[]>(ctx, 'git.churn')).data;
-    expect(result.data.reduce((sum, row) => sum + row.files, 0)).toBe(perFile.length);
+    // every changed file is in exactly one row: those per-file churn ranks, and the changelog it leaves out
+    const perFile = await run<ChurnRow[]>(ctx, 'git.churn');
+    expect(perFile.summary).toContain('1 changelog left out');
+    expect(result.data.reduce((sum, row) => sum + row.files, 0)).toBe(perFile.data.length + 1);
     await expect(run(ctx, 'git.churn by=author')).rejects.toMatchObject({code: 'E_ARGS'});
   });
 

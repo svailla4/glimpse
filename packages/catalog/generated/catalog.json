@@ -308,7 +308,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height. One of: s|m|l|xl|fill."
+          "description": "Height the two panes share (fixed, not a maximum). One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -362,7 +362,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -404,7 +404,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -495,7 +495,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -537,7 +537,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -609,7 +609,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -701,7 +701,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -748,7 +748,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -806,7 +806,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -876,7 +876,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -917,7 +917,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -964,7 +964,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1046,7 +1046,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1122,7 +1122,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1194,7 +1194,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1270,7 +1270,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1326,7 +1326,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1388,7 +1388,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1438,7 +1438,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1507,7 +1507,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1570,7 +1570,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1600,7 +1600,7 @@
             "LR",
             "TB"
           ],
-          "description": "Flow direction. Default LR. One of: LR|TB."
+          "description": "Flow direction. Default: whichever reads larger at the plate width, LR on a tie. One of: LR|TB."
         },
         "focus": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -1629,7 +1629,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1659,7 +1659,7 @@
             "TB",
             "LR"
           ],
-          "description": "Flow direction. Default TB. One of: TB|LR."
+          "description": "Flow direction; wins over a src header ('graph LR'). Default: the header's, else whichever reads larger in its plate. One of: TB|LR."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -1678,7 +1678,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1720,7 +1720,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1762,7 +1762,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1793,7 +1793,7 @@
             "LR",
             "TB"
           ],
-          "description": "Layout direction. Default LR. One of: LR|TB."
+          "description": "Default: whichever reads larger. One of: LR|TB."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -1812,7 +1812,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1897,7 +1897,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1951,7 +1951,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -1992,7 +1992,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",
@@ -2034,7 +2034,7 @@
             "xl",
             "fill"
           ],
-          "description": "Height 160/280/420/640px or fill the viewport. One of: s|m|l|xl|fill."
+          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
         },
         "span": {
           "type": "integer",

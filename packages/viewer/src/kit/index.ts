@@ -18,6 +18,8 @@ export * from './provider.tsx';
 export {REPORT_CODES, ReportContext, Subpart, createRedefinitions, reportCode, useReportState} from './report.ts';
 export type {RenderReport, ReportChannel} from './report.ts';
 export * from './select.ts';
+export {DEFAULT_CAP, FAMILY_CAPS, FILL_MIN, FILL_OFFSET, SIZE_STEPS, sizeCap, useSizeCap} from './sizeCap.ts';
+export type {SizeStep} from './sizeCap.ts';
 export * from './states.tsx';
 export * from './surface.ts';
 export * from './tooltip.tsx';

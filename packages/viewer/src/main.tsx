@@ -2,7 +2,7 @@
 //
 // Two rules for this file:
 // 1. './styles/tokens.css' is the FIRST import, before anything that can reach a component. It declares the layer
-//    order (gl.tokens, gl.base, gl.kit, gl.components); CSS is emitted in import order, and a layer that is seen
+//    order (xyflow, gl.tokens, gl.base, gl.kit, gl.components); CSS is emitted in import order, and a layer that is seen
 //    first sorts first. The build repeats the declaration at the top of every CSS file (vite.config.ts), but the
 //    dev server relies on this import order alone.
 // 2. Fixture data is loaded with a dynamic import, and only in dev builds, so it stays out of the eager bundle

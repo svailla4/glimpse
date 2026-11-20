@@ -6,7 +6,7 @@ import {DataGate, Empty, Redline, fmtNum, useDataset, type GlView} from '../../k
 import {
   Diagram, MONO_11, MONO_12, UI_12, fitText, textWidth,
   type DiagramEdge, type DiagramNode, type Dir, type Mark, type NodeFlags,
-} from './edgekit/index.ts';
+} from './flowkit/index.ts';
 import css from './ERDiagram.module.css';
 
 const HEAD = 26;
@@ -150,7 +150,7 @@ function entityOf(table: Table): EntityRef {
   return {type: 'file', id: loc.path, path: loc.path, ...(loc.line != null ? {line: loc.line} : {}), ...(loc.endLine != null ? {endLine: loc.endLine} : {}), label: table.name};
 }
 
-function ErBody(p: {id: string; data: unknown; dir: Dir; sized: boolean}) {
+function ErBody(p: {id: string; data: unknown; dir?: Dir}) {
   const {id, dir} = p;
   const clean = useMemo(() => cleanSchema(p.data), [p.data]);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
@@ -166,7 +166,6 @@ function ErBody(p: {id: string; data: unknown; dir: Dir; sized: boolean}) {
     if (typeof clean === 'string' || clean.tables.length > MAX_TABLES) return undefined;
     // Row index of each column a relation can attach to, per table, as drawn right now.
     const rowOf = new Map<string, Map<string, number>>();
-    const heights = new Map<string, number>();
     const nodes: Array<DiagramNode<TableDraw>> = clean.tables.map(table => {
       const foldable = table.columns.length > VISIBLE_COLUMNS;
       const folded = foldable && !unfolded.has(table.name);
@@ -184,7 +183,6 @@ function ErBody(p: {id: string; data: unknown; dir: Dir; sized: boolean}) {
       // A relation to a folded column attaches to the fold row.
       if (folded) for (const col of table.columns.slice(VISIBLE_COLUMNS)) if (!rows.has(col.name)) rows.set(col.name, visible.length);
       rowOf.set(table.name, rows);
-      heights.set(table.name, h);
       const keys = table.columns.filter(col => col.pk).map(col => col.name);
       return {
         id: table.name,
@@ -207,10 +205,10 @@ function ErBody(p: {id: string; data: unknown; dir: Dir; sized: boolean}) {
         },
       };
     });
+    // A relation between columns attaches at their rows: a port on the table's side, at the middle of the row.
     const port = (table: string, column: string | undefined): number | undefined => {
       const row = column !== undefined ? rowOf.get(table)?.get(column) : undefined;
-      // Rows only line up with an edge that arrives from the side.
-      return row === undefined || dir !== 'LR' ? undefined : HEAD + row * ROW + ROW / 2 - (heights.get(table) ?? 0) / 2;
+      return row === undefined ? undefined : HEAD + row * ROW + ROW / 2;
     };
     const edges: DiagramEdge[] = clean.relations.map((rel, i) => {
       const marks = rel.card ? CARDINALITY[rel.card] : undefined;
@@ -228,7 +226,7 @@ function ErBody(p: {id: string; data: unknown; dir: Dir; sized: boolean}) {
       };
     });
     return {nodes, edges};
-  }, [clean, unfolded, dir]);
+  }, [clean, unfolded]);
 
   const onNodeClick = useCallback((node: DiagramNode<TableDraw>, target: Element) => {
     if (!target.closest?.('[data-more]')) return false;
@@ -256,14 +254,15 @@ function ErBody(p: {id: string; data: unknown; dir: Dir; sized: boolean}) {
       nodes={model.nodes}
       edges={model.edges}
       dir={dir}
-      sized={p.sized}
       ariaLabel={ariaLabel}
       note={notes.join(' · ') || undefined}
       renderNode={drawTable}
       onNodeClick={onNodeClick}
       onDrill={onDrill}
-      nodesep={32}
-      ranksep={72}
+      // Column types and edge labels are 11 px: the stage opens no further out than keeps them at 10 px.
+      minText={11}
+      nodeGap={32}
+      layerGap={64}
     />
   );
 }
@@ -272,7 +271,9 @@ export const ERDiagramView: GlView<typeof C.ERDiagram> = ({id, props}) => {
   const state = useDataset<ErData>(props.data);
   return (
     <DataGate state={state} id={`ERDiagram#${id}`}>
-      {data => <ErBody id={id} data={data} dir={props.dir === 'TB' ? 'TB' : 'LR'} sized={props.size != null} />}
+      {/* Without dir= the schema is laid out both ways and drawn the way that reads larger in its plate (a fourth
+          table was cut at the edge of a narrow plate when it was always left to right). */}
+      {data => <ErBody id={id} data={data} dir={props.dir === 'TB' || props.dir === 'LR' ? props.dir : undefined} />}
     </DataGate>
   );
 };

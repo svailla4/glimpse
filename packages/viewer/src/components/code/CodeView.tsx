@@ -4,7 +4,7 @@ import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, t
 import {
   Drafting, Empty, Icon, PlateAside, REPORT_CODES, Redline, fmtNum, toNumber, useDataset, useFollowedFile, useHostActions, useRev, useSelection, type GlView,
 } from '../../kit/index.ts';
-import {Crumbs, ignoredMarksText, inRanges, parseMarks, TokenSpans} from './codekit/lines.tsx';
+import {Crumbs, ignoredMarksText, inRanges, parseMarks, TokenSpans, useCapStyle} from './codekit/lines.tsx';
 import k from './codekit/lines.module.css';
 import {useFileLines} from './codekit/useFileLines.ts';
 import {VirtualRows, type VirtualRowsHandle} from './codekit/VirtualRows.tsx';
@@ -59,7 +59,7 @@ export const CodeViewView: GlView<typeof C.CodeView> = ({id, props}) => (
     file={props.file}
     mark={props.mark}
     notes={props.notes}
-    fit={props.size ? 'fill' : 'cap'}
+    fit="cap"
     chrome={typeof props.title === 'string' && props.title !== '' ? 'plate' : 'boxed'}
   />
 );
@@ -70,6 +70,7 @@ export interface CodeFileProps {
   file?: string;
   mark?: string;
   notes?: DataInput<CodeNote[]>;
+  /** `cap`: as tall as its lines up to the cell's cap (D20); `fill`: fills the pane of the view it is part of. */
   fit: 'fill' | 'cap';
   /** Where the header goes: into the plate header, into a boxed body, or into a body that sits inside another view. */
   chrome: 'plate' | 'boxed' | 'bare';
@@ -101,6 +102,7 @@ export function CodeFile(props: CodeFileProps): ReactNode {
   const file = lines.file;
   const current = file !== undefined && file.path === path;
   const total = file?.total ?? 0;
+  const capStyle = useCapStyle({'--gl-digits': String(total).length});
 
   const {ranges: marks, ignored: badMarks} = useMemo(() => parseMarks(props.mark), [props.mark]);
   const notesState = useDataset<CodeNote[]>(props.notes);
@@ -280,7 +282,7 @@ export function CodeFile(props: CodeFileProps): ReactNode {
       data-fit={props.fit}
       data-boxed={props.chrome === 'boxed' ? '' : undefined}
       aria-busy={lines.loading || undefined}
-      style={{['--gl-digits' as never]: String(total).length}}
+      style={capStyle}
     >
       {framed ? (
         <PlateAside><span className={k.bits}>{bits}{open}</span></PlateAside>

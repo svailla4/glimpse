@@ -17,13 +17,14 @@ export interface HostFixture {
 
 export const HOST_ENV = {GLIMPSE_PORT: '0', GLIMPSE_NO_OPEN: '1', GLIMPSE_TOKEN: TOKEN};
 
-/** A minimal built viewer: index.html plus two hashed assets. */
+/** A minimal built viewer: index.html plus three hashed assets, one of them a layout worker. */
 export async function fakeViewer(root: string): Promise<string> {
   const dir = join(root, 'viewer-dist');
   await mkdir(join(dir, 'assets'), {recursive: true});
   await writeFile(join(dir, 'index.html'), '<!doctype html><title>Glimpse</title><div id="root"></div><script type="module" src="/assets/index-abc123.js"></script>');
   await writeFile(join(dir, 'assets', 'index-abc123.js'), 'console.log("viewer")');
   await writeFile(join(dir, 'assets', 'index-abc123.css'), '@layer gl.tokens;');
+  await writeFile(join(dir, 'assets', 'elk.worker-abc123.js'), 'self.onmessage = event => self.postMessage(event.data);');
   await writeFile(join(dir, 'assets', '.hidden'), 'secret');
   return dir;
 }

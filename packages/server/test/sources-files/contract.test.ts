@@ -77,7 +77,9 @@ describe('with git', () => {
     expect(dir.data).toEqual((await run(ctx, 'deps.modules src')).data);
     expect(await failure(ctx, 'deps.files src/nope.ts')).toEqual({code: 'E_TARGET', message: 'deps.files: no such file "src/nope.ts"'});
     expect(await failure(ctx, 'code.symbols')).toMatchObject({code: 'E_TARGET'});
-    expect(await failure(ctx, 'code.symbols src')).toEqual({code: 'E_TARGET', message: 'code.symbols: no such file "src"'});
+    // A directory is no file, and the refusal says which call lists its files.
+    expect(await failure(ctx, 'code.symbols src')).toEqual({code: 'E_TARGET', message: 'code.symbols reads one file, and "src" is a directory: files.list src lists its files'});
+    expect(await failure(ctx, 'code.symbols src/nope.ts')).toEqual({code: 'E_TARGET', message: 'code.symbols: no such file "src/nope.ts"'});
     expect(await failure(ctx, 'code.refs')).toMatchObject({code: 'E_TARGET'});
     expect(await failure(ctx, 'code.refs noSuchIdentifierAnywhere')).toEqual({code: 'E_TARGET', message: 'code.refs: no matches for "noSuchIdentifierAnywhere"'});
     expect(await failure(ctx, `code.refs ${'x'.repeat(201)}`)).toMatchObject({code: 'E_TARGET'});

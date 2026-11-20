@@ -1,12 +1,16 @@
 // repo.kpis, repo.stack, repo.packages, repo.scripts: the headline numbers and what the project is built with.
 import type {ChipItem, LangRow, Rows, StatItem} from '@glimpse/catalog';
-import {repoModel, type RepoModel} from '../../analyze/index.ts';
+import {parseModuleId} from '../../analyze/cluster.ts';
+import {repoModel} from '../../analyze/index.ts';
 import {languageOf} from '../../analyze/languages.ts';
-import {codeLines, declaredPackages} from '../../analyze/model.ts';
-import type {Source} from '../../contracts.ts';
+import {toolsOf} from '../../analyze/manifests.ts';
+import {codeLines, declaredPackages, packagesOf, sourceLines} from '../../analyze/model.ts';
+import {ecosystemOf} from '../../analyze/resolve.ts';
+import type {FileEntry, Source} from '../../contracts.ts';
+import {cyclesThrough, modulesIn, scopedFiles} from './deps.ts';
 import {languageMix, UNCLASSIFIED} from './files.ts';
-import {readHistory} from './history.ts';
-import {compact, define, itemsResult, rowsResult, type SourceOptions} from './shared.ts';
+import {readHistory, scopedTotals, type Totals} from './history.ts';
+import {compact, define, itemsResult, leadOf, rowsResult, scopeNote, scopeOf, type SourceOptions} from './shared.ts';
 
 const THIRTY_DAYS = 30 * 86_400;
 const MAX_LANGUAGE_CHIPS = 6;
@@ -61,57 +65,103 @@ function knownDependency(name: string) {
     ?? known(lower.split('.').slice(0, 2).join('.'));
 }
 
-/** The language mix without data, prose and configuration formats: the languages someone writes code in (stack chips). */
-function codedLanguages(model: RepoModel): LangRow[] {
+/**
+ * The language mix of `files` without data, prose and configuration formats: the languages someone writes code in
+ * (stack chips).
+ */
+function codedLanguages(files: readonly FileEntry[]): LangRow[] {
   const coded = new Set<string>();
-  for (const file of model.files) {
+  for (const file of files) {
     const language = file.lang ? languageOf(file.path) : undefined;
     if (language && (language.kind === 'code' || language.kind === 'markup')) coded.add(language.name);
   }
-  return languageMix(model).filter(row => coded.has(row.lang));
+  return languageMix(files).filter(row => coded.has(row.lang));
+}
+
+/** Manifest ecosystems that can declare what a file of each ecosystemOf() value imports. */
+const MANIFESTS_OF: Readonly<Record<string, readonly string[]>> = {npm: ['npm', 'deno'], maven: ['maven', 'gradle']};
+
+/**
+ * The manifests a path reads (packagesOf): those under it, else the package it belongs to. Of an enclosing directory
+ * with several manifests (a package.json beside a pyproject.toml), those of the languages the path is written in;
+ * a Makefile serves every language. The note says which, so a table of the enclosing package is never taken for one
+ * the path holds.
+ */
+function manifestsFor<T extends {dir: string; ecosystem: string}>(packages: readonly T[], scope: string, files: readonly FileEntry[]): {packages: T[]; note: string} {
+  const found = packagesOf(packages, scope);
+  if (scope === '' || !found.enclosing) return {packages: found.packages, note: scopeNote(scope)};
+  if (found.packages.length === 0) return {packages: [], note: `no manifest in ${scope} or above it`};
+  const ecosystems = new Set(['make']);
+  for (const file of files) {
+    if (sourceLines(file) === 0) continue;
+    const ecosystem = ecosystemOf(file.lang);
+    for (const name of MANIFESTS_OF[ecosystem] ?? [ecosystem]) ecosystems.add(name);
+  }
+  const matching = found.packages.filter(pkg => ecosystems.has(pkg.ecosystem));
+  const chosen = matching.length > 0 ? matching : found.packages;
+  const homes = [...new Set(chosen.map(pkg => pkg.dir || 'the root'))].join(', ');
+  return {packages: chosen, note: `no manifest in ${scope}, so those of ${homes}`};
 }
 
 export function repoSources(options: SourceOptions): Source[] {
   const kpis = define('repo.kpis', async (ctx, ref, signal, meta) => {
+    const scope = scopeOf(ref);
     const [model, history] = await Promise.all([repoModel(ctx), readHistory(ctx, signal)]);
     signal.throwIfAborted();
-    const lines = model.files.reduce((sum, file) => sum + codeLines(file), 0);
+    // A path counts what lies under it, each number as the source of the same plate counts it for that path.
+    const {files, where} = scopedFiles(model, scope, meta.name);
+    const lines = files.reduce((sum, file) => sum + codeLines(file), 0);
     // Each number is the count another plate on the same page shows (decision D16): the Languages KPI the rows of
     // files.langs (its catch-all of unknown text files aside), Modules the modules deps.modules and deps.matrix cut
     // the repository into before a graph folds the smaller ones ("20 of N"), File cycles the rows of deps.cycles.
-    const languages = languageMix(model).filter(row => row.lang !== UNCLASSIFIED).length;
+    const languages = languageMix(files).filter(row => row.lang !== UNCLASSIFIED).length;
+    const modules = modulesIn(model, scope, files);
+    const cycles = cyclesThrough(model, scope === '' ? undefined : files).length;
     const stats: StatItem[] = [
-      {label: 'Files', value: model.files.length},
+      {label: 'Files', value: files.length},
       {label: 'Lines', value: lines, format: 'compact'},
       {label: 'Languages', value: languages},
-      {label: 'Modules', value: model.modules},
+      {label: 'Modules', value: modules},
       // File level, and named so: a module graph marks cycles between modules, which is a different count.
-      {label: 'File cycles', value: model.cycles.length, ...(model.cycles.length > 0 ? {tone: 'warn' as const} : {})},
+      {label: 'File cycles', value: cycles, ...(cycles > 0 ? {tone: 'warn' as const} : {})},
     ];
     const warnings = [...model.warnings];
-    if (history) {
+    let totals: Totals | undefined;
+    if (history && scope !== '') {
+      try {
+        totals = await scopedTotals(ctx, {dir: parseModuleId(scope).dir, has: path => where.hasFile(path)}, signal);
+      } catch (error) {
+        signal.throwIfAborted();
+        ctx.log(`glimpse: git log of ${scope} failed, history metrics omitted (${error instanceof Error ? (error.message.split('\n')[0] ?? '').slice(0, 120) : 'unknown error'})`);
+      }
+    } else if (history) totals = {times: history.times, authors: history.authors, partial: history.partial, warnings: history.totalWarnings};
+    if (totals) {
       const now = options.now() / 1000;
-      const recent = history.times.filter(time => time > now - THIRTY_DAYS).length;
-      const before = history.times.filter(time => time <= now - THIRTY_DAYS && time > now - 2 * THIRTY_DAYS).length;
+      const recent = totals.times.filter(time => time > now - THIRTY_DAYS).length;
+      const before = totals.times.filter(time => time <= now - THIRTY_DAYS && time > now - 2 * THIRTY_DAYS).length;
       // The same commits and authors git.log and git.authors list: one parsed history (git/log.ts). A shallow clone
       // holds only its latest commits, so the counts are lower bounds and a rise against the month before is the
       // depth of the clone, not activity: no delta is drawn (V033).
-      const bound = history.partial ? {unit: 'or more'} : {};
+      const bound = totals.partial ? {unit: 'or more'} : {};
       stats.push(
-        {label: 'Commits (30d)', value: recent, ...bound, ...(history.partial ? {} : {delta: recent - before})},
-        {label: 'Contributors', value: history.authors.size, ...bound},
+        {label: 'Commits (30d)', value: recent, ...bound, ...(totals.partial ? {} : {delta: recent - before})},
+        {label: 'Contributors', value: totals.authors.size, ...bound},
       );
-      warnings.push(...history.totalWarnings);
+      warnings.push(...totals.warnings);
     } else warnings.push('no git history: commit and contributor counts are omitted');
     // Exact below 10,000, as the viewer shows them: a rounded "4.7k" next to "4,690 files" reads as a second count.
     const shownValue = (value: number) => (Math.abs(value) < 10_000 ? value.toLocaleString('en-US') : compact(value));
     const lead = (shown: StatItem[]) =>
-      shown.map(stat => `${stat.label} ${typeof stat.value === 'number' ? shownValue(stat.value) : stat.value}${stat.unit ? ` ${stat.unit}` : ''}`).join(', ');
+      leadOf(scope, shown.map(stat => `${stat.label} ${typeof stat.value === 'number' ? shownValue(stat.value) : stat.value}${stat.unit ? ` ${stat.unit}` : ''}`).join(', '));
     return itemsResult(meta, ref, stats, 'label value', lead, warnings);
   });
 
   const stack = define('repo.stack', async (ctx, ref, _signal, meta) => {
+    const scope = scopeOf(ref);
     const model = await repoModel(ctx);
+    // A path: the languages of its files, the frameworks of the manifests it reads, the tools its files reveal.
+    const {files} = scopedFiles(model, scope, meta.name);
+    const {packages, note} = manifestsFor(model.manifests.packages, scope, files);
     const chips: ChipItem[] = [];
     const seen = new Set<string>();
     const add = (item: ChipItem) => {
@@ -120,9 +170,9 @@ export function repoSources(options: SourceOptions): Source[] {
       seen.add(label);
       chips.push(item);
     };
-    for (const row of codedLanguages(model).slice(0, MAX_LANGUAGE_CHIPS)) if (row.pct >= 1 || chips.length === 0) add({label: row.lang, slotKey: row.lang});
+    for (const row of codedLanguages(files).slice(0, MAX_LANGUAGE_CHIPS)) if (row.pct >= 1 || chips.length === 0) add({label: row.lang, slotKey: row.lang});
     const found = new Map<string, {label: string; category: Category; uses: number}>();
-    for (const pkg of model.manifests.packages) {
+    for (const pkg of packages) {
       for (const dep of pkg.deps) {
         const known = knownDependency(dep);
         if (!known) continue;
@@ -135,24 +185,30 @@ export function repoSources(options: SourceOptions): Source[] {
     for (const entry of ranked.filter(item => item.category === 'framework').slice(0, MAX_FRAMEWORK_CHIPS)) add(entry.label);
     for (const entry of ranked.filter(item => item.category === 'store')) add({label: entry.label, tone: 'info'});
     for (const entry of ranked.filter(item => item.category === 'tool')) add(entry.label);
-    for (const tool of model.manifests.tools) add(tool);
-    return itemsResult(meta, ref, chips, 'label', shown => shown.map(item => (typeof item === 'string' ? item : item.label)).join(', '));
+    for (const tool of scope === '' ? model.manifests.tools : toolsOf(files.map(file => file.path))) add(tool);
+    const labels = (shown: ChipItem[]) => [note, shown.map(item => (typeof item === 'string' ? item : item.label)).join(', ')].filter(Boolean).join('; ');
+    return itemsResult(meta, ref, chips, 'label', labels);
   });
 
   const packages = define('repo.packages', async (ctx, ref, _signal, meta) => {
+    const scope = scopeOf(ref);
     const model = await repoModel(ctx);
-    const rows: Rows = declaredPackages(model.manifests)
-      .map(pkg => ({name: pkg.name, ecosystem: pkg.ecosystem, version: pkg.version, dir: pkg.dir, deps: pkg.deps.length}));
+    const {files} = scopedFiles(model, scope, meta.name);
+    const {packages: found, note} = manifestsFor(declaredPackages(model.manifests), scope, files);
+    const rows: Rows = found.map(pkg => ({name: pkg.name, ecosystem: pkg.ecosystem, version: pkg.version, dir: pkg.dir, deps: pkg.deps.length}));
     const ecosystems = new Map<string, number>();
     for (const row of rows) ecosystems.set(String(row.ecosystem), (ecosystems.get(String(row.ecosystem)) ?? 0) + 1);
-    const lead = [...ecosystems].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${n} ${name}`).join(', ');
+    const lead = [note, [...ecosystems].sort((a, b) => b[1] - a[1]).map(([name, n]) => `${n} ${name}`).join(', ')].filter(Boolean).join('; ');
     return rowsResult(meta, ref, rows, {by: 'dir', lead, warnings: model.manifests.warnings});
   });
 
   const scripts = define('repo.scripts', async (ctx, ref, _signal, meta) => {
+    const scope = scopeOf(ref);
     const model = await repoModel(ctx);
-    const rows: Rows = model.manifests.packages.flatMap(pkg => pkg.scripts.map(script => ({package: pkg.name, script: script.name, command: script.command})));
-    const lead = rows.slice(0, 6).map(row => String(row.script)).join(' ');
+    const {files} = scopedFiles(model, scope, meta.name);
+    const {packages: found, note} = manifestsFor(model.manifests.packages, scope, files);
+    const rows: Rows = found.flatMap(pkg => pkg.scripts.map(script => ({package: pkg.name, script: script.name, command: script.command})));
+    const lead = [note, rows.slice(0, 6).map(row => String(row.script)).join(' ')].filter(Boolean).join('; ');
     return rowsResult(meta, ref, rows, {by: 'package', lead});
   });
 

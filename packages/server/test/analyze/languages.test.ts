@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {extName, hasGeneratedHeader, isBinaryExt, isGeneratedPath, isTestPath, languageOf} from '../../src/analyze/languages.ts';
+import {extName, hasGeneratedHeader, isBinaryExt, isGeneratedPath, isReleaseNotes, isTestPath, languageOf} from '../../src/analyze/languages.ts';
 
 describe('languageOf', () => {
   it.each([
@@ -72,6 +72,21 @@ describe('path classes', () => {
 
   it.each(['src/builder.ts', 'src/distance.ts', 'docs/build.md', 'src/vendors.ts', 'src/admin.ts', 'lock.ts'])('%s is not generated', path => {
     expect(isGeneratedPath(path)).toBe(false);
+  });
+
+  // Changelogs crowded "Most changed files" and paired with every file in "Changes together".
+  it.each([
+    'CHANGELOG.md', 'packages/core/CHANGELOG.md', 'changelog.md', 'CHANGE_LOG.md', 'Change-Log.markdown', 'CHANGES.rst', 'HISTORY.md', 'NEWS.txt',
+    'RELEASES.md', 'docs/release-notes.md', 'RELEASE_NOTES.adoc', 'ChangeLog', 'CHANGES', 'NEWS', 'HISTORY',
+  ])('%s is release notes', path => {
+    expect(isReleaseNotes(path)).toBe(true);
+  });
+
+  it.each([
+    'src/history.ts', 'app/news.py', 'lib/changes.go', 'src/changelog.ts', 'scripts/release', 'scripts/changes', 'RELEASE.md', 'docs/releasing.md',
+    'README.md', 'docs/history/intro.md', 'CHANGELOG.json', 'news', 'history',
+  ])('%s is not release notes', path => {
+    expect(isReleaseNotes(path)).toBe(false);
   });
 
   it('recognises generated-file headers', () => {

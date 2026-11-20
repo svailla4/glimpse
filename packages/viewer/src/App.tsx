@@ -42,6 +42,13 @@ function endedText(end: SessionSnapshot['end']): string {
   }
 }
 
+/**
+ * What the tab says under a link to a view the session no longer holds. It cannot tell a view the person closed from
+ * one dropped for newer views (the host keeps the most recently updated ones), so it names both.
+ */
+const missingDetail = (others: boolean) =>
+  `closed, or dropped to make room for newer views · ask the agent to show it again${others ? ', or pick a view above' : ''}`;
+
 const scrollTop = (y: number) => {
   try {
     window.scrollTo(0, y);
@@ -132,9 +139,10 @@ export function App(p: {session: ViewerSession}): JSX.Element {
       else if (event.key === 'd') toggleDensityNow();
       else if (event.key === '[' || event.key === ']') {
         const {surfaces: list, focus: current} = session.getSnapshot();
-        if (list.length < 2) return;
         const index = list.findIndex(item => item.id === current);
-        const next = list[(index + (event.key === ']' ? 1 : list.length - 1)) % list.length];
+        // With no view on screen (a link to a closed one), `]` goes to the first tab and `[` to the last.
+        if (list.length < (index < 0 ? 1 : 2)) return;
+        const next = index < 0 ? list[event.key === ']' ? 0 : list.length - 1] : list[(index + (event.key === ']' ? 1 : list.length - 1)) % list.length];
         if (next) session.focus(next.id);
       } else return;
       event.preventDefault();
@@ -184,7 +192,8 @@ export function App(p: {session: ViewerSession}): JSX.Element {
             <SurfaceView key={viewKey} surface={surface} onError={reportRenderError} />
           ) : (
             <div className={css.waiting}>
-              {focus !== undefined && status !== 'ended' ? <Drafting label={`drafting ${info?.title || focus}`} />
+              {state.missing !== undefined ? <Empty message={`view “${state.missing}” is no longer open`} detail={missingDetail(surfaces.length > 0)} />
+                : focus !== undefined && status !== 'ended' ? <Drafting label={`drafting ${info?.title || focus}`} />
                 : status === 'connecting' ? <Drafting label="connecting to the session" />
                 : status === 'live' ? <Empty message="no views yet · ask the agent to show one, for example an overview" />
                 : <Empty message={state.end && state.end.reason !== 'closed' ? 'no view to show' : 'session ended before a view was shown'} />}

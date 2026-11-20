@@ -1,11 +1,13 @@
 // files.tree, files.list, files.langs: what is in the repository and how big it is.
 import type {DirNode, LangRow, Rows} from '@glimpse/catalog';
+import {parseModuleId} from '../../analyze/cluster.ts';
 import {repoModel, type RepoModel} from '../../analyze/index.ts';
 import {baseName, dirName} from '../../analyze/languages.ts';
 import {codeLines} from '../../analyze/model.ts';
 import {SourceError, type FileEntry, type Source} from '../../contracts.ts';
+import {scopedFiles} from './deps.ts';
 import {readHistory, type History} from './history.ts';
-import {byText, clampSummary, compact, define, inScope, plural, rowsResult, scopeOf, type SourceOptions} from './shared.ts';
+import {byText, clampSummary, compact, define, inScope, leadOf, plural, rowsResult, scopeNote, scopeOf, type SourceOptions} from './shared.ts';
 
 const MAX_CHILDREN = 40;
 /**
@@ -17,12 +19,24 @@ const MAX_CHILDREN = 40;
 const MAX_CHILDREN_OF_TARGET = Number.POSITIVE_INFINITY;
 const SECONDS_PER_DAY = 86_400;
 
-/** Files under `scope`; E_TARGET when the scope names nothing in the repository. */
+/**
+ * Files under `scope`: a directory, a file, or a module id of a graph ('src/*': the files of src/ outside its
+ * sub-modules), read as deps.modules reads it (scopedFiles). E_TARGET when the scope names nothing in the repository.
+ */
 export function filesIn(model: RepoModel, scope: string, source: string): FileEntry[] {
   if (scope === '') return model.files;
-  const files = model.files.filter(file => inScope(file.path, scope));
-  if (files.length === 0) throw new SourceError('E_TARGET', `${source}: no files under "${scope}"`);
-  return files;
+  return [...scopedFiles(model, scope, source).files];
+}
+
+/**
+ * A module id that is not a directory ('src/*', '(root)'): a tree is drawn from a directory, and the module holds only
+ * part of one, so files.tree names the calls that do read it instead of drawing a directory it was not asked for.
+ */
+function refuseModuleTree(model: RepoModel, scope: string, source: string): void {
+  const {dir, rest} = parseModuleId(scope);
+  if (!rest || model.byPath.has(scope) || model.files.some(file => inScope(file.path, scope))) return;
+  scopedFiles(model, scope, source);
+  throw new SourceError('E_TARGET', `${source}: "${scope}" is a module of a graph (the files of ${dir || 'the root'} outside its sub-modules), not a directory: ${source} ${dir || '.'} draws the directory, files.list ${scope} lists the module's files`);
 }
 
 interface Rollup {
@@ -206,13 +220,14 @@ export function filesSources(options: SourceOptions): Source[] {
       const node = fileNode(single, model, history, now);
       return {data: node, total: 1, ...(history && history.warnings.length > 0 ? {warnings: history.warnings} : {}), summary: `1 file, ${compact(node.loc)} loc`};
     }
+    refuseModuleTree(model, scope, meta.name);
     // Commit counts and ages come from the shared history: what limits it (a shallow clone, the parsed window) is said.
     const warnings = [...model.warnings, ...(history?.warnings ?? [])];
     const {root, nodes} = rollUp(filesIn(model, scope, meta.name), scope, model, history, now);
     const {kept, rollups} = cutTree(root, meta.budget, MAX_CHILDREN_OF_TARGET);
     const generated = model.files.reduce((sum, file) => sum + (file.generated && inScope(file.path, scope) ? 1 : 0), 0);
     const summary = [
-      `${plural(root.node.files, 'file')}, ${compact(root.node.loc)} loc`,
+      `${plural(root.node.files, 'file')}, ${compact(root.node.loc)} loc${scopeNote(scope, ' ')}`,
       ...(rollups > 0 ? [`${plural(rollups, 'rollup')} (${kept} of ${nodes} nodes)`] : []),
       ...(generated > 0 ? [`${plural(generated, 'generated file')} not counted in loc`] : []),
     ].join(', ');
@@ -241,7 +256,7 @@ export function filesSources(options: SourceOptions): Source[] {
     const first = rows[0];
     return rowsResult(meta, ref, rows, {
       by: 'loc',
-      ...(first ? {lead: `top ${String(first.path)} ${String(first.loc)} loc`} : {}),
+      lead: leadOf(scope, first ? `top ${String(first.path)} ${String(first.loc)} loc` : ''),
       // Without history there is no commits column to show.
       ...(history ? {} : {fields: (meta.fields ?? []).filter(field => field.key !== 'commits')}),
       warnings: [...model.warnings, ...(history?.warnings ?? [])],
@@ -249,8 +264,9 @@ export function filesSources(options: SourceOptions): Source[] {
   });
 
   const langs = define('files.langs', async (ctx, ref, _signal, meta) => {
+    const scope = scopeOf(ref);
     const model = await repoModel(ctx);
-    const rows = languageMix(model);
+    const rows = languageMix(filesIn(model, scope, meta.name));
     const kept: LangRow[] = rows.slice(0, meta.budget);
     const total = rows.reduce((sum, row) => sum + row.loc, 0);
     if (rows.length > meta.budget) {
@@ -262,7 +278,7 @@ export function filesSources(options: SourceOptions): Source[] {
       kept.push({lang: `${tail.length} more languages`, files: tail.reduce((sum, row) => sum + row.files, 0), loc, pct: share(loc, total)});
     }
     // Rounded from the exact ratio, as the repo line of a show result rounds it: 5.47% is 5% in both (V032).
-    const lead = kept.slice(0, 4).map(row => `${row.lang} ${total > 0 ? Math.round((row.loc / total) * 100) : 0}%`).join(' ');
+    const lead = leadOf(scope, kept.slice(0, 4).map(row => `${row.lang} ${total > 0 ? Math.round((row.loc / total) * 100) : 0}%`).join(' '));
     const result = rowsResult(meta, ref, kept as unknown as Rows, {by: 'loc', lead});
     if (rows.length > kept.length) {
       result.total = rows.length;
@@ -283,11 +299,14 @@ export const UNCLASSIFIED = 'Unclassified';
 /** Percent with one decimal, from the exact ratio. */
 const share = (part: number, whole: number): number => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : 0);
 
-/** Lines of code per language, largest first: generated and binary files aside, unknown text files as 'Unclassified'. */
-export function languageMix(model: RepoModel): LangRow[] {
+/**
+ * Lines of code per language of `files` (the repository's, or those under a path), largest first: generated and
+ * binary files aside, unknown text files as 'Unclassified'.
+ */
+export function languageMix(files: readonly FileEntry[]): LangRow[] {
   const byLang = new Map<string, {files: number; loc: number}>();
   let total = 0;
-  for (const file of model.files) {
+  for (const file of files) {
     const loc = codeLines(file);
     if (loc === 0) continue;
     const lang = file.lang ?? UNCLASSIFIED;

@@ -551,7 +551,6 @@
             "@path": "/g/graph"
           },
           "title": "Graph",
-          "size": "l",
           "span": 7
         },
         {
@@ -584,7 +583,6 @@
             }
           ],
           "title": "Layers",
-          "size": "l",
           "span": 5
         },
         {
@@ -607,8 +605,7 @@
           "data": {
             "@path": "/g/schema"
           },
-          "title": "ERDiagram",
-          "size": "l"
+          "title": "ERDiagram"
         },
         {
           "id": "code_children_0",

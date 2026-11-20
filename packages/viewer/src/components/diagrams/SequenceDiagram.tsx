@@ -3,14 +3,18 @@
 import type * as C from '@glimpse/catalog';
 import {parseSequence, type SeqArrow, type SeqAst} from '@glimpse/catalog';
 import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode} from 'react';
-import {Empty, Redline, useSize, useTooltip, type GlView} from '../../kit/index.ts';
-import {MONO_11, UI_12, fitText, markPath, roundedPath, textWidth, wrapText} from './edgekit/index.ts';
+import {Empty, Redline, useSize, useSizeCap, useTooltip, type GlView} from '../../kit/index.ts';
+import {MONO_11, UI_12, fitText, markPath, roundedPath, textWidth, wrapText} from './flowkit/index.ts';
 import css from './SequenceDiagram.module.css';
 
 const PAD = 16;
 /** From the outer lifelines to the edge: half an actor box and some air. */
 const SIDE = 76;
-const ACTOR_MAX_W = 128;
+/** An actor's name is drawn whole up to this box width; only a plate too narrow for the names cuts them to the second. */
+const ACTOR_MAX_W = 224;
+const ACTOR_TIGHT_W = 128;
+/** Between the boxes of two neighbouring actors, at least. */
+const ACTOR_GAP = 16;
 const HEAD_H = 44;
 const ACTOR_H = 28;
 const MIN_COL = 140;
@@ -57,10 +61,27 @@ interface Plan {
  * and only then is wider than the container, which scrolls. A width of 0 plans the diagram at its natural size.
  */
 export function planSequence(ast: SeqAst, containerWidth: number): Plan {
+  const wide = planAt(ast, containerWidth, ACTOR_MAX_W);
+  // Whole names first; cut to the narrower box only when that is what keeps the diagram inside its plate.
+  // (Scaled down less than the most it may be, it was scaled to the container: it fits, whatever the rounding.)
+  if (containerWidth <= 0 || wide.scale > MIN_SCALE + 1e-6 || wide.width * wide.scale <= containerWidth + 0.5) return wide;
+  const tight = planAt(ast, containerWidth, ACTOR_TIGHT_W);
+  return tight.width * tight.scale < wide.width * wide.scale - 0.5 ? tight : wide;
+}
+
+function planAt(ast: SeqAst, containerWidth: number, actorMax: number): Plan {
   const actors = ast.actors.slice(0, MAX_ACTORS);
   const column = new Map(actors.map((actor, i) => [actor.id, i]));
   const steps = ast.steps.slice(0, MAX_STEPS);
   const last = actors.length - 1;
+  // The actor boxes, first: two neighbours never come closer than their half-widths and a gap, however the
+  // messages between them are spaced (two boxes shared a border, and two overlapped by 15 px at 760 px).
+  const heads = actors.map(actor => {
+    const text = fitText(actor.label, actorMax - 24, UI_12);
+    return {text, w: Math.ceil(Math.max(64, textWidth(text, UI_12) + 24))};
+  });
+  // (Rounded up, and a pixel more: lifelines are drawn at whole pixels.)
+  const hard = heads.map((head, i) => (i === 0 ? 0 : Math.ceil((heads[i - 1]!.w + head.w) / 2) + ACTOR_GAP + 1));
 
   // wants[hi]: the distance lifeline `hi` must keep from an earlier lifeline `lo`.
   const wants: Array<Array<[lo: number, distance: number]>> = actors.map(() => []);
@@ -82,25 +103,40 @@ export function planSequence(ast: SeqAst, containerWidth: number): Plan {
   }
   const at: number[] = [];
   actors.forEach((_, i) => {
-    let position = i === 0 ? 0 : at[i - 1]! + MIN_COL;
+    let position = i === 0 ? 0 : at[i - 1]! + Math.max(MIN_COL, hard[i]!);
     for (const [lo, distance] of wants[i]!) position = Math.max(position, at[lo]! + distance);
     at.push(position);
   });
-  const right = Math.max(SIDE, overhang);
+  const sideL = Math.max(SIDE, (heads[0]?.w ?? 0) / 2 + 12);
+  const right = Math.max(SIDE, overhang, (heads[last]?.w ?? 0) / 2 + 12);
+  // Gaps between neighbours at a stretch: the messages' gap stretched, never under the boxes' own.
+  const gaps = (stretch: number) => at.map((p, i) => (i === 0 ? 0 : Math.max(hard[i]!, (p - at[i - 1]!) * stretch)));
+  const spanAt = (stretch: number) => gaps(stretch).reduce((sum, gap) => sum + gap, 0);
   const span = at[last] ?? 0;
-  const room = containerWidth > 0 && span > 0 ? (containerWidth - SIDE - right) / span : 1;
-  // Wider than needed: spread out. Narrower: close up, and scale down what closing up cannot gain.
-  const stretch = Math.max(TIGHT, Math.min(2, room));
-  const content = span * stretch + SIDE + right;
+  const available = containerWidth - sideL - right;
+  // Wider than needed: spread out. Narrower: close up (the largest stretch that fits, not under TIGHT), and scale down
+  // what closing up cannot gain.
+  let stretch = containerWidth > 0 && span > 0 ? Math.max(TIGHT, Math.min(2, available / span)) : 1;
+  if (containerWidth > 0 && span > 0 && spanAt(stretch) > available) {
+    let lo = TIGHT;
+    let hi = stretch;
+    for (let i = 0; i < 20; i++) {
+      const mid = (lo + hi) / 2;
+      if (spanAt(mid) <= available) lo = mid;
+      else hi = mid;
+    }
+    stretch = lo;
+  }
+  const steps0 = gaps(stretch);
+  const content = steps0.reduce((sum, gap) => sum + gap, 0) + sideL + right;
   const scale = containerWidth > 0 && content > containerWidth ? Math.max(MIN_SCALE, containerWidth / content) : 1;
   const width = Math.max(Math.ceil(containerWidth / scale), Math.ceil(content));
-  const left = SIDE + (width - content) / 2;
-  const x = (i: number) => Math.round(left + (at[i] ?? 0) * stretch);
+  const left = sideL + (width - content) / 2;
+  const offsets: number[] = [];
+  for (const [i, gap] of steps0.entries()) offsets.push((offsets[i - 1] ?? 0) + gap);
+  const x = (i: number) => Math.round(left + (offsets[i] ?? 0));
 
-  const actorDraws = actors.map((actor, i) => {
-    const text = fitText(actor.label, ACTOR_MAX_W - 24, UI_12);
-    return {id: actor.id, label: actor.label, text, x: x(i), w: Math.ceil(Math.max(64, textWidth(text, UI_12) + 24))};
-  });
+  const actorDraws = actors.map((actor, i) => ({id: actor.id, label: actor.label, text: heads[i]!.text, x: x(i), w: heads[i]!.w}));
 
   const rows: RowDraw[] = [];
   let y = 8;
@@ -171,8 +207,10 @@ function messageRow(row: Extract<RowDraw, {kind: 'message'}>): ReactNode {
   );
 }
 
-function SequenceBody(p: {ast: SeqAst; sized: boolean}) {
+function SequenceBody(p: {ast: SeqAst}) {
   const {ast} = p;
+  // As tall as its steps, up to the plate's maximum height (decision D20); past that it scrolls under sticky actors.
+  const cap = useSizeCap();
   const boxRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const {width} = useSize(boxRef);
@@ -234,8 +272,8 @@ function SequenceBody(p: {ast: SeqAst; sized: boolean}) {
   const ariaLabel = `Sequence diagram, ${plan.actors.length} ${plan.actors.length === 1 ? 'participant' : 'participants'}, ${messages} ${messages === 1 ? 'message' : 'messages'}: ${names}${plan.actors.length > 8 ? ' and more' : ''}`;
 
   return (
-    <div ref={boxRef} className={css.root} data-sized={p.sized || undefined}>
-      <div ref={scrollRef} className={css.scroll} role="img" aria-label={ariaLabel} tabIndex={0} onKeyDown={onKeyDown} onScroll={measure}>
+    <div ref={boxRef} className={css.root}>
+      <div ref={scrollRef} className={css.scroll} style={{maxHeight: cap}} role="img" aria-label={ariaLabel} tabIndex={0} onKeyDown={onKeyDown} onScroll={measure}>
         {width > 0 ? (
           <>
             <svg className={css.head} width={plan.width * scale} height={HEAD_H * scale} viewBox={`0 0 ${plan.width} ${HEAD_H}`} aria-hidden="true">
@@ -283,5 +321,5 @@ export const SequenceDiagramView: GlView<typeof C.SequenceDiagram> = ({id, props
     const more = parsed.errors.length - shown.length;
     return <Redline code="E_NOTATION" id={`SequenceDiagram#${id}`} message={shown.join('; ') + (more > 0 ? `; and ${more} more` : '')} />;
   }
-  return <SequenceBody ast={parsed.ast} sized={props.size != null} />;
+  return <SequenceBody ast={parsed.ast} />;
 };

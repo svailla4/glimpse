@@ -3,7 +3,7 @@ import type * as C from '@glimpse/catalog';
 import {parseFlow, type FlowAst, type FlowShape} from '@glimpse/catalog';
 import {useMemo, type ReactNode} from 'react';
 import {Empty, Redline, fmtNum, type GlView} from '../../kit/index.ts';
-import {Diagram, UI_12, textWidth, wrapText, type DiagramEdge, type DiagramNode, type NodeFlags} from './edgekit/index.ts';
+import {Diagram, UI_12, textWidth, wrapText, type DiagramEdge, type DiagramNode, type Dir, type NodeFlags} from './flowkit/index.ts';
 import css from './Flowchart.module.css';
 
 const LINE = 16;
@@ -16,6 +16,23 @@ export const MAX_NODES = 150;
 interface NodeDraw { shape: FlowShape; lines: string[] }
 
 const even = (v: number) => Math.ceil(v / 2) * 2;
+
+const HEADER = /^(?:flowchart|graph)\s+(TD|TB|BT|LR|RL)$/i;
+const HEADER_DIR: Record<string, Dir> = {TD: 'TB', TB: 'TB', BT: 'BT', LR: 'LR', RL: 'RL'};
+
+/**
+ * The direction a Mermaid header gives ('graph LR', 'flowchart TD'), or undefined. The header is the first statement
+ * of the source after blank lines and %% comments, ended by a newline or a ';'.
+ */
+export function headerDir(src: string): Dir | undefined {
+  for (const line of src.split(/\r?\n/)) {
+    const text = line.trim();
+    if (text === '' || text.startsWith('%%')) continue;
+    const match = HEADER.exec(text.split(';', 1)[0]!.trim());
+    return match ? HEADER_DIR[match[1]!.toUpperCase()] : undefined;
+  }
+  return undefined;
+}
 
 /** The box a shape needs around its (already wrapped) label. */
 function sizeOf(shape: FlowShape, lines: readonly string[]): {w: number; h: number} {
@@ -88,6 +105,10 @@ function toDiagram(ast: FlowAst): {nodes: Array<DiagramNode<NodeDraw>>; edges: D
 export const FlowchartView: GlView<typeof C.Flowchart> = ({id, props}) => {
   const src = typeof props.src === 'string' ? props.src : '';
   const parsed = useMemo(() => (src.trim() === '' ? undefined : parseFlow(src)), [src]);
+  // dir= wins; without it the header of the source ('graph LR') says which way the chart flows; with neither, the chart
+  // is laid out both ways and drawn the way that reads larger in its plate (a 14-step chart in a full-width plate was
+  // drawn top to bottom at 60% with two thirds of the plate empty).
+  const dir: Dir | undefined = props.dir === 'LR' || props.dir === 'TB' ? props.dir : headerDir(src);
   const model = useMemo(() => (parsed?.ok ? toDiagram(parsed.ast) : undefined), [parsed]);
 
   if (!parsed) return <Empty message="no flowchart source" />;
@@ -108,14 +129,13 @@ export const FlowchartView: GlView<typeof C.Flowchart> = ({id, props}) => {
       name="Flowchart"
       nodes={model.nodes}
       edges={model.edges}
-      dir={props.dir === 'LR' ? 'LR' : 'TB'}
-      sized={props.size != null}
+      dir={dir}
       ariaLabel={ariaLabel}
       renderNode={drawNode}
-      // Shapes hold 12 px text, edge labels 11 px: the stage opens no further out than keeps the smallest at 10 px.
-      minText={model.edges.some(edge => edge.label) ? 11 : 12}
-      nodesep={32}
-      ranksep={44}
+      // Shapes hold 12 px text: the stage opens no further out than keeps it at 10 px. (Edge labels grow when zoomed out.)
+      minText={12}
+      nodeGap={32}
+      layerGap={44}
     />
   );
 };

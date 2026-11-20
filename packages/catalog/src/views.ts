@@ -42,7 +42,7 @@ stack=Chips()
 notes=Markdown($/notes)
 map=Treemap(title='Where the code is',size='l',span=7)
 langs=Plate('Languages',[SegmentedBar(),DataTable('files.langs')],span=5)
-deps=Graph(title='How modules depend on each other',size='l',span=8)
+deps=Graph(title='How modules depend on each other',size='xl',span=8)
 side=Tabs(['File cycles','External'],[DataTable('deps.cycles'),List('deps.external top=12')])
 activity=LineChart('git.timeline',mode='stacked',title='Activity by module',span=6)
 hot=DataTable('git.hotspots top=15','path commits:bar complexity:bar isTest:bool=Test owner',sort='-score',title='Hotspots',note='Commits x summed indentation depth, a proxy for complexity.',span=6)
@@ -63,10 +63,10 @@ map=Treemap(${r('files.tree', t)},size='fill')`,
 root=Page('Dependencies',[notes,graph,edges,cycles,matrix,ext]${t ? `,'${s(t)}'` : ''})
 notes=Markdown($/notes)
 graph=Graph(${r('deps.modules', t)},title='Module dependencies',size='xl',span=8)
-edges=DataTable('deps.matrix','from to weight:bar',sort='-weight',title='Heaviest edges',size='xl',span=4)
-cycles=DataTable('deps.cycles',title='File cycles',note='Import cycles between files; the graph marks cycles between modules.',span=6)
-matrix=Heatmap('deps.matrix',title='Who imports whom',span=6)
-ext=BarChart('deps.external top=20',title='External packages')`,
+edges=DataTable(${r('deps.matrix', t)},'from to weight:bar',sort='-weight',title='Heaviest edges',size='xl',span=4)
+cycles=DataTable(${r('deps.cycles', t)},title='File cycles',note='Import cycles between files; the graph marks cycles between modules.',span=6)
+matrix=Heatmap(${r('deps.matrix', t)},title='Who imports whom',span=6)
+ext=BarChart(${r('deps.external', t, {top: '20'})},title='External packages')`,
   },
   {
     name: 'hotspots', doc: 'Where change and complexity meet: scatter, churn treemap, ranking, co-change pairs.', target: 'path',
@@ -100,7 +100,7 @@ root=Page('${s(path)}',[notes,Grid([code,Column([outline,log])],'2:1')${imports 
 notes=Markdown($/notes)
 code=CodeView('${s(t!)}',notes=$/marks,size='fill')
 outline=SymbolOutline('${s(path)}',title='Outline',size='l')${imports ? `
-near=Graph(${r('deps.files', path)},focus='${s(path)}',title='Imports and importers',size='l')` : ''}
+near=Graph(${r('deps.files', path)},focus='${s(path)}',title='Imports and importers')` : ''}
 log=CommitList(${r('git.log', path, {top: '10'})},title='Recent commits')`;
     },
   },
@@ -129,7 +129,7 @@ root=Page('Changes',[kpis,notes,diff,impact,log],'${s(range)}')
 kpis=Stats(${r('diff.stats', range)})
 notes=Markdown($/notes)
 diff=DiffView('${s(range)}',title='Diff',size='fill')
-impact=Graph(${r('diff.impact', range)},title='Blast radius',size='l',span=7)
+impact=Graph(${r('diff.impact', range)},title='Blast radius',span=7)
 log=${range === 'wt' || range === 'staged' ? `List('code.todos top=8',title='Open TODOs',span=5)` : `CommitList(${r('git.log', range)},title='Commits',size='l',span=5)`}`;
     },
   },
@@ -144,7 +144,7 @@ plan=Steps($/plan,title='Plan')
 design=Markdown('_No design drawn yet._',title='Design')
 notes=Markdown($/notes)
 changes=DiffView(title='Working tree',size='xl')
-impact=Graph('diff.impact wt',title='Blast radius',size='l')`,
+impact=Graph('diff.impact wt',title='Blast radius')`,
   },
 ];
 
