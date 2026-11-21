@@ -138,7 +138,7 @@ describe('show', () => {
 
   it('view plus spec patches the preset in the same call', async () => {
     const {client} = await connect();
-    const {lines, isError} = await call(client, 'show', {view: 'feature', spec: "$/plan=[{title:'Add limiter',status:'doing'},{title:'Tests'}]\ndesign=Flowchart('Req --> RL{Over limit?}; RL -->|no| H[Handler]',title='Design')"});
+    const {lines, isError} = await call(client, 'show', {view: 'feature', spec: "$/plan=[{title:'Add limiter',status:'doing'},{title:'Tests'}]\ndesign=Flowchart({nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond'},H:'Handler'},edges:[['Req','RL'],['RL','H','no']]},title='Design')"});
     expect(isError).toBe(false);
     expect(lines[0]).toMatch(/^ok feature /);
     expect(lines).toContain('parts plan design notes changes impact | slots $/plan $/notes');

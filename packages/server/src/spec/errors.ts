@@ -5,7 +5,7 @@ import {COMPONENT_BY_NAME, COMPONENTS, signatureOf} from '@glimpse/catalog';
 
 export type ErrorCode =
   | 'E_SYNTAX' | 'E_UNKNOWN' | 'E_PROP' | 'E_ENUM' | 'E_REQUIRED' | 'E_TYPE' | 'E_REF' | 'E_PARENT'
-  | 'E_SOURCE' | 'E_ARGS' | 'E_NOTATION' | 'E_PATH' | 'E_VIEW' | 'E_ID' | 'E_SPEC'
+  | 'E_SOURCE' | 'E_ARGS' | 'E_SHAPE' | 'E_PATH' | 'E_VIEW' | 'E_ID' | 'E_SPEC'
   // raised by a source at run time (contracts.ts, SourceError)
   | 'E_NO_GIT' | 'E_TARGET' | 'E_SHALLOW' | 'E_INTERNAL';
 

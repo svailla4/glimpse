@@ -1,6 +1,5 @@
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
-import {headerDir} from '../../src/components/diagrams/Flowchart.tsx';
 import {CONTROLS, POSITIONS_KEY, configurePositionStorage} from '../../src/components/diagrams/flowkit/index.ts';
 import {buildPatch, buildSurface, renderExpress, renderSpec} from '../harness.tsx';
 import {
@@ -8,10 +7,11 @@ import {
   stageOf, viewOf, type FakeStorage,
 } from './util.tsx';
 
-const GALLERY = 'flowchart TD; Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429]); H --> DB[(Postgres)]; H -.-> C((cache))';
-const spec = (src: string, props = '') => `root=Page('T',[f])\nf=Flowchart('${src}'${props},title='Flow',size='l')`;
-const ready = async (src: string, props = '') => {
-  const view = renderExpress(spec(src, props));
+// Express data literals, as a model writes them.
+const GALLERY = "{nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond'},H:'Handler',E:{label:'429',shape:'pill'},DB:{label:'Postgres',shape:'store'},C:{label:'cache',shape:'circle'}},edges:[['Req','RL'],['RL','H','no'],['RL','E','yes'],['H','DB'],{from:'H',to:'C',dashed:true}]}";
+const spec = (data: string, props = '') => `root=Page('T',[f])\nf=Flowchart(${data}${props},title='Flow',size='l')`;
+const ready = async (data: string, props = '') => {
+  const view = renderExpress(spec(data, props));
   await screen.findByRole('img', {name: /^Flowchart/});
   await drawn(view, 'f');
   return view;
@@ -27,7 +27,7 @@ afterEach(() => configurePositionStorage(undefined));
 
 describe('Flowchart', () => {
   it('draws every shape, labelled and dashed edges, top to bottom', async () => {
-    const view = await ready(GALLERY);
+    const view = await ready(GALLERY, `,dir='TB'`);
     expect(nodeIds(view, 'f')).toEqual(['Req', 'RL', 'H', 'E', 'DB', 'C']);
     const shape = (id: string) => nodeOf(view, 'f', id).querySelector('[data-shape]')!;
     expect(shape('Req').getAttribute('data-shape')).toBe('box');
@@ -67,52 +67,28 @@ describe('Flowchart', () => {
     expect(positionOf(nodeOf(view, 'f', 'RL')).x).toBeLessThan(positionOf(nodeOf(view, 'f', 'H')).x);
   });
 
-  // The owner's demo: 'graph LR; ...' drew top to bottom, because the header's direction was dropped.
-  it.each([
-    ['graph LR', 'LR', 'RIGHT'],
-    ['flowchart LR', 'LR', 'RIGHT'],
-    ['graph TD', 'TB', 'DOWN'],
-    ['flowchart TB', 'TB', 'DOWN'],
-    ['graph RL', 'RL', 'LEFT'],
-    ['flowchart BT', 'BT', 'UP'],
-  ])('honours the direction of a "%s" header when dir is not given', async (header, dir, elkDir) => {
-    const view = await ready(`${header}; M[main.ts]-->A[AuthProvider]; A-->R[AppRoot]`);
-    expect(stageOf(view, 'f').getAttribute('data-dir')).toBe(dir);
-    expect(elk.requests.at(-1)!.graph.layoutOptions!['elk.direction']).toBe(elkDir);
-    const m = positionOf(nodeOf(view, 'f', 'M'));
-    const r = positionOf(nodeOf(view, 'f', 'R'));
-    if (dir === 'LR') expect(m.x).toBeLessThan(r.x);
-    if (dir === 'RL') expect(m.x).toBeGreaterThan(r.x);
-    if (dir === 'TB') expect(m.y).toBeLessThan(r.y);
-    if (dir === 'BT') expect(m.y).toBeGreaterThan(r.y);
-  });
-
-  it('lets dir win over the header, and reads a header after blank lines and comments', async () => {
-    const view = await ready('graph LR; A-->B; B-->C', `,dir='TB'`);
+  it('lays out top to bottom with dir=TB, and tells ELK the direction', async () => {
+    const view = await ready("{nodes:{M:'main.ts',A:'AuthProvider',R:'AppRoot'},edges:[['M','A'],['A','R']]}", `,dir='TB'`);
     expect(stageOf(view, 'f').getAttribute('data-dir')).toBe('TB');
-    expect(positionOf(nodeOf(view, 'f', 'A')).y).toBeLessThan(positionOf(nodeOf(view, 'f', 'C')).y);
-    expect(headerDir('\n%% the start\n  graph LR\nA --> B')).toBe('LR');
-    expect(headerDir('graph lr; A --> B')).toBe('LR');
-    expect(headerDir('graph; A --> B')).toBeUndefined();
-    expect(headerDir('A --> B; graph LR')).toBeUndefined();
-    expect(headerDir('')).toBeUndefined();
+    expect(elk.requests.at(-1)!.graph.layoutOptions!['elk.direction']).toBe('DOWN');
+    expect(positionOf(nodeOf(view, 'f', 'M')).y).toBeLessThan(positionOf(nodeOf(view, 'f', 'R')).y);
   });
 
   it.each([
-    ['a Mermaid header and comments', 'flowchart TD\n%% a comment\nA --> B', ['A', 'B'], ['A->B']],
-    ['a chain and a fan-out', 'A --> B --> C; A --> D & E', ['A', 'B', 'C', 'D', 'E'], ['A->B', 'A->D', 'A->E', 'B->C']],
-    ['a cycle and a self-loop', 'A --> B; B --> A; B --> B', ['A', 'B'], ['A->B', 'B->A', 'B->B']],
-    ['text on the arrow', 'A -- maybe later --> B', ['A', 'B'], ['A->B']],
-    ['one bare node', 'Solo', ['Solo'], []],
-  ])('draws %s', async (_name, src, nodes, edges) => {
-    const view = await ready(src);
+    ['edges alone', "[['A','B']]", ['A', 'B'], ['A->B']],
+    ['a chain and a fan-out', "{edges:[['A','B'],['B','C'],['A','D'],['A','E']]}", ['A', 'B', 'C', 'D', 'E'], ['A->B', 'A->D', 'A->E', 'B->C']],
+    ['a cycle and a self-loop', "{edges:[['A','B'],['B','A'],['B','B']]}", ['A', 'B'], ['A->B', 'B->A', 'B->B']],
+    ['nodes as a list', "{nodes:[{id:'A',label:'a'},{id:'B',label:'b'}],edges:[{source:'A',target:'B',text:'maybe later'}]}", ['A', 'B'], ['A->B']],
+    ['one bare node', "{nodes:{Solo:'Solo'}}", ['Solo'], []],
+  ])('draws %s', async (_name, data, nodes, edges) => {
+    const view = await ready(data);
     expect(nodeIds(view, 'f')).toEqual(nodes);
     expect([...view.cell('f').querySelectorAll('[data-edge]')].map(e => e.getAttribute('data-edge')).sort()).toEqual(edges);
     for (const edge of view.cell('f').querySelectorAll('[data-edge]')) expect(lineOf(edge)).toMatch(/^M[-\d. ]+(?:[LQ][-\d. ]+)+$/);
   });
 
   it('keeps the two edges of a cycle apart', async () => {
-    const view = await ready('A --> B; B --> A');
+    const view = await ready("[['A','B'],['B','A']]");
     expect(lineOf(edgeOf(view, 'f', 'A->B'))).not.toBe(lineOf(edgeOf(view, 'f', 'B->A')));
     // The way back goes round the side: the two never share a stretch of line.
     const forth = pointsOf(lineOf(edgeOf(view, 'f', 'A->B'))).map(([x, y]) => ({x, y}));
@@ -120,42 +96,71 @@ describe('Flowchart', () => {
     expect(runsAlong(forth, back)).toBe(false);
   });
 
-  it('shows a redline with the statement and column for a parse error', async () => {
-    const view = renderExpress(spec('A --> B; B ~~> C; D --> '));
-    await waitFor(() => expect(view.cell('f').querySelector('[data-code="E_NOTATION"]')).not.toBeNull());
-    const text = view.cell('f').querySelector('[data-code="E_NOTATION"]')!.textContent!;
+  it('draws groups as labelled frames around their nodes, nested groups inside their parent', async () => {
+    const view = await ready("{groups:{api:'API',db:{label:'Storage',parent:'api'}},nodes:{R:{label:'routes',group:'api'},P:{label:'Postgres',shape:'store',group:'db'},U:'User'},edges:[['U','R'],['R','P']]}");
+    const cell = view.cell('f');
+    expect(cell.querySelector('[data-group="api"]')!.textContent).toBe('API');
+    expect(cell.querySelector('[data-group="db"]')!.textContent).toBe('Storage');
+    const group = elk.requests.at(-1)!.graph.children!.find(child => child.id === 'api')!;
+    expect(group.children!.map(child => child.id).sort()).toEqual(['R', 'db']);
+    expect(group.children!.find(child => child.id === 'db')!.children!.map(child => child.id)).toEqual(['P']);
+    expect(view.errors).toEqual([]);
+  });
+
+  it('refuses Mermaid text with a redline that says what to write instead', async () => {
+    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart($/f,title='Flow',size='l')`, {data: {'/f': 'A --> B'}});
+    await waitFor(() => expect(view.cell('f').querySelector('[data-code="E_SHAPE"]')).not.toBeNull());
+    const text = view.cell('f').querySelector('[data-code="E_SHAPE"]')!.textContent!;
     expect(text).toContain('Flowchart#f');
-    expect(text).toMatch(/statement 2: expected an arrow .* at column 3/);
-    expect(text).toMatch(/statement 3: expected a node id at column \d+, found end of statement/);
+    expect(text).toContain('Flowchart takes data, not Mermaid text: {nodes, edges, groups?}');
     expect(view.cell('f').querySelector('[data-node]')).toBeNull();
   });
 
-  it('shows the empty state for an empty or unbound src, and draws once it is set', async () => {
-    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart($/src,title='Flow',size='l')`);
-    await waitFor(() => expect(view.cell('f').querySelector('[data-gl-state="empty"]')!.textContent).toBe('no flowchart source'));
-    view.setData('/src', '   ');
-    expect(view.cell('f').querySelector('[data-gl-state="empty"]')).not.toBeNull();
-    view.setData('/src', 'A --> B');
-    await waitFor(() => expect(nodeIds(view, 'f')).toEqual(['A', 'B']));
-    view.setData('/src', 'A --> B; B --> C{Done?}');
-    await waitFor(() => expect(nodeIds(view, 'f')).toEqual(['A', 'B', 'C']));
-    view.setData('/src', 'A -->');
-    await waitFor(() => expect(view.cell('f').querySelector('[data-code="E_NOTATION"]')).not.toBeNull());
-    view.setData('/src', 42);
+  it('draws what it can of data a patch wrote and tells the model what it left out (W_DROPPED)', async () => {
+    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart($/f,title='Flow',size='l')`, {data: {'/f': {nodes: {A: 'a', B: 'b'}, edges: [['A', 'B']]}}});
+    await drawn(view, 'f');
+    await waitFor(() => expect(view.stateOf('f')).toBe('OK'));
+    // The server sends a patched path's whole top-level value ($/f), as here.
+    view.setData('/f', {nodes: {A: 'a', B: 'b'}, edges: [['A', 'B'], ['A']]});
+    await waitFor(() => expect(view.stateOf('f')).toBe('W_DROPPED'));
+    expect(view.reports.findLast(report => report.code === 'W_DROPPED')!.message).toBe("Flowchart#f: not drawn: edge 2: expected ['from', 'to', 'label'?] or {from, to}, received a list of 1");
+    expect(nodeIds(view, 'f')).toEqual(['A', 'B']);
+    expect(view.cell('f').querySelector('[data-gl-note]')!.textContent).toContain('1 not drawn');
+    view.setData('/f', {nodes: {A: 'a', B: 'b'}, edges: [['A', 'B'], ['B', 'A']]});
+    await waitFor(() => expect(view.stateOf('f')).toBe('OK'));
+  });
+
+  it('follows a patch of one node ($/f/nodes/B={label}, which the server sends as the new $/f)', async () => {
+    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart($/f,title='Flow',size='l')`, {data: {'/f': {nodes: {A: 'a', B: 'b'}, edges: [['A', 'B']]}}});
+    await drawn(view, 'f');
+    view.setData('/f', {nodes: {A: 'a', B: {label: 'renamed'}}, edges: [['A', 'B']]});
+    await waitFor(() => expect(inside(nodeOf(view, 'f', 'B')).getByText('renamed')).toBeTruthy());
+  });
+
+  it('shows the empty state for empty or unbound data, and draws once it is set', async () => {
+    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart($/f,title='Flow',size='l')`);
     await waitFor(() => expect(view.cell('f').querySelector('[data-gl-state="empty"]')).not.toBeNull());
+    view.setData('/f', {nodes: {}});
+    await waitFor(() => expect(view.cell('f').querySelector('[data-gl-state="empty"]')!.textContent).toContain('no nodes to draw'));
+    view.setData('/f', {edges: [['A', 'B']]});
+    await waitFor(() => expect(nodeIds(view, 'f')).toEqual(['A', 'B']));
+    view.setData('/f', {edges: [['A', 'B'], ['B', 'C']]});
+    await waitFor(() => expect(nodeIds(view, 'f')).toEqual(['A', 'B', 'C']));
+    view.setData('/f', 42);
+    await waitFor(() => expect(view.cell('f').querySelector('[data-code="E_SHAPE"]')).not.toBeNull());
   });
 
   it('follows a patch that replaces the source', async () => {
-    const base = buildSurface('test', spec('A --> B'));
+    const base = buildSurface('test', spec("[['A','B']]"));
     const view = renderSpec(base);
     await waitFor(() => expect(nodeIds(view, 'f')).toEqual(['A', 'B']));
-    view.send(buildPatch('test', base, `f=Flowchart('X([Start]) --> Y --> Z',title='Flow',size='l')`));
+    view.send(buildPatch('test', base, `f=Flowchart({nodes:{X:{label:'Start',shape:'pill'}},edges:[['X','Y'],['Y','Z']]},title='Flow',size='l')`));
     await waitFor(() => expect(nodeIds(view, 'f')).toEqual(['X', 'Y', 'Z']));
     expect(view.errors).toEqual([]);
   });
 
   it('wraps and cuts a 500-character label', async () => {
-    const view = await ready(`A[${'long label '.repeat(45)}] --> B`);
+    const view = await ready(`{nodes:{A:'${'long label '.repeat(45)}'},edges:[['A','B']]}`);
     const lines = [...nodeOf(view, 'f', 'A').querySelectorAll('tspan')].map(t => t.textContent!);
     expect(lines).toHaveLength(3);
     expect(lines[2]!.endsWith('…')).toBe(true);
@@ -163,7 +168,7 @@ describe('Flowchart', () => {
   });
 
   it('selects a node, dims what is not connected to it, and walks with the arrow keys', async () => {
-    const view = await ready(GALLERY);
+    const view = await ready(GALLERY, `,dir='TB'`);
     click(nodeOf(view, 'f', 'H'));
     expect(view.getData('/ui/sel')).toEqual({type: 'node', id: 'H', label: 'Handler'});
     expect(view.actions.at(-1)).toMatchObject({name: 'gl_select', sourceComponentId: 'f'});
@@ -190,7 +195,7 @@ describe('Flowchart', () => {
   });
 
   it('lets nodes be dragged: edges follow, the position is stored, Re-layout brings the layout back', async () => {
-    const view = await ready(GALLERY);
+    const view = await ready(GALLERY, `,dir='TB'`);
     const before = positionOf(nodeOf(view, 'f', 'E'));
     const edgeBefore = lineOf(edgeOf(view, 'f', 'RL->E'));
     const other = lineOf(edgeOf(view, 'f', 'H->DB'));
@@ -219,32 +224,20 @@ describe('Flowchart', () => {
 
   it('restores dragged positions from storage', async () => {
     storage.items.set(POSITIONS_KEY, JSON.stringify({'demo/test/f': {B: {x: 300, y: 300}, Old: {x: 0, y: 0}}}));
-    const view = await ready('A --> B');
+    const view = await ready("[['A','B']]");
     const b = nodeOf(view, 'f', 'B');
     const {w, h} = sizeOf(b);
     expect(positionOf(b)).toEqual({x: 300 - w / 2, y: 300 - h / 2});
     expect(within(view.cell('f')).getByRole('button', {name: /Re-layout/})).toBeTruthy();
   });
-
-  it('draws nodes written as plain words: the words are the label, and a question is a diamond (F044)', async () => {
-    const view = await ready('Start --> Enter credentials --> Valid?; Valid? -- yes --> Session');
-    const cell = view.cell('f');
-    expect(nodeIds(view, 'f')).toHaveLength(4);
-    expect(cell.querySelector('[data-gl-state="redline"]')).toBeNull();
-    const labels = [...cell.querySelectorAll('[data-node]')].map(node => node.textContent);
-    expect(labels).toEqual(expect.arrayContaining(['Start', 'Enter credentials', 'Valid?', 'Session']));
-    const question = [...cell.querySelectorAll('[data-node]')].find(node => node.textContent === 'Valid?')!;
-    expect(question.querySelector('polygon')).not.toBeNull();
-    expect(cell.querySelectorAll('[data-edge]')).toHaveLength(3);
-  });
 });
 
 describe('Flowchart: content-sized and readable (decisions D18, D20, V005)', () => {
-  const LOGIN = 'Start([Open login page]) --> Form[Enter email and password]\\nForm --> Submit[Submit credentials]\\nSubmit --> Check{Credentials valid?}\\nCheck -->|yes| Session[Create session]\\nSession --> Done([Signed in])\\nCheck -->|no| Fail[Show error and count the attempt]\\nFail -->|retry| Form';
-  const STATES = 'Start((start)) -->|show with root=| Created\\nCreated -->|show without root=| Patched\\nPatched -->|show without root=| Patched\\nCreated -->|show with root=| Replaced\\nPatched -->|show with root=| Replaced\\nReplaced -->|show without root=| Patched\\nCreated -->|removed| Deleted\\nPatched -->|removed| Deleted\\nReplaced -->|removed| Deleted';
+  const LOGIN = "{nodes:{Start:{label:'Open login page',shape:'pill'},Form:'Enter email and password',Submit:'Submit credentials',Check:{label:'Credentials valid?',shape:'diamond'},Session:'Create session',Done:{label:'Signed in',shape:'pill'},Fail:'Show error and count the attempt'},edges:[['Start','Form'],['Form','Submit'],['Submit','Check'],['Check','Session','yes'],['Session','Done'],['Check','Fail','no'],['Fail','Form','retry']]}";
+  const STATES = "{nodes:{Start:{label:'start',shape:'circle'}},edges:[['Start','Created','show with root='],['Created','Patched','show without root='],['Patched','Patched','show without root='],['Created','Replaced','show with root='],['Patched','Replaced','show with root='],['Replaced','Patched','show without root='],['Created','Deleted','removed'],['Patched','Deleted','removed'],['Replaced','Deleted','removed']]}";
 
   it('makes an unsized plate as tall as a tall chart, up to 640 px, at 100% instead of shrinking its 11 px labels', async () => {
-    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart('${LOGIN}',dir='TB',title='Login')`, {size: {width: 618, height: 600}});
+    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart(${LOGIN},dir='TB',title='Login')`, {size: {width: 618, height: 600}});
     await screen.findByRole('img', {name: /^Flowchart/});
     await drawn(view, 'f');
     expect(zoomOf(view)).toBe(100);
@@ -255,7 +248,7 @@ describe('Flowchart: content-sized and readable (decisions D18, D20, V005)', () 
 
   // The owner's demo: a short chart opened in a 640 px stage with most of it empty paper.
   it('makes a small chart open fitted and centred, every node inside, the plate no taller than the chart', async () => {
-    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart('graph LR; A[Request] --> B[Handler] --> C[Store]',title='Small')`);
+    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart({nodes:{A:'Request',B:'Handler',C:'Store'},edges:[['A','B'],['B','C']]},dir='LR',title='Small')`);
     await screen.findByRole('img', {name: /^Flowchart/});
     await drawn(view, 'f');
     const stage = stageOf(view, 'f');
@@ -280,7 +273,7 @@ describe('Flowchart: content-sized and readable (decisions D18, D20, V005)', () 
   // labels grow below 91% (the floor is the 12 px node names: 84%), a labelled gap is the usual gap plus the label, and
   // the view cuts no node: it opens whole when that reads, else on a window of whole nodes with the minimap.
   it.each([560, 724, 960])('opens the labelled states chart in its %s px plate with every text 10 px or more on screen and no node cut', async width => {
-    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart('${STATES}',dir='LR',title='States')`, {size: {width, height: 600}});
+    const view = renderExpress(`root=Page('T',[f])\nf=Flowchart(${STATES},dir='LR',title='States')`, {size: {width, height: 600}});
     await screen.findByRole('img', {name: /^Flowchart/});
     await drawn(view, 'f');
     const stage = stageOf(view, 'f');
@@ -310,7 +303,7 @@ describe('Flowchart: content-sized and readable (decisions D18, D20, V005)', () 
   });
 
   it('draws a long edge label on two lines', async () => {
-    const view = await ready('A -->|show with id and spec, no root| B');
+    const view = await ready("[['A','B','show with id and spec, no root']]");
     const label = view.cell('f').querySelector('[data-edge-label]')!;
     expect([...label.querySelectorAll('span')].map(t => t.textContent)).toEqual(['show with id and', 'spec, no root']);
   });

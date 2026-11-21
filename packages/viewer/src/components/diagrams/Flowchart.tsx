@@ -1,9 +1,9 @@
-// Flowchart: Mermaid-style arrow notation drawn as shapes on the dot grid (design 5.6).
+// Flowchart: nodes, edges and groups written as data, drawn as shapes on the dot grid (design 5.6, decision D21).
 import type * as C from '@glimpse/catalog';
-import {parseFlow, type FlowAst, type FlowShape} from '@glimpse/catalog';
+import {cleanFlow, type FlowAst, type FlowShape} from '@glimpse/catalog';
 import {useMemo, type ReactNode} from 'react';
-import {Empty, Redline, fmtNum, type GlView} from '../../kit/index.ts';
-import {Diagram, UI_12, textWidth, wrapText, type DiagramEdge, type DiagramNode, type Dir, type NodeFlags} from './flowkit/index.ts';
+import {DataGate, Empty, Redline, fmtNum, useDataset, useReportState, type GlView} from '../../kit/index.ts';
+import {Diagram, UI_12, textWidth, wrapText, type DiagramEdge, type DiagramGroup, type DiagramNode, type Dir, type NodeFlags} from './flowkit/index.ts';
 import css from './Flowchart.module.css';
 
 const LINE = 16;
@@ -16,23 +16,6 @@ export const MAX_NODES = 150;
 interface NodeDraw { shape: FlowShape; lines: string[] }
 
 const even = (v: number) => Math.ceil(v / 2) * 2;
-
-const HEADER = /^(?:flowchart|graph)\s+(TD|TB|BT|LR|RL)$/i;
-const HEADER_DIR: Record<string, Dir> = {TD: 'TB', TB: 'TB', BT: 'BT', LR: 'LR', RL: 'RL'};
-
-/**
- * The direction a Mermaid header gives ('graph LR', 'flowchart TD'), or undefined. The header is the first statement
- * of the source after blank lines and %% comments, ended by a newline or a ';'.
- */
-export function headerDir(src: string): Dir | undefined {
-  for (const line of src.split(/\r?\n/)) {
-    const text = line.trim();
-    if (text === '' || text.startsWith('%%')) continue;
-    const match = HEADER.exec(text.split(';', 1)[0]!.trim());
-    return match ? HEADER_DIR[match[1]!.toUpperCase()] : undefined;
-  }
-  return undefined;
-}
 
 /** The box a shape needs around its (already wrapped) label. */
 function sizeOf(shape: FlowShape, lines: readonly string[]): {w: number; h: number} {
@@ -86,38 +69,34 @@ function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
   );
 }
 
-function toDiagram(ast: FlowAst): {nodes: Array<DiagramNode<NodeDraw>>; edges: DiagramEdge[]} {
+function toDiagram(ast: FlowAst): {nodes: Array<DiagramNode<NodeDraw>>; edges: DiagramEdge[]; groups: DiagramGroup[]} {
   const nodes = ast.nodes.map(node => {
     const lines = wrapText(node.label, WRAP_AT[node.shape] ?? WRAP_AT.box, MAX_LINES, UI_12);
     return {
       id: node.id,
       ...sizeOf(node.shape, lines),
       shape: node.shape === 'box' ? ('rect' as const) : node.shape,
+      ...(node.group !== undefined ? {group: node.group} : {}),
       entity: {type: 'node' as const, id: node.id, label: node.label},
       label: node.label,
       data: {shape: node.shape, lines},
     };
   });
   const edges = ast.edges.map((edge, i) => ({key: String(i), from: edge.from, to: edge.to, label: edge.label, dashed: edge.dashed === true}));
-  return {nodes, edges};
+  const groups = ast.groups.map(group => ({id: group.id, label: group.label, ...(group.parent !== undefined ? {parent: group.parent} : {})}));
+  return {nodes, edges, groups};
 }
 
-export const FlowchartView: GlView<typeof C.Flowchart> = ({id, props}) => {
-  const src = typeof props.src === 'string' ? props.src : '';
-  const parsed = useMemo(() => (src.trim() === '' ? undefined : parseFlow(src)), [src]);
-  // dir= wins; without it the header of the source ('graph LR') says which way the chart flows; with neither, the chart
-  // is laid out both ways and drawn the way that reads larger in its plate (a 14-step chart in a full-width plate was
-  // drawn top to bottom at 60% with two thirds of the plate empty).
-  const dir: Dir | undefined = props.dir === 'LR' || props.dir === 'TB' ? props.dir : headerDir(src);
-  const model = useMemo(() => (parsed?.ok ? toDiagram(parsed.ast) : undefined), [parsed]);
+function FlowBody(p: {id: string; data: unknown; dir: Dir | undefined}) {
+  const {id, dir} = p;
+  const cleaned = useMemo(() => cleanFlow(p.data), [p.data]);
+  const model = useMemo(() => (cleaned.ok ? toDiagram(cleaned.ast) : undefined), [cleaned]);
+  // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
+  const dropped = cleaned.ok ? cleaned.dropped : [];
+  useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
 
-  if (!parsed) return <Empty message="no flowchart source" />;
-  if (!parsed.ok) {
-    const shown = parsed.errors.slice(0, 3).map(error => `statement ${error.statement}: ${error.message}`);
-    const more = parsed.errors.length - shown.length;
-    return <Redline code="E_NOTATION" id={`Flowchart#${id}`} message={shown.join('; ') + (more > 0 ? `; and ${more} more` : '')} />;
-  }
-  if (!model) return null;
+  if (!cleaned.ok) return <Redline code="E_SHAPE" id={`Flowchart#${id}`} message={cleaned.error} />;
+  if (!model || model.nodes.length === 0) return <Empty message="no nodes to draw: Flowchart takes {nodes, edges, groups?}" />;
   if (model.nodes.length > MAX_NODES) {
     return <Redline code="E_TOO_LARGE" id={`Flowchart#${id}`} message={`${fmtNum(model.nodes.length)} nodes is more than a flowchart can show (${MAX_NODES}). Split it into several charts.`} />;
   }
@@ -129,8 +108,10 @@ export const FlowchartView: GlView<typeof C.Flowchart> = ({id, props}) => {
       name="Flowchart"
       nodes={model.nodes}
       edges={model.edges}
+      groups={model.groups}
       dir={dir}
       ariaLabel={ariaLabel}
+      note={dropped.length > 0 ? `${fmtNum(dropped.length)} not drawn` : undefined}
       renderNode={drawNode}
       // Shapes hold 12 px text: the stage opens no further out than keeps it at 10 px. (Edge labels grow when zoomed out.)
       minText={12}
@@ -138,4 +119,12 @@ export const FlowchartView: GlView<typeof C.Flowchart> = ({id, props}) => {
       layerGap={44}
     />
   );
+}
+
+export const FlowchartView: GlView<typeof C.Flowchart> = ({id, props}) => {
+  const state = useDataset<unknown>(props.data);
+  // Without dir= the chart is laid out both ways and drawn the way that reads larger in its plate (a 14-step chart in
+  // a full-width plate was drawn top to bottom at 60% with two thirds of the plate empty).
+  const dir: Dir | undefined = props.dir === 'LR' || props.dir === 'TB' ? props.dir : undefined;
+  return <DataGate state={state} id={`Flowchart#${id}`}>{data => <FlowBody id={id} data={data} dir={dir} />}</DataGate>;
 };

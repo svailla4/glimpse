@@ -12,5 +12,6 @@ export * from './docs.ts';
 export * from './views.ts';
 export * from './gallery.ts';
 export * from './transport.ts';
+export * from './diagrams.ts';
 export * from './notation.ts';
 export * from './normalize.ts';

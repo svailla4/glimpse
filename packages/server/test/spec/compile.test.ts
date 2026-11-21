@@ -66,11 +66,11 @@ describe('compileSpec', () => {
 
   it('a patch of an existing surface compiles to the delta only', () => {
     const seed = seedOf(compile(VIEW_BY_NAME.get('feature')!.build(undefined, {})).messages);
-    const {messages} = compile(`$/plan/0/status='done';$/plan/1/status='doing'\ndesign=Flowchart('A --> B',title='Design')`, seed);
+    const {messages} = compile(`$/plan/0/status='done';$/plan/1/status='doing'\ndesign=Flowchart({edges:[['A','B']]},title='Design')`, seed);
     expect(messages.map(kind).sort()).toEqual(['updateComponents', 'updateDataModel', 'updateDataModel']);
     const update = messages.find(m => 'updateComponents' in m)!;
     if (!('updateComponents' in update)) throw new Error('unreachable');
-    expect(update.updateComponents.components).toEqual([{id: 'design', component: 'Flowchart', src: 'A --> B', title: 'Design'}]);
+    expect(update.updateComponents.components).toEqual([{id: 'design', component: 'Flowchart', data: {edges: [['A', 'B']]}, title: 'Design'}]);
     expect(messages.filter(m => 'updateDataModel' in m).map(m => ('updateDataModel' in m ? m.updateDataModel.path : ''))).toEqual(['/plan/0/status', '/plan/1/status']);
   });
 

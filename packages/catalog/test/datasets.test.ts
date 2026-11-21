@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENT_BY_NAME, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, formatFileLoc, galleryRoot, gallerySpec, parseFileLoc, parseFlow, parseLineRanges,
+  COMPONENT_BY_NAME, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, formatFileLoc, galleryRoot, gallerySpec, parseFileLoc, cleanFlow, cleanSequence, parseLineRanges,
   type A2uiMessage, type ErTable, type GraphData, type WireComponent,
 } from '../src/index.ts';
 import {buildSurface, strictErrors} from '../testing/index.ts';
@@ -132,8 +132,11 @@ describe('gallery', () => {
     expect(table.span).toBeUndefined();
   });
 
-  it('still shows all 44 components, and its flowchart parses', () => {
+  it('still shows all 44 components, and its diagrams draw whole', () => {
     expect(new Set(surface.components.map(c => c.component)).size).toBe(COMPONENT_BY_NAME.size);
-    expect(parseFlow(props(one('Flowchart')).src).ok).toBe(true);
+    const flow = cleanFlow(props(one('Flowchart')).data);
+    expect(flow.ok && {nodes: flow.ast.nodes.length, groups: flow.ast.groups.length, fixes: flow.fixes, dropped: flow.dropped}).toEqual({nodes: 6, groups: 1, fixes: [], dropped: []});
+    const seq = cleanSequence(props(one('SequenceDiagram')).data);
+    expect(seq.ok && {actors: seq.ast.actors.length, blocks: seq.ast.steps.filter(step => step.kind === 'frame' && step.edge === 'open').length, fixes: seq.fixes, dropped: seq.dropped}).toEqual({actors: 4, blocks: 2, fixes: [], dropped: []});
   });
 });

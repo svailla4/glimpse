@@ -137,6 +137,14 @@ export const SHAPES: Readonly<Record<string, ShapeDoc>> = {
     sig: '{nodes: [{id, label, sub?, group?, status?: added|modified|deleted|affected, file?}], edges: [{from, to, label?, weight?, kind?: solid|dashed}], groups?: [{id, label}]}',
     example: "{nodes:[{id:'api',label:'api'},{id:'db',label:'db',sub:'postgres'}],edges:[{from:'api',to:'db',label:'reads'}]}",
   },
+  FlowData: {
+    sig: "{nodes: {ID: 'label' | {label, shape?: box|diamond|pill|store|circle, group?}}, edges: [['from','to','label'?] | {from, to, label?, dashed?}], groups?: {ID: 'label' | {label, parent?}}}; or lists [{id, ...}]. Bound to $/name, a node patches: $/name/nodes/ID={label:'...'}",
+    example: "{groups:{api:'API'},nodes:{R:{label:'routes',group:'api'},L:{label:'Over limit?',shape:'diamond',group:'api'},P:{label:'Postgres',shape:'store'}},edges:[['R','L'],{from:'L',to:'P',label:'no',dashed:true}]}",
+  },
+  SeqData: {
+    sig: "{actors?: ['A', 'B'] | {A: 'Label'}, steps: [['from', 'to', 'label', 'sync'|'reply'|'async'?] | {from, to, label?, arrow?} | {note, over: 'A' | ['A', 'B']} | {loop|alt|opt|par|critical|break|group: 'label', steps, else?: [{label, steps}]}]}; or just the steps list",
+    example: "{actors:{U:'User',A:'API',D:'DB'},steps:[['U','A','POST /login'],{alt:'valid password',steps:[['A','D','insert session'],['A','U','200','reply']],else:[{label:'wrong password',steps:[['A','U','401','reply']]}]}]}",
+  },
   TourStop: {
     sig: "{file: 'path#L10-40', note, title?}",
     example: "[{file:'src/auth/service.ts#L20-58',title:'Entry point',note:'Validates the credentials.'},{file:'src/auth/cache.ts#L5-30',note:'Token cache.'}]",
@@ -272,14 +280,13 @@ CUSTOM: show{id:"auth-flow", spec} with spec in A2UI Express:
   root=Page('Title',[...])  nested calls; positional args in signature order, then name=value; _ skips an optional
   name=Comp(...)  named part: usable as a child, patchable later
   $/path=value  set data, e.g. $/plan=[{title:'A',status:'doing'}]; $/path as an argument binds to it
-  'single' or "double" quoted strings; statements end with newline or ';'
 PATCH: show{id, spec} without root= changes only what it names: $/path=... or name=Comp(...) (a new name is appended). A preset's id is its view name; results list the parts. root= replaces the layout and keeps the data.
-DATA: a data argument is a source ref, a $/path or small inline rows. Ref: '<source> [path|range|symbol] [top=N] [since=90d]', e.g. DataTable('git.churn src/auth top=20') or BarChart('git.churn by=module'). Results list the fields; tables and charts pick columns and axes. data? omitted = the default source.
+DATA: a data argument is a source ref, a $/path or small inline rows. Ref: '<source> [path|range|symbol] [top=N] [since=90d]', e.g. DataTable('git.churn src/auth top=20') or BarChart('git.churn by=module'). data? omitted = the default source.
 Sources: ${sourceGroups()}
 Graphs (deps.modules, deps.files, diff.impact) need Graph().
-ROWS you write: Stats|KeyValue [{label,value}] Layers [{name,items:['a','b']}] ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}]
+INLINE: Stats|KeyValue [{label,value}] Layers [{name,items:['a','b']}] ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}] Flowchart {nodes:{A:{label,shape?,group?}},edges:[['A','B','x'?]],groups?} SequenceDiagram {steps:[['A','B','x','reply'?],{note,over},{loop:'x',steps}]}
 CODE: CodeView('src/a.ts#L10-40') and DiffView('main..HEAD') read from disk; DiffView() is the live working tree; files are 'path#L10-20' everywhere.
-LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it, so FileTree() beside CodeView() is a file browser.
+LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it: FileTree() beside CodeView() is a file browser.
 SHARED, not listed below: span=1..12 on all (12-column grid); title= (numbered plate), note=, size=s|m|l|xl|fill (only a max height) on Text, Markdown, Chips, Stats, KeyValue, Steps, List, Data, Charts, Diagrams, Code (not Sparkline, CodeBlock).
 Components (? optional; catalog{} lists more):
 ${componentIndex({brief: true})}
@@ -340,12 +347,13 @@ tour=CodeTour([{file:'src/auth/service.ts#L20-58',title:'Entry point',note:'Vali
   {
     title: 'Plan a feature', when: 'Before and while building something: the plan, the design and the live diff.', view: 'feature',
     spec: `$/plan=[{title:'Add limiter middleware',status:'doing',file:'src/api/limiter.ts'},{title:'Wire into the router'},{title:'Tests'}]
-design=Flowchart('Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429])',title='Design')`,
+$/design={nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond'},H:'Handler',E:{label:'429',shape:'pill'}},edges:[['Req','RL'],['RL','H','no'],['RL','E','yes']]}
+design=Flowchart($/design,title='Design')`,
   },
   {
     title: 'Trace a request', when: 'The user asks what happens when something is called.', id: 'login',
     spec: `root=Page('Login request',[seq,tour])
-seq=SequenceDiagram('User->>API: POST /login; API->>Auth: verify(password); Auth->>DB: find user; DB-->>Auth: row; Auth-->>API: token; API-->>User: 200',title='Sequence',span=6)
+seq=SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify(password)'],['Auth','DB','find user'],['DB','Auth','row','reply'],['Auth','API','token','reply'],['API','User','200','reply']]},title='Sequence',span=6)
 tour=CodeTour([{file:'src/api/routes.ts#L12-30',title:'Route',note:'Parses the body and calls the service.'},{file:'src/auth/service.ts#L20-58',title:'Service',note:'Constant-time compare, then issues the token.'}],title='In the code',span=6)`,
   },
   {

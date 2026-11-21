@@ -4,7 +4,7 @@ import {datasetKey, GALLERY_SPEC, parseRef, SOURCE_BY_NAME, VIEWS, type A2uiMess
 import {beforeAll, describe, expect, it} from 'vitest';
 import {createRegistry} from '../../src/sources/registry.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
-import {boundKeys, checkRef, expandMessages, refSignature, splitRatio, unboundPaths} from '../../src/spec/expand.ts';
+import {boundKeys, checkRef, diagramNotes, expandMessages, refSignature, splitRatio, unboundPaths} from '../../src/spec/expand.ts';
 import {fakeSources} from '../session/fakes.ts';
 
 let tools: Toolchain;
@@ -91,33 +91,50 @@ describe('expandMessages: data props', () => {
   });
 });
 
-describe('expandMessages: notation, columns, paths', () => {
-  it('a literal Flowchart or SequenceDiagram source is parsed; errors name the statement', () => {
-    const good = expand(`root=Page('x',[Flowchart('A[Start] --> B{ok?}; B -->|yes| C([Done])'),SequenceDiagram('A->>B: hi; B-->>A: yo')])`);
+describe('expandMessages: diagram data, columns, paths', () => {
+  it('inline diagram data draws; what it corrected is fixed, what it leaves out is warn, one entry at a time', () => {
+    const good = expand(`root=Page('x',[Flowchart({nodes:{A:'Start',B:{label:'ok?',shape:'diamond'}},edges:[['A','B']]}),SequenceDiagram({steps:[['A','B','hi'],['B','A','yo','reply']]})])`);
     expect(good.problems).toEqual([]);
-    const bad = expand(`root=Page('x',[Flowchart('A --> B; B -> C'),SequenceDiagram('A->>B: hi; nonsense here')])`);
-    expect(bad.codes).toEqual(['E_NOTATION', 'E_NOTATION']);
-    expect(bad.lines[0]).toMatch(/^E_NOTATION Flowchart#root_children_0\.src statement 2: /);
-    expect(bad.lines[1]).toMatch(/^E_NOTATION SequenceDiagram#root_children_1\.src statement 2: /);
+    expect(good.fixes).toEqual([]);
+    expect(good.warnings).toEqual([]);
+    const partly = expand(`root=Page('x',[Flowchart({nodes:{A:{label:'a',shape:'cylinder'}},edges:[['A','B'],['A']]}),SequenceDiagram({steps:[['A','B','hi'],{note:'lost'}]})])`);
+    expect(partly.problems).toEqual([]);
+    expect(partly.fixes).toEqual([
+      "Flowchart#root_children_0: node A: shape 'cylinder' -> store",
+      'Flowchart#root_children_0: node B added for edge A -> B (not in nodes)',
+    ]);
+    expect(partly.warnings).toEqual([
+      "Flowchart#root_children_0: not drawn: edge 2: expected ['from', 'to', 'label'?] or {from, to}, received a list of 1",
+      "SequenceDiagram#root_children_1: not drawn: step 2: a note needs over: 'A' or over: ['A', 'B']",
+    ]);
   });
 
-  it('a src bound to a path this call writes is parsed like a literal one', () => {
-    expect(expand(`$/flow='A --> B'\nroot=Page('x',[Flowchart($/flow)])`).problems).toEqual([]);
-    const bad = expand(`$/seq='A->>B: hi\\nnonsense here'\nroot=Page('x',[seq])\nseq=SequenceDiagram($/seq)`);
-    expect(bad.lines).toEqual([expect.stringMatching(/^E_NOTATION \$\/seq \(SequenceDiagram#seq\.src\) statement 2: expected "A->>B: text"/)]);
-    // a src bound to a path nobody writes in this call is not looked for
-    expect(expand(`root=Page('x',[seq])\nseq=SequenceDiagram($/elsewhere)`).problems).toEqual([]);
+  it('Mermaid text where a diagram takes data is E_SHAPE with the shape to write instead', () => {
+    const bad = expand(`root=Page('x',[Flowchart('A --> B'),SequenceDiagram('A->>B: hi'),Flowchart(42)])`);
+    expect(bad.codes).toEqual(['E_SHAPE', 'E_SHAPE', 'E_SHAPE']);
+    expect(bad.lines[0]).toMatch(/^E_SHAPE Flowchart#root_children_0\.data: Flowchart takes data, not Mermaid text: \{nodes, edges, groups\?\}, e\.g\. \{nodes:/);
+    expect(bad.lines[1]).toMatch(/^E_SHAPE SequenceDiagram#root_children_1\.data: SequenceDiagram takes data, not Mermaid text: /);
+    expect(bad.lines[2]).toBe('E_SHAPE Flowchart#root_children_2.data: expected {nodes, edges, groups?}, received a number');
   });
 
-  // Measurement: a writer's 'alt … else … end' gave no signal at all. Blocks are frames now; a block left open, or an
-  // `end` that closes nothing, is a fixed line.
-  it('a sequence block left open or an end too many is a fixed line', () => {
-    const open = expand(`$/seq='sequenceDiagram\\nA->>S: get\\nalt hit\\nS-->>A: rows\\nelse miss\\nS->>D: compute'\nroot=Page('x',[seq])\nseq=SequenceDiagram($/seq)`);
-    expect(open.problems).toEqual([]);
-    expect(open.fixes).toEqual([`$/seq (SequenceDiagram#seq.src) line 3: alt closed at the end (no 'end')`]);
-    const inline = expand(`root=Page('x',[seq])\nseq=SequenceDiagram('A->>B: x; end')`);
-    expect(inline.fixes).toEqual([`SequenceDiagram#seq.src line 1: 'end' closes no block: skipped`]);
-    expect(expand(`root=Page('x',[seq])\nseq=SequenceDiagram('A->>B: x\\nalt ok\\nB-->>A: y\\nend')`).fixes).toEqual([]);
+  it('bound diagram data is left to diagramNotes, which reads the data model after the call', () => {
+    const out = expand(`$/flow={edges:[['A','B']]}\nroot=Page('x',[Flowchart($/flow)])`);
+    expect(out.problems).toEqual([]);
+    const flow = out.byComponent('Flowchart');
+    const data = {flow: {nodes: {A: 'a'}, edges: [['A', 'B'], ['A', 'G']], groups: {G: 'Group'}}};
+    // defined in this call: checked
+    expect(diagramNotes([flow], data, new Set([flow.id]), new Set())).toEqual({
+      fixes: [`Flowchart#${flow.id}: node B added for edge A -> B (not in nodes)`],
+      warnings: [`Flowchart#${flow.id}: not drawn: edge A -> G: G is a group; edges join nodes`, `Flowchart#${flow.id}: not drawn: group G: no nodes in it`],
+    });
+    // a later patch writes $/flow/... and names no component: still checked
+    expect(diagramNotes([flow], data, new Set(), new Set(['flow'])).warnings).toHaveLength(2);
+    // neither defined nor written: said already, not again
+    expect(diagramNotes([flow], data, new Set(), new Set(['other']))).toEqual({fixes: [], warnings: []});
+    // not a diagram at all
+    expect(diagramNotes([flow], {flow: 'A --> B'}, new Set([flow.id]), new Set()).warnings).toEqual([
+      `Flowchart#${flow.id}: E_SHAPE $/flow: Flowchart takes data, not Mermaid text: {nodes, edges, groups?}, e.g. {nodes:{A:'Request',B:{label:'Over limit?',shape:'diamond'}},edges:[['A','B'],['B','C','no']]}`,
+    ]);
   });
 
   it('an unknown column kind is E_ENUM listing the kinds', () => {
@@ -143,7 +160,7 @@ describe('expandMessages: notation, columns, paths', () => {
 
   it('collects every problem of a call', () => {
     const out = expand(`root=Page('x',[DataTable('nope.nope'),Flowchart('???'),DataTable('fake.rows','a:zzz'),DataTable('code.refs')])`);
-    expect(out.codes).toEqual(['E_SOURCE', 'E_NOTATION', 'E_ENUM', 'E_ARGS']);
+    expect(out.codes).toEqual(['E_SOURCE', 'E_SHAPE', 'E_ENUM', 'E_ARGS']);
   });
 
   it('a reserved path segment in a compiled message is E_PATH (decision D10)', () => {

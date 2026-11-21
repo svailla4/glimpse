@@ -1644,14 +1644,14 @@
     },
     "Flowchart": {
       "type": "object",
-      "description": "Flowchart or state machine from Mermaid-style arrow notation.",
+      "description": "Boxes and arrows written as data: flows, state machines, grouped parts.",
       "properties": {
         "component": {
           "const": "Flowchart"
         },
-        "src": {
-          "$ref": "common_types.json#/$defs/DynamicString",
-          "description": "Statements split by ';' or newline: 'A[Label] --> B{Decision}', '-->|label|', '-.->' dashed. Shapes: [box] {diamond} ([pill]) [(store)] ((circle))."
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Nodes, edges and groups (FlowData below)."
         },
         "dir": {
           "type": "string",
@@ -1659,7 +1659,7 @@
             "TB",
             "LR"
           ],
-          "description": "Flow direction; wins over a src header ('graph LR'). Default: the header's, else whichever reads larger in its plate. One of: TB|LR."
+          "description": "Flow direction. Default: whichever reads larger in its plate. One of: TB|LR."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -1689,19 +1689,19 @@
       },
       "required": [
         "component",
-        "src"
+        "data"
       ]
     },
     "SequenceDiagram": {
       "type": "object",
-      "description": "Lifelines and messages from Mermaid-style sequence notation.",
+      "description": "Lifelines and numbered messages written as data, with notes and loop/alt frames.",
       "properties": {
         "component": {
           "const": "SequenceDiagram"
         },
-        "src": {
-          "$ref": "common_types.json#/$defs/DynamicString",
-          "description": "Statements split by ';' or newline: 'A->>B: call', 'B-->>A: reply', 'A-)B: async', 'Note over A,B: text'; 'alt cond' ... 'else other' ... 'end' (also opt, loop, par/and, critical, break) draws a frame."
+        "data": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Actors and steps: messages, notes, blocks (SeqData below)."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -1731,7 +1731,7 @@
       },
       "required": [
         "component",
-        "src"
+        "data"
       ]
     },
     "Layers": {

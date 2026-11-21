@@ -36,8 +36,8 @@ A Treemap(data~:DirNode='files.tree', value:loc|bytes|files|commits, color:lang|
 C Icicle(data~:DirNode='files.tree', value:loc|bytes|files|commits, color:lang|churn|age|complexity|depth|none) +frame
 # diagram
 A Graph(data~:GraphData='deps.modules', dir:LR|TB, focus~, depth:int) +frame
-B Flowchart(src*~, dir:TB|LR) +frame
-B SequenceDiagram(src*~) +frame
+B Flowchart(data*~:FlowData, dir:TB|LR) +frame
+B SequenceDiagram(data*~:SeqData) +frame
 B Layers(data*~:LayerItem[]) +frame
 C ERDiagram(data*~:ErData, dir:LR|TB) +frame
 # code

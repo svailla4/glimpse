@@ -1,9 +1,9 @@
-// SequenceDiagram: lifelines and messages from Mermaid-style notation (design 5.6). No layout library: columns are
-// actors, rows are steps.
+// SequenceDiagram: lifelines, messages, notes and blocks written as data (design 5.6, decision D21). No layout
+// library: columns are actors, rows are steps, a block is a frame round its rows.
 import type * as C from '@glimpse/catalog';
-import {parseSequence, type SeqArrow, type SeqAst} from '@glimpse/catalog';
+import {cleanSequence, seqLeaves, type SeqArrow, type SeqAst} from '@glimpse/catalog';
 import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode} from 'react';
-import {Empty, Redline, useSize, useSizeCap, useTooltip, type GlView} from '../../kit/index.ts';
+import {DataGate, Empty, Redline, fmtNum, useDataset, useReportState, useSize, useSizeCap, useTooltip, type GlView} from '../../kit/index.ts';
 import {MONO_11, UI_12, fitText, markPath, roundedPath, textWidth, wrapText, type Face} from './flowkit/index.ts';
 import css from './SequenceDiagram.module.css';
 
@@ -484,14 +484,22 @@ function SequenceBody(p: {ast: SeqAst}) {
   );
 }
 
+function SequenceData(p: {id: string; data: unknown}) {
+  const cleaned = useMemo(() => cleanSequence(p.data), [p.data]);
+  // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
+  const dropped = cleaned.ok ? cleaned.dropped : [];
+  useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
+  if (!cleaned.ok) return <Redline code="E_SHAPE" id={`SequenceDiagram#${p.id}`} message={cleaned.error} />;
+  if (seqLeaves(cleaned.ast.steps).length === 0) return <Empty message="no steps to draw: SequenceDiagram takes {actors?, steps}" />;
+  return (
+    <>
+      <SequenceBody ast={cleaned.ast} />
+      {dropped.length > 0 ? <div className={css.dropped}>{`${fmtNum(dropped.length)} not drawn: ${dropped.join('; ')}`}</div> : null}
+    </>
+  );
+}
+
 export const SequenceDiagramView: GlView<typeof C.SequenceDiagram> = ({id, props}) => {
-  const src = typeof props.src === 'string' ? props.src : '';
-  const parsed = useMemo(() => (src.trim() === '' ? undefined : parseSequence(src)), [src]);
-  if (!parsed) return <Empty message="no sequence source" />;
-  if (!parsed.ok) {
-    const shown = parsed.errors.slice(0, 3).map(error => `statement ${error.statement}: ${error.message}`);
-    const more = parsed.errors.length - shown.length;
-    return <Redline code="E_NOTATION" id={`SequenceDiagram#${id}`} message={shown.join('; ') + (more > 0 ? `; and ${more} more` : '')} />;
-  }
-  return <SequenceBody ast={parsed.ast} />;
+  const state = useDataset<unknown>(props.data);
+  return <DataGate state={state} id={`SequenceDiagram#${id}`}>{data => <SequenceData id={id} data={data} />}</DataGate>;
 };

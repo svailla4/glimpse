@@ -1,4 +1,4 @@
-import {parseSequence, type SeqAst} from '@glimpse/catalog';
+import {cleanSequence, type SeqAst} from '@glimpse/catalog';
 import {screen, waitFor} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
 import {UI_12, textWidth} from '../../src/components/diagrams/flowkit/index.ts';
@@ -6,18 +6,27 @@ import {MAX_STEPS, planSequence, wrapWidth} from '../../src/components/diagrams/
 import {buildPatch, buildSurface, renderExpress, renderSpec} from '../harness.tsx';
 import {focus, key} from './util.tsx';
 
-const GALLERY = 'User->>API: POST /login; API->>Auth: verify(password); Auth->>DB: find user; DB-->>Auth: row; Note over Auth,DB: constant-time compare; Auth-->>API: token; API-->>User: 200';
-const spec = (src: string) => `root=Page('T',[s])\ns=SequenceDiagram('${src}',title='Seq')`;
-const ready = async (src: string) => {
-  const view = renderExpress(spec(src));
+// Express data literals, as a model writes them.
+const GALLERY = "{steps:[['User','API','POST /login'],['API','Auth','verify(password)'],['Auth','DB','find user'],['DB','Auth','row','reply'],{note:'constant-time compare',over:['Auth','DB']},['Auth','API','token','reply'],['API','User','200','reply']]}";
+const spec = (data: string) => `root=Page('T',[s])\ns=SequenceDiagram(${data},title='Seq')`;
+const ready = async (data: string) => {
+  const view = renderExpress(spec(data));
   await screen.findByRole('img', {name: /^Sequence diagram/});
   return view;
 };
-const ast = (src: string): SeqAst => {
-  const parsed = parseSequence(src);
-  if (!parsed.ok) throw new Error(JSON.stringify(parsed.errors));
-  return parsed.ast;
+const ast = (data: unknown): SeqAst => {
+  const cleaned = cleanSequence(data);
+  if (!cleaned.ok) throw new Error(cleaned.error);
+  return cleaned.ast;
 };
+/** A JS value written as an Express literal: unquoted keys, single-quoted strings. */
+const express = (value: unknown): string =>
+  typeof value === 'string' ? `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+    : Array.isArray(value) ? `[${value.map(express).join(',')}]`
+    : value !== null && typeof value === 'object' ? `{${Object.entries(value).map(([key, item]) => `${key}:${express(item)}`).join(',')}}`
+    : String(value);
+/** Messages A -> B, B -> C, ... between `count + 1` actors P0..Pn. */
+const chain = (count: number, label = 'go') => Array.from({length: count}, (_, i) => [`P${i}`, `P${i + 1}`, label]);
 
 describe('SequenceDiagram', () => {
   it('draws actors, lifelines, numbered messages and notes', async () => {
@@ -47,7 +56,7 @@ describe('SequenceDiagram', () => {
   });
 
   it('draws async messages, self-messages and participant labels', async () => {
-    const view = await ready('participant W as Worker\nW-)Q: enqueue\nQ->>Q: dedupe\nNote over Q: at most once');
+    const view = await ready("{actors:{W:'Worker'},steps:[['W','Q','enqueue','async'],['Q','Q','dedupe'],{note:'at most once',over:'Q'}]}");
     const cell = view.cell('s');
     expect([...cell.querySelectorAll('[data-actor]')].map(a => a.textContent)).toEqual(['Worker', 'Q']);
     const steps = [...cell.querySelectorAll('[data-step]')];
@@ -61,33 +70,41 @@ describe('SequenceDiagram', () => {
     expect(steps[1]!.textContent).toContain('dedupe');
   });
 
-  it('shows a redline with the statement for a parse error', async () => {
-    const view = renderExpress(spec('A->>B: ok; B ~~ C; ->>D: no sender'));
-    await waitFor(() => expect(view.cell('s').querySelector('[data-code="E_NOTATION"]')).not.toBeNull());
-    const text = view.cell('s').querySelector('[data-code="E_NOTATION"]')!.textContent!;
+  it('refuses Mermaid text with a redline that says what to write instead', async () => {
+    const view = renderExpress(`root=Page('T',[s])\ns=SequenceDiagram($/s,title='Seq')`, {data: {'/s': 'A->>B: ok'}});
+    await waitFor(() => expect(view.cell('s').querySelector('[data-code="E_SHAPE"]')).not.toBeNull());
+    const text = view.cell('s').querySelector('[data-code="E_SHAPE"]')!.textContent!;
     expect(text).toContain('SequenceDiagram#s');
-    expect(text).toMatch(/statement 2: expected "A->>B: text"/);
-    expect(text).toMatch(/statement 3: /);
+    expect(text).toContain('SequenceDiagram takes data, not Mermaid text');
     expect(view.cell('s').querySelector('[data-step]')).toBeNull();
   });
 
-  it('shows the empty state without a source and follows the binding', async () => {
-    const view = renderExpress(`root=Page('T',[s])\ns=SequenceDiagram($/src,title='Seq')`);
-    await waitFor(() => expect(view.cell('s').querySelector('[data-gl-state="empty"]')!.textContent).toBe('no sequence source'));
-    view.setData('/src', 'A->>B: one');
-    await waitFor(() => expect(view.cell('s').querySelectorAll('[data-step]')).toHaveLength(1));
-    view.setData('/src', 'A->>B: one\nB-->>A: two\nA->>C: three');
-    await waitFor(() => expect(view.cell('s').querySelectorAll('[data-step]')).toHaveLength(3));
-    expect(view.cell('s').querySelectorAll('[data-actor]')).toHaveLength(3);
-    view.setData('/src', '');
-    await waitFor(() => expect(view.cell('s').querySelector('[data-gl-state="empty"]')).not.toBeNull());
+  it('draws what it can and tells the model what it left out (W_DROPPED)', async () => {
+    const view = renderExpress(`root=Page('T',[s])\ns=SequenceDiagram($/s,title='Seq')`, {data: {'/s': [['A', 'B', 'ok'], {note: 'floating'}]}});
+    await waitFor(() => expect(view.stateOf('s')).toBe('W_DROPPED'));
+    expect(view.reports.findLast(report => report.code === 'W_DROPPED')!.message).toBe("SequenceDiagram#s: not drawn: step 2: a note needs over: 'A' or over: ['A', 'B']");
+    expect(view.cell('s').querySelectorAll('[data-step]')).toHaveLength(1);
+    view.setData('/s', [['A', 'B', 'ok'], {note: 'over A', over: 'A'}]);
+    await waitFor(() => expect(view.stateOf('s')).toBe('OK'));
   });
 
-  it('follows a patch that replaces the source', async () => {
-    const base = buildSurface('test', spec('A->>B: hi'));
+  it('shows the empty state without data and follows the binding', async () => {
+    const view = renderExpress(`root=Page('T',[s])\ns=SequenceDiagram($/s,title='Seq')`);
+    await waitFor(() => expect(view.cell('s').querySelector('[data-gl-state="empty"]')).not.toBeNull());
+    view.setData('/s', [['A', 'B', 'one']]);
+    await waitFor(() => expect(view.cell('s').querySelectorAll('[data-step]')).toHaveLength(1));
+    view.setData('/s', {steps: [['A', 'B', 'one'], ['B', 'A', 'two', 'reply'], ['A', 'C', 'three']]});
+    await waitFor(() => expect(view.cell('s').querySelectorAll('[data-step]')).toHaveLength(3));
+    expect(view.cell('s').querySelectorAll('[data-actor]')).toHaveLength(3);
+    view.setData('/s', {steps: [{opt: 'nothing', steps: []}]});
+    await waitFor(() => expect(view.cell('s').querySelector('[data-gl-state="empty"]')!.textContent).toContain('no steps to draw'));
+  });
+
+  it('follows a patch that replaces the data', async () => {
+    const base = buildSurface('test', spec("[['A','B','hi']]"));
     const view = renderSpec(base);
     await waitFor(() => expect(view.cell('s').querySelectorAll('[data-step]')).toHaveLength(1));
-    view.send(buildPatch('test', base, `s=SequenceDiagram('X->>Y: a; Y-->>X: b',title='Seq')`));
+    view.send(buildPatch('test', base, `s=SequenceDiagram([['X','Y','a'],['Y','X','b','reply']],title='Seq')`));
     await waitFor(() => expect([...view.cell('s').querySelectorAll('[data-actor]')].map(a => a.textContent)).toEqual(['X', 'Y']));
     expect(view.errors).toEqual([]);
   });
@@ -124,7 +141,7 @@ describe('SequenceDiagram', () => {
 
   it('cuts a 500-character label and keeps the full text for the announcement', async () => {
     const long = 'y'.repeat(500);
-    const view = await ready(`A->>B: ${long}`);
+    const view = await ready(`[['A','B','${long}']]`);
     const label = view.cell('s').querySelector('[data-step] text:last-of-type')!.textContent!;
     expect(label.endsWith('…')).toBe(true);
     expect(label.length).toBeLessThan(120);
@@ -138,10 +155,17 @@ describe('SequenceDiagram', () => {
 // Blind-writer measurement: 'alt tokens left … else bucket empty … end' was drawn as one numbered run, so a
 // branch that never runs with the other read as if it did.
 describe('SequenceDiagram blocks', () => {
-  const RATE = 'sequenceDiagram\nparticipant A as Agent\nparticipant S as Server\nparticipant L as Limiter\nA->>S: show\nS->>L: take\nalt tokens left\nL-->>S: ok\nS-->>A: rendered\nelse bucket empty\nL-->>S: deny\nS-->>A: retry later\nend\nA->>S: next';
+  const RATE = {
+    actors: {A: 'Agent', S: 'Server', L: 'Limiter'},
+    steps: [
+      ['A', 'S', 'show'], ['S', 'L', 'take'],
+      {alt: 'tokens left', steps: [['L', 'S', 'ok', 'reply'], ['S', 'A', 'rendered', 'reply']], else: [{label: 'bucket empty', steps: [['L', 'S', 'deny', 'reply'], ['S', 'A', 'retry later', 'reply']]}]},
+      ['A', 'S', 'next'],
+    ],
+  };
 
   it('draws an alt as a labelled frame with a divider, round the steps of its branches only', async () => {
-    const view = await ready(RATE.replace(/\n/g, '\\n'));
+    const view = await ready(express(RATE));
     const cell = view.cell('s');
     const frame = cell.querySelector('[data-frame="alt"]')!;
     expect(frame).not.toBeNull();
@@ -174,8 +198,8 @@ describe('SequenceDiagram blocks', () => {
     expect(frame!.x + frame!.w).toBeLessThanOrEqual(plan.width);
   });
 
-  it('nests frames inside their parent, and closes one left open at the end', () => {
-    const plan = planSequence(ast('A->>B: x\nloop every 5s\nA->>B: poll\nopt changed\nB-->>A: rows\nend\nend\nalt broken\nA->>B: y'), 600);
+  it('nests frames inside their parent', () => {
+    const plan = planSequence(ast([['A', 'B', 'x'], {loop: 'every 5s', steps: [['A', 'B', 'poll'], {opt: 'changed', steps: [['B', 'A', 'rows', 'reply']]}]}, {alt: 'broken', steps: [['A', 'B', 'y']]}]), 600);
     const [loop, opt, alt] = plan.frames;
     expect([loop!.op, opt!.op, alt!.op]).toEqual(['loop', 'opt', 'alt']);
     expect(opt!.depth).toBe(1);
@@ -191,7 +215,14 @@ describe('planSequence', () => {
   // Blind-writer measurement: 'auth-flow-2026-11-20.html' was cut to 'auth-flow-202…' between two lifelines of a
   // span=7 plate: a label of one word cannot take a second line, so its gap needs all of it.
   it('keeps a one-word label whole: its gap is as wide as the word', () => {
-    const src = 'sequenceDiagram\nactor U as User\nparticipant V as Viewer tab\nparticipant S as ExportService\nparticipant B as SnapshotBuilder\nparticipant R as Source resolvers\nU->>V: click Export\nV->>S: POST /api/export viewId\nS->>B: build(view spec)\nB->>R: resolve each data ref\nR-->>B: rows\nB-->>S: spec + data snapshot\nS->>S: inline runtime.js, css, snapshot\nS-->>V: auth-flow-2026-11-20.html\nV-->>U: download';
+    const src = {
+      actors: {U: 'User', V: 'Viewer tab', S: 'ExportService', B: 'SnapshotBuilder', R: 'Source resolvers'},
+      steps: [
+        ['U', 'V', 'click Export'], ['V', 'S', 'POST /api/export viewId'], ['S', 'B', 'build(view spec)'], ['B', 'R', 'resolve each data ref'],
+        ['R', 'B', 'rows', 'reply'], ['B', 'S', 'spec + data snapshot', 'reply'], ['S', 'S', 'inline runtime.js, css, snapshot'],
+        ['S', 'V', 'auth-flow-2026-11-20.html', 'reply'], ['V', 'U', 'download', 'reply'],
+      ],
+    };
     for (const width of [722, 600]) {
       const plan = planSequence(ast(src), width);
       for (const row of plan.rows) if (row.kind === 'message') expect(row.lines.join(' '), `at ${width}`).toBe(row.full);
@@ -201,7 +232,7 @@ describe('planSequence', () => {
   });
 
   it('keeps lifelines at least 140 px apart and widens a gap for the label that crosses it', () => {
-    const plan = planSequence(ast('A->>B: hi; B->>C: a label that is clearly longer than the minimum column'), 0);
+    const plan = planSequence(ast([['A', 'B', 'hi'], ['B', 'C', 'a label that is clearly longer than the minimum column']]), 0);
     const [a, b, c] = plan.actors.map(actor => actor.x);
     expect(b! - a!).toBe(140);
     // the label wants more than a lifeline may have: the gap stops at 280 and the label takes a second line (V014)
@@ -213,7 +244,7 @@ describe('planSequence', () => {
   });
 
   it('wraps a label to two lines in a narrow plate instead of cutting it (V014)', () => {
-    const five = ast('Model->>Server: show(spec); Server->>Parser: parse A2UI Express spec; Parser-->>Server: parts and data bindings; Server->>Sources: run every bound source; Server-->>Model: ok plus one line per dataset');
+    const five = ast([['Model', 'Server', 'show(spec)'], ['Server', 'Parser', 'parse A2UI Express spec'], ['Parser', 'Server', 'parts and data bindings', 'reply'], ['Server', 'Sources', 'run every bound source'], ['Server', 'Model', 'ok plus one line per dataset', 'reply']]);
     // From a span=7 plate of a 1440 px page (where the review saw 'parse A2UI Ex…') down to a phone: every label whole.
     for (const width of [700, 520, 420, 360]) {
       const plan = planSequence(five, width);
@@ -228,19 +259,19 @@ describe('planSequence', () => {
   });
 
   it('stretches a narrow diagram to its container and scrolls a wide one', () => {
-    const narrow = planSequence(ast('A->>B: hi'), 900);
+    const narrow = planSequence(ast([['A', 'B', 'hi']]), 900);
     expect(narrow.width).toBe(900);
     expect(narrow.actors[1]!.x - narrow.actors[0]!.x).toBe(280);
     // centred
     expect(narrow.actors[0]!.x + narrow.actors[1]!.x).toBeCloseTo(900, -1);
-    const wide = planSequence(ast(Array.from({length: 12}, (_, i) => `P${i}->>P${i + 1}: go`).join('; ')), 600);
+    const wide = planSequence(ast(chain(12)), 600);
     // thirteen lifelines cannot be had in 600 px: the gaps close up to 95 px and the rest scrolls
     expect(wide.actors[1]!.x - wide.actors[0]!.x).toBe(95);
     expect(wide.width * wide.scale).toBeGreaterThan(600);
   });
 
   it('fits a cell that is a little too narrow: gaps close up first, then the drawing is scaled, never below 10 px text', () => {
-    const six = ast('User->>Agent: ask; Agent->>Server: show; Server->>Sources: run; Sources-->>Server: rows; Server->>Viewer: frame; Viewer->>Hub: event; Hub-->>User: done');
+    const six = ast([['User', 'Agent', 'ask'], ['Agent', 'Server', 'show'], ['Server', 'Sources', 'run'], ['Sources', 'Server', 'rows', 'reply'], ['Server', 'Viewer', 'frame'], ['Viewer', 'Hub', 'event'], ['Hub', 'User', 'done', 'reply']]);
     const natural = planSequence(six, 0);
     expect(natural.scale).toBe(1);
     expect(natural.actors[1]!.x - natural.actors[0]!.x).toBe(140);
@@ -266,19 +297,35 @@ describe('planSequence', () => {
   });
 
   it('gives a self-message on the last lifeline room on the right', () => {
-    const plan = planSequence(ast('A->>B: hi; B->>B: think about it for a while'), 0);
+    const plan = planSequence(ast([['A', 'B', 'hi'], ['B', 'B', 'think about it for a while']]), 0);
     const self = plan.rows[1]!;
     expect(self.kind === 'message' && self.lines).toEqual(['think about it for a while']);
     expect(plan.width - plan.actors[1]!.x).toBeGreaterThan(150);
   });
 
   it('wraps long notes and caps the number of steps drawn', () => {
-    const plan = planSequence(ast(`A->>B: hi; Note over A: ${'word '.repeat(60)}`), 0);
+    const plan = planSequence(ast([['A', 'B', 'hi'], {note: 'word '.repeat(60), over: 'A'}]), 0);
     const note = plan.rows[1]!;
     expect(note.kind === 'note' && note.lines.length).toBe(4);
-    const many = planSequence(ast(Array.from({length: MAX_STEPS + 25}, () => 'A->>B: tick').join('\n')), 0);
+    const many = planSequence(ast(Array.from({length: MAX_STEPS + 25}, () => ['A', 'B', 'tick'])), 0);
     expect(many.rows).toHaveLength(MAX_STEPS);
     expect(many.hidden).toBe(25);
+  });
+
+  it('frames a block from the outermost lifeline it holds, an inner block inside its outer one', () => {
+    const plan = planSequence(ast([['A', 'B', 'x'], {opt: 'o', steps: [['B', 'C', 'y'], {loop: 'l', steps: [['B', 'C', 'z']]}]}]), 0);
+    const [opt, loop] = plan.frames;
+    const [, b, c] = plan.actors.map(actor => actor.x);
+    expect(opt!.x).toBeLessThan(b!);
+    expect(opt!.x + opt!.w).toBeGreaterThan(c!);
+    expect(loop!.x).toBeGreaterThan(opt!.x);
+    expect(loop!.x + loop!.w).toBeLessThan(opt!.x + opt!.w);
+    // the rows of the block sit inside its frame, under its tab
+    const inBlock = plan.rows.filter(row => row.kind === 'message' && ['y', 'z'].includes(row.full));
+    for (const row of inBlock) {
+      expect(row.y).toBeGreaterThan(opt!.y);
+      expect(row.y + row.h).toBeLessThan(opt!.y + opt!.h);
+    }
   });
 });
 
@@ -289,7 +336,7 @@ describe('SequenceDiagram: content-sized', () => {
     ['size m: 280 px', ",size='m'", 280],
     ['size s: 160 px', ",size='s'", 160],
   ])('takes %s as its maximum height', async (_name, size, cap) => {
-    const view = renderExpress(`root=Page('T',[s])\ns=SequenceDiagram('${GALLERY}',title='Seq'${size})`);
+    const view = renderExpress(`root=Page('T',[s])\ns=SequenceDiagram(${GALLERY},title='Seq'${size})`);
     const scroll = await screen.findByRole('img', {name: /^Sequence diagram/});
     expect(scroll.style.maxHeight).toBe(`${cap}px`);
     // no fixed height of its own: as tall as its steps up to that

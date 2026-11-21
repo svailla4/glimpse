@@ -588,14 +588,133 @@
         {
           "id": "diagrams_children_2",
           "component": "Flowchart",
-          "src": "Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429]); H --> DB[(Postgres)]; H -.-> C((cache))",
+          "data": {
+            "groups": {
+              "svc": "Service"
+            },
+            "nodes": {
+              "Req": "Request",
+              "RL": {
+                "label": "Over limit?",
+                "shape": "diamond",
+                "group": "svc"
+              },
+              "H": {
+                "label": "Handler",
+                "group": "svc"
+              },
+              "E": {
+                "label": "429",
+                "shape": "pill"
+              },
+              "DB": {
+                "label": "Postgres",
+                "shape": "store"
+              },
+              "C": {
+                "label": "cache",
+                "shape": "circle"
+              }
+            },
+            "edges": [
+              [
+                "Req",
+                "RL"
+              ],
+              [
+                "RL",
+                "H",
+                "no"
+              ],
+              [
+                "RL",
+                "E",
+                "yes"
+              ],
+              [
+                "H",
+                "DB"
+              ],
+              {
+                "from": "H",
+                "to": "C",
+                "dashed": true
+              }
+            ]
+          },
           "title": "Flowchart",
           "span": 6
         },
         {
           "id": "diagrams_children_3",
           "component": "SequenceDiagram",
-          "src": "User->>API: POST /login; API->>Auth: verify(password); Auth->>DB: find user; DB-->>Auth: row; Note over Auth,DB: constant-time compare; Auth-->>API: token; API-->>User: 200",
+          "data": {
+            "steps": [
+              [
+                "User",
+                "API",
+                "POST /login"
+              ],
+              [
+                "API",
+                "Auth",
+                "verify(password)"
+              ],
+              {
+                "loop": "each key",
+                "steps": [
+                  [
+                    "Auth",
+                    "DB",
+                    "find user"
+                  ],
+                  [
+                    "DB",
+                    "Auth",
+                    "row",
+                    "reply"
+                  ]
+                ]
+              },
+              {
+                "note": "constant-time compare",
+                "over": [
+                  "Auth",
+                  "DB"
+                ]
+              },
+              {
+                "alt": "valid",
+                "steps": [
+                  [
+                    "Auth",
+                    "API",
+                    "token",
+                    "reply"
+                  ],
+                  [
+                    "API",
+                    "User",
+                    "200",
+                    "reply"
+                  ]
+                ],
+                "else": [
+                  {
+                    "label": "invalid",
+                    "steps": [
+                      [
+                        "API",
+                        "User",
+                        "401",
+                        "reply"
+                      ]
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
           "title": "SequenceDiagram",
           "span": 6
         },

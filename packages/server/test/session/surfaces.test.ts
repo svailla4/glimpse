@@ -131,10 +131,19 @@ describe('draft and commit', () => {
 
   it('a preset and its patch commit as one create', () => {
     const store = new SurfaceStore();
-    const d = apply(store, 'feature', [VIEW_BY_NAME.get('feature')!.build(undefined, {}), `$/plan=[{title:'A',status:'doing'}]\ndesign=Flowchart('A --> B',title='Design')`], {fresh: true});
+    const d = apply(store, 'feature', [VIEW_BY_NAME.get('feature')!.build(undefined, {}), `$/plan=[{title:'A',status:'doing'}]\ndesign=Flowchart({edges:[['A','B']]},title='Design')`], {fresh: true});
     expect(d.mode).toBe('create');
     expect(store.get('feature')!.data.plan).toEqual([{title: 'A', status: 'doing'}]);
     expect(store.get('feature')!.components.get('design')!.component).toBe('Flowchart');
+  });
+
+  it('a patch replaces one node of a bound diagram, whether it was written as text or as {label} (decision D21)', () => {
+    const store = new SurfaceStore();
+    apply(store, 'arch', `$/f={nodes:{A:'a',B:'b',C:{label:'c'}},edges:[['A','B']]}\nroot=Page('T',[f])\nf=Flowchart($/f)`);
+    apply(store, 'arch', `$/f/nodes/B={label:'renamed',shape:'diamond'}\n$/f/nodes/C/label='also renamed'\n$/f/edges/1=['B','C']`);
+    expect(store.get('arch')!.data.f).toEqual({nodes: {A: 'a', B: {label: 'renamed', shape: 'diamond'}, C: {label: 'also renamed'}}, edges: [['A', 'B'], ['B', 'C']]});
+    // A path into a label written as text is refused: the docs say to replace the node.
+    expect(() => apply(store, 'arch', `$/f/nodes/A/label='x'`)).toThrow(/segment 'A' is a primitive value/);
   });
 
   it('a draft never touches the store or the current record', () => {
