@@ -101,8 +101,23 @@ describe('expandMessages: notation, columns, paths', () => {
     expect(bad.lines[1]).toMatch(/^E_NOTATION SequenceDiagram#root_children_1\.src statement 2: /);
   });
 
-  it('a bound src is not parsed', () => {
+  it('a src bound to a path this call writes is parsed like a literal one', () => {
     expect(expand(`$/flow='A --> B'\nroot=Page('x',[Flowchart($/flow)])`).problems).toEqual([]);
+    const bad = expand(`$/seq='A->>B: hi\\nnonsense here'\nroot=Page('x',[seq])\nseq=SequenceDiagram($/seq)`);
+    expect(bad.lines).toEqual([expect.stringMatching(/^E_NOTATION \$\/seq \(SequenceDiagram#seq\.src\) statement 2: expected "A->>B: text"/)]);
+    // a src bound to a path nobody writes in this call is not looked for
+    expect(expand(`root=Page('x',[seq])\nseq=SequenceDiagram($/elsewhere)`).problems).toEqual([]);
+  });
+
+  // Measurement: a writer's 'alt … else … end' gave no signal at all. Blocks are frames now; a block left open, or an
+  // `end` that closes nothing, is a fixed line.
+  it('a sequence block left open or an end too many is a fixed line', () => {
+    const open = expand(`$/seq='sequenceDiagram\\nA->>S: get\\nalt hit\\nS-->>A: rows\\nelse miss\\nS->>D: compute'\nroot=Page('x',[seq])\nseq=SequenceDiagram($/seq)`);
+    expect(open.problems).toEqual([]);
+    expect(open.fixes).toEqual([`$/seq (SequenceDiagram#seq.src) line 3: alt closed at the end (no 'end')`]);
+    const inline = expand(`root=Page('x',[seq])\nseq=SequenceDiagram('A->>B: x; end')`);
+    expect(inline.fixes).toEqual([`SequenceDiagram#seq.src line 1: 'end' closes no block: skipped`]);
+    expect(expand(`root=Page('x',[seq])\nseq=SequenceDiagram('A->>B: x\\nalt ok\\nB-->>A: y\\nend')`).fixes).toEqual([]);
   });
 
   it('an unknown column kind is E_ENUM listing the kinds', () => {

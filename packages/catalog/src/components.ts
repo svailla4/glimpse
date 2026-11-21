@@ -163,7 +163,7 @@ export const Callout = component('Callout', {
   kind: opt(p.enum(['note', 'tip', 'warn', 'risk', 'decision', 'question'], 'Tag and colour. Default note.', {
     info: 'note', information: 'note', warning: 'warn', caution: 'warn', danger: 'risk', error: 'risk', critical: 'risk',
     success: 'tip', hint: 'tip', idea: 'tip',
-  })),
+  }, ['info', 'success'])),
   title: opt(p.text('Bold lead-in.')),
   file: opt(p.text("File anchor 'path#L10-20'.")),
   ...CELL,
@@ -447,7 +447,7 @@ export const SequenceDiagram = component('SequenceDiagram', {
   doc: 'Lifelines and messages from Mermaid-style sequence notation.',
   example: "SequenceDiagram('User->>API: POST /login; API->>Auth: verify; Auth-->>API: token; API-->>User: 200')",
 }, {
-  src: p.text("Statements split by ';' or newline: 'A->>B: call', 'B-->>A: reply', 'A-)B: async', 'Note over A,B: text'."),
+  src: p.text("Statements split by ';' or newline: 'A->>B: call', 'B-->>A: reply', 'A-)B: async', 'Note over A,B: text'; 'alt cond' ... 'else other' ... 'end' (also opt, loop, par/and, critical, break) draws a frame."),
   ...FRAME,
 });
 

@@ -1,12 +1,13 @@
 // Expansion (design 2.2 step 4): compiled messages are rewritten in place so that every data prop naming a source
-// becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, the Mermaid-style notation,
-// column shorthand and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
+// becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, the Mermaid-style notation
+// (inline, or written to the path a src binds), column shorthand and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
 import {
   acceptsArg, checkColumns, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, parseColumns, parseFlow, parseRef, parseSequence, PATHS,
   shapeKinds, SOURCES, type A2uiMessage, type Field, type Prop, type SourceMeta, type SourceRef, type WireComponent,
 } from '@glimpse/catalog';
 import {AS_ROWS, NODE_FIELDS, readsAsRows} from '../session/datasets.ts';
 import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
+import type {Seed} from './compile.ts';
 import {closeMatch, nearest, oneLine, problem, type Problem} from './errors.ts';
 import {pathProblem} from './guard.ts';
 
@@ -388,10 +389,70 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
   nameFiles(comp, def.name, def.props as Record<string, Prop>, out, names);
   collectChecks(comp, def.name, def.props as Record<string, Prop>, out);
   if (def.name === 'Split' && typeof comp.ratio === 'string') comp.ratio = splitRatio(comp.ratio);
-  if ((def.name === 'Flowchart' || def.name === 'SequenceDiagram') && typeof comp.src === 'string') {
-    const parsed = def.name === 'Flowchart' ? parseFlow(comp.src) : parseSequence(comp.src);
-    if (!parsed.ok) {
-      for (const error of parsed.errors) out.problems.push(problem('E_NOTATION', `${where('src')} statement ${error.statement}: ${error.message}`, {component: def.name}));
+  if (typeof comp.src === 'string') checkSource(def.name, comp.src, where('src'), out);
+}
+
+/**
+ * Flowchart.src and SequenceDiagram.src, written inline or through the data model: what cannot be read is an
+ * E_NOTATION per statement, a slip the parser repaired (a block left open) a `fixed` line.
+ */
+function checkSource(component: string, src: string, where: string, out: Expansion): void {
+  if (component !== 'Flowchart' && component !== 'SequenceDiagram') return;
+  const parsed = component === 'Flowchart' ? parseFlow(src) : parseSequence(src);
+  if (!parsed.ok) {
+    for (const error of parsed.errors) out.problems.push(problem('E_NOTATION', `${where} statement ${error.statement}: ${error.message}`, {component}));
+    return;
+  }
+  for (const fix of parsed.fixes ?? []) out.fixes.push(`${where} line ${fix.line}: ${fix.message}`);
+}
+
+const decodeSegments = (path: string): string[] => path.split('/').filter(Boolean).map(segment => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
+const isContainer = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
+/** The value at `rest` (segments) inside `root`, when there is one. */
+function valueIn(root: unknown, rest: readonly string[]): {value: unknown} | undefined {
+  let node = root;
+  for (const segment of rest) {
+    if (!isContainer(node) || !Object.hasOwn(node, segment)) return undefined;
+    node = node[segment];
+  }
+  return {value: node};
+}
+
+/**
+ * Every value this call's messages write at `segments`, in message order: the new surface's data model, a write to
+ * the path itself, or a write to an ancestor whose value holds it. A write below the path is not one.
+ */
+function valuesAt(messages: readonly A2uiMessage[], segments: readonly string[]): unknown[] {
+  const values: unknown[] = [];
+  for (const message of messages) {
+    let found: {value: unknown} | undefined;
+    if ('createSurface' in message) {
+      found = message.createSurface.dataModel ? valueIn(message.createSurface.dataModel, segments) : undefined;
+    } else if ('updateDataModel' in message) {
+      const update = message.updateDataModel;
+      const at = decodeSegments(update.path ?? '/');
+      if (at.length === 0 || at.length > segments.length || at.some((segment, i) => segment !== segments[i])) continue;
+      found = valueIn(update.value, segments.slice(at.length));
+    }
+    if (found) values.push(found.value);
+  }
+  return values;
+}
+
+/**
+ * A diagram src bound to a path this call writes (`$/seq='sequenceDiagram ...'` read by `SequenceDiagram($/seq)`) is
+ * checked like an inline one, whether the component is in this call or in the stored view the call patches.
+ */
+function checkBoundSources(messages: readonly A2uiMessage[], out: Expansion, seed: Seed | undefined): void {
+  const own = messages.flatMap(componentsOf);
+  const ownIds = new Set(own.map(comp => comp.id));
+  for (const comp of [...own, ...(seed?.components ?? []).filter(stored => !ownIds.has(stored.id))]) {
+    if (comp.component !== 'Flowchart' && comp.component !== 'SequenceDiagram') continue;
+    const src = comp.src;
+    if (!isBinding(src) || !/^\/(?!(ds|meta|ui)(\/|$))/.test(src['@path'])) continue;
+    for (const value of valuesAt(messages, decodeSegments(src['@path']))) {
+      if (typeof value === 'string') checkSource(comp.component, value, `$${src['@path']} (${comp.component}#${comp.id}.src)`, out);
     }
   }
 }
@@ -416,13 +477,15 @@ function checkPaths(message: A2uiMessage, out: Expansion): void {
 /**
  * Expands every message in place and collects every problem found (the caller reports the first five). `names` are
  * the inventory's spellings the session found for paths an earlier expansion of the same call recorded (V071).
+ * `seed` is the stored view a patch applies to: a diagram of it may read its src from a path this call writes.
  */
-export function expandMessages(messages: A2uiMessage[], registry: SourceRegistry, names?: PathNames): Expansion {
+export function expandMessages(messages: A2uiMessage[], registry: SourceRegistry, names?: PathNames, seed?: Seed): Expansion {
   const out: Expansion = {refs: new Map(), problems: [], warnings: [], files: [], ranges: [], fields: [], fixes: [], paths: []};
   for (const message of messages) {
     checkPaths(message, out);
     for (const comp of componentsOf(message)) expandComponent(comp, registry, out, names);
   }
+  checkBoundSources(messages, out, seed);
   return out;
 }
 

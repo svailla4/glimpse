@@ -1,10 +1,13 @@
 // packages/catalog/src/notation.ts
 // Mermaid-style arrow notation for Flowchart.src and SequenceDiagram.src. Pure functions shared by the server
-// (validates literal src at show time) and the viewer (parses, lays out, paints). No Mermaid dependency.
+// (validates src at show time, literal or written to the path it binds) and the viewer (parses, lays out, paints).
+// No Mermaid dependency.
 import type {Field, FieldKind} from './datasets.ts';
 
 export interface NotationError { statement: number; message: string }
-export type ParseResult<T> = {ok: true; ast: T} | {ok: false; errors: NotationError[]};
+/** A slip the parser corrected (a block left open): its 1-based line, and what was done, at most 80 characters. */
+export interface NotationFix { line: number; message: string }
+export type ParseResult<T> = {ok: true; ast: T; fixes?: NotationFix[]} | {ok: false; errors: NotationError[]};
 
 export type FlowShape = 'box' | 'diamond' | 'pill' | 'store' | 'circle';
 export interface FlowNode { id: string; label: string; shape: FlowShape }
@@ -12,9 +15,15 @@ export interface FlowEdge { from: string; to: string; label?: string; dashed?: b
 export interface FlowAst { nodes: FlowNode[]; edges: FlowEdge[] }
 
 export type SeqArrow = 'sync' | 'reply' | 'async';
+/** The Mermaid blocks drawn as a labelled frame round their steps. */
+export type SeqFrameOp = 'loop' | 'alt' | 'opt' | 'par' | 'critical' | 'break';
 export type SeqStep =
   | {kind: 'message'; from: string; to: string; label: string; arrow: SeqArrow}
-  | {kind: 'note'; over: string[]; text: string};
+  | {kind: 'note'; over: string[]; text: string}
+  /** A block: `open` (alt, loop ...), `else` (a divider: else, and, option) and `end`, always balanced. */
+  | {kind: 'frame'; edge: 'open'; op: SeqFrameOp; label: string}
+  | {kind: 'frame'; edge: 'else'; label: string}
+  | {kind: 'frame'; edge: 'end'};
 export interface SeqAst { actors: Array<{id: string; label: string}>; steps: SeqStep[] }
 
 // ---------------------------------------------------------------- statements
@@ -41,17 +50,20 @@ function splitOutsideBrackets(line: string): string[] {
   return out;
 }
 
-/** Statements after dropping blanks, `%%` comments and a leading header. Index + 1 is the statement number in errors. */
-function statements(src: string, header: RegExp, bracketAware: boolean): string[] {
-  const out: string[] = [];
-  for (const line of src.split(/\r?\n/)) {
-    if (line.trim().startsWith('%%')) continue;
+/**
+ * Statements after dropping blanks, `%%` comments and a leading header, each with its 1-based line. Index + 1 is the
+ * statement number in errors.
+ */
+function statements(src: string, header: RegExp, bracketAware: boolean): Array<{text: string; line: number}> {
+  const out: Array<{text: string; line: number}> = [];
+  src.split(/\r?\n/).forEach((line, i) => {
+    if (line.trim().startsWith('%%')) return;
     for (const part of bracketAware ? splitOutsideBrackets(line) : line.split(';')) {
       const text = part.trim();
-      if (text && !text.startsWith('%%')) out.push(text);
+      if (text && !text.startsWith('%%')) out.push({text, line: i + 1});
     }
-  }
-  if (out.length > 0 && header.test(out[0]!)) out.shift();
+  });
+  if (out.length > 0 && header.test(out[0]!.text)) out.shift();
   return out;
 }
 
@@ -176,7 +188,7 @@ function parseFlowStatement(text: string, b: FlowBuilder): void {
 export function parseFlow(src: string): ParseResult<FlowAst> {
   const b: FlowBuilder = {nodes: new Map(), edges: []};
   const errors: NotationError[] = [];
-  statements(src, FLOW_HEADER, true).forEach((text, i) => {
+  statements(src, FLOW_HEADER, true).forEach(({text}, i) => {
     if (FLOW_IGNORED.test(text)) return;
     try {
       parseFlowStatement(text, b);
@@ -192,8 +204,12 @@ export function parseFlow(src: string): ParseResult<FlowAst> {
 
 // ---------------------------------------------------------------- sequence
 const SEQ_HEADER = /^sequenceDiagram$/i;
-/** Mermaid block and bookkeeping lines; accepted and skipped (blocks are flattened). */
-const SEQ_IGNORED = /^(?:autonumber|activate|deactivate|title|loop|alt|else|opt|par|and|rect|critical|option|break|box)\b|^end$/i;
+/** Mermaid bookkeeping lines; accepted and skipped. */
+const SEQ_IGNORED = /^(?:autonumber|activate|deactivate|title)\b/i;
+/** Blocks drawn as frames, their dividers, and the blocks that only group or colour (rect, box): balanced, not drawn. */
+const SEQ_OPEN = /^(loop|alt|opt|par|critical|break)(?:\s+(.*))?$/i;
+const SEQ_DIVIDER = /^(else|and|option)(?:\s+(.*))?$/i;
+const SEQ_GROUP = /^(?:rect|box)\b/i;
 const SEQ_PARTICIPANT = /^(?:participant|actor)\s+(.+?)(?:\s+as\s+(.+))?$/i;
 const SEQ_NOTE = /^note\s+(?:over|left\s+of|right\s+of)\s+([^:]+?)\s*:\s*(.*)$/i;
 // A message is `sender arrow receiver [: text]`. The sender cannot contain ':' (the text may contain arrows), and the
@@ -209,19 +225,48 @@ const isActorId = (id: string) => /^[\p{L}\p{N}_]/u.test(id) && !/--?>|--?\)/.te
 
 /**
  * Sequence notation. `A->>B: text` sync, `A-->>B: text` reply, `A-)B: text` async, `Note over A[,B]: text`,
- * `participant A [as Label]`. Actors appear in order of first mention; `A->>A: text` is a self-message.
+ * `participant A [as Label]`. Actors appear in order of first mention; `A->>A: text` is a self-message. Mermaid
+ * blocks `alt|opt|loop|par|critical|break label` … `else|and|option label` … `end` become balanced frame steps; a
+ * block left open is closed at the end and an `end` or `else` outside one is skipped, both said as fixes.
  */
 export function parseSequence(src: string): ParseResult<SeqAst> {
   const actors = new Map<string, {id: string; label: string}>();
   const steps: SeqStep[] = [];
   const errors: NotationError[] = [];
+  const fixes = fixList();
+  /** Open blocks, innermost last: a frame (alt ...) or a group that is not drawn (rect, box). */
+  const open: Array<{op: SeqFrameOp | 'group'; line: number}> = [];
   const actor = (id: string, label?: string) => {
     const known = actors.get(id);
     if (!known) actors.set(id, {id, label: label ?? id});
     else if (label) known.label = label;
     return id;
   };
-  statements(src, SEQ_HEADER, false).forEach((text, i) => {
+  const block = (text: string, line: number): boolean => {
+    const opened = SEQ_OPEN.exec(text);
+    if (opened) {
+      const op = opened[1]!.toLowerCase() as SeqFrameOp;
+      open.push({op, line});
+      steps.push({kind: 'frame', edge: 'open', op, label: (opened[2] ?? '').trim()});
+      return true;
+    }
+    if (SEQ_GROUP.test(text)) { open.push({op: 'group', line}); return true; }
+    const divider = SEQ_DIVIDER.exec(text);
+    if (divider) {
+      const top = open.at(-1);
+      if (top && top.op !== 'group') steps.push({kind: 'frame', edge: 'else', label: (divider[2] ?? '').trim()});
+      else fixes.add('else', line, `'${divider[1]!.toLowerCase()}' outside alt/par/critical skipped`);
+      return true;
+    }
+    if (/^end$/i.test(text)) {
+      const top = open.pop();
+      if (!top) fixes.add('end', line, `'end' closes no block: skipped`);
+      else if (top.op !== 'group') steps.push({kind: 'frame', edge: 'end'});
+      return true;
+    }
+    return false;
+  };
+  statements(src, SEQ_HEADER, false).forEach(({text, line}, i) => {
     const fail = (message: string) => { errors.push({statement: i + 1, message}); };
     let m = SEQ_PARTICIPANT.exec(text);
     if (m) {
@@ -247,12 +292,36 @@ export function parseSequence(src: string): ParseResult<SeqAst> {
       else steps.push({kind: 'message', from: actor(from), to: actor(to), label: (m[4] ?? '').trim(), arrow: SEQ_ARROWS[m[2]!]!});
       return;
     }
-    if (SEQ_IGNORED.test(text)) return;
+    if (SEQ_IGNORED.test(text) || block(text, line)) return;
     fail(`expected "A->>B: text", "A-->>B: text", "A-)B: text", "Note over A: text" or "participant A", found "${clip(text)}"`);
   });
-  if (errors.length === 0 && steps.length === 0) errors.push({statement: 1, message: 'no messages: expected something like "User->>API: POST /login"'});
+  for (const left of open.reverse()) {
+    if (left.op === 'group') continue;
+    steps.push({kind: 'frame', edge: 'end'});
+    fixes.add('open', left.line, `${left.op} closed at the end (no 'end')`);
+  }
+  if (errors.length === 0 && !steps.some(step => step.kind !== 'frame')) errors.push({statement: 1, message: 'no messages: expected something like "User->>API: POST /login"'});
   if (errors.length > 0) return {ok: false, errors};
-  return {ok: true, ast: {actors: [...actors.values()], steps}};
+  const list = fixes.list();
+  return {ok: true, ast: {actors: [...actors.values()], steps}, ...(list.length > 0 ? {fixes: list} : {})};
+}
+
+/** Repairs, at most one per kind: the first line, then " (+N more lines)" for the other lines it applied to. */
+function fixList() {
+  const byKind = new Map<string, {line: number; message: string; lines: Set<number>}>();
+  return {
+    add(kind: string, line: number, message: string) {
+      const known = byKind.get(kind);
+      if (known) known.lines.add(line);
+      else byKind.set(kind, {line, message, lines: new Set([line])});
+    },
+    list(): NotationFix[] {
+      return [...byKind.values()].sort((a, b) => a.line - b.line).map(f => {
+        const more = f.lines.size > 1 ? ` (+${f.lines.size - 1} more lines)` : '';
+        return {line: f.line, message: clip(f.message, 80 - more.length) + more};
+      });
+    },
+  };
 }
 
 // ---------------------------------------------------------------- columns

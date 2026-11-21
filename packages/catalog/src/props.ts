@@ -37,6 +37,11 @@ export interface Prop<W = unknown, V = unknown, Req extends boolean = boolean> {
    * `fixed warning -> warn` (see enumValue()).
    */
   readonly aliases?: Readonly<Record<string, string>>;
+  /**
+   * enum props: aliases rewritten without a `fixed` line, because they are what models write for that value and a
+   * line on every such page teaches nothing (Callout 'info', 'success').
+   */
+  readonly quiet?: readonly string[];
   readonly shape?: string;               // data props: name of the expected shape in datasets.ts (docs/tests)
   readonly source?: string;              // data props: default source ref used when the prop is omitted
   /**
@@ -93,10 +98,10 @@ export const p = {
   action: (doc: string) => mk<ActionWire, () => Promise<void>>('action', ref(CommonSchemas.Action, 'Action', doc), doc),
   /**
    * Static enum. Values are appended to the description so they show up in every generated prompt.
-   * `aliases` maps other words to one of the values (lower-case keys).
+   * `aliases` maps other words to one of the values (lower-case keys); the `quiet` ones are rewritten without a word.
    */
-  enum: <const T extends readonly [string, ...string[]]>(values: T, doc: string, aliases?: Readonly<Record<string, T[number]>>) =>
-    mk<T[number], T[number]>('enum', z.enum(values).describe(`${doc} One of: ${values.join('|')}.`), doc, {values, ...(aliases ? {aliases} : {})}),
+  enum: <const T extends readonly [string, ...string[]]>(values: T, doc: string, aliases?: Readonly<Record<string, T[number]>>, quiet?: readonly string[]) =>
+    mk<T[number], T[number]>('enum', z.enum(values).describe(`${doc} One of: ${values.join('|')}.`), doc, {values, ...(aliases ? {aliases} : {}), ...(quiet ? {quiet} : {})}),
   /** Static string. */
   str: (doc: string) => mk<string, string>('str', z.string().describe(doc), doc),
   /** Static integer. */

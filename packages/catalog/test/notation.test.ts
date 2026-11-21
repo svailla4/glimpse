@@ -175,9 +175,49 @@ describe('parseSequence', () => {
     expect(seq('A->>B: x; participant B as Backend').actors).toEqual([{id: 'A', label: 'A'}, {id: 'B', label: 'Backend'}]);
   });
 
-  it('ignores blanks, %% comments and Mermaid block keywords', () => {
+  it('ignores blanks, %% comments and bookkeeping lines; a loop is a frame', () => {
     const ast = seq('%% comment\nautonumber\nloop every minute\nA->>B: ping;;\nend\nactivate B');
-    expect(ast.steps).toEqual([{kind: 'message', from: 'A', to: 'B', label: 'ping', arrow: 'sync'}]);
+    expect(ast.steps).toEqual([
+      {kind: 'frame', edge: 'open', op: 'loop', label: 'every minute'},
+      {kind: 'message', from: 'A', to: 'B', label: 'ping', arrow: 'sync'},
+      {kind: 'frame', edge: 'end'},
+    ]);
+  });
+
+  // Measurement: a writer's 'alt tokens left / else bucket empty' was drawn as one run of messages, with no signal.
+  it('reads alt/else, opt, par/and and nested blocks as balanced frames', () => {
+    const src = 'sequenceDiagram\nA->>S: show\nalt tokens left\nS-->>A: ok\nelse bucket empty\nopt logged\nS->>L: note it\nend\nS-->>A: denied\nend\npar\nA->>B: x\nand\nA->>C: y\nend';
+    const parsed = parseSequence(src);
+    expect(parsed.ok && parsed.fixes).toBeUndefined();
+    const frames = seq(src).steps.filter(step => step.kind === 'frame');
+    expect(frames).toEqual([
+      {kind: 'frame', edge: 'open', op: 'alt', label: 'tokens left'},
+      {kind: 'frame', edge: 'else', label: 'bucket empty'},
+      {kind: 'frame', edge: 'open', op: 'opt', label: 'logged'},
+      {kind: 'frame', edge: 'end'},
+      {kind: 'frame', edge: 'end'},
+      {kind: 'frame', edge: 'open', op: 'par', label: ''},
+      {kind: 'frame', edge: 'else', label: ''},
+      {kind: 'frame', edge: 'end'},
+    ]);
+  });
+
+  it('keeps rect and box balanced without drawing them, and says what it closed or skipped', () => {
+    const grouped = seq('rect rgb(200, 220, 255)\nA->>B: x\nend\nbox Aqua Team\nparticipant C\nend\nB->>C: y');
+    expect(grouped.steps.map(step => step.kind)).toEqual(['message', 'message']);
+    const open = parseSequence('A->>B: x\nalt hit\nB-->>A: rows');
+    expect(open.ok && open.fixes).toEqual([{line: 2, message: "alt closed at the end (no 'end')"}]);
+    expect(open.ok && open.ast.steps.at(-1)).toEqual({kind: 'frame', edge: 'end'});
+    const stray = parseSequence('A->>B: x\nelse no\nend\nB-->>A: y');
+    expect(stray.ok && stray.fixes).toEqual([{line: 2, message: "'else' outside alt/par/critical skipped"}, {line: 3, message: "'end' closes no block: skipped"}]);
+    expect(stray.ok && stray.ast.steps.every(step => step.kind === 'message')).toBe(true);
+    // two of a kind are one line that counts the others
+    const twice = parseSequence('A->>B: x\nend\nend');
+    expect(twice.ok && twice.fixes).toEqual([{line: 2, message: "'end' closes no block: skipped (+1 more lines)"}]);
+    // a message from an actor named like a block keyword is still a message
+    expect(seq('alt->>B: x').steps).toEqual([{kind: 'message', from: 'alt', to: 'B', label: 'x', arrow: 'sync'}]);
+    // frames alone are not a diagram
+    expect(seqErrors('alt x\nend')).toEqual([{statement: 1, message: 'no messages: expected something like "User->>API: POST /login"'}]);
   });
 
   it.each([
