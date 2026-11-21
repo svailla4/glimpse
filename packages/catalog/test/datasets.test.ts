@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENT_BY_NAME, FILE_REF, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, cleanFlow, cleanSequence, fileRefs, formatFileLoc, galleryRoot, gallerySpec,
+  COMPONENT_BY_NAME, FILE_REF, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, cleanFlow, cleanItems, cleanLayers, cleanSchema, cleanSequence, fileRefs, formatFileLoc, galleryData,
+  galleryRoot, gallerySpec,
   ignoredMarksWarning, parseFileLoc, readLineMarks, replaceFileRefs,
   type A2uiMessage, type ErTable, type GraphData, type WireComponent,
 } from '../src/index.ts';
@@ -106,6 +107,7 @@ describe('gallery', () => {
     expect(GALLERY_SPEC).toBe(GALLERY_DATA + '\n' + GALLERY_ROOT);
     expect(gallerySpec()).toBe(GALLERY_SPEC);
     expect(galleryRoot()).toBe(GALLERY_ROOT);
+    expect(galleryData()).toBe(GALLERY_DATA);
   });
 
   // The forms decision D5 accepts beyond the canonical one are in the showcase, so every screenshot run and the
@@ -137,12 +139,15 @@ describe('gallery', () => {
   });
 
   // F014: half the file links were struck through as missing, because they named fixture paths that are not in the
-  // repository being shown. F092: the outline read README.md, which has no symbols.
-  it('points every plate that reads the disk, and every file link in prose, at one file of the host repository', () => {
+  // repository being shown. F092: the outline read README.md, which has no symbols. Decision D24: the server checks the
+  // files diagram and Steps data name, so those point at the same file.
+  it('points every plate that reads the disk, every file link in prose and every file data names at one file of the host repository', () => {
     const paths = (text: string) => [...text.matchAll(/\[\[([^\]#]+)/g)].map(m => m[1]);
-    for (const [file, root] of [['README.md', GALLERY_ROOT], ['packages/server/src/main.ts', galleryRoot({file: 'packages/server/src/main.ts'})]] as const) {
-      const built = (buildSurface('g', GALLERY_DATA + '\n' + root)[0] as Extract<A2uiMessage, {createSurface: unknown}>).createSurface.components.map(props);
-      expect(strictErrors(buildSurface('g', GALLERY_DATA + '\n' + root))).toEqual([]);
+    for (const [file, spec] of [['README.md', GALLERY_SPEC], ['packages/server/src/main.ts', gallerySpec({file: 'packages/server/src/main.ts'})]] as const) {
+      const created = (buildSurface('g', spec)[0] as Extract<A2uiMessage, {createSurface: unknown}>).createSurface;
+      const built = created.components.map(props);
+      const data = (created.dataModel as {g: Record<string, unknown>}).g;
+      expect(strictErrors(buildSurface('g', spec))).toEqual([]);
       const by = (component: string) => built.filter(c => c.component === component);
       expect(by('SymbolOutline')[0]!.file).toBe(file);
       expect(parseFileLoc(by('CodeView')[0]!.file).path).toBe(file);
@@ -152,14 +157,30 @@ describe('gallery', () => {
       expect(by('KeyValue')[0]!.data.Entry).toBe(file);
       for (const text of [...by('Text'), ...by('Markdown')].map(c => String(c.text))) for (const path of paths(text)) expect(path).toBe(file);
       expect([...by('Text'), ...by('Markdown')].flatMap(c => paths(String(c.text))).length).toBeGreaterThanOrEqual(2);
+      const flow = cleanFlow(by('Flowchart')[0]!.data);
+      const layers = cleanLayers(by('Layers')[0]!.data);
+      const schema = cleanSchema(data.schema);
+      const plan = cleanItems('step', data.plan);
+      const named = [
+        ...(flow.ok ? flow.ast.nodes.flatMap(n => n.file ?? []) : []),
+        ...(layers.ok ? layers.ast.bands.flatMap(b => b.items.flatMap(i => i.file ?? [])) : []),
+        ...(schema.ok ? schema.ast.tables.flatMap(t => t.file ?? []) : []),
+        ...(plan.ok ? plan.ast.flatMap(i => i.file ?? []) : []),
+      ];
+      expect(named.length, 'a Flowchart node, a Layers item, a table and two steps name a file').toBe(5);
+      for (const loc of named) expect(parseFileLoc(loc).path).toBe(file);
     }
   });
 
   // Integrator item: in a repository where every file opens on a licence, the Code section showed only the licence.
   it('starts the plates that read lines at the start line, given as an option or as #L<n> on the file', () => {
-    for (const root of [galleryRoot({file: 'src/x.ts', start: 41}), galleryRoot({file: 'src/x.ts#L41'})]) {
+    for (const options of [{file: 'src/x.ts', start: 41}, {file: 'src/x.ts#L41'}]) {
+      const root = galleryRoot(options);
       const built = (buildSurface('g', GALLERY_DATA + '\n' + root)[0] as Extract<A2uiMessage, {createSurface: unknown}>).createSurface.components.map(props);
       expect(strictErrors(buildSurface('g', GALLERY_DATA + '\n' + root))).toEqual([]);
+      const data = galleryData(options);
+      expect(data).toContain(`file:'src/x.ts#L41-44'},{title:'Wire into router',status:'doing',file:'src/x.ts#L42'}`);
+      expect(data).toContain(`{name:'users',file:'src/x.ts#L41',`);
       const by = (component: string) => built.filter(c => c.component === component);
       expect(by('SymbolOutline')[0]!.file).toBe('src/x.ts');
       expect(by('CodeView')[0]).toMatchObject({file: 'src/x.ts#L41-80', mark: 'L41-43', notes: [{line: 42}]});
@@ -169,6 +190,7 @@ describe('gallery', () => {
     }
     expect(galleryRoot({file: 'src/x.ts', start: 1})).toBe(galleryRoot({file: 'src/x.ts'}));
     expect(galleryRoot({file: 'src/x.ts', start: 0})).toBe(galleryRoot({file: 'src/x.ts'}));
+    expect(galleryData({file: 'src/x.ts', start: 0})).toBe(galleryData({file: 'src/x.ts'}));
   });
 
   it('escapes the file it is given', () => {
@@ -190,5 +212,23 @@ describe('gallery', () => {
     expect(flow.ok && {nodes: flow.ast.nodes.length, groups: flow.ast.groups.length, fixes: flow.fixes, dropped: flow.dropped}).toEqual({nodes: 6, groups: 1, fixes: [], dropped: []});
     const seq = cleanSequence(props(one('SequenceDiagram')).data);
     expect(seq.ok && {actors: seq.ast.actors.length, blocks: seq.ast.steps.filter(step => step.kind === 'frame' && step.edge === 'open').length, fixes: seq.fixes, dropped: seq.dropped}).toEqual({actors: 4, blocks: 2, fixes: [], dropped: []});
+    for (const clean of [cleanLayers(props(one('Layers')).data), cleanSchema(model.g.schema), cleanItems('step', model.g.plan)]) expect(clean.ok && {fixes: clean.fixes, dropped: clean.dropped}).toEqual({fixes: [], dropped: []});
+  });
+
+  // Decision D24: the showcase links its diagrams, so a click on Postgres shows what a link lights.
+  it('links a Layers item, an ER table and two sequence actors to Flowchart nodes that exist', () => {
+    const flow = cleanFlow(props(one('Flowchart')).data);
+    const seq = cleanSequence(props(one('SequenceDiagram')).data);
+    const layers = cleanLayers(props(one('Layers')).data);
+    const schema = cleanSchema(model.g.schema);
+    if (!flow.ok || !seq.ok || !layers.ok || !schema.ok) throw new Error('a gallery diagram does not clean');
+    expect(flow.ast.nodes.find(n => n.id === 'DB')).toMatchObject({note: 'users and sessions', file: 'README.md'});
+    expect(layers.ast.bands.flatMap(b => b.items.filter(i => i.nodes).map(i => [i.label, i.nodes]))).toEqual([['postgres', ['DB']]]);
+    expect(schema.ast.tables.filter(t => t.nodes).map(t => [t.name, t.nodes])).toEqual([['sessions', ['DB']]]);
+    // actor DB is node DB by its id; actor Auth is node H, so the message Auth -> DB runs along the edge H -> DB
+    expect(seq.ast.actors.map(a => a.node ?? a.id)).toEqual(['User', 'API', 'H', 'DB']);
+    expect(flow.ast.edges.some(e => e.from === 'H' && e.to === 'DB')).toBe(true);
+    const ids = new Set(flow.ast.nodes.map(n => n.id));
+    for (const id of ['DB', 'H']) expect(ids.has(id), id).toBe(true);
   });
 });

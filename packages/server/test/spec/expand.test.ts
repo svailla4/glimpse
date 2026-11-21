@@ -177,10 +177,10 @@ describe('expandMessages: diagram data, columns, paths', () => {
     const out = expand(`root=Page('x',[Flowchart({nodes:{PG:{label:'Postgres',file:'db/schema.sql#L1-20'}},edges:[]}),Layers([{name:'Data',items:[{label:'Postgres',file:'db/schema.sql'}]}]),ERDiagram([{name:'users',file:'db/users.sql',columns:['id']}]),Steps([{title:'Migrate',file:'db/migrate.sql#L3'}])])`);
     expect(out.problems).toEqual([]);
     expect(out.files).toEqual([
-      {where: 'Flowchart#root_children_0 node PG', file: 'db/schema.sql#L1-20'},
-      {where: "Layers#root_children_1 item 'Postgres'", file: 'db/schema.sql'},
-      {where: 'ERDiagram#root_children_2 table users', file: 'db/users.sql'},
-      {where: 'Steps#root_children_3 step 1', file: 'db/migrate.sql#L3'},
+      {where: 'Flowchart#root_children_0 node PG', file: 'db/schema.sql#L1-20', nested: true},
+      {where: "Layers#root_children_1 item 'Postgres'", file: 'db/schema.sql', nested: true},
+      {where: 'ERDiagram#root_children_2 table users', file: 'db/users.sql', nested: true},
+      {where: 'Steps#root_children_3 step 1', file: 'db/migrate.sql#L3', nested: true},
     ]);
   });
 
@@ -194,7 +194,7 @@ describe('expandMessages: diagram data, columns, paths', () => {
     expect(diagramNotes(comps, data, new Set(['tiers', 'er', 'plan']), new Set())).toEqual({
       fixes: [],
       warnings: ['Layers#tiers: not drawn: ignored item key colour', 'ERDiagram#er: E_SHAPE $/er: expected tables [{name, columns}] or {tables, relations}, received a string'],
-      files: [{where: "Layers#tiers item 'PG'", file: 'db/a.sql'}, {where: 'Steps#plan step 1', file: 'db/b.sql#L2'}],
+      files: [{where: "Layers#tiers item 'PG'", file: 'db/a.sql', nested: true}, {where: 'Steps#plan step 1', file: 'db/b.sql#L2', nested: true}],
     });
   });
 

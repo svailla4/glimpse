@@ -117,12 +117,23 @@ describe('show', () => {
     expect(t.session.surfaces.get('feature')!.data).toEqual({plan: [], notes: ''});
   });
 
-  it('the gallery compiles, expands and binds no dataset at all', async () => {
-    const t = start();
-    const outcome = await t.session.show({id: 'gallery', sources: [GALLERY_SPEC], fresh: true, view: 'gallery'});
-    expect(outcome.datasets).toEqual([]);
-    expect(outcome.warnings).toEqual([]);
-    expect(new Set([...t.session.surfaces.get('gallery')!.components.values()].map(c => c.component)).size).toBe(44);
+  // Decision D24: the files its diagrams and Steps name are checked too, so they are lines of the one real file.
+  it('the gallery compiles, expands, binds no dataset at all and warns of nothing in a repository with a README.md', async () => {
+    const repo = await tempRoot();
+    const t = testSession(repo.root);
+    try {
+      await writeFile(join(repo.root, 'README.md'), Array.from({length: 40}, (_, i) => `line ${i + 1}`).join('\n'));
+      const outcome = await t.session.show({id: 'gallery', sources: [GALLERY_SPEC], fresh: true, view: 'gallery'});
+      expect(outcome.datasets).toEqual([]);
+      expect(outcome.fixes).toEqual([]);
+      expect(outcome.warnings).toEqual([]);
+      await outcome.checks;
+      expect(outcome.warnings).toEqual([]);
+      expect(new Set([...t.session.surfaces.get('gallery')!.components.values()].map(c => c.component)).size).toBe(44);
+    } finally {
+      t.session.dispose();
+      await repo.cleanup();
+    }
   });
 
   it('reports repairs and unbound paths', async () => {
@@ -321,6 +332,19 @@ plan=Steps([{title:'Migrate',file:'db/missing.sql#L3'},{title:'Ship'}])`));
       'ERDiagram#er table orders: "db/" is a directory, not a file.',
       'Steps#plan step 1: file "db/missing.sql" does not exist.',
     ]);
+  });
+
+  // Under the cap on warning lines, a plate whose own file is missing is never crowded out by links inside diagrams
+  // that name it too (the gallery of a file that does not exist names it in seven places).
+  it('the files of props are reported before the files named inside data, wherever they come on the page', async () => {
+    const t = start();
+    const outcome = await t.session.show(spec('order', `root=Page('Order',[tiers,code])
+tiers=Layers([{name:'Data',items:[{label:'A',file:'db/a.sql'},{label:'B',file:'db/b.sql'},{label:'C',file:'db/c.sql'},{label:'D',file:'db/d.sql'},{label:'E',file:'db/e.sql'},{label:'F',file:'db/f.sql'}]}])
+code=CodeView('db/gone.sql')`));
+    await outcome.checks;
+    expect(outcome.warnings).toHaveLength(6);
+    expect(outcome.warnings[0]).toBe('CodeView#code: file "db/gone.sql" does not exist.');
+    expect(outcome.warnings.slice(1).every(line => line.startsWith("Layers#tiers item '"))).toBe(true);
   });
 
   it('so is one in data bound to a $/path, checked against the data model after the call', async () => {

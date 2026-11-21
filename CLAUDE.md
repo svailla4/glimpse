@@ -111,7 +111,8 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   Kept as they are, because models already know them and errors come back with suggestions: source refs
   (`'git.churn src top=20'`), view refs, `path#L10-20`, git ranges, `sort='-field'`, ERDiagram `fk:'users.id'`.
   Not done: `[[...]]` refs in text bound to a `$/path`, in Steps notes and in Markdown links are not checked, and a
-  file ref past the last line is reported nowhere.
+  file ref past the last line is reported nowhere. (Since D24 the `file` of a Flowchart node, Layers item, ER table
+  and Steps item is checked at show time, inline or bound to a `$/path`.)
 - **D23: every merge into main is released (2026-11-21).** `release.yml` runs on pushes to `main` as well as on
   version tags, and releases a merge as the next patch version.
   Why: installs come from the `release` branch, and nothing had been tagged for a day of merges, so D21 and D22 were
@@ -119,3 +120,31 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   run after the build passes, not by a separate workflow: a tag pushed with `GITHUB_TOKEN` starts no other run, and a
   broken `main` should get no version. A commit that already has a version tag is left to that tag's run. Runs are
   serialized (`concurrency: release`), so each counts from the tag the last one pushed.
+- **D24: links are one hub of diagram node ids; a message is a path (2026-11-21).** An item names the diagram node it
+  stands for with `node:'ID'` (or a list; `nodes` is fixed to `node`): Layers and Steps items, ER tables, rows of a
+  DataTable that do not come from a source, and sequence actors, whose node is their id unless given. A sequence
+  message may list the nodes it passes through, `via:['CDN','Q']`. Flowchart nodes gain `note` and `file`: the note
+  shows on hover and in the plate margin, and a file makes the node carry a path, so CodeView follows it and Cmd-click
+  opens it. One reader, `readNodes` (catalog `links.ts`, kept apart from `diagrams.ts` so eager Steps stays small).
+  - Selection: `EntityRef.nodes` carries the ids and `parseEntity` keeps 1 to 16 of them (anything else is dropped
+    whole), so a trace survives a show and a reload. `ENTITY_TYPES` lives in the catalog. A message selects
+    `{type:'message', id:'<comp>:<n>', nodes:[from, ...via, to]}`; an ER table always selects a `node`, with its path.
+    Two `node` entities on one file are one place only where their line ranges meet.
+  - Matching (`matchSelection` returns `'linked'`): an entity standing for one node lights when the selection names
+    it; one standing for several lights when it stands for every node the selection names. One hop; links never
+    chain. In flowkit only a node that is itself selected lights its neighbours; a linked node lights alone; a
+    selection that is not a node lights only the edges between consecutive ids of its list (`legsOf`, by `edge.key`).
+  - Checks: the Layers and ER readers moved to the catalog as `Clean<T>` cleaners (`cleanLayers`, `cleanSchema`), so
+    unknown keys and bad entries are reported by the server and by the tab (`W_DROPPED`); inline Layers or ER data
+    that is not the shape is now `E_SHAPE`. The server checks the files that diagram and Steps data name, after the
+    files of props (`FileCheck.nested`), so under the cap on warning lines a plate whose own file is missing is never
+    crowded out by links inside diagrams; and Steps keys (`cleanItems`). `linkNotes` warns when an id links to nothing on the view, naming the label it may mean or
+    the nearest id. The gallery links its diagrams through node DB, and its files are lines of its one real file.
+  Why: same-id `{type:'node'}` matching already linked Flowchart, ER and Graph by accident. Making that the documented
+  hub costs one authored field and one EntityRef field, no new component or prop, 2 instruction characters and no
+  grammar. Rejected: per-part id scoping (it breaks today's links and about 20 selection tests); link tags
+  (`link:'pg'`, a second key space); a shortest path inferred through the Flowchart (a guess drawn as fact, where
+  `via` says it); hiding a DataTable `node` column (it would hide real data); a global line-overlap rule for file
+  identity. Budgets: the diagrams chunk limit went from 36 to 43 kB by the D19 rule (measured plus about 15%).
+  Not done: a case fix inside nested files (a wrong case is only warned), `fixed` lines for Steps status synonyms,
+  links on List, charts and Stats, edge selection, and `[[refs]]` in diagram notes.

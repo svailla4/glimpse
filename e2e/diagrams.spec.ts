@@ -228,4 +228,25 @@ co=SequenceDiagram({actors:{U:{label:'User',node:'Client'},G:{label:'Gateway',no
     await stageOf(page, 'arch');
     await expect.poll(() => hotEdges(page)).toEqual(['GW->Inv']);
   });
+
+  // The gallery shows the same links on its own diagrams: node DB has a note and a file, the sessions table and the
+  // postgres item stand for it, and a click on it says where it is.
+  test('the gallery links its diagrams through Flowchart node DB', async ({page, glimpse}) => {
+    const shown = await glimpse.call('show', {view: 'gallery'});
+    expect(shown.isError, shown.text).toBe(false);
+    await openViewer(page, glimpse);
+    await expectSettled(page);
+    const flow = await stageOf(page, 'diagrams_children_2');
+    const db = flow.locator('[data-node="DB"]');
+    await expect(db.locator('[data-noted]')).toHaveCount(1);
+    await db.click();
+    await expect(page.locator('.gl-cell[data-id="diagrams_children_4"] [data-node="sessions"]')).toHaveAttribute('data-selected', 'true');
+    await expect(page.locator('.gl-cell[data-id="diagrams_children_4"] [data-node="orders"]')).not.toHaveAttribute('data-selected', 'true');
+    await expect(page.locator('.gl-cell[data-id="diagrams_children_1"] [data-layer-item="postgres"]')).toHaveAttribute('data-selected', 'true');
+    // the gallery's one real file is the source file it picked for its Code section
+    const file = (await page.locator('[data-gl="CodeView"] [data-gl-path]').first().getAttribute('data-gl-path')) ?? '';
+    expect(file).toMatch(/\.(?:ts|py|go)$/);
+    await expect(page.locator('.gl-cell[data-id="diagrams_children_2"]')).toContainText(`Postgres: users and sessions · ${file}`);
+    await expect.poll(() => selections(glimpse), {timeout: 3000}).toEqual([`viewer: select node DB Postgres ${file} (gallery)`]);
+  });
 });

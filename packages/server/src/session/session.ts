@@ -703,7 +703,8 @@ export class Session {
     const {ctx} = services;
     const out: string[] = [];
     let candidates: string[] | undefined;
-    for (const {where, file} of expansion.files) {
+    // the files of props first, then those named inside data (FileCheck.nested, decision D24)
+    for (const {where, file} of [...expansion.files.filter(entry => !entry.nested), ...expansion.files.filter(entry => entry.nested)]) {
       if (out.length >= MAX_CHECK_WARNINGS) break;
       const path = parseFileLoc(file).path;
       const state = await this.servable(path);

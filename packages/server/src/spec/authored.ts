@@ -6,6 +6,7 @@ import {
   cleanFlow, cleanItems, cleanLayers, cleanSchema, cleanSequence, type Clean, type FileLoc, type LayersItem, type WireComponent,
 } from '@glimpse/catalog';
 import {looseDistance, nearest, oneLine} from './errors.ts';
+import type {FileCheck} from './expand.ts';
 
 /** What one component's data says: the node ids it declares, the ones it links to, and the files it names. */
 export interface Authored {
@@ -104,8 +105,8 @@ function boundData(comp: WireComponent, data: Record<string, unknown>): {path: s
  */
 export function diagramNotes(
   components: Iterable<WireComponent>, data: Record<string, unknown>, defined: ReadonlySet<string>, written: ReadonlySet<string>,
-): {fixes: string[]; warnings: string[]; files: Array<{where: string; file: string}>} {
-  const notes = {fixes: [] as string[], warnings: [] as string[], files: [] as Array<{where: string; file: string}>};
+): {fixes: string[]; warnings: string[]; files: FileCheck[]} {
+  const notes = {fixes: [] as string[], warnings: [] as string[], files: [] as FileCheck[]};
   for (const comp of components) {
     const read = AUTHORED[comp.component];
     const bound = read ? boundData(comp, data) : undefined;
@@ -121,7 +122,7 @@ export function diagramNotes(
     }
     notes.fixes.push(...cleaned.fixes.map(fix => `${where}: ${fix}`));
     notes.warnings.push(...cleaned.dropped.map(drop => `${where}: not drawn: ${drop}`));
-    notes.files.push(...cleaned.ast.files.map(({at, file}) => ({where: `${where} ${at}`, file})));
+    notes.files.push(...cleaned.ast.files.map(({at, file}) => ({where: `${where} ${at}`, file, nested: true as const})));
   }
   return notes;
 }

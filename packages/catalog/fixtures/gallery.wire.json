@@ -563,7 +563,7 @@
                 "ui",
                 {
                   "label": "api",
-                  "file": "src/api/routes.ts"
+                  "file": "README.md"
                 }
               ]
             },
@@ -577,7 +577,10 @@
             {
               "label": "Storage",
               "items": [
-                "postgres",
+                {
+                  "label": "postgres",
+                  "node": "DB"
+                },
                 "redis"
               ]
             }
@@ -609,7 +612,9 @@
               },
               "DB": {
                 "label": "Postgres",
-                "shape": "store"
+                "shape": "store",
+                "note": "users and sessions",
+                "file": "README.md"
               },
               "C": {
                 "label": "cache",
@@ -649,6 +654,15 @@
           "id": "diagrams_children_3",
           "component": "SequenceDiagram",
           "data": {
+            "actors": {
+              "User": "User",
+              "API": "API",
+              "Auth": {
+                "label": "Auth",
+                "node": "H"
+              },
+              "DB": "DB"
+            },
             "steps": [
               [
                 "User",
@@ -1440,12 +1454,12 @@
               "title": "Add limiter middleware",
               "note": "Sliding window per IP.",
               "status": "done",
-              "file": "src/api/limiter.go#L1-40"
+              "file": "README.md#L1-4"
             },
             {
               "title": "Wire into router",
               "status": "doing",
-              "file": "src/api/routes.ts#L12"
+              "file": "README.md#L2"
             },
             {
               "title": "Tests",
@@ -1460,7 +1474,7 @@
           "schema": [
             {
               "name": "users",
-              "file": "src/auth/schema.sql#L1",
+              "file": "README.md#L1",
               "columns": [
                 {
                   "name": "id",
@@ -1479,6 +1493,7 @@
             },
             {
               "name": "sessions",
+              "node": "DB",
               "columns": [
                 {
                   "name": "id",

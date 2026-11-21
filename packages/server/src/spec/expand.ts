@@ -20,7 +20,7 @@ export interface Expansion {
   /** What is certain to draw wrong although the spec is valid, as `Name#id: text` (a `warn` line each). */
   warnings: string[];
   /** Literal files named by components (CodeView, FileRef, a CodeTour stop, a [[path]] ref ...): the session checks they exist. */
-  files: Array<{where: string; file: string}>;
+  files: FileCheck[];
   /** Literal DiffView ranges other than the working tree: the session checks the revisions exist. */
   ranges: Array<{where: string; range: string}>;
   /** Field names a component asks of a dataset, checked against the dataset's fields once it has settled. */
@@ -33,6 +33,13 @@ export interface Expansion {
    */
   paths: string[];
 }
+
+/**
+ * A file to check, and the part that names it. `nested` marks one named inside a component's data (a Flowchart node's
+ * or a Layers item's file, decision D24): the session checks those after the rest, so a plate whose own file is
+ * missing is reported before the links inside a diagram, under the cap on warning lines.
+ */
+export interface FileCheck { where: string; file: string; nested?: true }
 
 /** The inventory's names of paths a spec wrote in another case ('readme.md' -> 'README.md'), keyed by the text written. */
 export type PathNames = ReadonlyMap<string, string>;
@@ -504,7 +511,7 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
     else {
       out.fixes.push(...cleaned.fixes.map(fix => `${def.name}#${comp.id}: ${fix}`));
       out.warnings.push(...cleaned.dropped.map(drop => `${def.name}#${comp.id}: not drawn: ${drop}`));
-      for (const {at, file} of cleaned.ast.files) if (out.files.length < MAX_CHECKS) out.files.push({where: `${def.name}#${comp.id} ${at}`, file});
+      for (const {at, file} of cleaned.ast.files) if (out.files.length < MAX_CHECKS) out.files.push({where: `${def.name}#${comp.id} ${at}`, file, nested: true});
     }
   }
 }
