@@ -15,8 +15,8 @@ next year:
 - Record a design decision that changes how Glimpse behaves in the decision log below, with its reasons, so a later
   session does not undo it by accident.
 - Keep the codebase small and legible: prefer removing code to adding options, and match the style already here.
-- The owner (svailla4) decides product direction and licensing; ask before changing those. Commit, push or open a
-  pull request only when asked. Patch releases are the exception: they follow Releasing below without asking.
+- The owner (svailla4) decides product direction, licensing and minor or major versions (patch releases are
+  automatic, see Releasing); ask before changing those. Commit, push or open a pull request only when asked.
 
 ## Layout
 
@@ -46,20 +46,18 @@ Before calling work done: `check`, `test`, `build` and `budgets` pass, and `e2e`
 ## Releasing
 
 An installed plugin runs neither this checkout nor `plugin/dist`: the marketplace entry installs the `release` branch,
-which `.github/workflows/release.yml` builds from a version tag. Work merged into `main` reaches no one until it is
-tagged. The owner's standing instruction (2026-11-21) is that `main` is released as it changes:
+which `.github/workflows/release.yml` writes (decision D23):
 
-- Whenever `main` has commits the latest tag lacks (`git fetch --tags && git log $(git describe --tags --abbrev=0
-  origin/main)..origin/main`), tag the next patch version on `origin/main` and push the tag:
-  `git tag -a v0.1.2 -m 'Glimpse 0.1.2: <what changed>' origin/main && git push origin v0.1.2`. Check this at the
-  start of a session and after a pull request is merged. A minor or major version still needs the owner's go-ahead.
-- Watch the run (`gh run watch`). The workflow runs check, test and build before it publishes; if it fails, fix
-  `main` and tag the next patch. Never move or delete a pushed tag.
-- Then refresh the local install: `claude plugin marketplace update glimpse && claude plugin update glimpse@glimpse`,
-  and `/reload-plugins` in an open session. `plugin update` compares versions only, so it does nothing before a new
-  tag has published.
-- To try work that is not released: `npm run build`, `claude plugin disable glimpse@glimpse` (so two `glimpse`
-  servers do not clash), then `claude --plugin-dir <checkout>/plugin`.
+- Every merge into `main` is released as the next patch version. The workflow runs check, test and build, and only
+  then pushes the tag (`v0.1.2` after `v0.1.1`) and the built plugin. A failed run leaves no tag: fix `main` and the
+  next merge releases. Never move or delete a pushed tag.
+- A minor or major version is a tag pushed by hand, and only with the owner's go-ahead:
+  `git tag -a v0.2.0 -m 'Glimpse 0.2.0' origin/main && git push origin v0.2.0`.
+- After a merge, watch the release run (`gh run list --workflow release.yml`), then refresh the local install:
+  `claude plugin marketplace update glimpse && claude plugin update glimpse@glimpse`, and `/reload-plugins` in an
+  open session. `plugin update` compares versions only, so it does nothing before the new version has published.
+- To try work that is not merged: `npm run build`, `claude plugin disable glimpse@glimpse` (so two `glimpse` servers
+  do not clash), then `claude --plugin-dir <checkout>/plugin`.
 
 ## Rules that are easy to break
 
@@ -114,3 +112,10 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   (`'git.churn src top=20'`), view refs, `path#L10-20`, git ranges, `sort='-field'`, ERDiagram `fk:'users.id'`.
   Not done: `[[...]]` refs in text bound to a `$/path`, in Steps notes and in Markdown links are not checked, and a
   file ref past the last line is reported nowhere.
+- **D23: every merge into main is released (2026-11-21).** `release.yml` runs on pushes to `main` as well as on
+  version tags, and releases a merge as the next patch version.
+  Why: installs come from the `release` branch, and nothing had been tagged for a day of merges, so D21 and D22 were
+  on `main` but not installable, and the owner tested an old build without knowing it. The tag is pushed by the same
+  run after the build passes, not by a separate workflow: a tag pushed with `GITHUB_TOKEN` starts no other run, and a
+  broken `main` should get no version. A commit that already has a version tag is left to that tag's run. Runs are
+  serialized (`concurrency: release`), so each counts from the tag the last one pushed.

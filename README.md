@@ -69,7 +69,7 @@ Rebuild (`npm run build`) after pulling changes.
 
 ### Releasing
 
-Push a version tag from `main`: `git tag v0.1.1 && git push origin v0.1.1`. The release workflow (`.github/workflows/release.yml`) runs the check, the unit tests and the build on macOS, sets the plugin's version from the tag, and pushes the built plugin to the `release` branch, where installs and updates come from.
+Every merge into `main` is released as the next patch version. The release workflow (`.github/workflows/release.yml`) runs the check, the unit tests and the build on macOS, then tags the merge (`v0.1.2` after `v0.1.1`), sets the plugin's version from it and pushes the built plugin to the `release` branch, where installs and updates come from. A failed run leaves no tag. For a minor or major version, push the tag by hand: `git tag v0.2.0 && git push origin v0.2.0`.
 
 ### As a plain MCP server
 
