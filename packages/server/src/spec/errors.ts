@@ -1,7 +1,7 @@
 // Error vocabulary of the spec pipeline (design 6.6): one Problem per line the model reads, and the mapping from
 // the Express compiler's messages to Glimpse codes. All contact with @a2ui/agent message texts is here; the patterns
 // are pinned by test/spec/errors.test.ts, so an SDK upgrade that rewords a message fails there, not in production.
-import {COMPONENT_BY_NAME, COMPONENTS, signatureOf} from '@glimpse/catalog';
+import {COMPONENT_BY_NAME, COMPONENTS, NOTATIONS, signatureOf, type NotationKind} from '@glimpse/catalog';
 
 export type ErrorCode =
   | 'E_SYNTAX' | 'E_UNKNOWN' | 'E_PROP' | 'E_ENUM' | 'E_REQUIRED' | 'E_TYPE' | 'E_REF' | 'E_PARENT'
@@ -30,6 +30,8 @@ export interface Problem {
   message: string;
   /** Catalog component the problem is about; its signature is printed after the problem lines. */
   component?: string;
+  /** The data notation the problem is about; its one-line grammar is printed after the signature. */
+  notation?: NotationKind;
   repair?: RepairHint;
 }
 
@@ -46,7 +48,7 @@ export class SpecError extends Error {
   }
 }
 
-export const problem = (code: ErrorCode, message: string, extra: Pick<Problem, 'component' | 'repair'> = {}): Problem => ({code, message, ...extra});
+export const problem = (code: ErrorCode, message: string, extra: Pick<Problem, 'component' | 'notation' | 'repair'> = {}): Problem => ({code, message, ...extra});
 
 /** Code points that end a line for some reader or cannot be seen: DEL, NEL, zero-width space, the two Unicode separators, BOM. */
 const BREAKS: ReadonlySet<number> = new Set([0x7f, 0x85, 0x200b, 0x2028, 0x2029, 0xfeff]);
@@ -190,14 +192,17 @@ export function oneLine(text: string, max = 240): string {
 }
 
 /**
- * At most five problem lines, the signature of the first offending component, then the fixed last line (null: none,
- * for tools that render nothing).
+ * At most five problem lines, the signature of the first offending component (and, when that problem is about a data
+ * notation, the notation's one-line grammar), then the fixed last line (null: none, for tools that render nothing).
  */
 export function formatProblems(problems: readonly Problem[], lastLine: string | null = NOTHING_RENDERED): string {
   const lines = problems.slice(0, MAX_PROBLEM_LINES).map(p => oneLine(`${p.code} ${p.message}`, 400));
   if (problems.length > MAX_PROBLEM_LINES) lines[MAX_PROBLEM_LINES - 1] += ` (+${problems.length - MAX_PROBLEM_LINES} more)`;
-  const def = problems.map(p => (p.component ? COMPONENT_BY_NAME.get(p.component) : undefined)).find(d => d !== undefined);
-  if (def) lines.push(`sig ${signatureOf(def)}`);
+  const first = problems.find(p => p.component !== undefined && COMPONENT_BY_NAME.has(p.component));
+  if (first) {
+    lines.push(`sig ${signatureOf(COMPONENT_BY_NAME.get(first.component!)!)}`);
+    if (first.notation) lines.push(`notation ${NOTATIONS[first.notation].sig}`);
+  }
   if (lastLine !== null) lines.push(lastLine);
   return lines.join('\n');
 }

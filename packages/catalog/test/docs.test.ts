@@ -2,9 +2,9 @@ import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENTS, EXAMPLES, INSTRUCTIONS_BUDGET, INSTRUCTIONS_LINE_MAX, INSTRUCTIONS_TARGET, SHAPES, SHARED_PROPS, SKILL_DESCRIPTION, SOURCES, VIEWS, VIEW_INDEX, componentDoc,
-  componentIndex, componentsDrawing, exampleCall, examplesDoc, hasFrame, partsOf, serverInstructions, shapeKinds, shapesOf, signatureOf,
-  skillMarkdown, sourceDoc, sourceGroups, sourceIndex, typedSignatureList, viewDoc, viewGroups, type Prop,
+  COMPONENTS, EXAMPLES, INSTRUCTIONS_BUDGET, INSTRUCTIONS_LINE_MAX, INSTRUCTIONS_TARGET, NOTATION_BY_SHAPE, NOTATIONS, SHAPES, SHARED_PROPS, SKILL_DESCRIPTION, SOURCES,
+  VIEWS, VIEW_INDEX, componentDoc, componentIndex, componentsDrawing, exampleCall, examplesDoc, hasFrame, normalizeSpec, notationKind, partsOf, serverInstructions, shapeKinds,
+  shapesOf, signatureOf, skillMarkdown, sourceDoc, sourceGroups, sourceIndex, typedSignatureList, viewDoc, viewGroups, type Prop,
 } from '../src/index.ts';
 import {buildArtifacts} from '../testing/artifacts.ts';
 import {buildSurface, strictErrors} from '../testing/index.ts';
@@ -17,8 +17,8 @@ const propsOf = (def: (typeof COMPONENTS)[number]) => Object.entries(def.props) 
 describe('server instructions', () => {
   const text = serverInstructions();
 
-  it('fit the always-loaded slot with headroom (target 3,750 of a 4,000 budget; the host cuts at 4,096)', () => {
-    expect(INSTRUCTIONS_TARGET).toBeLessThanOrEqual(INSTRUCTIONS_BUDGET * 0.94);
+  it('fit the always-loaded slot with headroom (target 3,850 of a 4,000 budget; the host cuts at 4,096)', () => {
+    expect(INSTRUCTIONS_BUDGET - INSTRUCTIONS_TARGET).toBeGreaterThanOrEqual(150);
     expect(text.length).toBeLessThanOrEqual(INSTRUCTIONS_TARGET);
   });
 
@@ -48,11 +48,19 @@ describe('server instructions', () => {
   // ended in an `ok` that was wrong on screen. The instructions say what is needed to get those right first time.
   it('spend their words where first-contact specs failed', () => {
     expect(text).toContain('show{id:"auth-flow", spec}'); // ids may carry hyphens, and the example shows one
-    expect(text).toContain("$/plan=[{title:'A',status:'doing'}]"); // the row form of a plan, not Steps.current
-    expect(text).toContain("Layers [{name,items:['a','b']}]");
-    expect(text).toContain("ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}]");
-    // V002: both writers gave KeyValue the Stats rows; the one row shape serves both
-    expect(text).toContain('Stats|KeyValue [{label,value}]');
+    // Data as text: notations the model already writes replace the object shapes cold writers got wrong (Steps.current,
+    // ERDiagram, Layers; V002: KeyValue given the Stats rows, so one notation serves both).
+    expect(text).toContain("$/plan='- [ ] A'"); // a plan as a task list, not Steps.current
+    // Measurement (notations round): 'Steps \'- [x] done — note\'' was copied as it stood: every plan of the small
+    // model opened with a done step noted 'done' on designs not started. The example is a real step, not yet begun.
+    expect(text).toContain("Steps '- [ ] Cache — on disk' [x] done [~] doing");
+    expect(text).not.toMatch(/'- \[[x~]\]/);
+    // ...and 'Tier: a, b' read as 'Tier: prose': the items are names.
+    expect(text).toContain("Layers 'UI: Tabs, Nav — Vue'");
+    // ...and the small model drew its architecture with Flowchart, which has no status, groups or file links.
+    expect(text).toContain('Graph (architecture)|ERDiagram Mermaid graph|erDiagram (a[A<br>sub]:::new|changed|gone, click a "path")');
+    expect(text).toContain("Stats|KeyValue 'Key: value'");
+    expect(text).toContain('DataTable|List|charts Markdown table');
     expect(text).toMatch(/a new name is appended/); // adding a part to a preset
     expect(text).toMatch(/A preset's id is its view name/); // patch by id: the cheap form
     expect(text).toMatch(/"warn" = a part the tab could not draw/); // an ok result can still need a fix
@@ -64,6 +72,17 @@ describe('server instructions', () => {
 
   // The verify round's cold writers: task 17 (churn per module) failed for both after two retries, and both put
   // diff.impact in a DataTable (task 7). One example and one line say what each needs.
+  // The DATA AS TEXT line names every component whose data prop takes a notation ('charts' stands for the Rows charts).
+  it('name every component that takes data as text', () => {
+    const line = text.split('\n').find(l => l.startsWith('DATA AS TEXT'))!;
+    const taking = COMPONENTS.filter(def => propsOf(def).some(([key]) => notationKind(def.name, key) !== undefined));
+    expect(taking.length).toBeGreaterThan(10);
+    for (const def of taking) {
+      if (def.family === 'chart') expect(line, def.name).toContain('|charts Markdown table');
+      else expect(line, def.name).toMatch(new RegExp(`(^|[ |])${def.name}([ |]|$)`));
+    }
+  });
+
   it('show churn by module and say which sources are graphs', () => {
     expect(text).toContain("BarChart('git.churn by=module')");
     const graphs = /^Graphs \(([^)]*)\) need Graph\(\)\.$/m.exec(text);
@@ -116,7 +135,9 @@ describe('component docs', () => {
   it.each(COMPONENTS.map(def => [def.name, def] as const))('componentDoc(%s) is a compact, complete entry', (name, def) => {
     const doc = componentDoc(name)!;
     expect(doc.length).toBeGreaterThanOrEqual(100);
-    expect(doc.length).toBeLessThanOrEqual(1000);
+    // 1,100 since the data notations: Graph, DataTable and ERDiagram carry a notation line (catalog answers are paid
+    // only when asked; a preset result may be 1,200).
+    expect(doc.length).toBeLessThanOrEqual(1100);
     expect(doc.startsWith(signatureOf(def))).toBe(true);
     expect(doc).toContain(def.doc);
     expect(doc.endsWith(`  e.g. ${def.example}`)).toBe(true);
@@ -217,7 +238,14 @@ describe('data shapes', () => {
       const doc = componentDoc(def.name)!;
       const shapes = new Set(propsOf(def).flatMap(([, prop]) => shapesOf(prop.shape)));
       for (const shape of shapes) {
-        expect(doc, `${def.name}: ${shape}`).toContain(`  ${shape}: ${SHAPES[shape]!.sig}\n    e.g. ${SHAPES[shape]!.example}\n`);
+        const kind = Object.hasOwn(NOTATION_BY_SHAPE, shape) ? NOTATION_BY_SHAPE[shape]! : undefined;
+        if (kind) {
+          // a shape that can be written as text shows the notation and a text example instead of an object example
+          expect(doc, `${def.name}: ${shape}`).toContain(`  ${shape}: ${SHAPES[shape]!.sig}\n    or text: ${NOTATIONS[kind].sig}\n    e.g. ${NOTATIONS[kind].example}\n`);
+          expect(NOTATIONS[kind].example).not.toContain('\n');
+        } else {
+          expect(doc, `${def.name}: ${shape}`).toContain(`  ${shape}: ${SHAPES[shape]!.sig}\n    e.g. ${SHAPES[shape]!.example}\n`);
+        }
         expect(SHAPES[shape]!.example).not.toContain('\n');
       }
       for (const shape of Object.keys(SHAPES)) if (!shapes.has(shape)) expect(doc, `${def.name}: ${shape}`).not.toContain(`  ${shape}: `);
@@ -225,6 +253,23 @@ describe('data shapes', () => {
     expect(componentDoc('Steps')).toContain("StepItem: {title, note?, status?: todo|doing|done|blocked|skipped, file?: 'path#L10'}");
     expect(componentDoc('ERDiagram')).toContain("fk?: true|'table.column'");
     expect(componentDoc('ERDiagram')).toContain("relations: [{from: 'orders.user_id', to: 'users.id'");
+    expect(componentDoc('Steps')).toContain('    or text: a step per line: - [x] done, - [~] doing, - [ ] todo');
+    expect(componentDoc('Steps')).toContain("    e.g. '- [x] Add the middleware\\n- [~] Wire the router — behind a flag [[src/api/routes.ts#L12]]\\n- [ ] Tests'");
+    expect(componentDoc('Graph')).toContain('    or text: Mermaid graph: ');
+    expect(componentDoc('JsonView')).not.toContain('or text:');
+  });
+
+  // Every text example in the catalog answers compiles inside a component call and draws: the server parses it, so
+  // here it is enough that the Express string literal compiles to the string the notation tests parse.
+  it.each(COMPONENTS.flatMap(def => propsOf(def).flatMap(([key]) => {
+    const kind = notationKind(def.name, key);
+    return kind ? [[def.name, key, kind] as const] : [];
+  })))('%s(%s=<the %s text example>) compiles', (name, key, kind) => {
+    const def = COMPONENTS.find(c => c.name === name)!;
+    const required = propsOf(def).filter(([k, prop]) => prop.required && k !== key).map(([k, prop]) => `${k}=${prop.kind === 'children' ? '[]' : "'x'"}`);
+    const messages = buildSurface('text', `$/v=${NOTATIONS[kind].example}\nroot=Page('S',[${name}(${[`${key}=$/v`, ...required].join(',')})])`);
+    const first = messages[0]!;
+    expect('createSurface' in first && first.createSurface.dataModel?.v).toBe(JSON.parse(normalizeSpec(NOTATIONS[kind].example)));
   });
 
   // An example that does not compile would teach the model a form the server rejects.

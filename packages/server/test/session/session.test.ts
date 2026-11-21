@@ -117,6 +117,30 @@ describe('show', () => {
     expect(t.session.surfaces.get('feature')!.data).toEqual({plan: [], notes: ''});
   });
 
+  it('data written as text is stored and sent as data: the tab and a replay never see the text', async () => {
+    const t = start();
+    const plan = `$/plan='- [x] A\\n- [~] B'\nroot=Page('Plan',[plan,arch])\nplan=Steps($/plan)\narch=Graph('graph TB\\na[API] --> b[DB]\\nclick b "src/missing.ts"')`;
+    const outcome = await t.session.show(spec('plan', plan));
+    expect(outcome.fixes).toEqual([]);
+    const record = t.session.surfaces.get('plan')!;
+    expect(record.data.plan).toEqual([{title: 'A', status: 'done'}, {title: 'B', status: 'doing'}]);
+    expect(record.components.get('arch')).toMatchObject({data: {nodes: [{id: 'a', label: 'API'}, {id: 'b', label: 'DB', file: 'src/missing.ts'}], edges: [{from: 'a', to: 'b'}], dir: 'TB'}});
+    const snapshot = JSON.stringify(t.session.replay());
+    expect(snapshot).not.toContain('- [x]');
+    expect(snapshot).not.toContain('-->');
+    // a file the data names is checked like any other (decision D3)
+    await outcome.checks;
+    expect(outcome.warnings).toEqual([expect.stringMatching(/^Graph#arch\.data node b: file "src\/missing\.ts" does not exist\./)]);
+
+    // a patch that sets the bound slot as text publishes the parsed value
+    const before = t.host.frames.length;
+    const patch = await t.session.show(spec('plan', `$/plan='- [x] A\\n- [x] B\\n- [ ] C'`));
+    expect(patch.mode).toBe('patch');
+    const sent = [{title: 'A', status: 'done'}, {title: 'B', status: 'done'}, {title: 'C', status: 'todo'}];
+    expect(dataUpdates(t.host.frames.slice(before))).toEqual([{surfaceId: 'plan', path: '/plan', value: sent}]);
+    expect(t.session.surfaces.get('plan')!.data.plan).toEqual(sent);
+  });
+
   it('the gallery compiles, expands and binds no dataset at all', async () => {
     const t = start();
     const outcome = await t.session.show({id: 'gallery', sources: [GALLERY_SPEC], fresh: true, view: 'gallery'});
@@ -147,6 +171,8 @@ describe('all or nothing', () => {
     ['an unknown source', `table=DataTable('git.chrun')`],
     ['a reserved path', `$/notes='x'\n$/ds/fake_slow=1`],
     ['bad notation', `notes=Flowchart('A -> B')`],
+    ['a bad data notation', `table=Graph('graph LR\\na => b')`],
+    ['a bad data notation through the data model', `$/notes='- [x] a\\nnope'\nnotes=Steps($/notes)`],
     ['a part the new root leaves out', `$/notes='x'\nroot=Page('Demo',[notes])\nextra=Text('nobody shows me')`],
     ['a reserved name in a path', `$/notes='x'\n$/__proto__/polluted=1`],
     ['a reserved name as a key', `$/notes={constructor:{prototype:{polluted:1}}}`],

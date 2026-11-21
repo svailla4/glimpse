@@ -8,7 +8,7 @@
 // Each limit keeps headroom under the hard figure of design section 10 (decision D13), so the next component or
 // source still fits: the hard figure is in parentheses.
 // What the agent pays for, in characters (the bundled server is started over stdio and asked through the MCP client):
-//   instructions                 <= 3,750   sent once per session (4,000; the catalog's INSTRUCTIONS_TARGET)
+//   instructions                 <= 3,850   sent once per session (4,000; the catalog's INSTRUCTIONS_TARGET)
 //   show + catalog definitions   <= 1,500   the two always-loaded tools: name, description and input schema as JSON
 //   a preset result              <= 1,200   every preset, on the deterministic fixture repository and on --repo,
 //                                           first call and repeat call (when every dataset has settled)

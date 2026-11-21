@@ -56,6 +56,16 @@ describe('parseFlow', () => {
     });
   });
 
+  // Shared with Graph's notation: a `:::class` after a node and the dashed `-.-` link now parse in a Flowchart too (the
+  // class is ignored there); nothing that parsed before parses differently, and `->` is still an error.
+  it('accepts and ignores :::class, and reads -.- as a dashed link', () => {
+    expect(flow('A[x]:::cls --> B')).toEqual(flow('A[x] --> B'));
+    expect(flow('A:::cls --> B:::other')).toEqual(flow('A --> B'));
+    expect(flow('Read config:::new --> B').nodes[0]).toEqual({id: 'Read_config', label: 'Read config', shape: 'box'});
+    expect(flow('A -.- B').edges).toEqual([{from: 'A', to: 'B', dashed: true}]);
+    expect(flowErrors('A -> B')).toEqual([{statement: 1, message: 'expected an arrow (-->, -->|label|, -- label -->, -.->) at column 3, found "-> B"'}]);
+  });
+
   it('chains edges in one statement and fans out with &', () => {
     expect(flow('A --> B --> C').edges).toEqual([{from: 'A', to: 'B'}, {from: 'B', to: 'C'}]);
     expect(flow('A & B --> C').edges).toEqual([{from: 'A', to: 'C'}, {from: 'B', to: 'C'}]);
@@ -175,9 +185,46 @@ describe('parseSequence', () => {
     expect(seq('A->>B: x; participant B as Backend').actors).toEqual([{id: 'A', label: 'A'}, {id: 'B', label: 'Backend'}]);
   });
 
-  it('ignores blanks, %% comments and Mermaid block keywords', () => {
+  it('ignores blanks, %% comments and bookkeeping lines; a loop is a frame', () => {
     const ast = seq('%% comment\nautonumber\nloop every minute\nA->>B: ping;;\nend\nactivate B');
-    expect(ast.steps).toEqual([{kind: 'message', from: 'A', to: 'B', label: 'ping', arrow: 'sync'}]);
+    expect(ast.steps).toEqual([
+      {kind: 'frame', edge: 'open', op: 'loop', label: 'every minute'},
+      {kind: 'message', from: 'A', to: 'B', label: 'ping', arrow: 'sync'},
+      {kind: 'frame', edge: 'end'},
+    ]);
+  });
+
+  // Measurement: a writer's 'alt tokens left / else bucket empty' was drawn as one run of messages, with no signal.
+  it('reads alt/else, opt, par/and and nested blocks as balanced frames', () => {
+    const src = 'sequenceDiagram\nA->>S: show\nalt tokens left\nS-->>A: ok\nelse bucket empty\nopt logged\nS->>L: note it\nend\nS-->>A: denied\nend\npar\nA->>B: x\nand\nA->>C: y\nend';
+    const parsed = parseSequence(src);
+    expect(parsed.ok && parsed.fixes).toBeUndefined();
+    const frames = seq(src).steps.filter(step => step.kind === 'frame');
+    expect(frames).toEqual([
+      {kind: 'frame', edge: 'open', op: 'alt', label: 'tokens left'},
+      {kind: 'frame', edge: 'else', label: 'bucket empty'},
+      {kind: 'frame', edge: 'open', op: 'opt', label: 'logged'},
+      {kind: 'frame', edge: 'end'},
+      {kind: 'frame', edge: 'end'},
+      {kind: 'frame', edge: 'open', op: 'par', label: ''},
+      {kind: 'frame', edge: 'else', label: ''},
+      {kind: 'frame', edge: 'end'},
+    ]);
+  });
+
+  it('keeps rect and box balanced without drawing them, and says what it closed or skipped', () => {
+    const grouped = seq('rect rgb(200, 220, 255)\nA->>B: x\nend\nbox Aqua Team\nparticipant C\nend\nB->>C: y');
+    expect(grouped.steps.map(step => step.kind)).toEqual(['message', 'message']);
+    const open = parseSequence('A->>B: x\nalt hit\nB-->>A: rows');
+    expect(open.ok && open.fixes).toEqual([{line: 2, message: "alt closed at the end (no 'end')"}]);
+    expect(open.ok && open.ast.steps.at(-1)).toEqual({kind: 'frame', edge: 'end'});
+    const stray = parseSequence('A->>B: x\nelse no\nend\nB-->>A: y');
+    expect(stray.ok && stray.fixes).toEqual([{line: 2, message: "'else' outside alt/par/critical skipped"}, {line: 3, message: "'end' closes no block: skipped"}]);
+    expect(stray.ok && stray.ast.steps.every(step => step.kind === 'message')).toBe(true);
+    // a message from an actor named like a block keyword is still a message
+    expect(seq('alt->>B: x').steps).toEqual([{kind: 'message', from: 'alt', to: 'B', label: 'x', arrow: 'sync'}]);
+    // frames alone are not a diagram
+    expect(seqErrors('alt x\nend')).toEqual([{statement: 1, message: 'no messages: expected something like "User->>API: POST /login"'}]);
   });
 
   it.each([

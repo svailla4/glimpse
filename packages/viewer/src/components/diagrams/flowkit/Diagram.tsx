@@ -44,6 +44,12 @@ export interface DiagramProps<T> {
   groups?: readonly DiagramGroup[];
   /** Flow direction. Left out, the diagram is laid out both ways and drawn the way that reads larger at its width. */
   dir?: Dir;
+  /**
+   * With `dir`: a preference, not a rule. The diagram is also laid out the other way, and drawn that way when `dir`
+   * would open below PREFER_ZOOM and the other way reads larger (an eleven-node `graph LR` chain in a narrow plate
+   * opened at 46%, its names cut to ten characters).
+   */
+  preferDir?: boolean;
   ariaLabel: string;
   /** Marginal note for the plate header: counts, what was left out. */
   note?: string;
@@ -105,6 +111,9 @@ const PENDING_HEIGHT = 200;
 export const LABEL_FLOOR = 0.55;
 /** The widest a node is made to say its name whole (widen). */
 const WIDEN_MAX = 360;
+/** A preferred direction (preferDir) is kept when the diagram opens whole at this zoom or more that way. */
+export const PREFER_ZOOM = 0.7;
+const otherDir = (dir: Dir): Dir => (isAcross(dir) ? 'TB' : 'LR');
 
 /** A shape (width over height) in steps of a quarter octave, so a plate resized a little is not laid out again. */
 const step = (ratio: number) => Math.round(2 ** (Math.round(Math.log2(Math.max(0.05, ratio)) * 4) / 4) * 100) / 100;
@@ -265,20 +274,22 @@ export function Diagram<T>(p: DiagramProps<T>): ReactNode {
   // Parts with no edge between them are packed to the plate's shape (in steps, so a resize rarely lays out again).
   const packTo = input.parts > 1 && room !== undefined ? step(room) : undefined;
   const specs = useMemo<LayoutSpec[]>(() => {
-    const dirs: Dir[] = p.dir ? [p.dir] : ['LR', 'TB'];
+    const dirs: Dir[] = p.dir ? (p.preferDir ? [p.dir, otherDir(p.dir)] : [p.dir]) : ['LR', 'TB'];
     const dense = input.edges.length > DENSE_EDGES;
     return dirs.map(dir => ({
       dir, nodes: input.nodes, edges: input.edges, groups: input.groups, nodeGap: p.nodeGap, layerGap: p.layerGap, dense,
       ...(packTo !== undefined ? {aspect: packTo} : {}),
     }));
-  }, [input, p.dir, p.nodeGap, p.layerGap, packTo]);
+  }, [input, p.dir, p.preferDir, p.nodeGap, p.layerGap, packTo]);
   const layout = useLayouts(specs);
 
-  // The direction that shows the diagram larger at this width; the first one (left to right) on a near tie.
+  // The direction that shows the diagram larger at this width; the first one (left to right, or the preferred one) on
+  // a near tie. A preferred direction that opens whole at PREFER_ZOOM or more is kept.
+  const prefer = p.dir !== undefined && p.preferDir === true;
   const chosen = useMemo(() => {
     if (layout.status !== 'ready' || layout.laid.length === 0) return undefined;
     let best = 0;
-    if (width > 0) {
+    if (width > 0 && !(prefer && scoreLayout(layout.laid[0]!.bounds, width, cap, floor) >= PREFER_ZOOM)) {
       let bestScore = scoreLayout(layout.laid[0]!.bounds, width, cap, floor);
       layout.laid.forEach((other, i) => {
         const score = scoreLayout(other.bounds, width, cap, floor);
@@ -289,7 +300,7 @@ export function Diagram<T>(p: DiagramProps<T>): ReactNode {
       });
     }
     return {laid: layout.laid[best]!, spec: specs[best]!};
-  }, [layout, specs, width, cap, floor]);
+  }, [layout, specs, width, cap, floor, prefer]);
 
   // ---- a second layout when the first does not use the plate well: a flow too long for it is wrapped into rows (or
   // columns) of the plate's shape; a drawing the plate's height holds back, with width to spare, gets nodes wide

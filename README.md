@@ -204,7 +204,9 @@ Charts are Glimpse's own SVG on `d3-scale`, `d3-shape` and `d3-hierarchy`. `Grap
 
 ## Data sources
 
-A data argument is one of three things: a **source ref** (a string), a **`$/path`** into the view's data model, or **small inline rows**.
+A data argument is one of four things: a **source ref** (a string), a **`$/path`** into the view's data model, **data as text** in a notation models already write (a Mermaid `graph` for `Graph`, a Mermaid `erDiagram` for `ERDiagram`, a Markdown table for `DataTable`, `List` and the charts that take rows, a task list for `Steps`, `Key: value` lines for `KeyValue` and `Stats`, `Tier: name, name — note` lines for `Layers`), which the server turns into rows and graphs before anything reaches the tab, or **small inline rows**.
+
+Data as text is parsed by the server: the tab receives the same rows and graphs it would from inline data, and a stored view keeps them, so a later `show` with only `$/plan='- [x] A\n- [~] B'` updates a bound `Steps` in place. Glimpse adds three things to a Mermaid `graph`: the text after `<br>` in a label is the node's second line; `:::new`, `:::changed` and `:::gone` (or `:::added`, `:::modified`, `:::deleted`) mark a node's status; and `click a "src/a.ts#L10-20"` makes node `a` open that file of the repository. Styling lines (`style`, `classDef`, `linkStyle`) are ignored. The direction in the header (`graph LR`) is a preference: a graph that would open too small that way is drawn the other way, while `Graph(dir=...)` is kept as written. A task list marks a step `[x]` done, `[~]` doing, `[ ]` to do, `[!]` blocked or `[-]` skipped, then an optional ` — note` (a note that only says `done` or `todo` is the box's to say, and is dropped with a `fixed` line), and `[[path#L10]]` links a file. A `Layers` line lists names (`UI: Tabs, Nav — Vue`); a line written as a sentence becomes the tier's note. In a `SequenceDiagram`, `alt`, `opt`, `loop`, `par`, `critical` and `break` blocks are drawn as labelled frames, with a dashed divider for each `else`, `and` or `option`. In a Markdown table, a column whose cells are all plain numbers (`12`, `1,866`) holds numbers; `007` or `1.10` stay text. A notation error is an `E_NOTATION` line with the line and column and a corrected example, and nothing is drawn; a small slip (`Tests:true`, an unknown `:::hot`, a table without its `|---|` row) is repaired and reported as a `fixed` line. `catalog{names:["Steps"]}` shows a component's notation beside the shape of its data.
 
 A ref is `'<source> [path|range|symbol] [key=value ...]'`, for example `'git.hotspots src top=15'`, `'diff.files main..HEAD'` or `'git.churn by=module'` (one row per module instead of per file). The server runs it locally, enforces a row and node budget, and binds the result under `/ds/<key>` in the page's data model. The same ref used by two components is computed once. Each result carries its field names and kinds, so tables and charts pick columns and axes without being told. Three sources are graphs (`deps.modules`, `deps.files`, `diff.impact`) and are drawn with `Graph`; the trees (`files.tree`, `diff.tree`) with `FileTree`, `Treemap` or `Icicle`. `catalog{names:["git.churn"]}` lists a source's arguments and fields.
 
@@ -282,7 +284,7 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 
 | Budget | Limit | Now |
 |---|---|---|
-| Server instructions | 3,750 chars (hard limit 4,000) | 3,749 |
+| Server instructions | 3,850 chars (hard limit 4,000) | 3,849 |
 | `show` + `catalog` definitions | 1,500 chars | 1,147 |
 | Largest preset result (`overview`) | 1,200 chars | 1,095 |
 | Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 193.6 kB |

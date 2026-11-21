@@ -1,14 +1,17 @@
 // Expansion (design 2.2 step 4): compiled messages are rewritten in place so that every data prop naming a source
-// becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, the Mermaid-style notation,
-// column shorthand and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
+// becomes a /ds binding, data written as text (a Mermaid graph, a Markdown table, a task list ...) becomes the data
+// it describes, and the things only Glimpse can judge are checked: source refs, the Mermaid-style notation, column
+// shorthand and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
 import {
-  acceptsArg, checkColumns, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, parseColumns, parseFlow, parseRef, parseSequence, PATHS,
-  shapeKinds, SOURCES, type A2uiMessage, type Field, type Prop, type SourceMeta, type SourceRef, type WireComponent,
+  acceptsArg, checkColumns, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, NOTATIONS, notationFor, notationKind, parseColumns, parseFlow,
+  parseRef, parseSequence, PATHS, PROTOCOL_VERSION, shapeKinds, SOURCES, type A2uiMessage, type Field, type NotationMatch, type Prop,
+  type SourceMeta, type SourceRef, type WireComponent,
 } from '@glimpse/catalog';
 import {AS_ROWS, NODE_FIELDS, readsAsRows} from '../session/datasets.ts';
 import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
+import type {Seed} from './compile.ts';
 import {closeMatch, nearest, oneLine, problem, type Problem} from './errors.ts';
-import {pathProblem} from './guard.ts';
+import {pathProblem, valueProblem} from './guard.ts';
 
 export interface Expansion {
   /** Source refs the call names, by dataset key, in order of first use. */
@@ -336,6 +339,161 @@ function focusAsTarget(comp: WireComponent, name: string, text: string, registry
   return formatRef(chosen);
 }
 
+// ---------------------------------------------------------------- data as text
+/** A catalog component as the notation step needs it. */
+interface DefLike { name: string; props: Record<string, Prop> }
+
+/** A string given for a data prop that is neither a source ref nor written in the notation the prop takes. */
+function notARef(component: string, key: string, prop: Prop, value: string, where: string): Problem {
+  const kind = notationKind(component, key);
+  const quoted = `${where}: "${oneLine(value, 60)}"`;
+  if (!kind) return problem('E_SOURCE', `${quoted} is not a source ref. Write a ref ('files.list src top=20'), a $/path or inline ${prop.shape ?? 'data'}.`, {component});
+  const notation = NOTATIONS[kind];
+  return problem('E_SOURCE', `${quoted} is not a source ref or ${notation.name}. Write a ref ('files.list src top=20'), a $/path, inline ${prop.shape ?? 'data'} or ${notation.name}: ${notation.short}`, {component});
+}
+
+/** The objects of parsed data that name a file of the repository, with how a warning about each one names it. */
+function notationFiles(match: NotationMatch, ast: unknown): Array<{holder: {file?: unknown}; label: string}> {
+  const records = (value: unknown): Array<Record<string, unknown>> =>
+    (Array.isArray(value) ? value : []).filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null);
+  const text = (value: unknown) => oneLine(String(value ?? ''), 40);
+  const data = (typeof ast === 'object' && ast !== null ? ast : {}) as Record<string, unknown>;
+  switch (match.kind) {
+    case 'graph': return records(data.nodes).map(node => ({holder: node, label: `node ${text(node.id)}`}));
+    case 'er': return records(data.tables).map(table => ({holder: table, label: `table ${text(table.name)}`}));
+    case 'tasks': return records(ast).map((step, i) => ({holder: step, label: `step ${i + 1}`}));
+    case 'layers': return records(ast).flatMap(layer => records(layer.items).map(item => ({holder: item, label: `layer ${text(layer.name)} item ${text(item.label)}`})));
+    default: return [];
+  }
+}
+
+/**
+ * Puts what a notation string parsed to where the string was (`write`), or reports why it cannot: one E_NOTATION per
+ * error with its line, column and a corrected example. A slip the parser repaired is a `fixed` line; the files the
+ * data names are written under the inventory's names and checked like a CodeTour stop (decision D3); the direction an
+ * erDiagram gives fills the component's own `dir` when the call defines the component (`own`) and left it unset. A
+ * Mermaid graph's header direction stays in its data: Graph reads it as a preference, its own `dir` as a rule.
+ */
+function applyNotation(comp: WireComponent, def: DefLike, key: string, match: NotationMatch, where: string, out: Expansion, names: PathNames | undefined, own: boolean, write: (ast: unknown) => void): void {
+  const {result} = match;
+  if (!result.ok) {
+    for (const error of result.errors) {
+      const at = error.line !== undefined ? ` line ${error.line}${error.col !== undefined ? ` col ${error.col}` : ''}` : ` statement ${error.statement}`;
+      out.problems.push(problem('E_NOTATION', `${where}${at}: ${error.message}${error.example ? `. Example: ${error.example}` : ''}`, {component: def.name, notation: match.kind}));
+    }
+    return;
+  }
+  const bad = valueProblem(result.ast);
+  if (bad) { out.problems.push({...bad, message: `${where}: ${bad.message}`, component: def.name}); return; }
+  for (const fix of result.fixes ?? []) out.fixes.push(`${where} line ${fix.line}: ${fix.message}`);
+  // A Mermaid graph carries its header direction in its data, where Graph reads it as a preference.
+  if (result.dir && match.kind === 'graph' && typeof result.ast === 'object' && result.ast !== null) (result.ast as {dir?: string}).dir = result.dir;
+  else if (result.dir && own && 'dir' in def.props && comp.dir === undefined) comp.dir = result.dir;
+  for (const {holder, label} of notationFiles(match, result.ast)) {
+    if (typeof holder.file !== 'string' || holder.file.trim() === '') continue;
+    holder.file = named(holder.file.trim(), out, names);
+    if (out.files.length < MAX_CHECKS) out.files.push({where: `${def.name}#${comp.id}.${key} ${label}`, file: holder.file as string});
+  }
+  write(result.ast);
+}
+
+const decodeSegments = (path: string): string[] => path.split('/').filter(Boolean).map(segment => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
+const isContainer = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
+interface Slot { value: unknown; set: (value: unknown) => void }
+
+/** The place a value at `rest` (segments) inside `root` is held, when there is one. */
+function slotIn(root: unknown, rest: readonly string[], setRoot: (value: unknown) => void): Slot | undefined {
+  if (rest.length === 0) return {value: root, set: setRoot};
+  let node = root;
+  for (const segment of rest.slice(0, -1)) {
+    if (!isContainer(node) || !Object.hasOwn(node, segment)) return undefined;
+    node = node[segment];
+  }
+  const last = rest.at(-1)!;
+  if (!isContainer(node) || !Object.hasOwn(node, last)) return undefined;
+  const holder = node;
+  return {value: holder[last], set: value => { holder[last] = value; }};
+}
+
+/**
+ * Every place this call's messages write the value at `segments`, in message order: the new surface's data model, a
+ * write to the path itself, or a write to an ancestor whose value holds it. A write below the path is not one.
+ */
+function slotsAt(messages: readonly A2uiMessage[], segments: readonly string[]): Slot[] {
+  const slots: Slot[] = [];
+  for (const message of messages) {
+    let slot: Slot | undefined;
+    if ('createSurface' in message) {
+      const surface = message.createSurface;
+      slot = surface.dataModel ? slotIn(surface.dataModel, segments, () => undefined) : undefined;
+    } else if ('updateDataModel' in message) {
+      const update = message.updateDataModel;
+      const at = decodeSegments(update.path ?? '/');
+      if (at.length === 0 || at.length > segments.length || at.some((segment, i) => segment !== segments[i])) continue;
+      slot = slotIn(update.value, segments.slice(at.length), value => { update.value = value; });
+    }
+    if (slot) slots.push(slot);
+  }
+  return slots;
+}
+
+function surfaceOf(message: A2uiMessage | undefined): string | undefined {
+  if (!message) return undefined;
+  if ('createSurface' in message) return message.createSurface.surfaceId;
+  if ('updateComponents' in message) return message.updateComponents.surfaceId;
+  if ('updateDataModel' in message) return message.updateDataModel.surfaceId;
+  return (message as {deleteSurface?: {surfaceId?: string}}).deleteSurface?.surfaceId;
+}
+
+/**
+ * Data as text written through the data model: `$/plan='- [x] a'` read by `Steps($/plan)`. For every path a data prop
+ * with a notation binds (this call's components first, then the stored view's), each string this call writes there
+ * in that notation is parsed in place. A string an earlier call stored, bound only now by a component of this call,
+ * is parsed and sent as one more data write. The first component that binds a path decides how it is read.
+ */
+function expandBoundNotations(messages: A2uiMessage[], out: Expansion, names: PathNames | undefined, seed: Seed | undefined): void {
+  const own = messages.flatMap(componentsOf);
+  const ownIds = new Set(own.map(comp => comp.id));
+  const binders = [...own.map(comp => ({comp, own: true})), ...(seed?.components ?? []).filter(comp => !ownIds.has(comp.id)).map(comp => ({comp, own: false}))];
+  const handled = new Set<string>();
+  const surfaceId = surfaceOf(messages[0]);
+  for (const binder of binders) {
+    const def = COMPONENT_BY_NAME.get(binder.comp.component);
+    if (!def) continue;
+    const props = def.props as Record<string, Prop>;
+    // A diagram source bound to a path this call writes ($/seq='sequenceDiagram ...') is checked like an inline one.
+    const src = binder.comp.src;
+    if ((def.name === 'Flowchart' || def.name === 'SequenceDiagram') && isBinding(src) && /^\/(?!(ds|meta|ui)(\/|$))/.test(src['@path'])) {
+      for (const slot of slotsAt(messages, decodeSegments(src['@path']))) {
+        if (typeof slot.value === 'string') checkSource(def.name, slot.value, `$${src['@path']} (${def.name}#${binder.comp.id}.src)`, out);
+      }
+    }
+    for (const [key, prop] of Object.entries(props)) {
+      if (prop.kind !== 'data' || !notationKind(def.name, key)) continue;
+      const value = binder.comp[key];
+      if (!isBinding(value)) continue;
+      const path = value['@path'];
+      if (!path.startsWith('/') || /^\/(ds|meta|ui)(\/|$)/.test(path) || handled.has(path)) continue;
+      const segments = decodeSegments(path);
+      if (segments.length === 0) continue;
+      const slots = slotsAt(messages, segments);
+      if (slots.length === 0 && (!binder.own || !seed)) continue;
+      handled.add(path);
+      const where = `$${path} (${def.name}#${binder.comp.id}.${key})`;
+      const target = {name: def.name, props};
+      for (const slot of slots) {
+        const match = typeof slot.value === 'string' ? notationFor(def.name, key, slot.value) : undefined;
+        if (match) applyNotation(binder.comp, target, key, match, where, out, names, binder.own, slot.set);
+      }
+      if (slots.length > 0 || !seed || surfaceId === undefined) continue;
+      const stored = lookup(seed.data, path);
+      const match = typeof stored === 'string' ? notationFor(def.name, key, stored) : undefined;
+      if (match) applyNotation(binder.comp, target, key, match, where, out, names, true, ast => { messages.push({version: PROTOCOL_VERSION, updateDataModel: {surfaceId, path, value: ast}}); });
+    }
+  }
+}
+
 function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Expansion, names: PathNames | undefined): void {
   const def = COMPONENT_BY_NAME.get(comp.component);
   if (!def) return;
@@ -351,9 +509,15 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
       const first = value.trim().split(/\s+/)[0] ?? '';
       if (resolveSource(first, registry)) text = value;
       else if (!allowsString(prop)) {
+        // Data as text: a string in the notation this prop takes is parsed here and the data put where it was.
+        const match = looksLikeRef(value) ? undefined : notationFor(def.name, key, value);
+        if (match) {
+          applyNotation(comp, {name: def.name, props: def.props as Record<string, Prop>}, key, match, where(key), out, names, true, ast => { comp[key] = ast; });
+          continue;
+        }
         out.problems.push(looksLikeRef(value)
           ? problem('E_SOURCE', `${where(key)}: unknown source "${oneLine(first, 60)}". Nearest: ${nearest(first, sourceNames(registry)).join(' ')}`, {component: def.name})
-          : problem('E_SOURCE', `${where(key)}: "${oneLine(value, 60)}" is not a source ref. Write a ref ('files.list src top=20'), a $/path or inline ${prop.shape ?? 'data'}.`, {component: def.name}));
+          : notARef(def.name, key, prop, value, where(key)));
         continue;
       }
     }
@@ -388,12 +552,21 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
   nameFiles(comp, def.name, def.props as Record<string, Prop>, out, names);
   collectChecks(comp, def.name, def.props as Record<string, Prop>, out);
   if (def.name === 'Split' && typeof comp.ratio === 'string') comp.ratio = splitRatio(comp.ratio);
-  if ((def.name === 'Flowchart' || def.name === 'SequenceDiagram') && typeof comp.src === 'string') {
-    const parsed = def.name === 'Flowchart' ? parseFlow(comp.src) : parseSequence(comp.src);
-    if (!parsed.ok) {
-      for (const error of parsed.errors) out.problems.push(problem('E_NOTATION', `${where('src')} statement ${error.statement}: ${error.message}`, {component: def.name}));
-    }
+  if (typeof comp.src === 'string') checkSource(def.name, comp.src, where('src'), out);
+}
+
+/**
+ * Flowchart.src and SequenceDiagram.src, written inline or through the data model: what cannot be read is an
+ * E_NOTATION per statement, a slip the parser repaired (a block left open) a `fixed` line.
+ */
+function checkSource(component: string, src: string, where: string, out: Expansion): void {
+  if (component !== 'Flowchart' && component !== 'SequenceDiagram') return;
+  const parsed = component === 'Flowchart' ? parseFlow(src) : parseSequence(src);
+  if (!parsed.ok) {
+    for (const error of parsed.errors) out.problems.push(problem('E_NOTATION', `${where} statement ${error.statement}: ${error.message}`, {component}));
+    return;
   }
+  for (const fix of parsed.fixes ?? []) out.fixes.push(`${where} line ${fix.line}: ${fix.message}`);
 }
 
 const RESERVED = [PATHS.ds, PATHS.meta];
@@ -416,13 +589,16 @@ function checkPaths(message: A2uiMessage, out: Expansion): void {
 /**
  * Expands every message in place and collects every problem found (the caller reports the first five). `names` are
  * the inventory's spellings the session found for paths an earlier expansion of the same call recorded (V071).
+ * `seed` is the stored view a patch applies to: its components may bind data this call writes as text, and its data
+ * may hold text a component of this call binds only now (which then adds one data write to `messages`).
  */
-export function expandMessages(messages: A2uiMessage[], registry: SourceRegistry, names?: PathNames): Expansion {
+export function expandMessages(messages: A2uiMessage[], registry: SourceRegistry, names?: PathNames, seed?: Seed): Expansion {
   const out: Expansion = {refs: new Map(), problems: [], warnings: [], files: [], ranges: [], fields: [], fixes: [], paths: []};
   for (const message of messages) {
     checkPaths(message, out);
     for (const comp of componentsOf(message)) expandComponent(comp, registry, out, names);
   }
+  expandBoundNotations(messages, out, names, seed);
   return out;
 }
 

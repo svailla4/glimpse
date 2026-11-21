@@ -79,14 +79,26 @@ describe('repair inside compileSpec', () => {
     [`Callout('Careful','warning')`, 'Callout.kind warning -> warn', {kind: 'warn'}],
     [`Callout('Careful',kind='danger')`, 'Callout.kind danger -> risk', {kind: 'risk'}],
     [`Callout('Careful','error')`, 'Callout.kind error -> risk', {kind: 'risk'}],
-    [`Callout('Careful',kind='info')`, 'Callout.kind info -> note', {kind: 'note'}],
-    [`Callout('Careful','success')`, 'Callout.kind success -> tip', {kind: 'tip'}],
     [`Callout('Careful','Warn')`, 'Callout.kind Warn -> warn', {kind: 'warn'}],
     [`Callout('Careful','risky')`, 'Callout.kind risky -> risk', {kind: 'risk'}],
     [`Text('a',tone='muted')`, 'Text.tone muted -> dim', {tone: 'dim'}],
   ])('accepts the enum synonym in %s', (call, note, props) => {
     const {messages, fixes} = compile(`root=Page('x',[${call}])`);
     expect(fixes).toEqual([note]);
+    const first = messages[0]!;
+    if (!('createSurface' in first)) throw new Error('expected createSurface');
+    expect(first.createSurface.components[1]).toMatchObject(props);
+  });
+
+  // Measurement (notations round): six of twelve pages carried 'fixed Callout.kind info -> note' (five) or
+  // 'success -> tip' (one), the most frequent result line. What models write for a kind is taken without a word.
+  it.each([
+    [`Callout('Careful',kind='info')`, {kind: 'note'}],
+    [`Callout('Careful','success')`, {kind: 'tip'}],
+    [`Callout('Careful','Info')`, {kind: 'note'}],
+  ])('takes the kind models write, %s, without a fixed line', (call, props) => {
+    const {messages, fixes} = compile(`root=Page('x',[${call}])`);
+    expect(fixes).toEqual([]);
     const first = messages[0]!;
     if (!('createSurface' in first)) throw new Error('expected createSurface');
     expect(first.createSurface.components[1]).toMatchObject(props);

@@ -180,6 +180,11 @@ export interface GraphData {
   groups?: GraphGroup[];
   /** Granularity, shown in the plate note. */
   level?: 'module' | 'file' | 'package';
+  /**
+   * The direction a Mermaid header gave (`graph LR`): drawn that way unless it opens too small, where the other way
+   * reads larger. Graph's own `dir` is a rule.
+   */
+  dir?: 'LR' | 'TB';
 }
 
 // ---------------------------------------------------------------- small inline shapes (agent-authored or analyzer rows)

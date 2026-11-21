@@ -577,14 +577,16 @@ export class Session {
   // ---------------------------------------------------------------- show
   private prepare(request: ShowRequest, tools: Toolchain, registry: SourceRegistry, names?: PathNames): {draft: Draft; fixes: string[]; warnings: string[]; expansion: Expansion; compiledData: Set<string>} {
     const current = request.fresh ? undefined : this.surfaces.get(request.id);
+    const seed = current ? {components: [...current.components.values()], data: current.data} : undefined;
     const compiled = compileSpec(tools, {
       surfaceId: request.id,
-      ...(current ? {seed: {components: [...current.components.values()], data: current.data}} : {}),
+      ...(seed ? {seed} : {}),
       sources: request.sources,
       surfaces: this.surfaces.ids(),
       log: this.log,
     });
-    const expansion = expandMessages(compiled.messages, registry, names);
+    // The stored view, so data written as text for a part it already has is read in that part's notation.
+    const expansion = expandMessages(compiled.messages, registry, names, seed);
     if (expansion.problems.length > 0) throw new SpecError(expansion.problems);
     // Which components the preset's own text defined (the first source of a preset call) and which the model wrote.
     const idsOf = (from: (step: number) => boolean) =>

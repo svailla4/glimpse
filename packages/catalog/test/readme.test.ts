@@ -4,7 +4,7 @@ import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENTS, INSTRUCTIONS_BUDGET, INSTRUCTIONS_TARGET, SOURCE_BY_NAME, SOURCES, VIEW_INDEX, formatRef, parseFileLoc, serverInstructions, type A2uiMessage,
+  COMPONENTS, INSTRUCTIONS_BUDGET, INSTRUCTIONS_TARGET, SOURCE_BY_NAME, SOURCES, VIEW_INDEX, formatRef, notationKind, parseFileLoc, parseNotation, serverInstructions, type A2uiMessage,
 } from '../src/index.ts';
 import {compileExpress, expandRefs, strictErrors} from '../testing/index.ts';
 import {readText} from './support.ts';
@@ -102,6 +102,25 @@ describe('README: what it lists is what exists', () => {
     const graphs = SOURCES.filter(s => s.kind === 'graph').map(s => `\`${s.name}\``);
     expect(section(readme, 'Data sources')).toContain(`Three sources are graphs (${graphs.join(', ')}) and are drawn with \`Graph\``);
     expect(graphs).toHaveLength(3);
+  });
+
+  // Data as text: the section names every component whose data takes a notation (the Rows charts as 'the charts that
+  // take rows'), and the examples it gives parse as it says.
+  it('says which components take data as text, and its notation examples parse as it says', () => {
+    const data = section(readme, 'Data sources');
+    for (const def of COMPONENTS) {
+      if (!Object.keys(def.props).some(key => notationKind(def.name, key) !== undefined)) continue;
+      if (def.family === 'chart') expect(data, def.name).toContain('`List` and the charts that take rows');
+      else expect(data, def.name).toContain(`\`${def.name}\``);
+    }
+    expect(parseNotation('tasks', '- [x] A\n- [~] B')).toEqual({ok: true, ast: [{title: 'A', status: 'done'}, {title: 'B', status: 'doing'}]});
+    expect(parseNotation('table', '| v | n |\n|---|---|\n| 007 | 1,866 |\n| 1.10 | 12 |')).toMatchObject({ok: true, ast: [{v: '007', n: 1866}, {v: '1.10', n: 12}]});
+    const graph = parseNotation('graph', 'graph LR\na[A<br>sub]:::gone --> b:::modified\nstyle a fill:#f00\nclick a "src/a.ts#L10-20"');
+    expect(graph).toMatchObject({ok: true, ast: {nodes: [{id: 'a', label: 'A', sub: 'sub', status: 'deleted', file: 'src/a.ts#L10-20'}, {id: 'b', status: 'modified'}]}});
+    for (const slip of [['keyValue', 'Tests:true'], ['graph', 'a:::hot --> b'], ['table', '| a |\n| 1 |']] as const) {
+      const result = parseNotation(slip[0], slip[1]);
+      expect(result.ok && result.fixes?.length, slip[1]).toBe(1);
+    }
   });
 
   it('carries no absolute local path, user name or token', () => {

@@ -4,7 +4,7 @@ import {existsSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {serverInstructions, VIEWS} from '@glimpse/catalog';
+import {COMPONENT_BY_NAME, NOTATIONS, serverInstructions, signatureOf, VIEWS} from '@glimpse/catalog';
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
 import {catalogTool} from '../../src/mcp/catalogTool.ts';
 import {eventsTool} from '../../src/mcp/events.ts';
@@ -16,7 +16,7 @@ import {showRequest, showTool} from '../../src/mcp/show.ts';
 import {VERSION} from '../../src/mcp/version.ts';
 import {EventQueue} from '../../src/session/events.ts';
 import {codeShare, firstCodeLine, type ShowOutcome} from '../../src/session/session.ts';
-import {problem, SpecError} from '../../src/spec/errors.ts';
+import {NOTHING_RENDERED, problem, SpecError} from '../../src/spec/errors.ts';
 import {fakeDeps, fixedSource, tempRoot, testSession, type TestSession} from '../session/fakes.ts';
 
 /** Whether the temporary directory's file system ignores case (macOS and Windows by default; Linux does not). */
@@ -158,6 +158,40 @@ describe('showTool', () => {
     const second = body(await showTool(t.session, {id: 'demo', spec: '$/n=1'}, 500));
     expect(second).not.toContain('repo ');
     expect(body(await showTool(t.session, {view: 'stack'}, 500)).split('\n')[1]).toMatch(/^repo /);
+  });
+
+  // Data as text, every notation through show: drawn (ok, nothing repaired), repaired (a `fixed` line), or refused
+  // (E_NOTATION with line and column, the signature, the notation's grammar, and nothing rendered).
+  it.each([
+    ['Graph', 'graph', 'graph LR\\nsubgraph api[API]\\nr[routes<br>express]:::new -->|calls| s[service]\\nend', 'graph LR\\na:::hot --> b', /^fixed Graph#x\.data line 2: ':::hot' dropped \(status: new changed gone affected\)$/, 'graph LR\\na => b'],
+    ['ERDiagram', 'er', 'erDiagram\\nusers ||--o{ orders : places\\nusers {\\nuuid id PK\\n}', 'erDiagram\\nusers {\\nuuid id PK', /^fixed ERDiagram#x\.data line \d+: users \{ closed at the end$/, 'erDiagram\\nusers ||--o{ orders : places\\nwhat is this'],
+    ['DataTable', 'table', '| path | loc |\\n|---|---|\\n| src/a.ts | 120 |', '| path | loc |\\n| src/a.ts | 120 |', /^fixed DataTable#x\.data line 1: no \|---\| row under the header: line 1 read as the header$/, '| a | b |\\n|---|---|\\n| 1 | 2 | 3 |'],
+    ['List', 'table', '| title | value |\\n|---|---|\\n| redis | 14 |', '| title | value |\\n| redis | 14 |', /^fixed List#x\.data line 1: no \|---\| row/, '| a |\\n|---|\\n| 1 | 2 |'],
+    ['Steps', 'tasks', '- [x] Add the middleware\\n- [~] Wire the router — behind a flag\\n- [ ] Tests', '- [x] a\\n- [o] b', /^fixed Steps#x\.data line 2: '\[o\]' read as '\[ \]' \(marks: x ~ space ! -\)$/, '- [x] a\\nnope'],
+    ['KeyValue', 'keyValue', 'Language: TypeScript\\nTests: true', 'Language: TypeScript\\nTests:true', /^fixed KeyValue#x\.data line 2: 'Tests:true' read as 'Tests: true'$/, 'Key: value\\nnope'],
+    ['Stats', 'stats', 'Files: 412\\nCoverage: 87% (+2)', 'Files: 412\\nTests:9', /^fixed Stats#x\.data line 2: 'Tests:9' read as 'Tests: 9'$/, 'Files: 412\\nnope'],
+    ['Layers', 'layers', 'API: routes, middleware\\nDomain: ledger [[src/ledger.ts]] — no I/O', undefined, undefined, 'API: routes\\nnope'],
+  ] as const)('%s data as text through show: drawn, repaired, or refused', async (name, kind, good, slip, fixed, bad) => {
+    const t = start();
+    const view = (text: string) => `root=Page('T',[x])\nx=${name}('${text}')`;
+    const stored = () => JSON.stringify([...t.session.surfaces.get('n')!.components.values()]);
+    const ok = body(await showTool(t.session, {id: 'n', spec: view(good)}, 50)).split('\n');
+    expect(ok[0]).toMatch(/^ok n /);
+    expect(ok.filter(line => /^(E_|fixed )/.test(line))).toEqual([]);
+    expect(t.session.surfaces.get('n')!.components.get('x')!.data).not.toBeTypeOf('string');
+    expect(stored()).not.toContain(good.split('\\n')[0]!);
+    if (slip !== undefined) {
+      const repaired = body(await showTool(t.session, {id: 'n', spec: view(slip)}, 50)).split('\n');
+      expect(repaired[0]).toMatch(/^ok n /);
+      expect(repaired.filter(line => line.startsWith('fixed '))).toEqual([expect.stringMatching(fixed!)]);
+    }
+    const before = stored();
+    const refused = await showTool(t.session, {id: 'n', spec: view(bad)}, 50);
+    expect(refused.isError).toBe(true);
+    const lines = body(refused).split('\n');
+    expect(lines[0]).toMatch(new RegExp(`^E_NOTATION ${name}#x\\.data line \\d+ col \\d+: .+\\. Example: `));
+    expect(lines.slice(-3)).toEqual([`sig ${signatureOf(COMPONENT_BY_NAME.get(name)!)}`, `notation ${NOTATIONS[kind].sig}`, NOTHING_RENDERED]);
+    expect(stored()).toBe(before);
   });
 
   // Catalog handoff for finding F092: the gallery's outline read README.md and was always empty.
@@ -484,12 +518,24 @@ describe('catalogTool', () => {
     }
   });
 
+  // 1,100: a component that takes data as text also shows its notation (the catalog's componentDoc cap since then).
   it('per-name answers stay small', async () => {
     for (const name of ['DataTable', 'Page', 'Graph', 'git.hotspots', 'files.tree']) {
       const length = body(await catalogTool({names: [name]}, undefined)).length;
       expect(length, name).toBeGreaterThan(60);
-      expect(length, name).toBeLessThan(1000);
+      expect(length, name).toBeLessThan(1100);
     }
+  });
+
+  it('the grammar says which data props take data as text, and its example of it draws', async () => {
+    const grammar = body(await catalogTool({names: ['grammar']}, undefined));
+    expect(grammar).toContain('a $/path, inline data, or data as text (rule 9)');
+    const rule = grammar.split('\n').find(line => line.startsWith('9. '))!;
+    for (const name of ['Graph', 'ERDiagram', 'DataTable', 'List', 'Steps', 'KeyValue', 'Stats', 'Layers']) expect(rule, name).toContain(name);
+    const t = start();
+    const result = body(await showTool(t.session, {id: 'g', spec: "root=Page('T',[Steps('- [x] a\\n- [ ] b')])"}, 50));
+    expect(result.split('\n')[0]).toMatch(/^ok g /);
+    expect(t.session.surfaces.get('g')!.components.get('root_children_0')!.data).toEqual([{title: 'a', status: 'done'}, {title: 'b', status: 'todo'}]);
   });
 
   it('accepts bare view names, scoped views, and fuzzy names, stating the substitution', async () => {

@@ -1,7 +1,8 @@
 import {parseSequence, type SeqAst} from '@glimpse/catalog';
 import {screen, waitFor} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
-import {MAX_STEPS, planSequence} from '../../src/components/diagrams/SequenceDiagram.tsx';
+import {UI_12, textWidth} from '../../src/components/diagrams/flowkit/index.ts';
+import {MAX_STEPS, planSequence, wrapWidth} from '../../src/components/diagrams/SequenceDiagram.tsx';
 import {buildPatch, buildSurface, renderExpress, renderSpec} from '../harness.tsx';
 import {focus, key} from './util.tsx';
 
@@ -134,7 +135,71 @@ describe('SequenceDiagram', () => {
   });
 });
 
+// Measurement (notations round): 'alt tokens left … else bucket empty … end' was drawn as one numbered run, so a
+// branch that never runs with the other read as if it did.
+describe('SequenceDiagram blocks', () => {
+  const RATE = 'sequenceDiagram\nparticipant A as Agent\nparticipant S as Server\nparticipant L as Limiter\nA->>S: show\nS->>L: take\nalt tokens left\nL-->>S: ok\nS-->>A: rendered\nelse bucket empty\nL-->>S: deny\nS-->>A: retry later\nend\nA->>S: next';
+
+  it('draws an alt as a labelled frame with a divider, round the steps of its branches only', async () => {
+    const view = await ready(RATE.replace(/\n/g, '\\n'));
+    const cell = view.cell('s');
+    const frame = cell.querySelector('[data-frame="alt"]')!;
+    expect(frame).not.toBeNull();
+    expect([...frame.querySelectorAll('text')].map(t => t.textContent)).toEqual(['alt', '[tokens left]', '[bucket empty]']);
+    expect(frame.querySelectorAll('[data-divider]')).toHaveLength(1);
+    // the steps stay numbered and navigable; the frame is not a step
+    expect(cell.querySelectorAll('[data-step]')).toHaveLength(7);
+    const stage = screen.getByRole('img', {name: /^Sequence diagram/});
+    focus(stage);
+    for (let i = 0; i < 5; i++) key(stage, 'ArrowDown');
+    expect(cell.querySelector('[aria-live]')!.textContent).toBe('5. Limiter to Server, reply: deny (alt bucket empty)');
+  });
+
+  it('plans the frame from the first step of the block to the last, the divider between the branches', () => {
+    const plan = planSequence(ast(RATE), 700);
+    const [frame] = plan.frames;
+    const rows = plan.rows.filter(row => row.kind === 'message');
+    const inside = rows.slice(2, 6);
+    expect(frame!.y).toBeLessThan(inside[0]!.y);
+    expect(frame!.y).toBeGreaterThan(rows[1]!.y + rows[1]!.h - 1);
+    expect(frame!.y + frame!.h).toBeGreaterThan(inside[3]!.y + inside[3]!.h - 1);
+    expect(frame!.y + frame!.h).toBeLessThan(rows[6]!.y);
+    expect(frame!.dividers[0]!.y).toBeGreaterThan(inside[1]!.y + inside[1]!.h - 1);
+    expect(frame!.dividers[0]!.y).toBeLessThan(inside[2]!.y);
+    // it holds the lifelines its steps use, with room to spare, inside the drawing
+    const [a, , l] = plan.actors.map(actor => actor.x);
+    expect(frame!.x).toBeLessThan(a!);
+    expect(frame!.x + frame!.w).toBeGreaterThan(l!);
+    expect(frame!.x).toBeGreaterThanOrEqual(0);
+    expect(frame!.x + frame!.w).toBeLessThanOrEqual(plan.width);
+  });
+
+  it('nests frames inside their parent, and closes one left open at the end', () => {
+    const plan = planSequence(ast('A->>B: x\nloop every 5s\nA->>B: poll\nopt changed\nB-->>A: rows\nend\nend\nalt broken\nA->>B: y'), 600);
+    const [loop, opt, alt] = plan.frames;
+    expect([loop!.op, opt!.op, alt!.op]).toEqual(['loop', 'opt', 'alt']);
+    expect(opt!.depth).toBe(1);
+    expect(opt!.x).toBeGreaterThan(loop!.x);
+    expect(opt!.x + opt!.w).toBeLessThan(loop!.x + loop!.w);
+    expect(opt!.y + opt!.h).toBeLessThan(loop!.y + loop!.h);
+    expect(alt!.h).toBeGreaterThan(30);
+    expect(plan.height).toBeGreaterThan(alt!.y + alt!.h);
+  });
+});
+
 describe('planSequence', () => {
+  // Measurement (notations round): 'auth-flow-2026-11-20.html' was cut to 'auth-flow-202…' between two lifelines of a
+  // span=7 plate: a label of one word cannot take a second line, so its gap needs all of it.
+  it('keeps a one-word label whole: its gap is as wide as the word', () => {
+    const src = 'sequenceDiagram\nactor U as User\nparticipant V as Viewer tab\nparticipant S as ExportService\nparticipant B as SnapshotBuilder\nparticipant R as Source resolvers\nU->>V: click Export\nV->>S: POST /api/export viewId\nS->>B: build(view spec)\nB->>R: resolve each data ref\nR-->>B: rows\nB-->>S: spec + data snapshot\nS->>S: inline runtime.js, css, snapshot\nS-->>V: auth-flow-2026-11-20.html\nV-->>U: download';
+    for (const width of [722, 600]) {
+      const plan = planSequence(ast(src), width);
+      for (const row of plan.rows) if (row.kind === 'message') expect(row.lines.join(' '), `at ${width}`).toBe(row.full);
+    }
+    expect(wrapWidth('auth-flow-2026-11-20.html')).toBe(Math.ceil(textWidth('auth-flow-2026-11-20.html', UI_12)));
+    expect(wrapWidth('POST /api/export viewId')).toBeGreaterThanOrEqual(Math.ceil(textWidth('POST /api/export', UI_12)));
+  });
+
   it('keeps lifelines at least 140 px apart and widens a gap for the label that crosses it', () => {
     const plan = planSequence(ast('A->>B: hi; B->>C: a label that is clearly longer than the minimum column'), 0);
     const [a, b, c] = plan.actors.map(actor => actor.x);

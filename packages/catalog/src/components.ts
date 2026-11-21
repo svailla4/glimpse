@@ -163,7 +163,7 @@ export const Callout = component('Callout', {
   kind: opt(p.enum(['note', 'tip', 'warn', 'risk', 'decision', 'question'], 'Tag and colour. Default note.', {
     info: 'note', information: 'note', warning: 'warn', caution: 'warn', danger: 'risk', error: 'risk', critical: 'risk',
     success: 'tip', hint: 'tip', idea: 'tip',
-  })),
+  }, ['info', 'success'])),
   title: opt(p.text('Bold lead-in.')),
   file: opt(p.text("File anchor 'path#L10-20'.")),
   ...CELL,

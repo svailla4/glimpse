@@ -30,6 +30,15 @@ describe('Layers', () => {
     expect(view.errors).toEqual([]);
   });
 
+  // Measurement (notations round): a tier written as a sentence ('Store: .cache/<key>.json on disk, one file per
+  // result') is read by the server as the tier's note; the band then gives the note the boxes' place.
+  it('marks a tier that has only a note as bare, and no other', async () => {
+    const view = await ready(`root=Page('T',[l])\nl=Layers([{name:'Store',items:[],note:'one file per result'},{name:'API',items:['routes'],note:'thin'},{name:'Empty',items:[]}])`);
+    const cell = view.cell('l');
+    expect(bands(cell).map(band => band.hasAttribute('data-bare'))).toEqual([true, false, false]);
+    expect(within(bands(cell)[0] as HTMLElement).getByText('one file per result')).toBeTruthy();
+  });
+
   it('makes items with a file entities: click selects, the rest dims, Cmd-click opens', async () => {
     const view = await ready();
     const cell = view.cell('l');

@@ -1,6 +1,6 @@
 // Pins the Express compiler's message texts (design 6.6) and their mapping to Glimpse error codes. A failure here
 // after an @a2ui/agent upgrade means the patterns in src/spec/errors.ts need updating, not these expectations.
-import {normalizeSpec} from '@glimpse/catalog';
+import {normalizeSpec, NOTATIONS} from '@glimpse/catalog';
 import {beforeAll, describe, expect, it} from 'vitest';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
 import {classifyCompileError, closeMatch, compilerText, editDistance, flatten, formatProblems, nearest, NOTHING_RENDERED, oneLine, problem, readsAsViewerLine, SpecError} from '../../src/spec/errors.ts';
@@ -143,6 +143,25 @@ describe('formatProblems', () => {
 
   it('keeps every problem on one line and omits the last line on request', () => {
     expect(formatProblems([problem('E_SPEC', 'two\nlines\tand tabs')], null)).toBe('E_SPEC two lines and tabs');
+  });
+
+  it('after the signature, prints the notation the problem that gave it is about', () => {
+    const bad = problem('E_NOTATION', 'Steps#plan.data line 1 col 1: step has no title. Example: - [x] Ship the map', {component: 'Steps', notation: 'tasks'});
+    expect(formatProblems([problem('E_PATH', 'first'), bad]).split('\n')).toEqual([
+      'E_PATH first',
+      'E_NOTATION Steps#plan.data line 1 col 1: step has no title. Example: - [x] Ship the map',
+      'sig Steps(data, current?)',
+      `notation ${NOTATIONS.tasks.sig}`,
+      NOTHING_RENDERED,
+    ]);
+    // the signature comes from a problem without a notation: no notation line, even if a later problem has one
+    const plain = problem('E_ENUM', 'DataTable.columns column 1: unknown kind', {component: 'DataTable'});
+    expect(formatProblems([plain, bad]).split('\n')).toEqual([
+      'E_ENUM DataTable.columns column 1: unknown kind',
+      'E_NOTATION Steps#plan.data line 1 col 1: step has no title. Example: - [x] Ship the map',
+      'sig DataTable(data, columns?, sort?, search?, group?)',
+      NOTHING_RENDERED,
+    ]);
   });
 });
 

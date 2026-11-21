@@ -212,7 +212,8 @@ describe('catalog and query', () => {
     // Finding F043: Glimpse's own rules, not the upstream prompt's 3,900 characters.
     expect(grammar.text).toContain('No <a2ui> tags');
     expect(grammar.text).not.toContain('deleteSurface');
-    expect(grammar.text.length).toBeLessThan(1600);
+    // 1,800 since rule 9 (data as text); read only on request.
+    expect(grammar.text.length).toBeLessThan(1800);
     expect((await call(client, 'catalog', {names: ['examples']})).text).toContain('# Explain a module');
 
     const unknown = await call(client, 'catalog', {names: ['zzzzzz']});

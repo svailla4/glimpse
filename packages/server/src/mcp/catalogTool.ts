@@ -31,8 +31,9 @@ export const GRAMMAR = [
   "4. Arguments are positional in signature order, then name=value. _ skips an optional positional: Grid([a,b],_,'m'). Children are a list of names or nested calls: [intro, Text('x')].",
   "5. Values: 'single' or \"double\" quoted strings (an apostrophe inside single quotes is fine: 'doesn't'; \\n is a line break), numbers, true, false, null, [lists] and {key: value} objects.",
   "6. $/path=value sets data: $/plan=[{title:'A',status:'done'}], then $/plan/0/status='doing'. $/path as an argument binds to it: Steps($/plan). /ds and /meta belong to the server.",
-  "7. A data argument is a source ref string ('git.churn src top=20'), a $/path or inline data. Refs run locally and are never sent to you.",
+  "7. A data argument is a source ref string ('git.churn src top=20'), a $/path, inline data, or data as text (rule 9). Refs run locally and are never sent to you.",
   '8. # or // starts a comment. Text that is not a statement is ignored and reported; a spec cut off mid-call has its brackets closed and says so.',
+  "9. Data as text, one item per line (\\n or a line break inside the quotes): Graph a Mermaid graph (a[A<br>sub]:::new, subgraph g[Title] ... end, click a \"path#L10\"), ERDiagram a Mermaid erDiagram, DataTable, List and charts a Markdown table, Steps a task list ('- [x] done — note', [~] doing, [ ] todo), KeyValue and Stats 'Key: value' lines, Layers 'Tier: a, b — note' lines. Errors give the line and column.",
 ].join('\n');
 
 function index(): string {

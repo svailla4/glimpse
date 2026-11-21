@@ -123,7 +123,7 @@ function LayersBody(p: {id: string; data: unknown}) {
     <div ref={rootRef} className={css.root} style={{maxHeight: cap}} role="group" aria-label={ariaLabel} onKeyDown={onKeyDown}>
       {notes.length > 0 ? <PlateAside><span className={css.marginal} data-gl-note="">{notes.join(' · ')}</span></PlateAside> : null}
       {clean.bands.map((band, b) => (
-        <section key={b} className={css.band} data-layer={band.name} data-first={b === 0 || undefined} aria-label={band.name}>
+        <section key={b} className={css.band} data-layer={band.name} data-first={b === 0 || undefined} data-bare={(band.items.length === 0 && band.more === 0 && band.note !== undefined) || undefined} aria-label={band.name}>
           <h4 className={css.name} title={band.name}>{band.name}</h4>
           <ul className={css.items}>
             {band.items.map((item, i) => {

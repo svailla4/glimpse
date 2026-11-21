@@ -13,16 +13,16 @@ FAST: show{view:"overview"}. Views: overview, stack, feature, gallery, tree|deps
 CUSTOM: show{id:"auth-flow", spec} with spec in A2UI Express:
   root=Page('Title',[...])  nested calls; positional args in signature order, then name=value; _ skips an optional
   name=Comp(...)  named part: usable as a child, patchable later
-  $/path=value  set data, e.g. $/plan=[{title:'A',status:'doing'}]; $/path as an argument binds to it
+  $/path=value  set data, e.g. $/plan='- [ ] A'; $/path as an argument binds to it
   'single' or "double" quoted strings; statements end with newline or ';'
 PATCH: show{id, spec} without root= changes only what it names: $/path=... or name=Comp(...) (a new name is appended). A preset's id is its view name; results list the parts. root= replaces the layout and keeps the data.
-DATA: a data argument is a source ref, a $/path or small inline rows. Ref: '<source> [path|range|symbol] [top=N] [since=90d]', e.g. DataTable('git.churn src/auth top=20') or BarChart('git.churn by=module'). Results list the fields; tables and charts pick columns and axes. data? omitted = the default source.
+DATA: a data argument is a source ref, a $/path or inline data. Ref: '<source> [path|range|symbol] [top=N] [since=90d]', e.g. DataTable('git.churn src/auth top=20') or BarChart('git.churn by=module'). Results list the fields; tables and charts pick columns and axes. data? omitted = the default source.
 Sources: files.{tree list langs} repo.{kpis stack packages scripts} deps.{modules files cycles external matrix} git.{log activity timeline churn hotspots authors coupling} diff.{stats files tree impact} code.{symbols refs todos}
 Graphs (deps.modules, deps.files, diff.impact) need Graph().
-ROWS you write: Stats|KeyValue [{label,value}] Layers [{name,items:['a','b']}] ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}]
+DATA AS TEXT, a line per item: Graph (architecture)|ERDiagram Mermaid graph|erDiagram (a[A<br>sub]:::new|changed|gone, click a "path"); DataTable|List|charts Markdown table; Steps '- [ ] Cache — on disk' [x] done [~] doing; Stats|KeyValue 'Key: value'; Layers 'UI: Tabs, Nav — Vue'
 CODE: CodeView('src/a.ts#L10-40') and DiffView('main..HEAD') read from disk; DiffView() is the live working tree; files are 'path#L10-20' everywhere.
 LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it, so FileTree() beside CodeView() is a file browser.
-SHARED, not listed below: span=1..12 on all (12-column grid); title= (numbered plate), note=, size=s|m|l|xl|fill (only a max height) on Text, Markdown, Chips, Stats, KeyValue, Steps, List, Data, Charts, Diagrams, Code (not Sparkline, CodeBlock).
+SHARED, not listed below: span=1..12 on all; title= (numbered plate), note=, size=s|m|l|xl|fill (only a max height) on Text, Markdown, Chips, Stats, KeyValue, Steps, List, Data, Charts, Diagrams, Code (not Sparkline, CodeBlock).
 Components (? optional; catalog{} lists more):
 Layout: Page|Section(title, children, subtitle?) Plate(title, children, note?) Grid(children, cols?, gap?) Row|Column(children, gap?, align?) Tabs(labels, children) Split(start, end, ratio?)
 Content: Text(text, tone?) Markdown(text) Callout(text, kind?, title?, file?) KeyValue(data, cols?) Chips|Stats(data?) FileRef(file, label?) Steps(data) Stat(value, label?, delta?) List(data, limit?)
