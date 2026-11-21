@@ -52,6 +52,10 @@ Before calling work done: `check`, `test`, `build` and `budgets` pass, and `e2e`
   `SHAPES` (docs.ts); prop docs point at them instead of repeating them.
 - **Accept a reasonable guess, and say so.** Aliases are rewritten with a `fixed` line; what cannot be drawn becomes a
   `warn` line or a `W_*` render report. Never drop what the author wrote without telling the model.
+- **No invented string formats (D22).** A value an author writes is data (objects and lists), or follows a convention
+  models already know: `path#L10-20` (GitHub), `main..HEAD` (git), `'git.churn src top=20'` (a command line). A new
+  prop never gets a grammar of its own. Every string format that exists reads what it can, says what it corrected
+  (`fixed`) and says what it could not read (`warn`, or a `W_*` report from the tab); it never falls back silently.
 - **The server and the viewer share pure functions from the catalog**, so they always agree on what a value means.
 - Do not commit `plugin/dist`. Never add a shipped dependency without a licence the build allows (`scripts/notices.ts`).
 
@@ -71,3 +75,23 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   for data a patch wrote). Mermaid text is refused with `E_SHAPE` and an example of the data to write instead.
   Flowchart groups are drawn as nested frames by flowkit; sequence blocks (loop, alt, opt, par, critical, break,
   group, with `else` branches) are drawn as frames.
+- **D22: no invented string formats; no silent fallbacks (2026-11-21).** After D21, every prop whose string Glimpse
+  takes apart was audited. One was an invented grammar; four read what they could and dropped the rest without a word.
+  Why: the cost of a format is not its syntax but what happens when a model gets it wrong. A wrong value that is
+  reported is fixed in one step; one that is dropped silently is never fixed. Now:
+  - DataTable `columns` takes a list, `['path', {key:'commits', kind:'bar'}, {key:'last', kind:'date', label:'Last
+    change'}]`, read by `readColumns` (catalog `notation.ts`). The presets' shorthand `'path commits:bar'` still reads.
+    `columns` is a `value` prop (a DynamicValue the component reads itself), since a static prop may not be a union.
+    Unknown kind: `E_ENUM`; entry with no key: left out, `warn`; unchecked data in the tab: `W_COLUMNS`.
+  - Grid `cols` (`normalizeCols`, catalog `grid.ts`): `'2fr 1fr'`, `'50% 50%'`, `'two'` are rewritten with a `fixed`
+    line; anything else draws equal columns with a `warn` line; the tab reports `W_COLS`.
+  - Split `ratio`: a share rewritten to `'a:b'` is a `fixed` line; an unreadable ratio is a `warn` line.
+  - CodeView and CodeBlock `mark` (`readLineMarks`, catalog `datasets.ts`): `'lines 10-20'`, `'10..20'`, `'20-10'` are
+    rewritten with a `fixed` line; unreadable parts are a `warn` line; the tab reports `W_MARK`, also for marks past
+    the last line.
+  - `[[path#L10]]` refs in literal Text, Callout, Ask and Markdown (`FILE_REF`, `fileRefs`, catalog `datasets.ts`) are
+    checked like file props: missing files, directories and wrong case are reported at show time.
+  Kept as they are, because models already know them and errors come back with suggestions: source refs
+  (`'git.churn src top=20'`), view refs, `path#L10-20`, git ranges, `sort='-field'`, ERDiagram `fk:'users.id'`.
+  Not done: `[[...]]` refs in text bound to a `$/path`, in Steps notes and in Markdown links are not checked, and a
+  file ref past the last line is reported nowhere.
