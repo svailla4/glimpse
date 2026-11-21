@@ -1,8 +1,8 @@
 // Flowchart: nodes, edges and groups written as data, drawn as shapes on the dot grid (design 5.6, decision D21).
 import type * as C from '@glimpse/catalog';
-import {cleanFlow, type FlowAst, type FlowShape} from '@glimpse/catalog';
+import {cleanFlow, parseFileLoc, type EntityRef, type FlowAst, type FlowNode, type FlowShape} from '@glimpse/catalog';
 import {useMemo, type ReactNode} from 'react';
-import {DataGate, Empty, Redline, fmtNum, useDataset, useReportState, type GlView} from '../../kit/index.ts';
+import {DataGate, Empty, Redline, fmtNum, useDataset, useReportState, useSelection, type GlView} from '../../kit/index.ts';
 import {Diagram, UI_12, textWidth, wrapText, type DiagramEdge, type DiagramGroup, type DiagramNode, type Dir, type NodeFlags} from './flowkit/index.ts';
 import css from './Flowchart.module.css';
 
@@ -13,7 +13,8 @@ const MAX_LINES = 3;
 /** Beyond this a flowchart is no longer a picture; the layout would also hold the page up. */
 export const MAX_NODES = 150;
 
-interface NodeDraw { shape: FlowShape; lines: string[] }
+/** `noted`: the node has a note or a file (decision D24), marked with a dot in its corner. */
+interface NodeDraw { shape: FlowShape; lines: string[]; noted: boolean }
 
 const even = (v: number) => Math.ceil(v / 2) * 2;
 
@@ -56,17 +57,29 @@ function outline(shape: FlowShape, w: number, h: number): ReactNode {
 }
 
 function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
-  const {shape, lines} = node.data;
+  const {shape, lines, noted} = node.data;
   // A cylinder's lid takes the top of the box: its label sits a little lower.
   const cy = node.h / 2 + (shape === 'store' ? 4 : 0);
   return (
-    <g className={css.body} data-shape={shape} data-selected={flags.selected || undefined}>
+    <g className={css.body} data-shape={shape} data-selected={flags.selected || undefined} data-noted={noted || undefined}>
       {outline(shape, node.w, node.h)}
       <text className={css.text}>
         {lines.map((line, i) => <tspan key={i} x={node.w / 2} y={cy + (i - (lines.length - 1) / 2) * LINE}>{line}</tspan>)}
       </text>
+      {noted ? <circle className={css.noted} cx={node.w - 7} cy={7} r={2.5} /> : null}
     </g>
   );
+}
+
+/** What a node's note and file say, for its tooltip and the plate's margin (decision D24). */
+const aboutOf = (node: FlowNode): string | undefined => [node.note, node.file].filter(Boolean).join(' · ') || undefined;
+
+/** Decision D24: a node selects itself; with a file it also carries the path, so CodeView follows and Cmd-click opens. */
+function entityOf(node: FlowNode): EntityRef {
+  const entity: EntityRef = {type: 'node', id: node.id, label: node.label};
+  if (node.file === undefined) return entity;
+  const {path, line, endLine} = parseFileLoc(node.file);
+  return {...entity, path, ...(line != null ? {line} : {}), ...(endLine != null ? {endLine} : {})};
 }
 
 function toDiagram(ast: FlowAst): {nodes: Array<DiagramNode<NodeDraw>>; edges: DiagramEdge[]; groups: DiagramGroup[]} {
@@ -77,9 +90,10 @@ function toDiagram(ast: FlowAst): {nodes: Array<DiagramNode<NodeDraw>>; edges: D
       ...sizeOf(node.shape, lines),
       shape: node.shape === 'box' ? ('rect' as const) : node.shape,
       ...(node.group !== undefined ? {group: node.group} : {}),
-      entity: {type: 'node' as const, id: node.id, label: node.label},
+      entity: entityOf(node),
       label: node.label,
-      data: {shape: node.shape, lines},
+      detail: aboutOf(node),
+      data: {shape: node.shape, lines, noted: node.note !== undefined || node.file !== undefined},
     };
   });
   const edges = ast.edges.map((edge, i) => ({key: String(i), from: edge.from, to: edge.to, label: edge.label, dashed: edge.dashed === true}));
@@ -94,6 +108,14 @@ function FlowBody(p: {id: string; data: unknown; dir: Dir | undefined}) {
   // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
   const dropped = cleaned.ok ? cleaned.dropped : [];
   useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
+  // Decision D24: the selected node's note is in the plate's margin, for touch and click readers (hovering shows it too).
+  const {selected} = useSelection(id);
+  const picked = useMemo(() => {
+    if (!cleaned.ok || selected?.type !== 'node') return undefined;
+    const node = cleaned.ast.nodes.find(n => n.id === selected.id);
+    const about = node ? aboutOf(node) : undefined;
+    return node && about ? `${node.label}: ${about}` : undefined;
+  }, [cleaned, selected]);
 
   if (!cleaned.ok) return <Redline code="E_SHAPE" id={`Flowchart#${id}`} message={cleaned.error} />;
   if (!model || model.nodes.length === 0) return <Empty message="no nodes to draw: Flowchart takes {nodes, edges, groups?}" />;
@@ -111,7 +133,7 @@ function FlowBody(p: {id: string; data: unknown; dir: Dir | undefined}) {
       groups={model.groups}
       dir={dir}
       ariaLabel={ariaLabel}
-      note={dropped.length > 0 ? `${fmtNum(dropped.length)} not drawn` : undefined}
+      note={[picked, dropped.length > 0 ? `${fmtNum(dropped.length)} not drawn` : undefined].filter(Boolean).join(' · ') || undefined}
       renderNode={drawNode}
       // Shapes hold 12 px text: the stage opens no further out than keeps it at 10 px. (Edge labels grow when zoomed out.)
       minText={12}

@@ -7,7 +7,7 @@ import {useEffect, useRef, useState} from 'react';
 import {describe, expect, it, vi} from 'vitest';
 import {
   DataGate, Drafting, Empty, Frame, KitProvider, PathText, PlateAside, Redline, Subpart, assignSlots, borrowView, catVar, dropDirs, elidePath, fileEntity, nameTail,
-  isFrameable, isOtherKey, matchSelection, reportCode, splitPath, useCatSlots, useDataset, useHostActions, useLinkStatus, useReportState, useRows,
+  hubOf, isFrameable, isOtherKey, linkedEntity, marksSelection, matchSelection, reportCode, splitPath, useCatSlots, useDataset, useHostActions, useLinkStatus, useReportState, useRows,
   useSelection, useSize, useTooltip, widthBoxOf, type GlView,
 } from '../../src/kit/index.ts';
 import {COMPONENT_BY_NAME, hasFrame} from '@glimpse/catalog';
@@ -813,6 +813,79 @@ describe('one selection rule (F085)', () => {
     expect(matchSelection(dir('src'), {type: 'author', id: 'Mira', path: 'src/a.ts'})).toBeUndefined();
     expect(matchSelection({type: 'commit', id: 'abc', path: 'src'}, file('src/a.ts'))).toBeUndefined();
     expect(matchSelection({type: 'author', id: 'Mira'}, {type: 'author', id: 'Mira'})).toBe('exact');
+  });
+
+  // Decision D24: one hub of diagram node ids. The worked cases of the design, on a ticketing page: tables of one
+  // schema.sql (each with its own lines) carry node:'PG', a Layers item and a table row name PG, actor G stands for GW.
+  describe('links through diagram node ids (D24)', () => {
+    const nodePG: EntityRef = {type: 'node', id: 'PG', label: 'Postgres'};
+    const orders: EntityRef = {type: 'node', id: 'orders', label: 'orders', path: 'db/schema.sql', line: 10, endLine: 30, nodes: ['PG']};
+    const payments: EntityRef = {type: 'node', id: 'payments', label: 'payments', path: 'db/schema.sql', line: 31, endLine: 50, nodes: ['PG']};
+    const layersPG = linkedEntity(undefined, ['PG'], {id: 'tiers:Postgres', label: 'Postgres'})!;
+    const row: EntityRef = {type: 'row', id: 'rows:System of record', label: 'System of record', nodes: ['PG']};
+    const toPG: EntityRef = {type: 'message', id: 'co:5', label: '5. Orders to Postgres: insert', nodes: ['Ord', 'PG']};
+    const msg3: EntityRef = {type: 'message', id: 'co:3', label: '3. Gateway to Inventory: hold seats', nodes: ['GW', 'Inv']};
+    const msg1: EntityRef = {type: 'message', id: 'co:1', label: '1. User to Gateway: POST /checkout', nodes: ['Client', 'CDN', 'Q', 'GW']};
+    const node = (id: string): EntityRef => ({type: 'node', id});
+    const actorG = node('GW');
+    const schema = file('db/schema.sql');
+
+    it.each<[string, EntityRef, Array<[EntityRef, string | undefined]>]>([
+      ['node PG', nodePG, [[nodePG, 'exact'], [layersPG, 'exact'], [orders, 'linked'], [payments, 'linked'], [row, 'linked'], [toPG, 'linked'], [msg3, undefined]]],
+      ['table orders', orders, [[orders, 'exact'], [nodePG, 'linked'], [layersPG, 'linked'], [row, 'linked'], [payments, undefined], [toPG, undefined]]],
+      ['the row', row, [[row, 'exact'], [nodePG, 'linked'], [orders, 'linked'], [payments, 'linked'], [layersPG, 'linked'], [toPG, 'linked']]],
+      ['message 3', msg3, [[node('GW'), 'linked'], [node('Inv'), 'linked'], [actorG, 'linked'], [{...msg3, id: 'other:2'}, 'linked'], [msg1, undefined], [nodePG, undefined]]],
+      ['message 1 (via CDN, Q)', msg1, [[node('Client'), 'linked'], [node('CDN'), 'linked'], [node('Q'), 'linked'], [node('GW'), 'linked'], [msg3, undefined]]],
+      ['actor G', actorG, [[node('GW'), 'exact'], [msg3, 'linked'], [msg1, 'linked'], [nodePG, undefined]]],
+      ['the file schema.sql', schema, [[orders, 'exact'], [payments, 'exact'], [nodePG, undefined], [row, undefined]]],
+    ])('selecting %s', (_name, selection, cases) => {
+      expect(cases.map(([entity]) => matchSelection(selection, entity))).toEqual(cases.map(([, how]) => how));
+      for (const [entity, how] of cases) expect(marksSelection(selection, entity)).toBe(how === 'exact' || how === 'linked');
+    });
+
+    it('a self-message, a row standing for several nodes, and nodes of one file', () => {
+      const self: EntityRef = {type: 'message', id: 's:2', label: '2. A to itself: tick', nodes: ['A', 'A']};
+      expect(hubOf(self)).toEqual(['A']);
+      expect(matchSelection(self, node('A'))).toBe('linked');
+      // an author-written row naming two nodes lights with either, and lights each; a table standing for PG and
+      // itself does not stand for both
+      const stores: EntityRef = {type: 'row', id: 'l:Stores', label: 'Stores', nodes: ['PG', 'Redis']};
+      expect(matchSelection(node('PG'), stores)).toBe('linked');
+      expect(matchSelection(node('Redis'), stores)).toBe('linked');
+      expect(matchSelection(stores, node('PG'))).toBe('linked');
+      expect(matchSelection(stores, orders)).toBeUndefined();
+      // two nodes of one file are one place only where their lines meet; a node without lines is the whole file
+      expect(matchSelection(orders, payments)).toBeUndefined();
+      expect(matchSelection({type: 'node', id: 'a', path: 'x.sql', line: 10, endLine: 30}, {type: 'node', id: 'b', path: 'x.sql', line: 25})).toBe('exact');
+      expect(matchSelection({type: 'node', id: 'a', path: 'x.sql'}, {type: 'node', id: 'b', path: 'x.sql', line: 5})).toBe('exact');
+      // a line of the file selected elsewhere is the place of the table whose lines hold it
+      expect(matchSelection({...schema, line: 12}, orders)).toBe('exact');
+      expect(matchSelection({...schema, line: 40}, orders)).toBeUndefined();
+      expect(matchSelection({...schema, line: 40}, payments)).toBe('exact');
+    });
+
+    it('leaves entities that name no node as they were', () => {
+      expect(matchSelection(nodePG, {type: 'row', id: '7', path: 'src/a.ts'})).toBeUndefined();
+      expect(matchSelection(file('src/a.ts'), {type: 'row', id: '7', path: 'src/a.ts'})).toBe('exact');
+      expect(matchSelection(dir('src/auth'), {type: 'node', id: 'S', path: 'src/auth/session.ts', nodes: ['PG']})).toBe('within');
+      expect(matchSelection({type: 'commit', id: 'abc'}, {type: 'commit', id: 'def'})).toBeUndefined();
+      expect(matchSelection({type: 'symbol', id: 'login', path: 'a.ts'}, file('a.ts'))).toBe('contains');
+      // a file carrying nodes is still that file to a file tree, and links like a node
+      const filed: EntityRef = {...file('src/api.ts'), nodes: ['GW']};
+      expect(matchSelection(file('src/api.ts'), filed)).toBe('exact');
+      expect(matchSelection(actorG, filed)).toBe('linked');
+      expect(hubOf(file('src/api.ts'))).toEqual([]);
+    });
+
+    it('linkedEntity: an item\'s own entity carries its nodes; without one, one node is that node, several a row', () => {
+      const own = file('src/api.ts');
+      const item = {id: 'tiers:API', label: 'API'};
+      expect(linkedEntity(undefined, [], item)).toBeUndefined();
+      expect(linkedEntity(own, [], item)).toBe(own);
+      expect(linkedEntity(own, ['GW'], item)).toEqual({...own, nodes: ['GW']});
+      expect(linkedEntity(undefined, ['GW'], item)).toEqual({type: 'node', id: 'GW', label: 'API'});
+      expect(linkedEntity(undefined, ['GW', 'Q'], item)).toEqual({type: 'row', id: 'tiers:API', label: 'API', nodes: ['GW', 'Q']});
+    });
   });
 
   it('useSelection().match follows /ui/sel', () => {

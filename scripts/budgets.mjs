@@ -19,9 +19,12 @@
 //     ELK layout worker          <= 515 kB  assets/elk.worker-<hash>.js, the whole ELK engine (447.8 kB measured)
 //     React Flow chunk           <=  90 kB  assets/xyflow-<hash>.js, once a view imports React Flow (77.6 kB measured)
 //     React Flow stylesheet      <= 2.5 kB  assets/xyflow-<hash>.css (2.2 kB measured)
-//     diagrams chunk             <=  36 kB  assets/diagrams-<hash>.js (31.3 kB measured, the ELK + React Flow views;
+//     diagrams chunk             <=  43 kB  assets/diagrams-<hash>.js (37.7 kB measured, the ELK + React Flow views;
 //                                           25.4 kB at the Install phase, before the wrap/widen pass, the window
-//                                           search, routing for dragged edges and the minimap placement)
+//                                           search, routing for dragged edges and the minimap placement; 31.3 kB
+//                                           when the line was first set at 36 kB; 35.8 kB before D24 links, which
+//                                           added the Layers and ERDiagram cleaners that name what they drop, node
+//                                           notes, selectable sequence messages and traces)
 //   each other lazy chunk        <= 120 kB  every other script
 // Exits 1 when a budget is exceeded or a measurement could not be taken.
 import {existsSync} from 'node:fs';
@@ -47,7 +50,7 @@ const OWN_LINES = [
   {name: 'ELK layout worker', file: /^elk\.worker-[\w-]{8}\.js$/, limit: 515_000, required: true},
   {name: 'React Flow chunk', file: /^xyflow-[\w-]{8}\.js$/, limit: 90_000, required: false},
   {name: 'React Flow stylesheet', file: /^xyflow-[\w-]{8}\.css$/, limit: 2_500, required: true},
-  {name: 'diagrams chunk', file: /^diagrams-[\w-]{8}\.js$/, limit: 36_000, required: true},
+  {name: 'diagrams chunk', file: /^diagrams-[\w-]{8}\.js$/, limit: 43_000, required: true},
 ];
 
 const argv = process.argv.slice(2);

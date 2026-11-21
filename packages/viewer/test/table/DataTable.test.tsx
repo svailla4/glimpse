@@ -395,6 +395,35 @@ describe('DataTable: selection, entities, keyboard', () => {
     expect(view.getData('/ui/sel') ?? null).toBeNull();
   });
 
+  // Decision D24: an inline row naming a diagram node stands for it; a source's `node` field is only data.
+  it('links an inline row with a node to that node, marks it without selecting it, and keeps the column', async () => {
+    const view = renderExpress(page("DataTable([{choice:'System of record',node:'PG'},{choice:'Cache',node:['Redis','PG']},{choice:'Queue'}])"));
+    await ready(view);
+    expect(headers(view).map(h => h.textContent)).toEqual(['choice', 'node']);
+    expect(cellsOf(rowAt(view, 0))[1]!.textContent).toBe('PG');
+    fireEvent.click(cellsOf(rowAt(view, 0))[0]!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: 'rows:System of record', label: 'System of record', nodes: ['PG']});
+    // Cache stands for Redis and PG: linked to a selection naming PG, so marked, but it is not the selected row
+    expect(rowsOf(view).map(row => row.getAttribute('data-selected'))).toEqual(['exact', 'within', null]);
+    expect(rowsOf(view).map(row => row.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
+    fireEvent.click(cellsOf(rowAt(view, 2))[0]!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: 'rows:Queue', label: 'Queue'});
+    // a Flowchart node selected elsewhere
+    view.setData('/ui/sel', {type: 'node', id: 'Redis', label: 'Redis'});
+    expect(rowsOf(view).map(row => row.getAttribute('data-selected'))).toEqual([null, 'within', null]);
+  });
+
+  it('reads no link from a node field of rows that come from a source', async () => {
+    const view = renderExpress(page('DataTable($/t)'), {data: {'/t': {...datasetFixture('repo.packages'), fields: undefined, data: [{name: 'web', node: 'PG'}]}}});
+    await ready(view);
+    expect(headers(view).map(h => h.textContent)).toContain('node');
+    expect(cellsOf(rowAt(view, 0))[0]!.textContent).toBe('web');
+    fireEvent.click(cellsOf(rowAt(view, 0))[0]!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: `${datasetFixture('repo.packages').$ds}:web`, label: 'web'});
+    view.setData('/ui/sel', {type: 'node', id: 'PG', label: 'Postgres'});
+    expect(rowAt(view, 0).getAttribute('data-selected')).toBeNull();
+  });
+
   it('lets an entity cell select its own entity', async () => {
     const view = renderExpress(page("DataTable('git.churn')"), {datasets: 'ready'});
     await ready(view);

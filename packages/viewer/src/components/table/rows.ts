@@ -1,10 +1,10 @@
 // Row logic for the table family: coercion, column resolution, sort, search, grouping and the entity a row stands
 // for. No DOM. Which entity a file location names and how an entity relates to the selection are the kit's rules.
 import {
-  parseFileLoc, parseRef,
+  parseFileLoc, parseRef, readNodes,
   type DataRow, type Dataset, type EntityRef, type Field, type FieldKind,
 } from '@glimpse/catalog';
-import {fileEntity, matchSelection} from '../../kit/index.ts';
+import {fileEntity, linkedEntity, matchSelection} from '../../kit/index.ts';
 
 /** Numbers and numeric strings; everything else (null, '', NaN, objects) is undefined. */
 export function num(value: unknown): number | undefined {
@@ -303,9 +303,15 @@ export function cellEntity(column: Column, row: DataRow, ds: Dataset | undefined
 
 /**
  * What activating a row selects: the file in its `path` / `file` field, else its first entity cell, else the row
- * itself (identified by its first cell).
+ * itself (identified by its first cell). A row written inline (not from a source) that names diagram nodes in a `node`
+ * field (`node:'PG'`, decision D24) carries them, so it lights with node PG; a source's `node` field is only data.
  */
 export function rowEntity(row: DataRow, columns: readonly Column[], index: number, ds: Dataset | undefined): EntityRef {
+  const own = ownEntity(row, columns, index, ds);
+  return ds?.$ds ? own : (linkedEntity(own, readNodes(row).ids, {id: own.id, label: own.label ?? own.id}) ?? own);
+}
+
+function ownEntity(row: DataRow, columns: readonly Column[], index: number, ds: Dataset | undefined): EntityRef {
   const file = rowFile(row);
   if (file) return fileEntity(file);
   for (const column of columns) {
@@ -317,14 +323,17 @@ export function rowEntity(row: DataRow, columns: readonly Column[], index: numbe
   return {type: 'row', id: `${ds?.$ds ?? 'rows'}:${label ?? index}`, ...(label ? {label} : {})};
 }
 
-/** How the surface selection marks an entity: it is the selection, it lies inside the selected directory, or neither. */
+/**
+ * How the surface selection marks an entity: it is the selection, it lies inside the selected directory or names the
+ * same diagram nodes (decision D24: marked, but not the selected row), or neither.
+ */
 export type SelectionMark = 'exact' | 'within' | undefined;
 
 export function selectionMark(selected: EntityRef | null, entity: EntityRef): SelectionMark {
   const match = matchSelection(selected, entity);
   // Two rows of one file ('a.ts#L3', 'a.ts#L9') are different places: a selection with a line marks only its row.
   if (match === 'exact') return selected?.line == null || entity.line == null || selected.line === entity.line ? 'exact' : undefined;
-  return match === 'within' ? 'within' : undefined;
+  return match === 'within' || match === 'linked' ? 'within' : undefined;
 }
 
 /** `path:line` for an editor or a terminal; the label or id for entities without a path. The kit's rule (`c` copies the same text in every component). */

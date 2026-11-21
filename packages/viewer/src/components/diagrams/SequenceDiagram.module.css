@@ -115,6 +115,35 @@
   .step[data-active] .number {
     fill: var(--gl-ink);
   }
+  /*
+   * Decision D24: a message that is the selection, or names the selected node, is drawn in the selection's accent like
+   * a selected box in the other diagrams; while any is, the other rows dim as unconnected nodes do (flowkit).
+   */
+  .step[data-kind='message'],
+  .actorHead {
+    cursor: pointer;
+  }
+  .step {
+    transition: opacity var(--gl-t-state) var(--gl-ease);
+  }
+  .step[data-dim] {
+    opacity: 0.35;
+  }
+  .step[data-selected] .line {
+    stroke: var(--gl-accent);
+    stroke-width: 1.5;
+  }
+  .step[data-selected] .headSolid {
+    fill: var(--gl-accent);
+    stroke: var(--gl-accent);
+  }
+  .step[data-selected] .headOpen {
+    stroke: var(--gl-accent);
+  }
+  .actorHead[data-selected] .actor {
+    stroke: var(--gl-accent);
+    stroke-width: 1.5;
+  }
 
   .note {
     fill: var(--gl-sunken);
@@ -221,7 +250,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .line {
+    .line,
+    .step {
       transition: none;
     }
   }

@@ -9,6 +9,7 @@
 // `dropped`, the rest still draws. A reasonable guess (a shape alias, an edge to a node nobody declared) is drawn and
 // named in `fixes`. Only a value that is not a diagram at all is refused.
 import {MAX_ENTITY_NODES, STEP_KEYS, type ErRelation, type FileLoc} from './datasets.ts';
+import {describeValue, readNodes} from './links.ts';
 
 export interface Cleaned<T> {
   ast: T;
@@ -35,9 +36,6 @@ const pick = (o: Record<string, unknown>, keys: readonly string[]): unknown => {
   return undefined;
 };
 const clip = (text: string, max = 40) => (text.length > max ? text.slice(0, max - 1) + '…' : text);
-/** What a value is, for the messages: 'a string', 'an array', 'null'. */
-export const describeValue = (v: unknown): string =>
-  v === null ? 'null' : Array.isArray(v) ? 'an array' : typeof v === 'object' ? 'an object' : `a ${typeof v}`;
 
 /** Collects notes, keeps the first MAX_NOTES and counts the rest. */
 class Notes {
@@ -107,29 +105,7 @@ function entries(raw: unknown, what: string, dropped: Notes): Array<[string, unk
   return out;
 }
 
-// ================================================================ node links (decision D24)
-/**
- * The diagram node ids an item stands for (decision D24): `node:'PG'` or `node:['PG', 'Redis']`; `nodes` is read as
- * `node` and said in `alias`. Ids are kept once each, in written order, at most `max`. `problem` names what could not
- * be read (the readable ids are still returned).
- */
-export function readNodes(o: Record<string, unknown>, key = 'node', max = MAX_ENTITY_NODES): {ids: string[]; alias?: string; problem?: string} {
-  const used = o[key] !== undefined ? key : key === 'node' && o.nodes !== undefined ? 'nodes' : undefined;
-  if (used === undefined) return {ids: []};
-  const raw = o[used];
-  const written: unknown[] = Array.isArray(raw) ? raw : [raw];
-  const list = written.map(textOf);
-  const read = [...new Set(list.filter((v): v is string => v !== undefined))];
-  const ids = read.slice(0, max);
-  const bad = list.indexOf(undefined);
-  const problems = [
-    bad >= 0 ? `${used}: expected 'ID' or ['ID', ...], received ${received(written[bad])}${Array.isArray(raw) ? ' in the list' : ''}` : undefined,
-    read.length > ids.length ? `${used}: ${read.length} ids, the first ${max} kept` : undefined,
-    used === 'node' && o.nodes !== undefined ? 'nodes not read (node is)' : undefined,
-  ].filter(Boolean);
-  return {ids, ...(used !== key ? {alias: `${used} -> ${key}`} : {}), ...(problems.length > 0 ? {problem: problems.join('; ')} : {})};
-}
-
+// ================================================================ node links (decision D24; readNodes is in links.ts)
 /** readNodes at `where`: its alias said in `fixes`, its problem in `dropped`. */
 function nodesAt(o: Record<string, unknown>, where: string, fixes: Notes, dropped: Notes, key = 'node', max = MAX_ENTITY_NODES): string[] {
   const read = readNodes(o, key, max);

@@ -1,6 +1,7 @@
+import {cleanSchema} from '@glimpse/catalog';
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
-import {VISIBLE_COLUMNS, cleanSchema} from '../../src/components/diagrams/ERDiagram.tsx';
+import {VISIBLE_COLUMNS} from '../../src/components/diagrams/ERDiagram.tsx';
 import {POSITIONS_KEY, configurePositionStorage} from '../../src/components/diagrams/flowkit/index.ts';
 import {datasetFixture, errorDataset, pendingDataset, renderExpress} from '../harness.tsx';
 import {click, drag, drawn, edgeOf, elk, fakeStorage, focus, inside, key, lineOf, nodeIds, nodeOf, pointsOf, positionOf, sizeOf, stageOf, viewOf, type FakeStorage} from './util.tsx';
@@ -123,10 +124,11 @@ describe('ERDiagram', () => {
     expect(nodeOf(view, 'e', 'wide').querySelector('[data-more]')).toBeNull();
   });
 
-  it('selects a table; one with a file selects that file', async () => {
+  // Decision D24: a table always selects itself as a node; its file adds the place (/ui/file follows it).
+  it('selects a table as a node; one with a file carries that file', async () => {
     const view = await ready();
     click(nodeOf(view, 'e', 'users'));
-    expect(view.getData('/ui/sel')).toEqual({type: 'file', id: 'src/auth/schema.sql', path: 'src/auth/schema.sql', line: 1, label: 'users'});
+    expect(view.getData('/ui/sel')).toEqual({type: 'node', id: 'users', label: 'users', path: 'src/auth/schema.sql', line: 1});
     expect(view.getData('/ui/file')).toBe('src/auth/schema.sql#L1');
     expect(nodeOf(view, 'e', 'users').hasAttribute('data-selected')).toBe(true);
     expect(edgeOf(view, 'e', 'sessions->users').hasAttribute('data-hot')).toBe(true);
@@ -176,9 +178,51 @@ describe('ERDiagram', () => {
     expect(nodeOf(view, 'e', 'b.c').querySelector('rect')!.getAttribute('height')).toBe(String(26 + 22));
     expect(sizeOf(nodeOf(view, 'e', 'b.c')).h).toBe(26 + 22);
     expect([...view.cell('e').querySelectorAll('[data-edge]')].map(e => e.getAttribute('data-edge')).sort()).toEqual(['a->a', 'a->b.c']);
-    expect(view.cell('e').querySelector('[data-gl-note]')!.textContent).toBe('3 relations to unknown tables dropped · 3 unnamed or repeated tables dropped');
+    // Decision D24: the catalog's cleanSchema names each entry it left out; the tab tells the model (W_DROPPED).
+    expect(view.cell('e').querySelector('[data-gl-note]')!.textContent).toBe('9 not drawn');
+    await waitFor(() => expect(view.stateOf('e')).toBe('W_DROPPED'));
+    const message = view.reports.findLast(report => report.code === 'W_DROPPED')!.message;
+    expect(message).toMatch(/^ERDiagram#e: not drawn: table a column 3: no name; /);
+    for (const part of ['table a: repeated', 'table 3: no name', "relation 2: unknown table 'ghost'", 'and 1 more']) expect(message).toContain(part);
     const clean = cleanSchema(schema);
-    expect(typeof clean !== 'string' && clean.relations[0]).toMatchObject({from: 'a', fromColumn: 'ok', to: 'b.c'});
+    expect(clean.ok && clean.ast.relations[0]).toMatchObject({from: 'a', fromColumn: 'ok', to: 'b.c'});
+  });
+
+  it('reports unknown keys and an unreadable node of data a patch wrote (W_DROPPED)', async () => {
+    const view = await ready({tables: [{name: 'users', colour: 'red', node: {}, columns: [{name: 'id', unique: true}]}]});
+    await waitFor(() => expect(view.stateOf('e')).toBe('W_DROPPED'));
+    expect(view.reports.findLast(report => report.code === 'W_DROPPED')!.message).toBe(
+      "ERDiagram#e: not drawn: table users: node: expected 'ID' or ['ID', ...], received an object; ignored table key colour; ignored column key unique",
+    );
+    expect(nodeIds(view, 'e')).toEqual(['users']);
+    view.setData('/schema', SCHEMA);
+    await waitFor(() => expect(view.stateOf('e')).toBe('OK'));
+    expect(view.cell('e').querySelector('[data-gl-note]')).toBeNull();
+  });
+
+  // Decision D24: tables that name node PG light with it; the tables of one file stay apart by their lines.
+  it('lights the tables linked to a selected node, and a table with its own lines alone', async () => {
+    const tables = [
+      {name: 'orders', file: 'db/schema.sql#L10-30', node: 'PG', columns: [{name: 'id', pk: true}, {name: 'payment_id', fk: 'payments.id'}]},
+      {name: 'payments', file: 'db/schema.sql#L31-50', node: 'PG', columns: [{name: 'id', pk: true}]},
+      {name: 'audit', file: 'db/audit.sql', columns: [{name: 'id', pk: true}]},
+    ];
+    const view = await ready({tables});
+    const lit = () => nodeIds(view, 'e').filter(name => nodeOf(view, 'e', name).hasAttribute('data-selected'));
+    view.setData('/ui/sel', {type: 'node', id: 'PG', label: 'Postgres'});
+    await waitFor(() => expect(lit()).toEqual(['orders', 'payments']));
+    // a relation between two linked tables is hot; a table linked to nothing dims
+    expect(edgeOf(view, 'e', 'orders->payments').hasAttribute('data-hot')).toBe(true);
+    expect(nodeOf(view, 'e', 'audit').hasAttribute('data-dim')).toBe(true);
+
+    click(nodeOf(view, 'e', 'orders'));
+    expect(view.getData('/ui/sel')).toEqual({type: 'node', id: 'orders', label: 'orders', path: 'db/schema.sql', line: 10, endLine: 30, nodes: ['PG']});
+    expect(view.getData('/ui/file')).toBe('db/schema.sql#L10-30');
+    // payments shares the file, not the lines, and stands for PG but not for orders: it lights as orders' neighbour only
+    expect(lit()).toEqual(['orders']);
+    // a file selected elsewhere, without lines, is the place of both tables
+    view.setData('/ui/sel', {type: 'file', id: 'db/schema.sql', path: 'db/schema.sql'});
+    await waitFor(() => expect(lit()).toEqual(['orders', 'payments']));
   });
 
   it('cuts 500-character names to the table', async () => {
@@ -228,24 +272,25 @@ describe('ERDiagram', () => {
       {name: 'orders', columns: [{name: 'id', pk: true}, {name: 'user_id', fk: 'users.id'}, {name: 'shop', ref: 'shops'}]},
       {name: 'shops', columns: [{name: 'id', pk: true}]},
     ];
+    // (Read by the catalog's cleanSchema since decision D24; its own tests cover every case.)
     const clean = cleanSchema(tables);
-    if (typeof clean === 'string') throw new Error(clean);
-    expect(clean.tables.map(table => table.name)).toEqual(['users', 'orders', 'shops']);
-    expect(clean.relations).toEqual([
+    if (!clean.ok) throw new Error(clean.error);
+    expect(clean.ast.tables.map(table => table.name)).toEqual(['users', 'orders', 'shops']);
+    expect(clean.ast.relations).toEqual([
       {from: 'orders', fromColumn: 'user_id', to: 'users', toColumn: 'id', card: 'n-1'},
-      {from: 'orders', fromColumn: 'shop', to: 'shops', toColumn: undefined, card: 'n-1'},
+      {from: 'orders', fromColumn: 'shop', to: 'shops', card: 'n-1'},
     ]);
     // a column that points somewhere is marked as a foreign key
-    expect(clean.tables[1]!.columns.filter(column => column.fk).map(column => column.name)).toEqual(['user_id', 'shop']);
+    expect(clean.ast.tables[1]!.columns.filter(column => column.fk).map(column => column.name)).toEqual(['user_id', 'shop']);
     // written out in relations as well: drawn once
     const both = cleanSchema({tables, relations: [{from: 'users.id', to: 'orders.user_id'}]});
-    if (typeof both === 'string') throw new Error(both);
-    expect(both.relations.filter(rel => [rel.from, rel.to].sort().join() === 'orders,users')).toHaveLength(1);
-    // a pointer at a table that is not there is counted, not drawn
+    if (!both.ok) throw new Error(both.error);
+    expect(both.ast.relations.filter(rel => [rel.from, rel.to].sort().join() === 'orders,users')).toHaveLength(1);
+    // a pointer at a table that is not there is named, not drawn
     const ghost = cleanSchema([{name: 'a', columns: [{name: 'b_id', fk: 'b.id'}]}]);
-    if (typeof ghost === 'string') throw new Error(ghost);
-    expect(ghost.relations).toEqual([]);
-    expect(ghost.dropped.relations).toBe(1);
+    if (!ghost.ok) throw new Error(ghost.error);
+    expect(ghost.ast.relations).toEqual([]);
+    expect(ghost.dropped).toEqual(["column a.b_id: fk 'b.id' names no table"]);
 
     const view = await ready(tables);
     expect(nodeIds(view, 'e').sort()).toEqual(['orders', 'shops', 'users']);

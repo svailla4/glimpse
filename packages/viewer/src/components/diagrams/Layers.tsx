@@ -1,54 +1,36 @@
-// Layers: architecture tiers as stacked bands of boxes, top tier first (design 5.6). CSS grid only.
+// Layers: architecture tiers as stacked bands of boxes, top tier first (design 5.6). CSS grid only. The data is read
+// by the catalog's cleanLayers (decision D24), as on the server; how much of it is drawn is decided here.
 import type * as C from '@glimpse/catalog';
-import {parseFileLoc, type EntityRef, type LayerItem} from '@glimpse/catalog';
+import {cleanLayers, type EntityRef, type LayerItem, type LayersAst} from '@glimpse/catalog';
 import {useEffect, useMemo, useRef, useState, type KeyboardEvent} from 'react';
-import {DataGate, EntityLink, PlateAside, Redline, fmtNum, matchSelection, useDataset, useSelection, useSizeCap, type GlView} from '../../kit/index.ts';
+import {
+  DataGate, EntityLink, PlateAside, Redline, fileEntity, fmtNum, linkedEntity, marksSelection, useDataset, useReportState, useSelection, useSizeCap,
+  type GlView,
+} from '../../kit/index.ts';
 import css from './Layers.module.css';
 
 /** Items drawn per band; the rest are counted in a last box. */
 export const MAX_ITEMS = 60;
 export const MAX_BANDS = 40;
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const textOf = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v : typeof v === 'number' && Number.isFinite(v) ? String(v) : undefined);
-
 interface Item { label: string; note?: string; entity?: EntityRef }
 interface Band { name: string; note?: string; items: Item[]; more: number }
-export interface CleanLayers { bands: Band[]; dropped: number; hiddenBands: number }
 
-function entityOf(file: string, label: string): EntityRef {
-  const loc = parseFileLoc(file);
-  return {type: 'file', id: loc.path, path: loc.path, ...(loc.line != null ? {line: loc.line} : {}), ...(loc.endLine != null ? {endLine: loc.endLine} : {}), label};
-}
-
-/** Coerces the bound rows into bands. Entries that are neither a label nor an object with one are dropped and counted. */
-export function cleanLayers(data: readonly unknown[]): CleanLayers {
-  let dropped = 0;
-  const bands: Band[] = [];
-  for (const raw of data.slice(0, MAX_BANDS)) {
-    if (!isRecord(raw)) {
-      // A bare string is a band without items.
-      const name = textOf(raw);
-      if (name === undefined) dropped++;
-      else bands.push({name, items: [], more: 0});
-      continue;
-    }
-    const all: Item[] = [];
-    for (const entry of Array.isArray(raw.items) ? raw.items : []) {
-      // An item is its label, or an object with one; `name` and `title` are what the other lists call it.
-      const label = isRecord(entry) ? (textOf(entry.label) ?? textOf(entry.name) ?? textOf(entry.title)) : textOf(entry);
-      if (label === undefined) {
-        dropped++;
-        continue;
-      }
-      const file = isRecord(entry) ? textOf(entry.file) : undefined;
-      all.push({label, note: isRecord(entry) ? textOf(entry.note) : undefined, entity: file !== undefined ? entityOf(file, label) : undefined});
-    }
-    // `name` is canonical; Steps, List and CodeTour rows say `title` and items say `label`, so those are read too.
-    const name = textOf(raw.name) ?? textOf(raw.label) ?? textOf(raw.title);
-    bands.push({name: name ?? '—', note: textOf(raw.note), items: all.slice(0, MAX_ITEMS), more: Math.max(0, all.length - MAX_ITEMS)});
-  }
-  return {bands, dropped, hiddenBands: Math.max(0, data.length - MAX_BANDS)};
+/**
+ * The bands as drawn: at most MAX_BANDS, each with at most MAX_ITEMS items. An item with a file selects that file; one
+ * naming diagram nodes (`node:'PG'`, decision D24) carries them, and without a file selects the node itself.
+ */
+function bandsOf(ast: LayersAst, componentId: string): Band[] {
+  return ast.bands.slice(0, MAX_BANDS).map(band => ({
+    name: band.name,
+    ...(band.note !== undefined ? {note: band.note} : {}),
+    items: band.items.slice(0, MAX_ITEMS).map(item => {
+      const own = item.file !== undefined ? fileEntity(item.file, item.label) : undefined;
+      const entity = linkedEntity(own, item.nodes ?? [], {id: `${componentId}:${item.label}`, label: item.label});
+      return {label: item.label, ...(item.note !== undefined ? {note: item.note} : {}), ...(entity ? {entity} : {})};
+    }),
+    more: Math.max(0, band.items.length - MAX_ITEMS),
+  }));
 }
 
 function LayersBody(p: {id: string; data: unknown}) {
@@ -57,7 +39,11 @@ function LayersBody(p: {id: string; data: unknown}) {
   const cap = useSizeCap();
   const rootRef = useRef<HTMLDivElement>(null);
   const {selected} = useSelection(id);
-  const clean = useMemo(() => (Array.isArray(p.data) ? cleanLayers(p.data) : undefined), [p.data]);
+  const cleaned = useMemo(() => cleanLayers(p.data), [p.data]);
+  const bands = useMemo(() => (cleaned.ok ? bandsOf(cleaned.ast, id) : []), [cleaned, id]);
+  // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
+  const dropped = cleaned.ok ? cleaned.dropped : [];
+  useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
   const [active, setActive] = useState(0);
 
   // One tab stop: the entity under the roving index. EntityLink renders the button, so its tabindex is set here.
@@ -66,10 +52,7 @@ function LayersBody(p: {id: string; data: unknown}) {
     stops.forEach((stop, i) => { stop.tabIndex = i === Math.min(active, stops.length - 1) ? 0 : -1; });
   });
 
-  if (!clean) {
-    const got = p.data === null ? 'null' : typeof p.data === 'object' ? 'an object' : `a ${typeof p.data}`;
-    return <Redline code="E_SHAPE" id={`Layers#${id}`} message={`expected an array of {name, items}, received ${got}`} />;
-  }
+  if (!cleaned.ok) return <Redline code="E_SHAPE" id={`Layers#${id}`} message={cleaned.error} />;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -106,23 +89,22 @@ function LayersBody(p: {id: string; data: unknown}) {
     }
   };
 
-  // The red-pencil rule of the kit: the selected file itself, or a file inside the selected directory or module.
-  const isHit = (entity: EntityRef | undefined) => {
-    const how = entity ? matchSelection(selected, entity) : undefined;
-    return how === 'exact' || how === 'within';
-  };
-  const anySelected = clean.bands.some(band => band.items.some(item => isHit(item.entity)));
-  const items = clean.bands.reduce((sum, band) => sum + band.items.length + band.more, 0);
+  // The red-pencil rule of the kit: the selected file itself, a file inside the selected directory or module, or an
+  // item naming the selected diagram node (decision D24).
+  const isHit = (entity: EntityRef | undefined) => marksSelection(selected, entity);
+  const anySelected = bands.some(band => band.items.some(item => isHit(item.entity)));
+  const items = bands.reduce((sum, band) => sum + band.items.length + band.more, 0);
+  const total = cleaned.ast.bands.length;
   const notes = [
-    clean.dropped > 0 ? `${fmtNum(clean.dropped)} unreadable ${clean.dropped === 1 ? 'entry' : 'entries'} dropped` : undefined,
-    clean.hiddenBands > 0 ? `showing ${MAX_BANDS} of ${fmtNum(clean.bands.length + clean.hiddenBands)} tiers` : undefined,
+    dropped.length > 0 ? `${fmtNum(dropped.length)} not drawn` : undefined,
+    total > MAX_BANDS ? `showing ${MAX_BANDS} of ${fmtNum(total)} tiers` : undefined,
   ].filter(Boolean);
-  const ariaLabel = `Layers, ${clean.bands.length} ${clean.bands.length === 1 ? 'tier' : 'tiers'}, ${items} ${items === 1 ? 'item' : 'items'}: ${clean.bands.slice(0, 8).map(band => band.name.slice(0, 40)).join(', ')}`;
+  const ariaLabel = `Layers, ${bands.length} ${bands.length === 1 ? 'tier' : 'tiers'}, ${items} ${items === 1 ? 'item' : 'items'}: ${bands.slice(0, 8).map(band => band.name.slice(0, 40)).join(', ')}`;
 
   return (
     <div ref={rootRef} className={css.root} style={{maxHeight: cap}} role="group" aria-label={ariaLabel} onKeyDown={onKeyDown}>
       {notes.length > 0 ? <PlateAside><span className={css.marginal} data-gl-note="">{notes.join(' · ')}</span></PlateAside> : null}
-      {clean.bands.map((band, b) => (
+      {bands.map((band, b) => (
         <section key={b} className={css.band} data-layer={band.name} data-first={b === 0 || undefined} aria-label={band.name}>
           <h4 className={css.name} title={band.name}>{band.name}</h4>
           <ul className={css.items}>
