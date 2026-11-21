@@ -230,6 +230,33 @@ describe('showTool', () => {
     }
   });
 
+  // Finding V071 for the [[path]] refs of prose: drawn under the inventory's spelling where the file system ignores
+  // case, and named as a missing file, with the file meant, where it does not.
+  it('a [[path]] ref written in another case is rewritten to the inventory spelling, or reported missing', async () => {
+    const own = await tempRoot();
+    try {
+      await mkdir(join(own.root, 'Docs'), {recursive: true});
+      await writeFile(join(own.root, 'Docs', 'README.md'), '# r\n');
+      const deps = fakeDeps({inventory: ['Docs/README.md']});
+      const index = deps.createRepoIndex;
+      deps.createRepoIndex = (...args) => ({...index(...args), canonical: async (path: string) => (path.toLowerCase() === 'docs/readme.md' ? 'Docs/README.md' : undefined)});
+      const t = testSession(own.root, {deps});
+      live.push(t);
+      const lines = body(await showTool(t.session, {id: 'r', spec: "root=Page('x',[n])\nn=Markdown('Start at [[docs/readme.md#L1]].')"}, 100)).split('\n');
+      const text = t.session.surfaces.get('r')!.components.get('n')!.text;
+      if (CASE_INSENSITIVE) {
+        expect(lines).toContain("fixed path 'docs/readme.md#L1' -> 'Docs/README.md#L1'");
+        expect(text).toBe('Start at [[Docs/README.md#L1]].');
+        expect(lines.filter(line => line.startsWith('warn'))).toEqual([]);
+      } else {
+        expect(lines).toContain('warn Markdown#n: file "docs/readme.md" does not exist. Nearest: Docs/README.md');
+        expect(text).toBe('Start at [[docs/readme.md#L1]].');
+      }
+    } finally {
+      await own.cleanup();
+    }
+  });
+
   // Finding V035: the symbol preset opened a class quoted in a Markdown fence, then the Dart one, not the TypeScript one.
   it('the symbol preset opens the definition in code, in the repository\'s main language first', async () => {
     const deps = fakeDeps();

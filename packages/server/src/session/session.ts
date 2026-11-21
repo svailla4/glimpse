@@ -704,6 +704,8 @@ export class Session {
       const state = await this.servable(path);
       if (state === 'ok') continue;
       if (state === 'refused') { out.push(`${where}: "${path.slice(0, 120)}" is not a file of this project (outside it, ignored, or not a regular file).`); continue; }
+      const target = await resolveInside(this.root, path);
+      if (target && (await lstat(target).then(info => info.isDirectory(), () => false))) { out.push(`${where}: "${path.slice(0, 120)}" is a directory, not a file.`); continue; }
       candidates ??= (await ctx.index.files().catch(() => [])).map(entry => entry.path);
       out.push(`${where}: file "${path.slice(0, 120)}" does not exist.${missingFileHint(path, candidates)}`);
     }

@@ -2,9 +2,9 @@
 // becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, diagram data, column
 // shorthand and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
 import {
-  acceptsArg, checkColumns, cleanFlow, cleanSequence, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef,
-  looksLikeRef, normalizeCols, parseColumns, parseRef, PATHS,
-  shapeKinds, SOURCES, type A2uiMessage, type Field, type Prop, type SourceMeta, type SourceRef, type WireComponent,
+  acceptsArg, checkColumns, cleanFlow, cleanSequence, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, normalizeCols,
+  parseColumns, parseFileLoc, parseRef, PATHS, replaceFileRefs, shapeKinds, SOURCES, type A2uiMessage, type Field, type Prop, type SourceMeta,
+  type SourceRef, type WireComponent,
 } from '@glimpse/catalog';
 import {ignoredMarksWarning, readLineMarks} from '@glimpse/catalog';
 import {AS_ROWS, NODE_FIELDS, readsAsRows} from '../session/datasets.ts';
@@ -18,7 +18,7 @@ export interface Expansion {
   problems: Problem[];
   /** What is certain to draw wrong although the spec is valid, as `Name#id: text` (a `warn` line each). */
   warnings: string[];
-  /** Literal files named by components (CodeView, FileRef, a CodeTour stop ...): the session checks they exist. */
+  /** Literal files named by components (CodeView, FileRef, a CodeTour stop, a [[path]] ref ...): the session checks they exist. */
   files: Array<{where: string; file: string}>;
   /** Literal DiffView ranges other than the working tree: the session checks the revisions exist. */
   ranges: Array<{where: string; range: string}>;
@@ -169,6 +169,29 @@ function nameFiles(comp: WireComponent, name: string, props: Record<string, Prop
       if (meant !== undefined) (stop as {file?: unknown}).file = meant;
     }
   }
+}
+
+/** The text props that draw `[[path#L10]]` refs as file links (shared/inline.tsx, MarkdownProse.tsx), by component. */
+const PROSE: Readonly<Record<string, {prop: string; markdown: boolean}>> = {
+  Text: {prop: 'text', markdown: false}, Callout: {prop: 'text', markdown: false}, Ask: {prop: 'prompt', markdown: false}, Markdown: {prop: 'text', markdown: true},
+};
+
+/**
+ * The `[[path#L10]]` refs of a literal text, checked as a file prop is (the session says which name no file) and
+ * written under the inventory's name in the text (V071). A ref to a directory (`[[src/auth/]]`) is not a file to check.
+ */
+function proseRefs(comp: WireComponent, name: string, out: Expansion, names: PathNames | undefined): void {
+  const prose = PROSE[name];
+  const text = prose ? comp[prose.prop] : undefined;
+  if (!prose || typeof text !== 'string') return;
+  const where = `${name}#${comp.id}`;
+  const next = replaceFileRefs(text, prose.markdown, written => {
+    if (parseFileLoc(written).path.endsWith('/')) return undefined;
+    const meant = named(written, out, names);
+    if (out.files.length < MAX_CHECKS && !out.files.some(entry => entry.where === where && entry.file === meant)) out.files.push({where, file: meant});
+    return meant === written ? undefined : meant;
+  });
+  if (next !== text) comp[prose.prop] = next;
 }
 
 // ---------------------------------------------------------------- field names (decision D15)
@@ -442,6 +465,7 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
   if (fields && fields.length > 0) repairFields(comp, def.name, def.props as Record<string, Prop>, fields, out);
   nameFiles(comp, def.name, def.props as Record<string, Prop>, out, names);
   collectChecks(comp, def.name, def.props as Record<string, Prop>, out);
+  proseRefs(comp, def.name, out, names);
   if ('mark' in def.props) checkMark(comp, def.name, out);
   if (def.name === 'Split' && typeof comp.ratio === 'string') splitRatioChecked(comp, out);
   if (def.name === 'Grid') gridCols(comp, out);

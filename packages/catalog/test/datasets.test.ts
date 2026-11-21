@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENT_BY_NAME, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, cleanFlow, cleanSequence, formatFileLoc, galleryRoot, gallerySpec, ignoredMarksWarning, parseFileLoc, readLineMarks,
+  COMPONENT_BY_NAME, FILE_REF, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, cleanFlow, cleanSequence, fileRefs, formatFileLoc, galleryRoot, gallerySpec,
+  ignoredMarksWarning, parseFileLoc, readLineMarks, replaceFileRefs,
   type A2uiMessage, type ErTable, type GraphData, type WireComponent,
 } from '../src/index.ts';
 import {buildSurface, strictErrors} from '../testing/index.ts';
@@ -60,6 +61,34 @@ describe('file anchors and line ranges', () => {
     expect(ignoredMarksWarning(['foo'])).toBe("mark 'foo' ignored: write 'L10-20' or '3,7-9'");
     expect(ignoredMarksWarning(['a', 'b', 'c', 'd', 'the start of the function body'])).toBe("mark 'a', 'b', 'c' and 2 more ignored: write 'L10-20' or '3,7-9'");
     expect(ignoredMarksWarning(['the start of the function body'])).toBe("mark 'the start of the functi\u2026' ignored: write 'L10-20' or '3,7-9'");
+  });
+});
+
+describe('[[path]] file refs in prose', () => {
+  it('finds the refs drawn as links: not blank at either end, one line, not inside code', () => {
+    expect(fileRefs('See [[src/a.ts#L10-20]] and [[b.ts]].', false)).toEqual(['src/a.ts#L10-20', 'b.ts']);
+    expect(fileRefs('[[ a.ts]] [[a.ts ]] [[]] [[a\nb]] [[a[b]] [a.ts] [[ok.ts]]', false)).toEqual(['ok.ts']);
+    expect(fileRefs('`[[in/code.ts]]` then [[out.ts]] and **[[bold.ts]]**', false)).toEqual(['out.ts', 'bold.ts']);
+    expect(fileRefs(`[[${'x'.repeat(401)}]] [[${'y'.repeat(400)}]]`, false)).toEqual(['y'.repeat(400)]);
+    // Markdown: inline code of any backtick run and fenced blocks stay literal (a longer run closes a fence, as in
+    // CommonMark); text after a closed fence does not, and a fence never closed runs to the end
+    const md = 'A [[a.ts]] ``[[code.ts]]``\n```ts\n[[fenced.ts]]\n````\n[[after.ts]]\n~~~\n[[tilde.ts]]\n~~~\n[[last.ts]]\n```\n[[open.ts]]';
+    expect(fileRefs(md, true)).toEqual(['a.ts', 'after.ts', 'last.ts']);
+    // the same text read as inline markup has no fences
+    expect(fileRefs('```\n[[a.ts]]\n```', false)).toEqual(['a.ts']);
+  });
+
+  it('replaces only the refs the swap names, and leaves the rest of the text as written', () => {
+    const swap = (loc: string) => (loc.startsWith('readme') ? loc.replace('readme.md', 'README.md') : undefined);
+    expect(replaceFileRefs('[[readme.md#L2]], `[[readme.md]]` and [[src/a.ts]] [[readme.md]]', false, swap)).toBe('[[README.md#L2]], `[[readme.md]]` and [[src/a.ts]] [[README.md]]');
+    expect(replaceFileRefs('```\n[[readme.md]]\n```\n[[readme.md]]', true, swap)).toBe('```\n[[readme.md]]\n```\n[[README.md]]');
+    const text = 'no refs [[ here ]]';
+    expect(replaceFileRefs(text, false, swap)).toBe(text);
+  });
+
+  it('FILE_REF is one pattern, not global, so each user builds its own scanner', () => {
+    expect(FILE_REF.global).toBe(false);
+    expect(new RegExp(FILE_REF.source, 'g').exec('x [[a.ts#L1]]')?.[1]).toBe('a.ts#L1');
   });
 });
 

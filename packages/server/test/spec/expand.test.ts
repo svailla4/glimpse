@@ -243,6 +243,44 @@ describe('expandMessages: what is certain to draw wrong', () => {
     expect(out.files.map(entry => entry.file)).toEqual(['README.md#L1-5', 'README.md', 'README.md']);
   });
 
+  it('collects the literal [[path]] refs of prose for the session to check, as the tab draws them', () => {
+    const out = expand(`$/n='[[src/bound.ts]]'
+root=Page('x',[a,b,c,d,e])
+a=Text('See [[src/a.ts#L3]] and [[src/a.ts#L3]], not \`[[src/code.ts]]\`, and the dir [[src/auth/]].')
+b=Markdown('**[[src/b.ts#L1-9]]**\\n\`\`\`\\n[[src/fenced.ts]]\\n\`\`\`\\n[[src/after.ts]]')
+c=Callout('Race in [[src/c.ts]].',file='src/c2.ts')
+d=Ask('Keep [[src/d.ts]]?',['yes','no'])
+e=Markdown($/n)`);
+    expect(out.files).toEqual([
+      {where: 'Text#a', file: 'src/a.ts#L3'},
+      {where: 'Markdown#b', file: 'src/b.ts#L1-9'},
+      {where: 'Markdown#b', file: 'src/after.ts'},
+      {where: 'Callout#c', file: 'src/c2.ts'},
+      {where: 'Callout#c', file: 'src/c.ts'},
+      {where: 'Ask#d', file: 'src/d.ts'},
+    ]);
+    expect(out.paths).toEqual(['src/a.ts#L3', 'src/b.ts#L1-9', 'src/after.ts', 'src/c2.ts', 'src/c.ts', 'src/d.ts']);
+  });
+
+  // Finding V071 for refs: a ref written in another case is drawn, and checked, under the inventory's name.
+  it('writes a [[path]] ref the session found in another case under the inventory name, said once', () => {
+    const spec = `root=Page('x',[Text('Read [[readme.md#L2]], then [[readme.md#L2]] and \`[[readme.md]]\`.'),Markdown('[[Docs/Guide.md]] and [[src/ok.ts]]')])`;
+    const {messages} = compileSpec(tools, {surfaceId: 's', sources: [spec], surfaces: []});
+    const out = expandMessages(messages, registry, new Map([['readme.md#L2', 'README.md#L2'], ['Docs/Guide.md', 'docs/guide.md']]));
+    const components = 'createSurface' in messages[0]! ? messages[0].createSurface.components : [];
+    expect(components.find(c => c.component === 'Text')!.text).toBe('Read [[README.md#L2]], then [[README.md#L2]] and `[[readme.md]]`.');
+    expect(components.find(c => c.component === 'Markdown')!.text).toBe('[[docs/guide.md]] and [[src/ok.ts]]');
+    expect(out.fixes).toEqual(["path 'readme.md#L2' -> 'README.md#L2'", "path 'Docs/Guide.md' -> 'docs/guide.md'"]);
+    expect(out.files.map(entry => entry.file)).toEqual(['README.md#L2', 'docs/guide.md', 'src/ok.ts']);
+  });
+
+  it('checks at most MAX_CHECKS refs, however long the text', () => {
+    const refs = Array.from({length: 100}, (_, i) => `[[src/f${i}.ts]]`).join(' ');
+    const out = expand(`root=Page('x',[Text('${refs}')])`);
+    expect(out.files).toHaveLength(64);
+    expect(out.paths).toHaveLength(64);
+  });
+
   it('collects the field names a component asks of its dataset, once they are names the source returns', () => {
     const out = expand(`root=Page('x',[ScatterPlot('fake.rows',x='churn',y='n'),DataTable('fake.rows src','path:path=File n:num',sort='-owner',group='lang'),LineChart('fake.rows',y='n owner'),BarChart($/inline,x='a'),Treemap(value='loc'),DataTable('fake.slow',sort='zzz')])`);
     expect(out.fields).toEqual([

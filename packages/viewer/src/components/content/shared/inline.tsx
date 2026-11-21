@@ -1,12 +1,16 @@
 // Inline micro-markup for Text, Callout and Ask (design 4.6): `code`, *em*, **strong** and [[path#L10-20]] file refs.
 // Nothing else is markup; the text never reaches innerHTML.
+import {CODE_SPAN, FILE_REF} from '@glimpse/catalog';
 import {memo, type JSX, type ReactNode} from 'react';
 import {FileLink} from './FileLink.tsx';
 import styles from './inline.module.css';
 
 // Alternatives in priority order: code span, file ref, strong, em. A marker with no partner stays literal text.
-// Spans are bounded (400 characters) so a text full of unmatched markers still scans in linear time.
-const TOKEN = /`([^`\n]{1,400})`|\[\[(?!\s)([^[\]\n]{1,400}?)(?<!\s)\]\]|\*\*(?!\s)((?:[^*\n]|\*(?!\*)){1,400}?)(?<!\s)\*\*|\*(?!\s|\*)([^*\n]{1,400}?)(?<!\s)\*/g;
+// Spans are bounded (400 characters) so a text full of unmatched markers still scans in linear time. The code span
+// and the file ref are the catalog's, so the server checks exactly the refs drawn here as links.
+const STRONG = /\*\*(?!\s)((?:[^*\n]|\*(?!\*)){1,400}?)(?<!\s)\*\*/;
+const EM = /\*(?!\s|\*)([^*\n]{1,400}?)(?<!\s)\*/;
+const TOKEN = new RegExp([CODE_SPAN, FILE_REF, STRONG, EM].map(part => part.source).join('|'), 'g');
 /** Emphasis nests at most this deep; deeper text is left literal. */
 const MAX_DEPTH = 3;
 
