@@ -173,6 +173,16 @@ describe('all or nothing', () => {
     expect(dump(t)).toBe(before);
   });
 
+  it('a patch that rewrites the src a stored diagram binds is checked like an inline src', async () => {
+    const t = start();
+    await t.session.show(spec('seq', `$/seq='A->>B: hi'\nroot=Page('S',[s])\ns=SequenceDiagram($/seq)`));
+    const before = dump(t);
+    await expect(t.session.show(spec('seq', `$/seq='A->>B: hi\\nnonsense here'`))).rejects.toThrow(/^E_NOTATION \$\/seq \(SequenceDiagram#s\.src\) statement 2: /);
+    expect(dump(t)).toBe(before);
+    const fixed = await t.session.show(spec('seq', `$/seq='A->>B: hi\\nalt cached\\nB-->>A: rows'`));
+    expect(fixed.fixes).toEqual([`$/seq (SequenceDiagram#s.src) line 2: alt closed at the end (no 'end')`]);
+  });
+
   it('a patch of a view that does not exist says so', async () => {
     const t = start();
     await t.session.show(spec('overview', `root=Page('x',[])`));

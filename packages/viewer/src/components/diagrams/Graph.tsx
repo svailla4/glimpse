@@ -440,6 +440,25 @@ export function nameZoom(nodes: ReadonlyArray<{w: number; data: Pick<NodeDraw, '
   return Math.ceil(need * 20 - 1e-6) / 20;
 }
 
+/**
+ * For a graph its writer drew (inline data, not a source): the zoom from which every node's zoomed-out face shows its
+ * whole name, and its second line too. A name the writer chose is not cut to tell nodes apart, as nameZoom allows; a
+ * graph that cannot open whole at this zoom is wrapped, turned or panned instead (measurement: an eleven-node chain
+ * opened at 46%, 'glimpse.co…', 'Worker san…', the second lines gone).
+ */
+export function wholeZoom(nodes: ReadonlyArray<{w: number; h: number; data: Pick<NodeDraw, 'label' | 'rawSub' | 'cycle'>}>): number {
+  let need = 0;
+  for (const node of nodes) {
+    const d = node.data;
+    const mark = d.cycle ? 1 : 0;
+    need = Math.max(need, (FAR_LABEL * textWidth(d.label, {size: 1}) + FAR_MARK * mark) / Math.max(1, node.w - FAR_X - FAR_END - FAR_MARK_GAP * mark));
+    if (d.rawSub !== undefined) {
+      need = Math.max(need, (FAR_LABEL + FAR_SUB + 6) / node.h, (FAR_SUB * textWidth(d.rawSub, {size: 1, mono: true})) / Math.max(1, node.w - FAR_X - FAR_END));
+    }
+  }
+  return Math.ceil(need * 20 - 1e-6) / 20;
+}
+
 function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
   const d = node.data;
   if (flags.lod !== 'full') {
@@ -537,6 +556,9 @@ function GraphBody(p: {
   const slotKeys = useMemo(() => (shown ? shown.graph.nodes.flatMap(node => (node.slotKey !== undefined ? [node.slotKey] : [])) : []), [shown]);
   const cat = useCatSlots(SPINE_SLOTS, slotKeys);
 
+  // No source behind it and no analyzer's kinds of node: the writer drew this graph (inline data). The names are
+  // theirs: drawn whole, never shortened like a path or rewritten to tell two apart.
+  const authored = p.dsKey === undefined && typeof clean !== 'string' && clean.nodes.every(node => node.kind === undefined);
   const model = useMemo(() => {
     if (!shown || shown.graph.nodes.length > MAX_NODES) return undefined;
     const {graph} = shown;
@@ -565,12 +587,15 @@ function GraphBody(p: {
       if (width >= NODE_W_MAX) break;
     }
     width = Math.min(NODE_W_MAX, Math.ceil(width / 4) * 4);
-    // Two nodes that would read alike (two '…/scripts', two 'types.ts') say which is which (V048).
+    // Two nodes that would read alike (two '…/scripts', two 'types.ts') say which is which (V048). Names the writer
+    // typed (no source behind the graph) are theirs: never rewritten, never shortened like a path.
     const isPkg = (node: CleanNode) => node.kind === 'external' || node.kind === 'package';
-    const distinct = distinctLabels(
-      graph.nodes.map(node => ({id: node.id, label: node.label, file: node.file, pkg: isPkg(node)})),
-      (label, pkg) => fitLabel(label, NODE_W_WIDE - LABEL_X - LABEL_END, UI_12, pkg),
-    );
+    const distinct = authored
+      ? {labels: new Map<string, string>(), ends: new Set<string>()}
+      : distinctLabels(
+        graph.nodes.map(node => ({id: node.id, label: node.label, file: node.file, pkg: isPkg(node)})),
+        (label, pkg) => fitLabel(label, NODE_W_WIDE - LABEL_X - LABEL_END, UI_12, pkg),
+      );
     // In a small graph a node whose name or second line needs more than the shared width is wider, up to NODE_W_WIDE.
     // A larger one keeps the shared width (wider nodes would make it open further out) and the diagram widens its
     // nodes into the width the plate has to spare (widenNode): 'create_compliance_rep…' and cut second lines no more.
@@ -578,7 +603,7 @@ function GraphBody(p: {
       const label = distinct.labels.get(node.id) ?? node.label;
       return [node.id, roomy ? Math.min(NODE_W_WIDE, Math.max(width, Math.ceil(need(label, node, true) / 4) * 4)) : width];
     }));
-    const cutOf = (node: CleanNode): Cut => (distinct.ends.has(node.id) ? 'ends' : isPkg(node) ? 'name' : 'path');
+    const cutOf = (node: CleanNode): Cut => (authored || isPkg(node) ? 'name' : distinct.ends.has(node.id) ? 'ends' : 'path');
     const roomOf = (node: CleanNode) => widthOf.get(node.id)! - LABEL_X - LABEL_END - marks(node);
     // Names that start alike keep, when cut, the part that tells them apart ('surface-group…​.test.ts').
     const tails = tailsOf(graph.nodes.map(node => ({id: node.id, label: distinct.labels.get(node.id) ?? node.label})));
@@ -648,8 +673,8 @@ function GraphBody(p: {
       };
     });
     const groups: DiagramGroup[] = graph.groups.map(group => ({...group, drillable: p.dsKey !== undefined && group.id.startsWith(DIR_GROUP) && group.id.length > DIR_GROUP.length}));
-    return {nodes, edges, groups, lodZoom: nameZoom(nodes)};
-  }, [shown, cat, p.dsKey]);
+    return {nodes, edges, groups, lodZoom: authored ? Math.max(nameZoom(nodes), wholeZoom(nodes)) : nameZoom(nodes)};
+  }, [shown, cat, p.dsKey, authored]);
 
   // Drilling only asks the host for another scope; the plate's scope row (DataGate) is the way back (design rule D1).
   const dsKey = p.dsKey;

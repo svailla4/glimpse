@@ -226,7 +226,8 @@ export function rewrite(src: string): Rewrite {
       const target = enumValue(prop, value) ?? enumMeant(value, prop.values);
       if (!target) continue;
       edits.push({start: next.start, end: next.end, text: JSON.stringify(target)});
-      fixes.push(`${def.name}.${key} ${value} -> ${target}`);
+      // What models write for a value (Callout 'info') is taken as it: a line on every such page taught nothing.
+      if (!prop.quiet?.includes(value.trim().toLowerCase())) fixes.push(`${def.name}.${key} ${value} -> ${target}`);
     } else if ((prop.kind === 'str' || prop.kind === 'text') && next.kind === 'number' && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:%)?$/.test(next.text)) {
       edits.push({start: next.start, end: next.end, text: JSON.stringify(next.text)});
     } else if (prop.kind === 'action' && next.kind === 'string') {

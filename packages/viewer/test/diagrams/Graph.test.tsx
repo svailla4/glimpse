@@ -1,7 +1,7 @@
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import type {ElkNode} from 'elkjs/lib/elk-api.js';
-import {MAX_EDGES, MAX_NODES, NAME_KEEP, distinctLabels, fitLabel, fitSub, nameZoom} from '../../src/components/diagrams/Graph.tsx';
+import {MAX_EDGES, MAX_NODES, NAME_KEEP, distinctLabels, fitLabel, fitSub, nameZoom, wholeZoom} from '../../src/components/diagrams/Graph.tsx';
 import {CONTROLS, LOD_ZOOM, MIN_HEIGHT, MONO_11, POSITIONS_KEY, READABLE_ZOOM, UI_12, configurePositionStorage, textWidth} from '../../src/components/diagrams/flowkit/index.ts';
 import {buildPatch, buildSurface, datasetFixture, errorDataset, renderExpress, renderSpec} from '../harness.tsx';
 import {
@@ -752,6 +752,58 @@ describe('Graph: a readable opening view', () => {
     expect(w).toBeGreaterThanOrEqual(112);
     // one width for the whole graph
     expect(new Set(nodeIds(view, 'g').map(id => sizeOf(nodeOf(view, 'g', id)).w)).size).toBe(1);
+  });
+
+  // Measurement: a writer's architecture graph of eleven nodes in a span=7 plate opened at 46%, names cut to ten
+  // characters ('glimpse.co…', 'Worker san…'), every second line hidden, and 'packages/viewer' drawn '…/viewer'.
+  describe('a graph its writer drew (inline data, no source)', () => {
+    const arch = {
+      nodes: [
+        {id: 'cfg', label: 'glimpse.config', sub: 'plugins list', status: 'added'},
+        {id: 'loader', label: 'PluginLoader', sub: 'resolve + import', status: 'added'},
+        {id: 'val', label: 'Validator', sub: 'schema + contract version', status: 'added'},
+        {id: 'sb', label: 'Worker sandbox', sub: 'timeout + row cap', status: 'added'},
+        {id: 'reg', label: 'SourceRegistry', status: 'modified'},
+        {id: 'core', label: 'Built-in sources', sub: 'files repo deps git diff code', status: 'modified'},
+        {id: 'cat', label: 'catalog tool', status: 'modified'},
+        {id: 'q', label: 'query tool', status: 'modified'},
+        {id: 'bind', label: 'Ref parser + data binding', status: 'modified'},
+        {id: 'view', label: 'packages/viewer'},
+        {id: 'types', label: 'Contract types', sub: 'packages/catalog', status: 'added'},
+      ],
+      edges: [
+        {from: 'cfg', to: 'loader'}, {from: 'loader', to: 'val'}, {from: 'val', to: 'sb'}, {from: 'sb', to: 'reg'}, {from: 'core', to: 'reg'},
+        {from: 'reg', to: 'cat'}, {from: 'reg', to: 'q'}, {from: 'reg', to: 'bind'}, {from: 'bind', to: 'view'}, {from: 'types', to: 'loader'},
+      ],
+    };
+    const plate = {width: 722, height: 640};
+
+    it('opens where every name and second line reads whole, never shortened like a path', async () => {
+      const view = await ready(INLINE, {data: {'/g': arch}, size: plate});
+      expect(viewOf(stageOf(view, 'g')).k).toBeGreaterThanOrEqual(0.7);
+      for (const node of arch.nodes) {
+        const texts = [...nodeOf(view, 'g', node.id).querySelectorAll('text')].map(text => text.textContent);
+        expect(texts, node.id).toContain(node.label);
+        if (node.sub) expect(texts, node.id).toContain(node.sub);
+      }
+    });
+
+    it('never rewrites two names that read alike: they are the writer\'s', async () => {
+      const twins = {nodes: [{id: 'a', label: 'types.ts'}, {id: 'b', label: 'types.ts'}, {id: 'c', label: 'index.ts'}], edges: [{from: 'a', to: 'c'}, {from: 'b', to: 'c'}]};
+      const view = await ready(INLINE, {data: {'/g': twins}, size: plate});
+      for (const id of ['a', 'b']) expect([...nodeOf(view, 'g', id).querySelectorAll('text')].map(text => text.textContent)).toContain('types.ts');
+    });
+
+    it('opens no further out than keeps its names whole, and never cuts one like a path', () => {
+      const node = (label: string, w: number, rawSub?: string) => ({w, h: rawSub ? 40 : 28, data: {label, rawSub, cycle: false}});
+      // a name that fills its node needs nearly full size; a short one in a wide node reads further out
+      expect(wholeZoom([node('Ref parser + data binding', 180)])).toBeGreaterThan(wholeZoom([node('query tool', 180)]));
+      // a second line needs room for two lines of 10 px faces in the node's height
+      expect(wholeZoom([node('a', 160, 'x')])).toBeGreaterThanOrEqual((10.5 + 10 + 6) / 40);
+      // cut as a name (its end goes), never as a path ('…/viewer')
+      expect(fitLabel('packages/viewer', 60, UI_12, true)).toMatch(/^package.*…$/);
+      expect(fitLabel('packages/viewer', 60, UI_12)).toMatch(/^…\//);
+    });
   });
 
   it('flows the way that shows it larger at its width unless dir says otherwise', async () => {

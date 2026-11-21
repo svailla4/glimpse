@@ -1701,7 +1701,7 @@
         },
         "src": {
           "$ref": "common_types.json#/$defs/DynamicString",
-          "description": "Statements split by ';' or newline: 'A->>B: call', 'B-->>A: reply', 'A-)B: async', 'Note over A,B: text'."
+          "description": "Statements split by ';' or newline: 'A->>B: call', 'B-->>A: reply', 'A-)B: async', 'Note over A,B: text'; 'alt cond' ... 'else other' ... 'end' (also opt, loop, par/and, critical, break) draws a frame."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
