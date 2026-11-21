@@ -325,6 +325,13 @@ describe('expandMessages: field names', () => {
     expect(out.byComponent('Split').ratio).toBe('3:7');
   });
 
+  it("says what it did to Split's ratio: a share rewritten is fixed, a value Split cannot read is warn (D22)", () => {
+    const out = expand(`root=Page('x',[Split(Text('a'),Text('b'),'0.3'),Split(Text('c'),Text('d'),'1:2'),Split(Text('e'),Text('f'),'wide')])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual(["Split.ratio '0.3' -> '3:7'"]);
+    expect(out.warnings).toEqual(["Split#root_children_2: ratio 'wide' is not a ratio: opened half and half. Write '1:2'."]);
+  });
+
   it('writes a Grid cols guess the way Grid reads it, with a fixed line, and warns about one it cannot read', () => {
     const out = expand(`root=Page('x',[Grid([Text('a'),Text('b')],'2fr 1fr'),Grid([Text('c'),Text('d')],'50% 50%'),Grid([Text('e')],'two'),Grid([Text('f')],'1/2',id='g'),Grid([Text('h')],'2fr 1fr')])`);
     expect(out.problems).toEqual([]);

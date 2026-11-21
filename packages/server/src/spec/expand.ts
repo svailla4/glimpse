@@ -49,6 +49,22 @@ function kindWarning(component: string, id: string, meta: SourceMeta, kinds: Rea
   return `${component}#${id}: ${meta.name} returns ${KIND_NOUN[meta.kind]}, which ${component} cannot draw: use ${instead}${asRows}. The plate will show an error.`;
 }
 
+/**
+ * Split's ratio as Split draws it, said (D22): a share rewritten to 'a:b' is a `fixed` line, and a value Split cannot
+ * read (it then opens the panes half and half) is a `warn` line.
+ */
+function splitRatioChecked(comp: WireComponent, out: Expansion): void {
+  const written = String(comp.ratio);
+  const meant = splitRatio(written);
+  if (meant !== written) {
+    comp.ratio = meant;
+    out.fixes.push(`Split.ratio '${oneLine(written, 24)}' -> '${meant}'`);
+  }
+  if (!/^\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?$/.test(meant.trim()) && !/^\d+(?:\.\d+)?%?$/.test(meant.trim())) {
+    out.warnings.push(`Split#${comp.id}: ratio '${oneLine(written, 24)}' is not a ratio: opened half and half. Write '1:2'.`);
+  }
+}
+
 /** '0.3', '.3' and '30%' as the 'a:b' ratio Split draws; anything else is returned as written. */
 export function splitRatio(text: string): string {
   const trimmed = text.trim();
@@ -427,7 +443,7 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
   nameFiles(comp, def.name, def.props as Record<string, Prop>, out, names);
   collectChecks(comp, def.name, def.props as Record<string, Prop>, out);
   if ('mark' in def.props) checkMark(comp, def.name, out);
-  if (def.name === 'Split' && typeof comp.ratio === 'string') comp.ratio = splitRatio(comp.ratio);
+  if (def.name === 'Split' && typeof comp.ratio === 'string') splitRatioChecked(comp, out);
   if (def.name === 'Grid') gridCols(comp, out);
   // Inline diagram data: what is not a diagram at all is refused, the rest draws and says what it corrected or left out.
   // Data bound to a $/path is checked against the data model after the call (diagramNotes).
