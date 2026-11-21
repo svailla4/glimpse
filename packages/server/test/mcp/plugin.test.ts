@@ -14,9 +14,13 @@ import {VERSION} from '../../src/mcp/version.ts';
 import {tempRoot} from '../session/fakes.ts';
 
 const repo = fileURLToPath(new URL('../../../../', import.meta.url));
-const LICENSE_ID = 'PolyForm-Noncommercial-1.0.0';
-const REQUIRED_NOTICE = 'Required Notice: Copyright 2026 svailla4 (https://github.com/svailla4)';
-const POLYFORM_NC_SHA256 = 'c0ea4a896d2c8c394b29f9427589996db826cd501c512279ff0ed3ef48fabbe5';
+const LICENSE_ID = 'FSL-1.1-ALv2';
+// The one placeholder line of the FSL-1.1-ALv2 template, and Glimpse's filled-in Notice.
+// biome-ignore lint/suspicious/noTemplateCurlyInString: the placeholders are the licence template's, not JavaScript's
+const NOTICE_PLACEHOLDER = 'Copyright ${year} ${licensor name}';
+const COPYRIGHT_NOTICE = 'Copyright 2026 svailla4';
+// The FSL-1.1-ALv2 template published at https://fsl.software/ (getsentry/fsl.software, also SPDX's licenseText).
+const FSL_TEMPLATE_SHA256 = '36b6082235c0a2105174927fc57cc6ae9c41f45a08af2bdcaee18a8dace56177';
 const readJson = async (path: string) => JSON.parse(await readFile(join(repo, path), 'utf8')) as Record<string, any>;
 
 describe('plugin manifests', () => {
@@ -67,20 +71,21 @@ describe('plugin manifests', () => {
 });
 
 describe('licence', () => {
-  it('LICENSE.md is the Required Notice line, then the PolyForm Noncommercial 1.0.0 text unmodified', async () => {
+  it('LICENSE.md is the FSL-1.1-ALv2 template with only its Notice placeholders filled in', async () => {
     const text = await readFile(join(repo, 'LICENSE.md'), 'utf8');
-    const [notice, blank, ...rest] = text.split('\n');
-    // A plain-text line that begins with "Required Notice:" (the licence's Notices section), naming no one but the handle.
-    expect(notice).toBe(REQUIRED_NOTICE);
-    expect(blank).toBe('');
-    // The text published at https://polyformproject.org/licenses/noncommercial/1.0.0 (PolyForm's GitHub markdown),
-    // byte for byte: a changed licence text would have to drop the PolyForm name.
-    expect(createHash('sha256').update(rest.join('\n')).digest('hex')).toBe(POLYFORM_NC_SHA256);
+    // The Notice names no one but the handle, under the template's own heading.
+    expect(text.split('\n').slice(0, 10)).toEqual([
+      '# Functional Source License, Version 1.1, ALv2 Future License', '', '## Abbreviation', '', LICENSE_ID, '', '## Notice', '', COPYRIGHT_NOTICE, '',
+    ]);
+    expect(text.split(COPYRIGHT_NOTICE)).toHaveLength(2);
+    // Put the placeholders back and the text is the published template byte for byte: nothing else was edited, and a
+    // changed licence could not keep the FSL name.
+    expect(createHash('sha256').update(text.replace(COPYRIGHT_NOTICE, NOTICE_PLACEHOLDER)).digest('hex')).toBe(FSL_TEMPLATE_SHA256);
   });
 
   it('the plugin directory, which is what users install, carries the same LICENSE.md and NOTICE.md', async () => {
     for (const file of ['LICENSE.md', 'NOTICE.md']) expect(await readFile(join(repo, 'plugin', file), 'utf8'), file).toBe(await readFile(join(repo, file), 'utf8'));
-    expect(await readFile(join(repo, 'NOTICE.md'), 'utf8')).toContain(`\n${REQUIRED_NOTICE}\n`);
+    expect(await readFile(join(repo, 'NOTICE.md'), 'utf8')).toContain(`\n${COPYRIGHT_NOTICE}\n`);
   });
 
   it('every package.json declares it', async () => {
@@ -118,7 +123,8 @@ describe('scripts/build.mjs', () => {
     expect(text).not.toContain('"displayName":"GLSL"');
     const notices = await readFile(join(dir.root, 'dist', 'THIRD_PARTY_NOTICES.md'), 'utf8');
     expect(notices).toContain('**This build has no viewer: only the server bundle is covered.**');
-    expect(notices).toContain(REQUIRED_NOTICE);
+    expect(notices).toContain(`\n${COPYRIGHT_NOTICE}\n`);
+    expect(notices).toContain(LICENSE_ID);
   });
 
   it('the bundle has no bare imports left and embeds no absolute path of this machine', async () => {
