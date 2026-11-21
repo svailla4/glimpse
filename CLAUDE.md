@@ -15,8 +15,8 @@ next year:
 - Record a design decision that changes how Glimpse behaves in the decision log below, with its reasons, so a later
   session does not undo it by accident.
 - Keep the codebase small and legible: prefer removing code to adding options, and match the style already here.
-- The owner (svailla4) decides product direction, licensing and releases; ask before changing those. Commit, push
-  or open a pull request only when asked.
+- The owner (svailla4) decides product direction and licensing; ask before changing those. Commit, push or open a
+  pull request only when asked. Patch releases are the exception: they follow Releasing below without asking.
 
 ## Layout
 
@@ -42,6 +42,24 @@ npm test -w @glimpse/viewer -- test/diagrams   # one area
 ```
 
 Before calling work done: `check`, `test`, `build` and `budgets` pass, and `e2e` for anything the tab draws.
+
+## Releasing
+
+An installed plugin runs neither this checkout nor `plugin/dist`: the marketplace entry installs the `release` branch,
+which `.github/workflows/release.yml` builds from a version tag. Work merged into `main` reaches no one until it is
+tagged. The owner's standing instruction (2026-11-21) is that `main` is released as it changes:
+
+- Whenever `main` has commits the latest tag lacks (`git fetch --tags && git log $(git describe --tags --abbrev=0
+  origin/main)..origin/main`), tag the next patch version on `origin/main` and push the tag:
+  `git tag -a v0.1.2 -m 'Glimpse 0.1.2: <what changed>' origin/main && git push origin v0.1.2`. Check this at the
+  start of a session and after a pull request is merged. A minor or major version still needs the owner's go-ahead.
+- Watch the run (`gh run watch`). The workflow runs check, test and build before it publishes; if it fails, fix
+  `main` and tag the next patch. Never move or delete a pushed tag.
+- Then refresh the local install: `claude plugin marketplace update glimpse && claude plugin update glimpse@glimpse`,
+  and `/reload-plugins` in an open session. `plugin update` compares versions only, so it does nothing before a new
+  tag has published.
+- To try work that is not released: `npm run build`, `claude plugin disable glimpse@glimpse` (so two `glimpse`
+  servers do not clash), then `claude --plugin-dir <checkout>/plugin`.
 
 ## Rules that are easy to break
 
