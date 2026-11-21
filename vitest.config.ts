@@ -36,8 +36,8 @@ export default defineConfig({
           environment: 'jsdom',
           // RTL cleanup after each test and React's act() environment flag (vitest globals are off).
           setupFiles: ['test/setup.ts'],
-          // At least the 10 s a waitFor may take (test/setup.ts): a test of several waits that takes 400 ms here took
-          // over 5 s on a macOS CI runner and timed out at the default, mid-wait.
+          // Longer than the 10 s one waitFor may take (test/setup.ts), so a wait that fails reports its assertion
+          // ("expected X, received Y") instead of the test timing out mid-wait with no detail.
           testTimeout: 20_000,
         },
       },
