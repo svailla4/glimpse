@@ -3,7 +3,7 @@ import type {TokenLine} from '@glimpse/catalog';
 import {useEffect, useMemo, useRef, useState, type KeyboardEvent} from 'react';
 import {Empty, Icon, Redline, useHost, type GlView} from '../../kit/index.ts';
 import s from './CodeBlock.module.css';
-import {coerceLines, cx, ignoredMarksText, inRanges, lineText, parseMarks, plainLines, textCols, TokenSpans} from './codekit/lines.tsx';
+import {coerceLines, cx, ignoredMarksText, inRanges, lineText, plainLines, textCols, TokenSpans, useMarks} from './codekit/lines.tsx';
 import k from './codekit/lines.module.css';
 import {useFetched} from './codekit/useFetched.ts';
 import {VirtualRows} from './codekit/VirtualRows.tsx';
@@ -45,7 +45,7 @@ export const CodeBlockView: GlView<typeof C.CodeBlock> = ({id, props}) => {
       return line && lineText(line) === text ? line : text === '' ? [] : [[text, 0]];
     });
   }, [plain, highlighted.data]);
-  const {ranges: marks, ignored: badMarks} = useMemo(() => parseMarks(props.mark), [props.mark]);
+  const {ranges: marks, ignored: badMarks} = useMarks(props.mark, code ? plain.length : undefined);
   const cols = useMemo(() => plain.reduce((max, text) => Math.max(max, Math.min(textCols(text), 2016)), 0), [plain]);
   const [copied, copy] = useCopied();
 

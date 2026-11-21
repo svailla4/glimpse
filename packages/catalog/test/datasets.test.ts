@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENT_BY_NAME, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, formatFileLoc, galleryRoot, gallerySpec, parseFileLoc, cleanFlow, cleanSequence, parseLineRanges,
+  COMPONENT_BY_NAME, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, cleanFlow, cleanSequence, formatFileLoc, galleryRoot, gallerySpec, ignoredMarksWarning, parseFileLoc, readLineMarks,
   type A2uiMessage, type ErTable, type GraphData, type WireComponent,
 } from '../src/index.ts';
 import {buildSurface, strictErrors} from '../testing/index.ts';
@@ -18,8 +18,8 @@ describe('file anchors and line ranges', () => {
     [' 12 - 18 , 30 ', [[12, 18], [30, 30]]],
     ['', []],
     [undefined, []],
-  ] as const)('parseLineRanges(%j)', (spec, ranges) => {
-    expect(parseLineRanges(spec)).toEqual(ranges);
+  ] as const)('readLineMarks(%j)', (spec, ranges) => {
+    expect(readLineMarks(spec)).toEqual({ranges, ignored: []});
   });
 
   // F041: mark='L1-60' highlighted nothing, although files are written 'path#L1-60' everywhere else.
@@ -27,16 +27,39 @@ describe('file anchors and line ranges', () => {
     ['L1-60', [[1, 60]]],
     ['L3,L7-9', [[3, 3], [7, 9]]],
     ['L7-L9', [[7, 9]]],
-    ['#L10-20', [[10, 20]]],
     ['l5', [[5, 5]]],
-    ['3, L7-9 ,#L12', [[3, 3], [7, 9], [12, 12]]],
-  ] as const)('parseLineRanges(%j) reads the file-anchor spelling', (spec, ranges) => {
-    expect(parseLineRanges(spec)).toEqual(ranges);
+  ] as const)('readLineMarks(%j) reads the file-anchor spelling as written', (spec, ranges) => {
+    expect(readLineMarks(spec)).toEqual({ranges, ignored: []});
   });
 
-  it('drops what is not a line number', () => {
-    expect(parseLineRanges('3,abc,7..9,L,12')).toEqual([[3, 3], [12, 12]]);
-    expect(parseLineRanges('3,,7')).toEqual([[3, 3], [7, 7]]);
+  // Decision D22: a plain guess is read and the reading is said; it is never dropped in silence.
+  it.each([
+    ['lines 10-20', [[10, 20]], '10-20'],
+    ['line 7', [[7, 7]], '7'],
+    ['L10:L20', [[10, 20]], '10-20'],
+    ['#L10-L20', [[10, 20]], '10-20'],
+    ['#L12', [[12, 12]], '12'],
+    ['10..20', [[10, 20]], '10-20'],
+    ['10...20', [[10, 20]], '10-20'],
+    ['10\u201320', [[10, 20]], '10-20'],
+    ['10 \u2014 20', [[10, 20]], '10-20'],
+    ['10 to 20', [[10, 20]], '10-20'],
+    ['20-10', [[10, 20]], '10-20'],
+    ['3; 7-9', [[3, 3], [7, 9]], '3,7-9'],
+    ['3, L7-9 ,#L12', [[3, 3], [7, 9], [12, 12]], '3,L7-9,12'],
+  ] as const)('readLineMarks(%j) reads a guess and says how', (spec, ranges, fixed) => {
+    expect(readLineMarks(spec)).toEqual({ranges, ignored: [], fixed});
+  });
+
+  it('returns what names no line, and keeps it in the fixed text', () => {
+    expect(readLineMarks('3,abc,L,0,3-,12')).toEqual({ranges: [[3, 3], [12, 12]], ignored: ['abc', 'L', '0', '3-']});
+    expect(readLineMarks('3,,7')).toEqual({ranges: [[3, 3], [7, 7]], ignored: []});
+    expect(readLineMarks('the loop; 10..12')).toEqual({ranges: [[10, 12]], ignored: ['the loop'], fixed: 'the loop,10-12'});
+    expect(readLineMarks(4)).toEqual({ranges: [[4, 4]], ignored: []});
+    expect(readLineMarks(0)).toEqual({ranges: [], ignored: []});
+    expect(ignoredMarksWarning(['foo'])).toBe("mark 'foo' ignored: write 'L10-20' or '3,7-9'");
+    expect(ignoredMarksWarning(['a', 'b', 'c', 'd', 'the start of the function body'])).toBe("mark 'a', 'b', 'c' and 2 more ignored: write 'L10-20' or '3,7-9'");
+    expect(ignoredMarksWarning(['the start of the function body'])).toBe("mark 'the start of the functi\u2026' ignored: write 'L10-20' or '3,7-9'");
   });
 });
 
@@ -72,7 +95,7 @@ describe('gallery', () => {
     expect(layers.map(layer => Object.keys(layer)[0])).toEqual(['name', 'title', 'label']);
 
     expect(props(one('CodeView')).mark).toBe('L1-3');
-    expect(parseLineRanges(props(one('CodeView')).mark)).toEqual([[1, 3]]);
+    expect(readLineMarks(props(one('CodeView')).mark)).toEqual({ranges: [[1, 3]], ignored: []});
     expect(props(one('Markdown')).title, 'title= on Markdown draws a plate (F039)').toBe('Markdown');
   });
 

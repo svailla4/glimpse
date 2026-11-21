@@ -6,6 +6,7 @@ import {
   looksLikeRef, normalizeCols, parseColumns, parseRef, PATHS,
   shapeKinds, SOURCES, type A2uiMessage, type Field, type Prop, type SourceMeta, type SourceRef, type WireComponent,
 } from '@glimpse/catalog';
+import {ignoredMarksWarning, readLineMarks} from '@glimpse/catalog';
 import {AS_ROWS, NODE_FIELDS, readsAsRows} from '../session/datasets.ts';
 import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
 import {closeMatch, nearest, oneLine, problem, type Problem} from './errors.ts';
@@ -354,6 +355,20 @@ function focusAsTarget(comp: WireComponent, name: string, text: string, registry
   return formatRef(chosen);
 }
 
+/**
+ * Decision D22: a literal `mark` (CodeView, CodeBlock) is read here. A part written another plain way ('lines 10-20',
+ * '10..20', '20-10') is rewritten as a fix; a part that names no line is a `warn` line (the tab notes it too).
+ */
+function checkMark(comp: WireComponent, name: string, out: Expansion): void {
+  if (typeof comp.mark !== 'string') return;
+  const read = readLineMarks(comp.mark);
+  if (read.fixed !== undefined) {
+    out.fixes.push(`${name}#${comp.id}: mark '${oneLine(comp.mark, 60)}' -> '${oneLine(read.fixed, 60)}'`);
+    comp.mark = read.fixed;
+  }
+  if (read.ignored.length > 0) out.warnings.push(`${name}#${comp.id}: ${ignoredMarksWarning(read.ignored)}`);
+}
+
 function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Expansion, names: PathNames | undefined): void {
   const def = COMPONENT_BY_NAME.get(comp.component);
   if (!def) return;
@@ -411,6 +426,7 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
   if (fields && fields.length > 0) repairFields(comp, def.name, def.props as Record<string, Prop>, fields, out);
   nameFiles(comp, def.name, def.props as Record<string, Prop>, out, names);
   collectChecks(comp, def.name, def.props as Record<string, Prop>, out);
+  if ('mark' in def.props) checkMark(comp, def.name, out);
   if (def.name === 'Split' && typeof comp.ratio === 'string') comp.ratio = splitRatio(comp.ratio);
   if (def.name === 'Grid') gridCols(comp, out);
   // Inline diagram data: what is not a diagram at all is refused, the rest draws and says what it corrected or left out.

@@ -1,8 +1,8 @@
 // Token lines as the server sends them (design 5.7): [text, class] pairs, never markup. Everything here treats that
 // JSON as untrusted: a line that is not an array of pairs becomes plain text, an unknown class becomes class 0.
-import {TOKEN_CLASSES, type TokenLine} from '@glimpse/catalog';
-import {memo, type CSSProperties, type ReactNode} from 'react';
-import {DirText, useSizeCap} from '../../../kit/index.ts';
+import {ignoredMarksWarning, readLineMarks, TOKEN_CLASSES, type TokenLine} from '@glimpse/catalog';
+import {memo, useMemo, type CSSProperties, type ReactNode} from 'react';
+import {DirText, useReportState, useSizeCap} from '../../../kit/index.ts';
 import s from './lines.module.css';
 
 /**
@@ -83,33 +83,31 @@ export function Crumbs(p: {path: string}): ReactNode {
 
 export type LineRanges = ReadonlyArray<readonly [number, number]>;
 
+const rangeText = ([from, to]: readonly [number, number]) => (from === to ? `${from}` : `${from}-${to}`);
+
 /**
- * The `mark` prop as line ranges: '3,7-9'. Lines may be written the way file locations are everywhere else
- * ('L1-60', '#L10-L20', '12:18'), since that is what a writer who has just typed 'path#L10-20' reaches for.
- * Segments that name no line are left out and returned in `ignored`, so the view can say so instead of
- * silently marking nothing.
+ * The `mark` prop as line ranges ('3,7-9', read by readLineMarks, as the server reads it). What the view cannot
+ * honour is reported as W_MARK (decision D14): parts that name no line (the server says so for a mark it saw; this
+ * is for marks that reached the tab another way) and, once the view knows how many lines there are, ranges past the
+ * last one. The view also notes the ignored parts in its header (ignoredMarksText).
  */
-export function parseMarks(spec: unknown): {ranges: Array<[number, number]>; ignored: string[]} {
-  const ranges: Array<[number, number]> = [];
-  const ignored: string[] = [];
-  if (typeof spec === 'number' && Number.isInteger(spec) && spec > 0) return {ranges: [[spec, spec]], ignored};
-  if (typeof spec !== 'string') return {ranges, ignored};
-  for (const part of spec.split(/[,;]/)) {
-    const text = part.trim();
-    if (text === '') continue;
-    const match = /^#?L?(\d+)(?:\s*(?:-|–|:|\.\.)\s*#?L?(\d+))?$/i.exec(text);
-    const from = match ? Number(match[1]) : 0;
-    if (!match || from < 1) {
-      ignored.push(text);
-      continue;
+export function useMarks(spec: unknown, total: number | undefined): {ranges: LineRanges; ignored: string[]} {
+  const {ranges, ignored} = useMemo(() => readLineMarks(spec), [spec]);
+  const problem = useMemo(() => {
+    const said: string[] = [];
+    if (ignored.length > 0) said.push(ignoredMarksWarning(ignored));
+    const past = total !== undefined && total > 0 ? ranges.filter(range => range[1] > total) : [];
+    if (past.length > 0) {
+      const shown = past.slice(0, 3).map(range => `'${rangeText(range)}'`).join(', ');
+      said.push(`mark ${shown}${past.length > 3 ? ` and ${past.length - 3} more` : ''} ${past.length === 1 ? 'is' : 'are'} past the last line (${total})`);
     }
-    const to = match[2] ? Number(match[2]) : from;
-    ranges.push([Math.min(from, to), Math.max(from, to)]);
-  }
+    return said.length > 0 ? said.join('; ') : undefined;
+  }, [ranges, ignored, total]);
+  useReportState(problem !== undefined ? 'W_MARK' : undefined, problem ?? '');
   return {ranges, ignored};
 }
 
-/** 'mark: "abc" is not a line range' — the note a view shows for segments parseMarks could not read. */
+/** 'mark: "abc" is not a line range' — the note a view shows for the parts of a mark that name no line. */
 export function ignoredMarksText(ignored: readonly string[]): string {
   const shown = ignored.slice(0, 3).map(text => `"${text.length > 16 ? `${text.slice(0, 15)}…` : text}"`).join(', ');
   return `mark: ${shown}${ignored.length > 3 ? ` and ${ignored.length - 3} more` : ''} ${ignored.length === 1 ? 'is not a line range' : 'are not line ranges'}`;

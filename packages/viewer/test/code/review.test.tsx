@@ -1,10 +1,10 @@
 // Regression tests for the review findings in the code family: `mark` written the way file locations are (F041),
 // lines that fail to load and can be asked for again, the wording of an empty diff (F046), the diff list header
 // (F003) and the scroll cue (F016).
-import type {DiffPayload, FileQuery, FileSlice, TokenLine} from '@glimpse/catalog';
+import {readLineMarks, type DiffPayload, type FileQuery, type FileSlice, type TokenLine} from '@glimpse/catalog';
 import {fireEvent, waitFor, within} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
-import {ignoredMarksText, parseMarks} from '../../src/components/code/codekit/lines.tsx';
+import {ignoredMarksText} from '../../src/components/code/codekit/lines.tsx';
 import {HOST_FIXTURES, renderExpress} from '../harness.tsx';
 
 const slice = (q: FileQuery, total: number, note = ''): FileSlice => {
@@ -18,14 +18,14 @@ const text = (cell: HTMLElement, n: number) => cell.querySelector(`[data-line="$
 
 describe('mark (F041, D5)', () => {
   it('reads line ranges written like file locations, and says which segments name no line', () => {
-    expect(parseMarks('3,7-9').ranges).toEqual([[3, 3], [7, 9]]);
+    expect(readLineMarks('3,7-9').ranges).toEqual([[3, 3], [7, 9]]);
     // what a writer who has just typed 'path#L1-60' reaches for
-    expect(parseMarks('L1-60').ranges).toEqual([[1, 60]]);
-    expect(parseMarks('#L10-L20, l3 ; 5:7').ranges).toEqual([[10, 20], [3, 3], [5, 7]]);
-    expect(parseMarks('9-7').ranges).toEqual([[7, 9]]);
-    expect(parseMarks(4).ranges).toEqual([[4, 4]]);
-    expect(parseMarks(undefined)).toEqual({ranges: [], ignored: []});
-    const bad = parseMarks('L2, take(), 0, 3-');
+    expect(readLineMarks('L1-60').ranges).toEqual([[1, 60]]);
+    expect(readLineMarks('#L10-L20, l3 ; 5:7').ranges).toEqual([[10, 20], [3, 3], [5, 7]]);
+    expect(readLineMarks('9-7').ranges).toEqual([[7, 9]]);
+    expect(readLineMarks(4).ranges).toEqual([[4, 4]]);
+    expect(readLineMarks(undefined)).toEqual({ranges: [], ignored: []});
+    const bad = readLineMarks('L2, take(), 0, 3-');
     expect(bad.ranges).toEqual([[2, 2]]);
     expect(bad.ignored).toEqual(['take()', '0', '3-']);
     expect(ignoredMarksText(bad.ignored)).toBe('mark: "take()", "0", "3-" are not line ranges');
@@ -46,6 +46,21 @@ describe('mark (F041, D5)', () => {
     const block = view.cell('b');
     await waitFor(() => expect(block.querySelector('[data-gl-mark-ignored]')?.textContent).toBe('mark: "nope" is not a line range'));
     expect([...block.querySelectorAll('[data-hl]')].map(line => line.getAttribute('data-line'))).toEqual(['2']);
+  });
+
+  // Decision D14: what the view cannot mark is told to the model, not only noted in the header.
+  it('reports W_MARK for parts that name no line and for lines past the end, and OK for a mark it draws', async () => {
+    const view = renderExpress(
+      `root=Page('T',[a,b,c,d,e])\na=CodeView('big.ts',mark='the loop, 2')\nb=CodeView('big.ts',mark='95-110,120')\nc=CodeView('big.ts',mark='L2-3')\nd=CodeBlock('a\\nb\\nc','ts',mark='L2, nope')\ne=CodeBlock('a\\nb\\nc','ts',mark='3-4')`,
+      {host: {file: q => Promise.resolve(slice(q, 100))}},
+    );
+    await waitFor(() => expect(view.stateOf('b')).toBe('W_MARK'));
+    await waitFor(() => expect(view.stateOf('c')).toBe('OK'));
+    const said = (id: string) => view.reports.findLast(report => report.componentId === id && report.code === 'W_MARK')?.message;
+    expect(said('a')).toBe("CodeView#a: mark 'the loop' ignored: write 'L10-20' or '3,7-9'");
+    expect(said('b')).toBe("CodeView#b: mark '95-110', '120' are past the last line (100)");
+    expect(said('d')).toBe("CodeBlock#d: mark 'nope' ignored: write 'L10-20' or '3,7-9'");
+    expect(said('e')).toBe("CodeBlock#e: mark '3-4' is past the last line (3)");
   });
 });
 

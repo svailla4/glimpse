@@ -351,6 +351,44 @@ describe('expandMessages: field names', () => {
   });
 });
 
+// Decision D22: a mark that reads as a guess is rewritten and said; a part that names no line is a warn line.
+describe('expandMessages: mark', () => {
+  it('rewrites a guessed mark and says it as a fix', () => {
+    const out = expand(`root=Page('x',[a,b,c,d,e,f])\na=CodeView('src/a.ts',mark='lines 10-20')\nb=CodeView('src/a.ts',mark='L10:L20')\nc=CodeView('src/a.ts',mark='#L10-L20')\nd=CodeBlock('x','ts',mark='10..20')\ne=CodeView('src/a.ts',mark='10\u201320')\nf=CodeView('src/a.ts',mark='20-10')`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([]);
+    expect(out.fixes).toEqual([
+      "CodeView#a: mark 'lines 10-20' -> '10-20'",
+      "CodeView#b: mark 'L10:L20' -> '10-20'",
+      "CodeView#c: mark '#L10-L20' -> '10-20'",
+      "CodeBlock#d: mark '10..20' -> '10-20'",
+      "CodeView#e: mark '10\u201320' -> '10-20'",
+      "CodeView#f: mark '20-10' -> '10-20'",
+    ]);
+    expect(out.components.filter(comp => 'mark' in comp).map(comp => comp.mark)).toEqual(Array(6).fill('10-20'));
+  });
+
+  it('leaves a mark written the documented way alone', () => {
+    const out = expand(`root=Page('x',[CodeView('src/a.ts',mark='L3,L7-9'),CodeBlock('x','ts',mark='3, 7-9'),CodeView('src/a.ts')])`);
+    expect(out.fixes).toEqual([]);
+    expect(out.warnings).toEqual([]);
+    expect(out.byComponent('CodeView').mark).toBe('L3,L7-9');
+  });
+
+  it('warns about the parts that name no line and keeps the rest', () => {
+    const out = expand(`root=Page('x',[a,b])\na=CodeView('src/a.ts',mark='foo')\nb=CodeBlock('x','ts',mark='the loop; 10..12, 0')`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([
+      "CodeView#a: mark 'foo' ignored: write 'L10-20' or '3,7-9'",
+      "CodeBlock#b: mark 'the loop', '0' ignored: write 'L10-20' or '3,7-9'",
+    ]);
+    expect(out.fixes).toEqual(["CodeBlock#b: mark 'the loop; 10..12, 0' -> 'the loop,10-12,0'"]);
+    // a number is a line (the compiler writes it as text); 0 is not one
+    expect(expand(`root=Page('x',[CodeView('src/a.ts',mark=12)])`).warnings).toEqual([]);
+    expect(expand(`root=Page('x',[CodeView('src/a.ts',mark=0,id='z')])`).warnings).toEqual(["CodeView#z: mark '0' ignored: write 'L10-20' or '3,7-9'"]);
+  });
+});
+
 describe('checkRef and helpers', () => {
   it('checkRef returns the parsed ref and the meta, also for a fake source', () => {
     expect(checkRef('fake.rows src top=3', registry)).toEqual({ref: {source: 'fake.rows', target: 'src', args: {top: '3'}}, meta: fakes.rows.meta});
