@@ -73,8 +73,9 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   Mermaid. Measured cost: about 4% more characters for a whole page. `cleanFlow` and `cleanSequence` run on the
   server (inline data in `expandComponent`, bound data in `diagramNotes`) and in the viewer (which reports `W_DROPPED`
   for data a patch wrote). Mermaid text is refused with `E_SHAPE` and an example of the data to write instead.
-  Flowchart groups are drawn as nested frames by flowkit; sequence blocks (loop, alt, opt, par, critical, break,
-  group, with `else` branches) are drawn as frames.
+  Flowchart groups are drawn as nested frames by flowkit. Sequence blocks (loop, alt, opt, par, critical, break, with
+  `else` branches) are written nested and drawn by the renderer from #5 (merged the day before D21), which `cleanSequence`
+  feeds balanced open/else/end frame steps; #5's Mermaid block parsing and repair went with the parser.
 - **D22: no invented string formats; no silent fallbacks (2026-11-21).** After D21, every prop whose string Glimpse
   takes apart was audited. One was an invented grammar; four read what they could and dropped the rest without a word.
   Why: the cost of a format is not its syntax but what happens when a model gets it wrong. A wrong value that is
