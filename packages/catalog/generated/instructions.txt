@@ -10,7 +10,7 @@ Sources: files.{tree list langs} repo.{kpis stack packages scripts} deps.{module
 Graphs (deps.modules, deps.files, diff.impact) need Graph().
 INLINE: Stats|KeyValue [{label,value}] Layers [{name,items:['a','b']}] ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}] Flowchart {nodes:{A:{label,shape?,group?}},edges:[['A','B','x'?]],groups?} SequenceDiagram {steps:[['A','B','x','reply'?],{note,over},{loop:'x',steps}]}
 CODE: CodeView('src/a.ts#L10-40') and DiffView('main..HEAD') read from disk; DiffView() is the live working tree; files are 'path#L10-20' everywhere.
-LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it: FileTree() beside CodeView() is a file browser.
+LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it; node:'PG' links an item, row or actor to node PG.
 SHARED, not listed below: span=1..12 on all (12-column grid); title= (numbered plate), note=, size=s|m|l|xl|fill (only a max height) on Text, Markdown, Chips, Stats, KeyValue, Steps, List, Data, Charts, Diagrams, Code (not Sparkline, CodeBlock).
 Components (? optional; catalog{} lists more):
 Layout: Page|Section(title, children, subtitle?) Plate(title, children, note?) Grid(children, cols?, gap?) Row|Column(children, gap?, align?) Tabs(labels, children) Split(start, end, ratio?)

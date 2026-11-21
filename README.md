@@ -282,7 +282,7 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 
 | Budget | Limit | Now |
 |---|---|---|
-| Server instructions | 3,750 chars (hard limit 4,000) | 3,747 |
+| Server instructions | 3,750 chars (hard limit 4,000) | 3,749 |
 | `show` + `catalog` definitions | 1,500 chars | 1,147 |
 | Largest preset result (`overview`) | 1,200 chars | 1,095 |
 | Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 193.6 kB |

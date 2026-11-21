@@ -205,7 +205,7 @@ export const Steps = component('Steps', {
   doc: 'Numbered plan or walkthrough with status marks and a progress rule.',
   example: "Steps([{title:'Add the middleware',status:'done'},{title:'Wire the router',status:'doing'},{title:'Tests'}],title='Plan')",
 }, {
-  data: p.data<StepItem[]>('StepItem[]', '[{title,note?,status?,file?}]; status todo|doing|done|blocked|skipped.'),
+  data: p.data<StepItem[]>('StepItem[]', 'StepItem below.'),
   current: minor(opt(p.number('Number of the active step, counting from 1 as drawn. Usually omitted: give that step status doing.'))),
   ...FRAME,
 });
@@ -256,9 +256,9 @@ export const DataTable = component('DataTable', {
   doc: 'Virtualized sortable table; columns come from the dataset unless given.',
   example: "DataTable('git.hotspots top=25',['path',{key:'commits',kind:'bar'},'owner'],sort='-score',title='Hotspots')",
 }, {
-  data: p.data<Rows>('Rows', 'Source ref, $/path or inline rows. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph.'),
+  data: p.data<Rows>('Rows', "Source ref, $/path or inline rows (node:'ID' links a row). A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph."),
   // Two forms (the list, and the presets' shorthand string), so a DynamicValue (p.value), read by readColumns (notation.ts).
-  columns: opt(p.value<ColumnsValue>("[{key, kind?, label?} | 'key'] (or field/name, title). Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
+  columns: opt(p.value<ColumnsValue>("[{key, kind?, label?} | 'key']. Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
   sort: opt(p.str("'field' or '-field'.")),
   search: minor(opt(p.flag('Show the search box. Default: when more than 20 rows.'))),
   group: minor(opt(p.str('Group rows by this field.'))),
@@ -440,8 +440,8 @@ export const Flowchart = component('Flowchart', {
   doc: 'Boxes and arrows written as data: flows, state machines, grouped parts.',
   example: "Flowchart({nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond'}},edges:[['Req','RL'],['RL','H','no']]})",
 }, {
-  data: p.data<FlowData>('FlowData', 'Nodes, edges and groups (FlowData below).'),
-  dir: opt(p.enum(['TB', 'LR'], 'Flow direction. Default: whichever reads larger in its plate.', DIR_ALIASES)),
+  data: p.data<FlowData>('FlowData', 'FlowData below.'),
+  dir: opt(p.enum(['TB', 'LR'], 'Default: whichever reads larger.', DIR_ALIASES)),
   ...FRAME,
 });
 
@@ -450,7 +450,7 @@ export const SequenceDiagram = component('SequenceDiagram', {
   doc: 'Lifelines and numbered messages written as data, with notes and loop/alt frames.',
   example: "SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify'],['Auth','API','token','reply'],['API','User','200','reply']]})",
 }, {
-  data: p.data<SeqData>('SeqData', 'Actors and steps: messages, notes, blocks (SeqData below).'),
+  data: p.data<SeqData>('SeqData', 'SeqData below. Actor node: its id unless given; via: nodes passed.'),
   ...FRAME,
 });
 
@@ -459,7 +459,7 @@ export const Layers = component('Layers', {
   doc: 'Architecture tiers: horizontal bands of boxes, top tier first.',
   example: "Layers([{name:'API',items:['routes','middleware']},{name:'Domain',items:['ledger','payouts']}])",
 }, {
-  data: p.data<LayerItem[]>('LayerItem[]', "[{name,items:['label'|{label,file?,note?}],note?}], top tier first."),
+  data: p.data<LayerItem[]>('LayerItem[]', 'LayerItem below, top tier first.'),
   ...FRAME,
 });
 
@@ -468,7 +468,7 @@ export const ERDiagram = component('ERDiagram', {
   doc: 'Tables with column rows and key marks, joined by relation edges.',
   example: "ERDiagram([{name:'users',columns:[{name:'id',type:'uuid',pk:true},{name:'email'}]},{name:'orders',columns:[{name:'id',pk:true},{name:'user_id',fk:'users.id'}]}],title='Data model')",
 }, {
-  data: p.data<ErData>('ErData', "Tables [{name,columns:[{name,type?,pk?,fk?}]}], or {tables,relations}. fk:'users.id' draws the relation."),
+  data: p.data<ErData>('ErData', "ErData below. fk:'users.id' draws the relation."),
   dir: minor(opt(p.enum(['LR', 'TB'], 'Default: whichever reads larger.', DIR_ALIASES))),
   ...FRAME,
 });

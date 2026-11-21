@@ -11,7 +11,7 @@ export const CATALOG_INSTRUCTIONS = [
   'Data props take a /ds binding (server dataset), any other binding, or an inline value. Datasets are self-describing: tables and charts need no column or axis props.',
   'Data, chart, diagram and code components, and Text, Markdown, Chips and Stats, draw their own plate frame when given title=.',
   'Code and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.',
-  'The current selection is at /ui/sel ({type,id,path?,line?}); the selected file is at /ui/file ("path#L10-20").',
+  'The current selection is at /ui/sel ({type,id,path?,line?,nodes?}); the selected file is at /ui/file ("path#L10-20").',
 ].join('\n');
 
 /** Schema-only catalog: validation, Express compilation and toJson() in Node. Never imports @a2ui/react. */

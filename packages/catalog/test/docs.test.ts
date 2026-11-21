@@ -222,7 +222,7 @@ describe('data shapes', () => {
       }
       for (const shape of Object.keys(SHAPES)) if (!shapes.has(shape)) expect(doc, `${def.name}: ${shape}`).not.toContain(`  ${shape}: `);
     }
-    expect(componentDoc('Steps')).toContain("StepItem: {title, note?, status?: todo|doing|done|blocked|skipped, file?: 'path#L10'}");
+    expect(componentDoc('Steps')).toContain("StepItem: {title, note?, status?: todo|doing|done|blocked|skipped, file?: 'path#L10', node?}");
     expect(componentDoc('ERDiagram')).toContain("fk?: true|'table.column'");
     expect(componentDoc('ERDiagram')).toContain("relations: [{from: 'orders.user_id', to: 'users.id'");
   });

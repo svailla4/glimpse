@@ -110,7 +110,7 @@ export const SHAPES: Readonly<Record<string, ShapeDoc>> = {
     example: "[{label:'Files',value:412},{label:'Coverage',value:87,unit:'%',delta:2,tone:'good'}]",
   },
   StepItem: {
-    sig: "{title, note?, status?: todo|doing|done|blocked|skipped, file?: 'path#L10'}",
+    sig: "{title, note?, status?: todo|doing|done|blocked|skipped, file?: 'path#L10', node?}",
     example: "[{title:'Add the middleware',status:'done'},{title:'Wire the router',status:'doing',file:'src/api/routes.ts#L12'},{title:'Tests'}]",
   },
   ListItem: {
@@ -126,11 +126,11 @@ export const SHAPES: Readonly<Record<string, ShapeDoc>> = {
     example: "['React','Vite',{label:'1 cycle',tone:'warn'}]",
   },
   LayerItem: {
-    sig: "{name, items: ['label' | {label, file?, note?}], note?}",
+    sig: "{name, items: ['label' | {label, file?, note?, node?}], note?}",
     example: "[{name:'API',items:['routes','middleware']},{name:'Domain',items:['ledger',{label:'payouts',file:'src/payouts.ts'}]}]",
   },
   ErData: {
-    sig: "tables [{name, columns: [{name, type?, pk?: true, fk?: true|'table.column', nullable?}], file?}]; or {tables, relations: [{from: 'orders.user_id', to: 'users.id', card?: 1-1|1-n|n-1|n-n, label?}]}",
+    sig: "tables [{name, columns: [{name, type?, pk?: true, fk?: true|'table.column', nullable?}], file?, node?}]; or {tables, relations: [{from: 'orders.user_id', to: 'users.id', card?: 1-1|1-n|n-1|n-n, label?}]}",
     example: "[{name:'users',columns:[{name:'id',type:'uuid',pk:true},{name:'email',type:'text'}]},{name:'orders',columns:[{name:'id',type:'uuid',pk:true},{name:'user_id',type:'uuid',fk:'users.id'}]}]",
   },
   GraphData: {
@@ -138,11 +138,11 @@ export const SHAPES: Readonly<Record<string, ShapeDoc>> = {
     example: "{nodes:[{id:'api',label:'api'},{id:'db',label:'db',sub:'postgres'}],edges:[{from:'api',to:'db',label:'reads'}]}",
   },
   FlowData: {
-    sig: "{nodes: {ID: 'label' | {label, shape?: box|diamond|pill|store|circle, group?}}, edges: [['from','to','label'?] | {from, to, label?, dashed?}], groups?: {ID: 'label' | {label, parent?}}}; or lists [{id, ...}]. Bound to $/name, a node patches: $/name/nodes/ID={label:'...'}",
-    example: "{groups:{api:'API'},nodes:{R:{label:'routes',group:'api'},L:{label:'Over limit?',shape:'diamond',group:'api'},P:{label:'Postgres',shape:'store'}},edges:[['R','L'],{from:'L',to:'P',label:'no',dashed:true}]}",
+    sig: "{nodes: {ID: 'label' | {label, shape?: box|diamond|pill|store|circle, group?, note?, file?: 'path#L10'}}, edges: [['from','to','label'?] | {from, to, label?, dashed?}], groups?: {ID: 'label' | {label, parent?}}}; or lists [{id, ...}]. Bound to $/name, a node patches: $/name/nodes/ID={label:'...'}",
+    example: "{groups:{api:'API'},nodes:{R:{label:'routes',group:'api'},L:{label:'Over limit?',shape:'diamond',group:'api'},P:{label:'Postgres',shape:'store',note:'orders'}},edges:[['R','L'],{from:'L',to:'P',label:'no',dashed:true}]}",
   },
   SeqData: {
-    sig: "{actors?: ['A', 'B'] | {A: 'Label'}, steps: [['from', 'to', 'label', 'sync'|'reply'|'async'?] | {from, to, label?, arrow?} | {note, over: 'A' | ['A', 'B']} | {loop|alt|opt|par|critical|break|group: 'label', steps, else?: [{label, steps}]}]}; or just the steps list",
+    sig: "{actors?: ['A', 'B'] | {A: 'Label' | {label, node?}}, steps: [['from', 'to', 'label', 'sync'|'reply'|'async'?] | {from, to, label?, arrow?, via?} | {note, over: 'A' | ['A', 'B']} | {loop|alt|opt|par|critical|break|group: 'label', steps, else?: [{label, steps}]}]}; or just the steps list",
     example: "{actors:{U:'User',A:'API',D:'DB'},steps:[['U','A','POST /login'],{alt:'valid password',steps:[['A','D','insert session'],['A','U','200','reply']],else:[{label:'wrong password',steps:[['A','U','401','reply']]}]}]}",
   },
   TourStop: {
@@ -286,7 +286,7 @@ Sources: ${sourceGroups()}
 Graphs (deps.modules, deps.files, diff.impact) need Graph().
 INLINE: Stats|KeyValue [{label,value}] Layers [{name,items:['a','b']}] ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}] Flowchart {nodes:{A:{label,shape?,group?}},edges:[['A','B','x'?]],groups?} SequenceDiagram {steps:[['A','B','x','reply'?],{note,over},{loop:'x',steps}]}
 CODE: CodeView('src/a.ts#L10-40') and DiffView('main..HEAD') read from disk; DiffView() is the live working tree; files are 'path#L10-20' everywhere.
-LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it: FileTree() beside CodeView() is a file browser.
+LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it; node:'PG' links an item, row or actor to node PG.
 SHARED, not listed below: span=1..12 on all (12-column grid); title= (numbered plate), note=, size=s|m|l|xl|fill (only a max height) on Text, Markdown, Chips, Stats, KeyValue, Steps, List, Data, Charts, Diagrams, Code (not Sparkline, CodeBlock).
 Components (? optional; catalog{} lists more):
 ${componentIndex({brief: true})}

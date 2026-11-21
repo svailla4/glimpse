@@ -5,7 +5,7 @@
   "title": "Glimpse",
   "description": "Generative UI for codebases.",
   "catalogId": "urn:glimpse:catalog:v1",
-  "instructions": "Root is Page(title, children). Children flow on a 12-column grid; every component takes span=1..12.\nData props take a /ds binding (server dataset), any other binding, or an inline value. Datasets are self-describing: tables and charts need no column or axis props.\nData, chart, diagram and code components, and Text, Markdown, Chips and Stats, draw their own plate frame when given title=.\nCode and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.\nThe current selection is at /ui/sel ({type,id,path?,line?}); the selected file is at /ui/file (\"path#L10-20\").",
+  "instructions": "Root is Page(title, children). Children flow on a 12-column grid; every component takes span=1..12.\nData props take a /ds binding (server dataset), any other binding, or an inline value. Datasets are self-describing: tables and charts need no column or axis props.\nData, chart, diagram and code components, and Text, Markdown, Chips and Stats, draw their own plate frame when given title=.\nCode and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.\nThe current selection is at /ui/sel ({type,id,path?,line?,nodes?}); the selected file is at /ui/file (\"path#L10-20\").",
   "components": {
     "Page": {
       "type": "object",
@@ -586,7 +586,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "[{title,note?,status?,file?}]; status todo|doing|done|blocked|skipped."
+          "description": "StepItem below."
         },
         "current": {
           "$ref": "common_types.json#/$defs/DynamicNumber",
@@ -771,11 +771,11 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "Source ref, $/path or inline rows. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph."
+          "description": "Source ref, $/path or inline rows (node:'ID' links a row). A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph."
         },
         "columns": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "[{key, kind?, label?} | 'key'] (or field/name, title). Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool."
+          "description": "[{key, kind?, label?} | 'key']. Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool."
         },
         "sort": {
           "type": "string",
@@ -1651,7 +1651,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "Nodes, edges and groups (FlowData below)."
+          "description": "FlowData below."
         },
         "dir": {
           "type": "string",
@@ -1659,7 +1659,7 @@
             "TB",
             "LR"
           ],
-          "description": "Flow direction. Default: whichever reads larger in its plate. One of: TB|LR."
+          "description": "Default: whichever reads larger. One of: TB|LR."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -1701,7 +1701,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "Actors and steps: messages, notes, blocks (SeqData below)."
+          "description": "SeqData below. Actor node: its id unless given; via: nodes passed."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -1743,7 +1743,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "[{name,items:['label'|{label,file?,note?}],note?}], top tier first."
+          "description": "LayerItem below, top tier first."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -1785,7 +1785,7 @@
         },
         "data": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "Tables [{name,columns:[{name,type?,pk?,fk?}]}], or {tables,relations}. fk:'users.id' draws the relation."
+          "description": "ErData below. fk:'users.id' draws the relation."
         },
         "dir": {
           "type": "string",
