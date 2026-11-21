@@ -4,28 +4,17 @@
 // once a child names one, the Grid lays its children on 12 columns like the page does, and a child that names none
 // takes the share of the width its track would have had (12 / tracks, or its ratio). So `Grid([a(span=6), b(span=6)])`
 // and `Grid([map(span=8), tree(span=4)],'2:1')` sit side by side. Below 720 px of page width it is one column.
+// `cols` is read by the catalog's parseCols, as the server reads it: a guess ('2fr 1fr') is drawn as the server would
+// write it ('2:1'); what cannot be read is drawn as the default tracks and reported as W_COLS.
 import type * as C from '@glimpse/catalog';
+import {MAX_TRACKS, parseCols} from '@glimpse/catalog';
 import {useMemo, useRef} from 'react';
 import {inVisualOrder, useArrangement, type Arrangement} from '../../kit/arrange.tsx';
-import {ArrangeContext, useChildIds, useChildSpans, useSurfaceId, type GlView} from '../../kit/index.ts';
+import {ArrangeContext, useChildIds, useChildSpans, useReportState, useSurfaceId, type GlView} from '../../kit/index.ts';
 import css from './Grid.module.css';
 import {gapPx, vars} from './shared.ts';
 
-const MAX_TRACKS = 12;
 const COLUMNS = 12;
-
-/** Track weights for a `cols` value; undefined when it is neither a count nor a ratio of positive numbers. */
-export function parseCols(cols: string | undefined): number[] | undefined {
-  const text = cols?.trim();
-  if (!text) return undefined;
-  if (/^\d+$/.test(text)) {
-    const count = Number(text);
-    return count >= 1 ? new Array<number>(Math.min(MAX_TRACKS, count)).fill(1) : undefined;
-  }
-  const parts = text.split(':').map(part => Number(part.trim()));
-  if (parts.length < 2 || parts.length > MAX_TRACKS || parts.some(n => !Number.isFinite(n) || n <= 0)) return undefined;
-  return parts;
-}
 
 /**
  * The 12-column span of the i-th child that names none, when its siblings name theirs: the width of the track it would
@@ -41,7 +30,10 @@ export const GridView: GlView<typeof C.Grid> = ({id, props, child}) => {
   const element = useRef<HTMLDivElement>(null);
   const children = Array.isArray(props.children) ? props.children : [];
   const count = children.length;
-  const weights = useMemo(() => parseCols(props.cols) ?? new Array<number>(Math.min(4, Math.max(1, count))).fill(1), [props.cols, count]);
+  const written = String(props.cols ?? '').trim();
+  const read = useMemo(() => (written ? parseCols(written) : undefined), [written]);
+  const weights = useMemo(() => read ?? new Array<number>(Math.min(4, Math.max(1, count))).fill(1), [read, count]);
+  useReportState(written && !read ? 'W_COLS' : undefined, `cols '${written.slice(0, 40)}' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'`);
   const childIds = useChildIds(id);
   const spans = useChildSpans(id);
   // A span is a width on 12 columns: a Grid whose children name spans is laid on 12 columns.

@@ -2,7 +2,8 @@
 // becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, diagram data, column
 // shorthand and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
 import {
-  acceptsArg, checkColumns, cleanFlow, cleanSequence, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, parseColumns, parseRef, PATHS,
+  acceptsArg, checkColumns, cleanFlow, cleanSequence, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef,
+  looksLikeRef, normalizeCols, parseColumns, parseRef, PATHS,
   shapeKinds, SOURCES, type A2uiMessage, type Field, type Prop, type SourceMeta, type SourceRef, type WireComponent,
 } from '@glimpse/catalog';
 import {AS_ROWS, NODE_FIELDS, readsAsRows} from '../session/datasets.ts';
@@ -56,6 +57,23 @@ export function splitRatio(text: string): string {
   const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
   const d = gcd(first, 100 - first);
   return `${first / d}:${(100 - first) / d}`;
+}
+
+/**
+ * Grid's cols as Grid reads it (normalizeCols, shared with the viewer): a guess ('2fr 1fr', '50% 50%', 'two') is
+ * written as '2:1', '1:1' or '2' with a `fixed` line; what cannot be read is drawn as equal columns, said in a `warn`.
+ */
+function gridCols(comp: WireComponent, out: Expansion): void {
+  if (typeof comp.cols !== 'string' || comp.cols.trim() === '') return;
+  const written = comp.cols;
+  const meant = normalizeCols(written);
+  if (meant === undefined) {
+    out.warnings.push(`Grid#${comp.id}: cols '${oneLine(written, 40)}' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'.`);
+    return;
+  }
+  const fix = `Grid.cols '${oneLine(written, 40)}' -> '${meant}'`;
+  if (meant !== written.replace(/\s+/g, '') && !out.fixes.includes(fix)) out.fixes.push(fix);
+  comp.cols = meant;
 }
 
 const sourceNames = (registry: SourceRegistry): string[] => [...new Set([...SOURCES.map(s => s.name), ...registry.keys()])];
@@ -394,6 +412,7 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
   nameFiles(comp, def.name, def.props as Record<string, Prop>, out, names);
   collectChecks(comp, def.name, def.props as Record<string, Prop>, out);
   if (def.name === 'Split' && typeof comp.ratio === 'string') comp.ratio = splitRatio(comp.ratio);
+  if (def.name === 'Grid') gridCols(comp, out);
   // Inline diagram data: what is not a diagram at all is refused, the rest draws and says what it corrected or left out.
   // Data bound to a $/path is checked against the data model after the call (diagramNotes).
   const clean = DIAGRAMS[def.name];

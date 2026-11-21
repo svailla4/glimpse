@@ -15,3 +15,4 @@ export * from './transport.ts';
 export * from './diagrams.ts';
 export * from './notation.ts';
 export * from './normalize.ts';
+export * from './grid.ts';

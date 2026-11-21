@@ -324,6 +324,31 @@ describe('expandMessages: field names', () => {
     const out = expand(`root=Page('x',[Split(Text('a'),Text('b'),0.3)])`);
     expect(out.byComponent('Split').ratio).toBe('3:7');
   });
+
+  it('writes a Grid cols guess the way Grid reads it, with a fixed line, and warns about one it cannot read', () => {
+    const out = expand(`root=Page('x',[Grid([Text('a'),Text('b')],'2fr 1fr'),Grid([Text('c'),Text('d')],'50% 50%'),Grid([Text('e')],'two'),Grid([Text('f')],'1/2',id='g'),Grid([Text('h')],'2fr 1fr')])`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([]);
+    expect(out.fixes).toEqual(["Grid.cols '2fr 1fr' -> '2:1'", "Grid.cols '50% 50%' -> '1:1'", "Grid.cols 'two' -> '2'", "Grid.cols '1/2' -> '1:2'"]);
+    expect(out.components.filter(comp => comp.component === 'Grid').map(comp => comp.cols)).toEqual(['2:1', '1:1', '2', '1:2', '2:1']);
+    // what Grid reads as written says nothing, whitespace included
+    const plain = expand(`root=Page('x',[Grid([Text('a')],'3'),Grid([Text('b')],' 1 : 2 '),Grid([Text('c')])])`);
+    expect([plain.fixes, plain.warnings]).toEqual([[], []]);
+    expect(plain.components.filter(comp => comp.component === 'Grid').map(comp => comp.cols)).toEqual(['3', '1:2', undefined]);
+    // a number is quoted by the repair first, then read
+    expect(expand(`root=Page('x',[Grid([Text('a')],40)])`).fixes).toContain("Grid.cols '40' -> '12'");
+  });
+
+  it('warns about a Grid cols it cannot read and leaves it as written', () => {
+    const out = expand(`root=Page('x',[Grid([Text('a'),Text('b')],'wide',id='g'),Grid([Text('c')],'200px 1fr',id='h')])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual([]);
+    expect(out.warnings).toEqual([
+      "Grid#g: cols 'wide' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'.",
+      "Grid#h: cols '200px 1fr' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'.",
+    ]);
+    expect(out.byComponent('Grid').cols).toBe('wide');
+  });
 });
 
 describe('checkRef and helpers', () => {
