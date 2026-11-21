@@ -82,7 +82,7 @@ describe('README: what it lists is what exists', () => {
   });
 
   it('has the sections a reader needs: status, tools, security model, limitations', () => {
-    expect(readme).toMatch(/\*\*Status: version 0\.1\.0/);
+    expect(readme).toMatch(/\*\*Status: /);
     for (const tool of ['show', 'catalog', 'query', 'events', 'pending_context']) {
       expect(section(readme, 'Tools'), tool).toContain(`| \`${tool}\` |`);
       expect(pluginReadme, tool).toContain(`| \`${tool}\` |`);

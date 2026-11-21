@@ -7,7 +7,7 @@ Glimpse is two things:
 - **A component library**: 44 React components behind an [A2UI](https://a2ui.org) v1.0 catalog, drawn in one design language, Linework.
 - **An MCP server** with five tools. It compiles the agent's spec, runs the repository analyzers, and hosts the viewer on `127.0.0.1`.
 
-**Status: version 0.1.0, working but young.** All 44 components, the 26 data sources, the ten preset views and the five tools are implemented and covered by unit, component and end-to-end tests. It has been run on macOS with Chromium only, there is no release build yet (you build it from a checkout, see [Install](#install)), and it has had one round of testing with a model writing the specs. [Status and known limitations](#status-and-known-limitations) has the details.
+**Status: working but young.** All 44 components, the 26 data sources, the ten preset views and the five tools are implemented and covered by unit, component and end-to-end tests. It has been run on macOS with Chromium only and has had one round of testing with a model writing the specs. [Status and known limitations](#status-and-known-limitations) has the details.
 
 ## What it looks like
 
@@ -69,7 +69,7 @@ Rebuild (`npm run build`) after pulling changes.
 
 ### Releasing
 
-Push a version tag from `main`: `git tag v0.1.1 && git push origin v0.1.1`. The release workflow (`.github/workflows/release.yml`) runs the check, the unit tests and the build on macOS, sets the plugin's version from the tag, and pushes the built plugin to the `release` branch, where installs and updates come from.
+Every merge into `main` is released as the next patch version. The release workflow (`.github/workflows/release.yml`) runs the check, the unit tests and the build on macOS, then tags the merge (`v0.1.2` after `v0.1.1`), sets the plugin's version from it and pushes the built plugin to the `release` branch, where installs and updates come from. A failed run leaves no tag. For a minor or major version, push the tag by hand: `git tag v0.2.0 && git push origin v0.2.0`.
 
 ### As a plain MCP server
 
@@ -291,7 +291,7 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 
 ## Status and known limitations
 
-Version 0.1.0, early. The checks above pass, and the end-to-end suite drives the bundled server on a fixture repository and on this repository. Measured on a laptop: the first `show{view:"overview"}` returns in 0.2 to 0.4 s on small repositories and in about 1 s on a 4,700-file polyglot one; the first plate is on screen 0.1 to 0.2 s after the tab loads.
+Early. The checks above pass, and the end-to-end suite drives the bundled server on a fixture repository and on this repository. Measured on a laptop: the first `show{view:"overview"}` returns in 0.2 to 0.4 s on small repositories and in about 1 s on a 4,700-file polyglot one; the first plate is on screen 0.1 to 0.2 s after the tab loads.
 
 Be aware of the following:
 
@@ -302,7 +302,6 @@ Be aware of the following:
 - **Known defects** found by the end-to-end suite are kept as `fixme` tests until fixed; `e2e/README.md` has the current list (empty at this version).
 - **Approximate analysis.** Imports, symbols and complexity come from regular expressions; history statistics cover the latest 5,000 commits; authors are grouped by display name.
 - **One session, one server.** State lives in memory and ends with the agent session; the tab then keeps its last picture and says so. A click cannot wake an idle agent: it is delivered with your next prompt or the agent's next Glimpse call.
-- **No release build yet**, so the plugin cannot be installed directly from the hosted repository (see [Install](#install)).
 
 ## Licence
 
