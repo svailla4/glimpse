@@ -22,13 +22,24 @@ function token(value: unknown, max = MAX_VALUE): string {
 
 const name = (value: string) => value.replace(/[^\w.-]/g, '_').slice(0, 64) || '_';
 
-/** `viewer: select file src/hub/hub.ts#L41-58 (overview)` */
+/**
+ * `viewer: select file src/hub/hub.ts#L41-58 (overview)`. A file, symbol or row with a path is named by its place; any
+ * other entity by its id. A symbol, node, row or message also says its label, unless the id already does
+ * (`select node orders`, `select row tiers:Data stores`); a node with a file says where it is (decision D24):
+ * `viewer: select node PG Postgres db/schema.sql#L1-120 (arch)`. The node ids a selection stands for (`nodes`) are
+ * not printed: the model wrote those links.
+ */
 export function selectLine(ref: EntityRef, surfaceId: string): string {
-  const where = ref.path !== undefined && (ref.type === 'file' || ref.type === 'symbol' || ref.type === 'row')
+  const loc = ref.path !== undefined
     ? formatFileLoc({path: ref.path, ...(ref.line !== undefined ? {line: ref.line} : {}), ...(ref.endLine !== undefined ? {endLine: ref.endLine} : {})})
-    : ref.id;
-  const label = ref.type === 'symbol' && ref.label ? ` ${token(ref.label, 80)}` : '';
-  return `${PREFIX} select ${name(String(ref.type))} ${token(where)}${label} (${name(surfaceId)})`;
+    : undefined;
+  const where = loc !== undefined && (ref.type === 'file' || ref.type === 'symbol' || ref.type === 'row') ? loc : ref.id;
+  const named = ref.type === 'symbol' || ref.type === 'node' || ref.type === 'row' || ref.type === 'message';
+  // Only an id can already say the label: a place ('src/a.ts#L8') says where, never what (a symbol 'a' is still named).
+  const said = where === ref.id && ref.label !== undefined && ref.id.includes(ref.label);
+  const label = named && ref.label && !said ? ` ${token(ref.label, 80)}` : '';
+  const at = ref.type === 'node' && loc !== undefined ? ` ${token(loc)}` : '';
+  return `${PREFIX} select ${name(String(ref.type))} ${token(where)}${label}${at} (${name(surfaceId)})`;
 }
 
 /** `viewer: press plan approve {"plan":1}` / `viewer: answer feature store {"choice":"Redis"}` */

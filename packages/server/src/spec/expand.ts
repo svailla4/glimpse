@@ -2,13 +2,14 @@
 // becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, diagram data, DataTable
 // columns and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
 import {
-  acceptsArg, cleanFlow, cleanSequence, columnKey, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, normalizeCols, parseFileLoc,
+  acceptsArg, columnKey, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, normalizeCols, parseFileLoc,
   parseRef, PATHS, readColumns, replaceFileRefs, shapeKinds, shorthandTokens, SOURCES, tokenKey, type A2uiMessage, type Field, type Prop,
   type SourceMeta, type SourceRef, type WireComponent,
 } from '@glimpse/catalog';
 import {ignoredMarksWarning, readLineMarks} from '@glimpse/catalog';
 import {AS_ROWS, NODE_FIELDS, readsAsRows} from '../session/datasets.ts';
 import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
+import {AUTHORED, isBinding, lookup, SERVER_PATH, TEXT_DIAGRAMS} from './authored.ts';
 import {closeMatch, nearest, oneLine, problem, type Problem} from './errors.ts';
 import {pathProblem} from './guard.ts';
 
@@ -127,8 +128,8 @@ export function checkRef(text: string, registry: SourceRegistry, where = ''): {r
 }
 
 const allowsString = (prop: Prop): boolean => (prop.shape ?? '').split('|').some(part => part === 'string' || part === 'unknown');
-const isBinding = (value: unknown): value is {'@path': string} =>
-  typeof value === 'object' && value !== null && typeof (value as {'@path'?: unknown})['@path'] === 'string';
+/** A value the tab resolves itself: a binding or a function call. */
+const isDynamic = (value: unknown): boolean => isBinding(value) || (typeof value === 'object' && value !== null && '@call' in value);
 
 export function componentsOf(message: A2uiMessage): WireComponent[] {
   if ('createSurface' in message) return message.createSurface.components;
@@ -136,7 +137,8 @@ export function componentsOf(message: A2uiMessage): WireComponent[] {
   return [];
 }
 
-const MAX_CHECKS = 64;
+/** Most files, ranges and field lists one call has checked. */
+export const MAX_CHECKS = 64;
 
 /** Sources whose positional target is a path (a range, for diff.*, is never a case variant of a file). */
 const PATH_TARGET = new Set(['path', 'path|range']);
@@ -434,8 +436,8 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
     if (prop.kind !== 'data') continue;
     const value = comp[key];
     // Text where a diagram takes data (the Mermaid these components once read): say what they take now.
-    if (typeof value === 'string' && DIAGRAMS[def.name]) {
-      const cleaned = DIAGRAMS[def.name]!(value);
+    if (typeof value === 'string' && TEXT_DIAGRAMS.has(def.name)) {
+      const cleaned = AUTHORED[def.name]!(value);
       if (!cleaned.ok) out.problems.push(problem('E_SHAPE', `${where(key)}: ${cleaned.error}`, {component: def.name}));
       continue;
     }
@@ -492,54 +494,19 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
   if ('mark' in def.props) checkMark(comp, def.name, out);
   if (def.name === 'Split' && typeof comp.ratio === 'string') splitRatioChecked(comp, out);
   if (def.name === 'Grid') gridCols(comp, out);
-  // Inline diagram data: what is not a diagram at all is refused, the rest draws and says what it corrected or left out.
-  // Data bound to a $/path is checked against the data model after the call (diagramNotes).
-  const clean = DIAGRAMS[def.name];
-  if (clean && comp.data !== undefined && typeof comp.data !== 'string' && !isBinding(comp.data)) {
-    const cleaned = clean(comp.data);
+  // Inline authored data (decision D24, authored.ts): what is not the shape at all is refused, the rest draws and says
+  // what it corrected or left out, and the files it names are checked like file props. Data bound to a $/path is
+  // checked against the data model after the call (diagramNotes).
+  const authored = AUTHORED[def.name];
+  if (authored && comp.data !== undefined && typeof comp.data !== 'string' && !isDynamic(comp.data)) {
+    const cleaned = authored(comp.data);
     if (!cleaned.ok) out.problems.push(problem('E_SHAPE', `${where('data')}: ${cleaned.error}`, {component: def.name}));
     else {
       out.fixes.push(...cleaned.fixes.map(fix => `${def.name}#${comp.id}: ${fix}`));
       out.warnings.push(...cleaned.dropped.map(drop => `${def.name}#${comp.id}: not drawn: ${drop}`));
+      for (const {at, file} of cleaned.ast.files) if (out.files.length < MAX_CHECKS) out.files.push({where: `${def.name}#${comp.id} ${at}`, file});
     }
   }
-}
-
-/** The components whose data is diagram data, and how it is cleaned (catalog/src/diagrams.ts). */
-const DIAGRAMS: Readonly<Record<string, (data: unknown) => ReturnType<typeof cleanFlow> | ReturnType<typeof cleanSequence>>> = {
-  Flowchart: cleanFlow,
-  SequenceDiagram: cleanSequence,
-};
-const SERVER_PATH = /^\/(?:ds|meta|ui)(?:\/|$)/;
-
-/**
- * What the diagrams bound to a $/path draw from the data model after a call, as `fixed` and `warn` lines: those the
- * call defines, and those whose path the call wrote (`$/arch/nodes/G/group='api'` changes a diagram the call does not
- * name). Inline diagram data was checked by expandComponent. `written` holds the top segments of the paths written.
- */
-export function diagramNotes(
-  components: Iterable<WireComponent>, data: Record<string, unknown>, defined: ReadonlySet<string>, written: ReadonlySet<string>,
-): {fixes: string[]; warnings: string[]} {
-  const notes = {fixes: [] as string[], warnings: [] as string[]};
-  for (const comp of components) {
-    const clean = DIAGRAMS[comp.component];
-    if (!clean || !isBinding(comp.data)) continue;
-    const path = comp.data['@path'];
-    if (!path.startsWith('/') || SERVER_PATH.test(path)) continue;
-    if (!defined.has(comp.id) && !written.has(path.split('/').filter(Boolean)[0] ?? '')) continue;
-    const value = lookup(data, path);
-    // Nothing there is reported as an unbound path.
-    if (value === undefined) continue;
-    const where = `${comp.component}#${comp.id}`;
-    const cleaned = clean(value);
-    if (!cleaned.ok) {
-      notes.warnings.push(`${where}: E_SHAPE $${path}: ${cleaned.error}`);
-      continue;
-    }
-    notes.fixes.push(...cleaned.fixes.map(fix => `${where}: ${fix}`));
-    notes.warnings.push(...cleaned.dropped.map(drop => `${where}: not drawn: ${drop}`));
-  }
-  return notes;
 }
 
 const RESERVED = [PATHS.ds, PATHS.meta];
@@ -572,15 +539,6 @@ export function expandMessages(messages: A2uiMessage[], registry: SourceRegistry
   return out;
 }
 
-function lookup(data: unknown, path: string): unknown {
-  let node = data;
-  for (const segment of path.split('/').filter(Boolean)) {
-    if (typeof node !== 'object' || node === null) return undefined;
-    node = (node as Record<string, unknown>)[segment.replace(/~1/g, '/').replace(/~0/g, '~')];
-  }
-  return node;
-}
-
 function collectBindings(value: unknown, into: Set<string>): void {
   if (isBinding(value)) { into.add(value['@path']); return; }
   if (Array.isArray(value)) for (const item of value) collectBindings(item, into);
@@ -595,7 +553,7 @@ export function unboundPaths(components: Iterable<WireComponent>, data: Record<s
   const paths = new Set<string>();
   for (const comp of components) for (const [key, value] of Object.entries(comp)) if (key !== 'id' && key !== 'component') collectBindings(value, paths);
   return [...paths]
-    .filter(path => path.startsWith('/') && !/^\/(ds|meta|ui)(\/|$)/.test(path) && lookup(data, path) === undefined)
+    .filter(path => path.startsWith('/') && !SERVER_PATH.test(path) && lookup(data, path) === undefined)
     .map(path => `$${path}`);
 }
 

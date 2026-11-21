@@ -187,3 +187,45 @@ test.describe('D19/D20: diagrams open whole when they can, the way they are writ
     await expect(plate.locator('.react-flow__minimap')).toHaveCount(0);
   });
 });
+
+// Decision D24: diagrams and lists the model writes link through node ids (node:'PG'), and a selected message lights
+// the route it takes (via) on the Flowchart; the server keeps the trace, so it survives a reload.
+test.describe('D24: links and traces', () => {
+  test.use({viewport: {width: 1440, height: 900}});
+
+  const SPEC = `root=Page('Ticketing',[arch,er,tiers,choices,co])
+arch=Flowchart({nodes:{Client:'Client',CDN:'CDN',Q:'Queue',GW:'Gateway',Inv:'Inventory',PG:{label:'Postgres',shape:'store'}},edges:[['Client','CDN'],['CDN','Q'],['Q','GW'],['Client','GW'],['GW','Inv'],['Inv','PG']]},title='System')
+er=ERDiagram([{name:'orders',node:'PG',columns:[{name:'id',pk:true}]},{name:'seats',node:'PG',columns:[{name:'id',pk:true},{name:'order_id',fk:'orders.id'}]}],title='Schema')
+tiers=Layers([{name:'Data',items:[{label:'Postgres',node:'PG'},{label:'Edge',node:'GW'}]}],title='Tiers')
+choices=DataTable([{choice:'System of record',node:'PG'},{choice:'Front door',node:'GW'}],title='Choices')
+co=SequenceDiagram({actors:{U:{label:'User',node:'Client'},G:{label:'Gateway',node:'GW'},I:{label:'Inventory',node:'Inv'}},steps:[{from:'U',to:'G',label:'POST /checkout',via:['CDN','Q']},['G','I','hold seats']]},title='Checkout')`;
+
+  const hotEdges = (page: Page) =>
+    page.locator('.gl-cell[data-id="arch"] [data-edge][data-hot]').evaluateAll(edges => edges.map(edge => edge.getAttribute('data-edge') ?? '').sort());
+  const selections = async (glimpse: Glimpse) => (await glimpse.call('events', {})).lines.filter(line => line.startsWith('viewer: select'));
+
+  test('a node lights what links to it; a message lights its route, follows the keyboard and survives a reload', async ({page, glimpse}) => {
+    await showSettled(page, glimpse, 'links', SPEC);
+    await (await stageOf(page, 'arch')).locator('[data-node="PG"]').click();
+    for (const table of ['orders', 'seats']) await expect(page.locator(`.gl-cell[data-id="er"] [data-node="${table}"]`)).toHaveAttribute('data-selected', 'true');
+    await expect(page.locator('.gl-cell[data-id="tiers"] [data-layer-item="Postgres"]')).toHaveAttribute('data-selected', 'true');
+    await expect(page.locator('.gl-cell[data-id="tiers"] [data-layer-item="Edge"]')).toHaveAttribute('data-dim', 'true');
+    await expect(page.locator('.gl-cell[data-id="choices"] [role="row"]', {hasText: 'System of record'})).toHaveAttribute('data-selected', 'within');
+
+    await page.locator('.gl-cell[data-id="co"] [role="img"]').focus();
+    await page.keyboard.press('ArrowDown');
+    // the legs of Client -> CDN -> Q -> GW, and not the direct Client -> GW edge
+    await expect.poll(() => hotEdges(page)).toEqual(['CDN->Q', 'Client->CDN', 'Q->GW']);
+    await expect.poll(() => selections(glimpse), {timeout: 3000}).toEqual(['viewer: select message co:1 "1. User to Gateway: POST /checkout" (links)']);
+
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => hotEdges(page)).toEqual(['GW->Inv']);
+    // the selection reaches the server (debounced) before the reload
+    await expect.poll(async () => (await selections(glimpse)).some(line => line.startsWith('viewer: select message co:2 ')), {timeout: 3000}).toBe(true);
+
+    await page.reload();
+    await expectSettled(page);
+    await stageOf(page, 'arch');
+    await expect.poll(() => hotEdges(page)).toEqual(['GW->Inv']);
+  });
+});

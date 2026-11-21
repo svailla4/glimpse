@@ -218,7 +218,7 @@ export function editDistance(a: string, b: string): number {
 }
 
 /** Case-insensitive distance; a candidate that merely extends or shortens the name by a prefix ranks close. */
-function looseDistance(name: string, candidate: string): number {
+export function looseDistance(name: string, candidate: string): number {
   const a = name.toLowerCase();
   const b = candidate.toLowerCase();
   const d = editDistance(a, b);

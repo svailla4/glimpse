@@ -299,6 +299,55 @@ describe('working tree', () => {
   });
 });
 
+// Decision D24: the files diagram and Steps data name are checked like file props, inline or bound to a $/path.
+describe('files named inside data', () => {
+  beforeAll(async () => {
+    await mkdir(join(dir.root, 'db'), {recursive: true});
+    await writeFile(join(dir.root, 'db', 'schema.sql'), 'create table users ();\n');
+  });
+
+  it('a missing file of an inline Flowchart node, Layers item, ER table or Steps item is a warning', async () => {
+    const t = start();
+    const outcome = await t.session.show(spec('nested', `root=Page('Nested',[flow,tiers,er,plan])
+flow=Flowchart({nodes:{PG:{label:'Postgres',file:'db/schma.sql'},C:{label:'Cache',file:'db/schema.sql#L1'}},edges:[['PG','C']]})
+tiers=Layers([{name:'Data',items:[{label:'Postgres',file:'db/gone.sql'},{label:'Cache',file:'db/schema.sql'}]}])
+er=ERDiagram([{name:'orders',file:'db/',columns:['id']}])
+plan=Steps([{title:'Migrate',file:'db/missing.sql#L3'},{title:'Ship'}])`));
+    expect(outcome.warnings).toEqual([]);
+    await outcome.checks;
+    expect(outcome.warnings).toEqual([
+      'Flowchart#flow node PG: file "db/schma.sql" does not exist.',
+      'Layers#tiers item \'Postgres\': file "db/gone.sql" does not exist.',
+      'ERDiagram#er table orders: "db/" is a directory, not a file.',
+      'Steps#plan step 1: file "db/missing.sql" does not exist.',
+    ]);
+  });
+
+  it('so is one in data bound to a $/path, checked against the data model after the call', async () => {
+    const t = start();
+    const outcome = await t.session.show(spec('bound', `$/flow={nodes:{PG:{label:'Postgres',path:'db/schma.sql'}},edges:[]}
+$/tiers=[{name:'Data',items:[{label:'Postgres',file:'db/gone.sql'}]}]
+$/er=[{name:'orders',file:'db/orders.sql',columns:['id']},{name:'users',file:'db/schema.sql#L1',columns:['id']}]
+root=Page('Bound',[Flowchart($/flow),Layers($/tiers),ERDiagram($/er)])`));
+    expect(outcome.fixes).toEqual(['Flowchart#root_children_0: node PG: path -> file']);
+    await outcome.checks;
+    expect(outcome.warnings).toEqual([
+      'Flowchart#root_children_0 node PG: file "db/schma.sql" does not exist.',
+      'Layers#root_children_1 item \'Postgres\': file "db/gone.sql" does not exist.',
+      'ERDiagram#root_children_2 table orders: file "db/orders.sql" does not exist.',
+    ]);
+  });
+
+  it('a node id that links to nothing on the view is a warning; one another part declares is not', async () => {
+    const t = start();
+    const outcome = await t.session.show(spec('links', `root=Page('Links',[flow,tiers,seq])
+flow=Flowchart({nodes:{PG:'Postgres',GW:'Gateway'},edges:[['GW','PG']]})
+tiers=Layers([{name:'Data',items:[{label:'Postgres',node:'PGG'},{label:'Edge',node:'GW'}]}])
+seq=SequenceDiagram({actors:{U:'User',G:{label:'Gateway',node:'GW'}},steps:[['U','G','hi']]})`));
+    expect(outcome.warnings).toEqual(["Layers#tiers: node 'PGG' links to nothing on this view (nearest: PG)"]);
+  });
+});
+
 describe('colour slots', () => {
   it('assigns slots 1 to 8 per kind, heaviest first, and publishes them once', async () => {
     const langs = Array.from({length: 10}, (_, i) => ({lang: `L${i}`, loc: i === 3 ? 9999 : 100 - i}));
@@ -346,6 +395,36 @@ describe('host actions', () => {
     router.handle(action('gl_select', {ref: {type: 'module', id: 'auth'}}));
     router.handle(action('gl_select', {ref: null}));
     expect(t.session.events.drain()).toEqual([]);
+  });
+
+  // Decision D24: a selection names the diagram nodes it stands for; the server keeps them, so a trace survives.
+  it('gl_select keeps the message type and valid node ids, and drops any other nodes whole', async () => {
+    const {t, router} = await withRouter();
+    const message = {type: 'message', id: 'checkout:1', label: '1. User to Gateway: POST /checkout', nodes: ['Client', 'CDN', 'Q', 'GW', 'GW']};
+    expect(router.handle(action('gl_select', {ref: message}, 'table'))).toBe(true);
+    expect(t.session.surfaces.get('demo')!.sel).toEqual(message);
+    expect(t.session.events.drain()).toEqual(['viewer: select message checkout:1 "1. User to Gateway: POST /checkout" (demo)']);
+    const sixteen = Array.from({length: 16}, (_, i) => `N${i}`);
+    expect(router.handle(action('gl_select', {ref: {type: 'row', id: 'r', nodes: sixteen}}, 'table'))).toBe(true);
+    expect(t.session.surfaces.get('demo')!.sel).toEqual({type: 'row', id: 'r', nodes: sixteen});
+    const bad: unknown[] = ['PG', [], [...sixteen, 'N16'], ['PG', 7], ['PG', ''], ['x'.repeat(201)], {0: 'PG'}, null];
+    for (const nodes of bad) {
+      expect(router.handle(action('gl_select', {ref: {type: 'node', id: 'PG', nodes}}, 'table'))).toBe(true);
+      expect(t.session.surfaces.get('demo')!.sel).toEqual({type: 'node', id: 'PG'});
+    }
+    expect(router.handle(action('gl_select', {ref: {type: 'node', id: 'PG', nodes: ['x'.repeat(200)]}}, 'table'))).toBe(true);
+    expect(t.session.surfaces.get('demo')!.sel?.nodes).toEqual(['x'.repeat(200)]);
+  });
+
+  it('the node ids of a selection survive a patch and a replace', async () => {
+    const {t, router} = await withRouter();
+    const ref = {type: 'node', id: 'orders', label: 'orders', path: 'db/schema.sql', line: 10, endLine: 30, nodes: ['PG']};
+    router.handle(action('gl_select', {ref}, 'table'));
+    await t.session.show(spec('demo', `$/notes='patched'`));
+    expect(t.session.surfaces.get('demo')!.sel).toEqual(ref);
+    await t.session.show(spec('demo', `root=Page('Demo',[table,notes])`));
+    const ui = (created(t.session.replay().find(frame => frame.surfaceId === 'demo') as Frame).dataModel as {ui: unknown}).ui;
+    expect(ui).toEqual({sel: ref, file: 'db/schema.sql#L10-30'});
   });
 
   it('other actions are queued as press, answer or event lines by the kind of their source', async () => {

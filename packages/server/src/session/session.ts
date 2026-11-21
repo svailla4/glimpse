@@ -16,7 +16,8 @@ import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
 import {canonicalTarget, isCaseVariant} from '../sources/targets.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../spec/compile.ts';
 import {editDistance, nearest, oneLine, problem, SpecError, type Problem} from '../spec/errors.ts';
-import {boundKeys, checkRef, componentsOf, diagramNotes, expandMessages, unboundPaths, type Expansion, type PathNames} from '../spec/expand.ts';
+import {diagramNotes, linkNotes} from '../spec/authored.ts';
+import {boundKeys, checkRef, componentsOf, expandMessages, MAX_CHECKS, unboundPaths, type Expansion, type PathNames} from '../spec/expand.ts';
 import {DatasetStore, envelopeOf, pageRows, pendingEnvelope, readsRefs, rowsOf, type Drill, type Outcome, type PageQuery} from './datasets.ts';
 import {ownEnv} from './env.ts';
 import {EventQueue, selectLine} from './events.ts';
@@ -603,11 +604,15 @@ export class Session {
     const compiledData = new Set(compiled.messages.flatMap(message => ('updateDataModel' in message ? [topSegment(message.updateDataModel.path)]
       : 'createSurface' in message ? Object.keys(message.createSurface.dataModel ?? {}) : [])));
     const defined = new Set(compiled.messages.flatMap(message => componentsOf(message).map(comp => comp.id)));
-    const diagrams = diagramNotes(draft.record.components.values(), draft.record.data, defined, compiledData);
+    const components = [...draft.record.components.values()];
+    const diagrams = diagramNotes(components, draft.record.data, defined, compiledData);
+    // Decision D24: the files bound diagram and Steps data name are checked with the call's own (checkNamed).
+    for (const entry of diagrams.files) if (expansion.files.length < MAX_CHECKS) expansion.files.push(entry);
+    const links = linkNotes(components, draft.record.data, defined, compiledData);
     return {
       draft,
       fixes: [...compiled.fixes, ...expansion.fixes, ...diagrams.fixes],
-      warnings: [...compiled.warnings, ...expansion.warnings, ...diagrams.warnings, ...unbound.map(path => `unbound ${path}`)],
+      warnings: [...compiled.warnings, ...expansion.warnings, ...diagrams.warnings, ...links, ...unbound.map(path => `unbound ${path}`)],
       expansion,
       compiledData,
     };
