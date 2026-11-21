@@ -1,7 +1,7 @@
 // Row logic for the table family: coercion, column resolution, sort, search, grouping and the entity a row stands
 // for. No DOM. Which entity a file location names and how an entity relates to the selection are the kit's rules.
 import {
-  parseColumns, parseFileLoc, parseRef,
+  parseFileLoc, parseRef,
   type DataRow, type Dataset, type EntityRef, type Field, type FieldKind,
 } from '@glimpse/catalog';
 import {fileEntity, matchSelection} from '../../kit/index.ts';
@@ -103,10 +103,10 @@ function sniffKind(key: string, rows: readonly DataRow[]): FieldKind {
 const humanize = (key: string) => key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ');
 
 /**
- * Columns from the `columns` shorthand, else the dataset's fields, else sniffed from the first 50 rows.
- * A shorthand column without a kind takes the kind (and label) the dataset declares for that field.
+ * Columns from the `columns` prop (as read by readColumns), else the dataset's fields, else sniffed from the first 50
+ * rows. A column the prop names without a kind takes the kind (and label) the dataset declares for that field.
  */
-export function resolveColumns(spec: string | undefined, fields: readonly Field[] | undefined, rows: readonly DataRow[]): Column[] {
+export function resolveColumns(wanted: readonly Field[] | undefined, fields: readonly Field[] | undefined, rows: readonly DataRow[]): Column[] {
   const declared = new Map((fields ?? []).map(field => [field.key, field]));
   const finish = (field: Field): Column => {
     const base = declared.get(field.key);
@@ -118,8 +118,7 @@ export function resolveColumns(spec: string | undefined, fields: readonly Field[
       priority: field.priority ?? base?.priority ?? 2,
     };
   };
-  const fromSpec = spec ? parseColumns(spec) : [];
-  if (fromSpec.length > 0) return fromSpec.map(finish);
+  if (wanted && wanted.length > 0) return wanted.map(finish);
   if (fields && fields.length > 0) return fields.filter(field => typeof field?.key === 'string').map(finish);
   const keys: string[] = [];
   const known = new Set<string>();
@@ -146,7 +145,7 @@ export function knownFields(fields: readonly Field[] | undefined, rows: readonly
 
 export interface CheckedColumns {
   columns: Column[];
-  /** Fields the `columns` shorthand names that the data does not have; they are left out. */
+  /** Fields the `columns` prop names that the data does not have; they are left out. */
   missing: string[];
 }
 
@@ -155,9 +154,9 @@ export interface CheckedColumns {
  * a column of dashes. When none of the named columns exists the table falls back to its default columns. The server
  * already corrects the field names of a bound source; this catches inline data and anything it could not know.
  */
-export function checkColumns(spec: string | undefined, fields: readonly Field[] | undefined, rows: readonly DataRow[]): CheckedColumns {
-  const columns = resolveColumns(spec, fields, rows);
-  if (!spec || rows.length === 0) return {columns, missing: []};
+export function checkColumns(wanted: readonly Field[], fields: readonly Field[] | undefined, rows: readonly DataRow[]): CheckedColumns {
+  const columns = resolveColumns(wanted, fields, rows);
+  if (wanted.length === 0 || rows.length === 0) return {columns, missing: []};
   const known = new Set(knownFields(fields, rows));
   const kept = columns.filter(column => known.has(column.key));
   const missing = columns.filter(column => !known.has(column.key)).map(column => column.key);

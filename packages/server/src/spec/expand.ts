@@ -1,10 +1,10 @@
 // Expansion (design 2.2 step 4): compiled messages are rewritten in place so that every data prop naming a source
-// becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, diagram data, column
-// shorthand and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
+// becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, diagram data, DataTable
+// columns and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
 import {
-  acceptsArg, checkColumns, cleanFlow, cleanSequence, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, normalizeCols,
-  parseColumns, parseFileLoc, parseRef, PATHS, replaceFileRefs, shapeKinds, SOURCES, type A2uiMessage, type Field, type Prop, type SourceMeta,
-  type SourceRef, type WireComponent,
+  acceptsArg, cleanFlow, cleanSequence, columnKey, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, normalizeCols, parseFileLoc,
+  parseRef, PATHS, readColumns, replaceFileRefs, shapeKinds, shorthandTokens, SOURCES, tokenKey, type A2uiMessage, type Field, type Prop,
+  type SourceMeta, type SourceRef, type WireComponent,
 } from '@glimpse/catalog';
 import {ignoredMarksWarning, readLineMarks} from '@glimpse/catalog';
 import {AS_ROWS, NODE_FIELDS, readsAsRows} from '../session/datasets.ts';
@@ -264,18 +264,20 @@ export function meantField(name: string, fields: readonly Field[]): string | und
     ?? closeMatch(name, keys);
 }
 
+/** DataTable's columns: a list or the shorthand string, read by readColumns (catalog notation.ts). */
+const isColumns = (component: string, key: string): boolean => component === 'DataTable' && key === 'columns';
+
 /** Field-valued props of a component: a plain string prop documented as naming a field, and DataTable's columns. */
 const isFieldProp = (component: string, key: string, prop: Prop): boolean =>
-  prop.kind === 'str' && (/\bfield/i.test(prop.doc) || (component === 'DataTable' && key === 'columns'));
+  isColumns(component, key) || (prop.kind === 'str' && /\bfield/i.test(prop.doc));
 
 /** The field names a component's field props spell, as written (DataTable columns by key, sort without its sign). */
 function writtenFields(comp: WireComponent, name: string, props: Record<string, Prop>): string[] {
   const names: string[] = [];
   for (const [key, prop] of Object.entries(props)) {
     const value = comp[key];
-    if (typeof value !== 'string' || !isFieldProp(name, key, prop)) continue;
-    if (name === 'DataTable' && key === 'columns') names.push(...value.trim().split(/\s+/).map(token => /^[^:=]*/.exec(token)![0]));
-    else names.push(...value.split(/[\s,]+/).map(field => field.replace(/^-/, '')));
+    if (isColumns(name, key)) names.push(...readColumns(value).fields.map(column => column.key));
+    else if (typeof value === 'string' && isFieldProp(name, key, prop)) names.push(...value.split(/[\s,]+/).map(field => field.replace(/^-/, '')));
   }
   return names.filter(Boolean);
 }
@@ -310,12 +312,27 @@ function repairFields(comp: WireComponent, name: string, props: Record<string, P
   const moved = (key: string, written: string, meant: string) => out.fixes.push(`${name}.${key} '${oneLine(written, 40)}' -> '${meant}'`);
   for (const [key, prop] of Object.entries(props)) {
     const value = comp[key];
+    if (isColumns(name, key) && Array.isArray(value)) {
+      // The list form: an entry keeps its own spelling ('key', {field: ...}); one with no key is the columns check's.
+      const columns = value.flatMap(item => {
+        const named = columnKey(item);
+        if (!named) return [item];
+        const meant = meantField(named.key, fields);
+        if (meant === undefined) { dropped(key, named.key); return []; }
+        if (meant === named.key) return [item];
+        moved(key, named.key, meant);
+        return [named.prop === '' ? meant : {...(item as Record<string, unknown>), [named.prop]: meant}];
+      });
+      if (columns.length === 0) delete comp[key];
+      else comp[key] = columns;
+      continue;
+    }
     if (typeof value !== 'string' || !isFieldProp(name, key, prop) || value.trim() === '') continue;
     let next: string | undefined;
-    if (name === 'DataTable' && key === 'columns') {
+    if (isColumns(name, key)) {
       const columns: string[] = [];
-      for (const token of value.trim().split(/\s+/)) {
-        const head = /^[^:=]*/.exec(token)![0];
+      for (const token of shorthandTokens(value)) {
+        const head = tokenKey(token);
         const meant = head ? meantField(head, fields) : undefined;
         if (meant === undefined) { dropped(key, head || token); continue; }
         if (meant !== head) moved(key, head, meant);
@@ -369,9 +386,8 @@ function collectChecks(comp: WireComponent, name: string, props: Record<string, 
   const names: string[] = [];
   for (const [key, prop] of Object.entries(props)) {
     const value = comp[key];
-    if (prop.kind !== 'str' || typeof value !== 'string') continue;
-    if (name === 'DataTable' && key === 'columns') names.push(...parseColumns(value).map(column => column.key));
-    else if (/\bfield/i.test(prop.doc)) names.push(...value.split(/[\s,]+/).filter(Boolean).map(field => field.replace(/^-/, '')));
+    if (isColumns(name, key)) names.push(...readColumns(value).fields.map(column => column.key));
+    else if (prop.kind === 'str' && typeof value === 'string' && /\bfield/i.test(prop.doc)) names.push(...value.split(/[\s,]+/).filter(Boolean).map(field => field.replace(/^-/, '')));
   }
   const wanted = [...new Set(names.filter(Boolean))];
   if (wanted.length > 0 && out.fields.length < MAX_CHECKS) out.fields.push({where, key: dsKey, names: wanted});
@@ -458,8 +474,15 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
     if (!asRows && kinds && !kinds.has(checked.meta.kind)) out.warnings.push(kindWarning(def.name, comp.id, checked.meta, kinds));
   }
   // The columns as written are checked first: a kind that does not exist is the author's to fix, whatever the field.
-  if (def.name === 'DataTable' && typeof comp.columns === 'string') {
-    for (const error of checkColumns(comp.columns)) out.problems.push(problem('E_ENUM', `${where('columns')} column ${error.statement}: ${error.message}`, {component: def.name}));
+  // An entry with no key is left out and named; the rest draws. Columns bound to a $/path are the viewer's to report.
+  const columns = comp.columns;
+  if (def.name === 'DataTable' && columns !== undefined && !isBinding(columns) && !(typeof columns === 'object' && columns !== null && '@call' in columns)) {
+    for (const {column, type, message} of readColumns(columns).problems) {
+      const at = `${where('columns')}${column > 0 ? ` column ${column}` : ''}`;
+      if (type === 'kind') out.problems.push(problem('E_ENUM', `${at}: ${message}`, {component: def.name}));
+      else if (type === 'shape') out.problems.push(problem('E_SHAPE', `${at}: ${message}`, {component: def.name}));
+      else out.warnings.push(`${at}: ${type === 'dropped' ? 'not drawn: ' : ''}${message}`);
+    }
   }
   const fields = boundFields.length === 1 ? boundFields[0] : undefined;
   if (fields && fields.length > 0) repairFields(comp, def.name, def.props as Record<string, Prop>, fields, out);

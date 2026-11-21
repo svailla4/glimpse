@@ -11,6 +11,7 @@ import type {
   StepItem, TourStop,
 } from './datasets.ts';
 import type {FlowData, SeqData} from './diagrams.ts';
+import type {ColumnsValue} from './notation.ts';
 
 // ---- shared prop groups -----------------------------------------------------------------------------------
 /** Every component: columns it spans in the enclosing 12-column grid (Page, Section) or its flex share (Row). */
@@ -253,10 +254,11 @@ export const List = component('List', {
 export const DataTable = component('DataTable', {
   family: 'data', chunk: 'table', tier: 'A',
   doc: 'Virtualized sortable table; columns come from the dataset unless given.',
-  example: "DataTable('git.hotspots top=25','path commits:bar complexity:bar owner',sort='-score',title='Hotspots')",
+  example: "DataTable('git.hotspots top=25',['path',{key:'commits',kind:'bar'},'owner'],sort='-score',title='Hotspots')",
 }, {
-  data: p.data<Rows>('Rows', 'Rows: source ref, $/path or inline list of objects. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph.'),
-  columns: opt(p.str("Shorthand 'key[:kind][=Label] ...'. Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
+  data: p.data<Rows>('Rows', 'Source ref, $/path or inline rows. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph.'),
+  // Two forms (the list, and the presets' shorthand string), so a DynamicValue (p.value), read by readColumns (notation.ts).
+  columns: opt(p.value<ColumnsValue>("[{key, kind?, label?} | 'key'] (or field/name, title). Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
   sort: opt(p.str("'field' or '-field'.")),
   search: minor(opt(p.flag('Show the search box. Default: when more than 20 rows.'))),
   group: minor(opt(p.str('Group rows by this field.'))),

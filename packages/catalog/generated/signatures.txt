@@ -19,7 +19,7 @@ A Stat(value*~:number|string, label~, delta~:num, unit~, spark~:number[], format
 A Stats(data~:StatItem[]='repo.kpis') +frame
 B List(data*~:ListItem[], limit:int) +frame
 # data
-A DataTable(data*~:Rows, columns:str, sort:str, search:flag, group:str) +frame
+A DataTable(data*~:Rows, columns~:value, sort:str, search:flag, group:str) +frame
 A FileTree(data~:DirNode='files.tree', metric:loc|bytes|files|commits|changes|none, heat:none|churn|age|complexity, depth:int) +frame
 B CommitList(data~:CommitRow[]='git.log') +frame
 C JsonView(data*~:unknown, depth:int) +frame

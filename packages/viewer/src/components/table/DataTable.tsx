@@ -1,5 +1,5 @@
 import type * as C from '@glimpse/catalog';
-import {parseFileLoc, type DataRow, type Dataset, type Rows} from '@glimpse/catalog';
+import {parseFileLoc, readColumns, type DataRow, type Dataset, type Rows} from '@glimpse/catalog';
 import {memo, useDeferredValue, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject} from 'react';
 import {
   DataGate, Empty, Icon, PathText, PlateAside, REPORT_CODES, Redline, fmtNum, useCatSlots, useDataset, useHostActions, useReportState, useSelection, useSize,
@@ -308,7 +308,11 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
 
   // A field the spec names that the data lacks is left out and told to the agent (decisions D14, D15): a column of
   // dashes, a sort that does nothing or one group of everything would say nothing true.
-  const checked = useMemo(() => checkColumns(props.columns, state.fields, rows), [props.columns, state.fields, rows]);
+  // The columns prop is a list or the presets' shorthand string, read as the server reads it (catalog readColumns).
+  // What it cannot read is told to the agent (decision D22): columns bound to a $/path reach the tab unchecked.
+  const wanted = useMemo(() => readColumns(props.columns), [props.columns]);
+  useReportState(wanted.problems.length > 0 ? 'W_COLUMNS' : undefined, `columns: ${wanted.problems.map(problem => problem.message).join('; ')}`);
+  const checked = useMemo(() => checkColumns(wanted.fields, state.fields, rows), [wanted, state.fields, rows]);
   const allColumns = checked.columns;
   const known = useMemo(() => knownFields(state.fields, rows), [state.fields, rows]);
   const sortKey = parseSort(props.sort)?.key;

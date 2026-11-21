@@ -143,6 +143,22 @@ describe('expandMessages: diagram data, columns, paths', () => {
     expect(out.lines[0]).toMatch(/^E_ENUM DataTable#root_children_0\.columns column 2: unknown kind "bars" for column "n"\. Kinds: text num /);
   });
 
+  it('the list form of columns is checked entry by entry: an unknown kind is E_ENUM, the rest is warn and draws (D22)', () => {
+    const bad = expand(`root=Page('x',[DataTable('fake.rows',['path',{key:'n',kind:'bars'}])])`);
+    expect(bad.lines).toEqual([expect.stringMatching(/^E_ENUM DataTable#root_children_0\.columns column 2: unknown kind "bars" for column "n"\. Kinds: text num /)]);
+    const partly = expand(`root=Page('x',[DataTable('fake.rows',['path',{kind:'bar'},{key:'n',width:80}])])`);
+    expect(partly.problems).toEqual([]);
+    expect(partly.warnings).toEqual([
+      "DataTable#root_children_0.columns column 2: not drawn: no key: expected 'key' or {key, kind?, label?}",
+      'DataTable#root_children_0.columns column 3: ignored key width of column "n"',
+    ]);
+    // not a list or a string: an object is refused by the prop's schema, anything else by the reader
+    expect(() => expand(`root=Page('x',[DataTable('fake.rows',columns={path:true})])`)).toThrow(/E_TYPE DataTable#root_children_0 columns: /);
+    expect(expand(`root=Page('x',[DataTable('fake.rows',columns=5)])`).lines).toEqual([
+      "E_SHAPE DataTable#root_children_0.columns: expected a list ['key' or {key, kind?, label?}], received a number",
+    ]);
+  });
+
   it('assignments under /ds and /meta are rejected, in a new view and in a patch', () => {
     expect(expand(`$/ds/x=1\n$/meta/rev=9\nroot=Page('x',[])`).lines).toEqual([
       'E_PATH $/ds cannot be assigned: /ds and /meta are written by the server. Name a source in a data argument instead.',
@@ -342,6 +358,15 @@ describe('expandMessages: field names', () => {
     expect(out.byComponent('LineChart')).toMatchObject({x: 'date', y: 'commits'});
     expect(out.byComponent('DataTable')).toMatchObject({columns: 'sha subject date', sort: '-date'});
     expect(out.byComponent('DataTable').group).toBeUndefined();
+  });
+
+  it('repairs the field names of the list form in place, keeping each entry as written', () => {
+    const out = expand(`root=Page('x',[DataTable('git.log',['sha',{key:'when',kind:'date',label:'When'},{field:'zzz'},'subject'])])`);
+    expect(out.fixes).toEqual([
+      "DataTable.columns 'when' -> 'date'",
+      "DataTable.columns 'zzz' dropped (fields: sha subject author date files add del refs)",
+    ]);
+    expect(out.byComponent('DataTable').columns).toEqual(['sha', {key: 'date', kind: 'date', label: 'When'}, 'subject']);
   });
 
   it.each([...VIEWS.map(view => [view.name, view.build(view.targetRequired ? (view.target === 'symbol' ? 'Session' : 'src/a.ts') : undefined, {})] as const), ['gallery', GALLERY_SPEC] as const])('the %s preset names only fields its sources return', (_, source) => {
