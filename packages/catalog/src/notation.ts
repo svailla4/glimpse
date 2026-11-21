@@ -4,10 +4,13 @@
 // (checks literal columns at show time) and the viewer (reads them, and reports what a patch wrote that it cannot
 // draw), so the two always agree. Flowchart and SequenceDiagram take data, not a notation (diagrams.ts).
 import type {Field, FieldKind} from './datasets.ts';
-import {describeValue} from './diagrams.ts';
 
 const clip = (text: string, max = 40) => (text.length > max ? text.slice(0, max - 1) + '…' : text);
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+// Its own copy of diagrams.ts describeValue: importing it would make that module a chunk the table and diagram chunks
+// share (an extra request on every page with a table).
+const describeValue = (v: unknown): string =>
+  v === null ? 'null' : Array.isArray(v) ? 'an array' : typeof v === 'object' ? 'an object' : `a ${typeof v}`;
 
 /** Every FieldKind, in the order the docs list them. */
 export const FIELD_KINDS = [
