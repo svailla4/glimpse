@@ -174,7 +174,7 @@ describe('negative corpus: invalid messages are rejected', () => {
     ['unknown component', `root=Page('x',[DataTabel('git.churn')])`, /DataTabel/],
     ['unknown prop', `root=Page('x',[DataTable('git.churn',colums='path')])`, /colums/],
     ['bad enum', `root=Page('x',[Callout('x','danger')])`, /danger/],
-    ['missing required prop', `root=Page('x',[Flowchart()])`, /src/],
+    ['missing required prop', `root=Page('x',[Flowchart()])`, /data/],
     ['syntax error', `root=Page('x',[Markdown('x')]`, /Syntax error/],
     ['span out of range', `root=Page('x',[Text('a',span=13)])`, /span/],
   ])('the compiler rejects %s', (_label, spec, message) => {

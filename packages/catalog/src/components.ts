@@ -10,6 +10,8 @@ import type {
   ChipItem, CodeNote, CommitRow, DirNode, ErData, GraphData, KeyValueData, LayerItem, ListItem, Rows, StatItem,
   StepItem, TourStop,
 } from './datasets.ts';
+import type {FlowData, SeqData} from './diagrams.ts';
+import type {ColumnsValue} from './notation.ts';
 
 // ---- shared prop groups -----------------------------------------------------------------------------------
 /** Every component: columns it spans in the enclosing 12-column grid (Page, Section) or its flex share (Row). */
@@ -252,10 +254,11 @@ export const List = component('List', {
 export const DataTable = component('DataTable', {
   family: 'data', chunk: 'table', tier: 'A',
   doc: 'Virtualized sortable table; columns come from the dataset unless given.',
-  example: "DataTable('git.hotspots top=25','path commits:bar complexity:bar owner',sort='-score',title='Hotspots')",
+  example: "DataTable('git.hotspots top=25',['path',{key:'commits',kind:'bar'},'owner'],sort='-score',title='Hotspots')",
 }, {
-  data: p.data<Rows>('Rows', 'Rows: source ref, $/path or inline list of objects. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph.'),
-  columns: opt(p.str("Shorthand 'key[:kind][=Label] ...'. Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
+  data: p.data<Rows>('Rows', 'Source ref, $/path or inline rows. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph.'),
+  // Two forms (the list, and the presets' shorthand string), so a DynamicValue (p.value), read by readColumns (notation.ts).
+  columns: opt(p.value<ColumnsValue>("[{key, kind?, label?} | 'key'] (or field/name, title). Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
   sort: opt(p.str("'field' or '-field'.")),
   search: minor(opt(p.flag('Show the search box. Default: when more than 20 rows.'))),
   group: minor(opt(p.str('Group rows by this field.'))),
@@ -434,20 +437,20 @@ export const Graph = component('Graph', {
 
 export const Flowchart = component('Flowchart', {
   family: 'diagram', chunk: 'diagrams', tier: 'B',
-  doc: 'Flowchart or state machine from Mermaid-style arrow notation.',
-  example: "Flowchart('Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429])')",
+  doc: 'Boxes and arrows written as data: flows, state machines, grouped parts.',
+  example: "Flowchart({nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond'}},edges:[['Req','RL'],['RL','H','no']]})",
 }, {
-  src: p.text("Statements split by ';' or newline: 'A[Label] --> B{Decision}', '-->|label|', '-.->' dashed. Shapes: [box] {diamond} ([pill]) [(store)] ((circle))."),
-  dir: opt(p.enum(['TB', 'LR'], "Flow direction; wins over a src header ('graph LR'). Default: the header's, else whichever reads larger in its plate.", DIR_ALIASES)),
+  data: p.data<FlowData>('FlowData', 'Nodes, edges and groups (FlowData below).'),
+  dir: opt(p.enum(['TB', 'LR'], 'Flow direction. Default: whichever reads larger in its plate.', DIR_ALIASES)),
   ...FRAME,
 });
 
 export const SequenceDiagram = component('SequenceDiagram', {
   family: 'diagram', chunk: 'diagrams', tier: 'B',
-  doc: 'Lifelines and messages from Mermaid-style sequence notation.',
-  example: "SequenceDiagram('User->>API: POST /login; API->>Auth: verify; Auth-->>API: token; API-->>User: 200')",
+  doc: 'Lifelines and numbered messages written as data, with notes and loop/alt frames.',
+  example: "SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify'],['Auth','API','token','reply'],['API','User','200','reply']]})",
 }, {
-  src: p.text("Statements split by ';' or newline: 'A->>B: call', 'B-->>A: reply', 'A-)B: async', 'Note over A,B: text'; 'alt cond' ... 'else other' ... 'end' (also opt, loop, par/and, critical, break) draws a frame."),
+  data: p.data<SeqData>('SeqData', 'Actors and steps: messages, notes, blocks (SeqData below).'),
   ...FRAME,
 });
 

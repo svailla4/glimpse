@@ -88,7 +88,7 @@ test('the feature view follows a replaced plan', async ({page, glimpse}) => {
   expect(replaced.isError, replaced.text).toBe(false);
   await expect(plan.locator('[data-gl-steps-count]')).toHaveText('1 / 3 done');
   // the design part can be swapped for a diagram
-  const design = await glimpse.call('show', {id: 'feature', spec: "design=Flowchart('A[Client] --> B{Limited?}; B -->|no| C[Handler]',title='Design')"});
+  const design = await glimpse.call('show', {id: 'feature', spec: "design=Flowchart({nodes:{A:'Client',B:{label:'Limited?',shape:'diamond'},C:'Handler'},edges:[['A','B'],['B','C','no']]},title='Design')"});
   expect(design.isError, design.text).toBe(false);
   await expect(page.locator('.gl-cell[data-id="design"] svg [data-node]')).toHaveCount(3);
 });

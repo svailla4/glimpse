@@ -6,6 +6,7 @@
 //   - fenced code goes through the CodeBlock view of the code chunk, or a plain mono block while that is unavailable
 // Every element gets its class through `overrides`, so no selector here can reach into a borrowed view.
 import type * as C from '@glimpse/catalog';
+import {FILE_REF} from '@glimpse/catalog';
 import MarkdownToJsx, {RuleType, type MarkdownToJSX} from 'markdown-to-jsx/react';
 import {memo, useMemo, type JSX, type ReactNode} from 'react';
 import {borrowView, fmtNum, type GlView} from '../../kit/index.ts';
@@ -20,8 +21,8 @@ const MAX_CHARS = 200_000;
 
 // [[path#L10-20]] is not Markdown, and a path such as src/__tests__/a.ts would be read as emphasis. Before parsing,
 // each ref becomes a link with a private scheme and a fully escaped target; the link rule turns it into a FileLink,
-// and code (where the ref must stay literal) turns it back.
-const REF = /\[\[(?!\s)([^[\]\n]{1,400}?)(?<!\s)\]\]/g;
+// and code (where the ref must stay literal) turns it back. FILE_REF is the catalog's, which the server checks.
+const REF = new RegExp(FILE_REF.source, 'g');
 const REF_SCHEME = 'glref:';
 const REF_LINK = /\[ref\]\(glref:([^)\s]*)\)/g;
 const escapeRef = (loc: string) => encodeURIComponent(loc).replace(/[()*_~!']/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`);

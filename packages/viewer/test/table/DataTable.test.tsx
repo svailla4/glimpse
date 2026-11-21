@@ -150,6 +150,28 @@ describe('DataTable: columns and cells', () => {
     expect(kinds).toEqual(['path', 'num', 'date', 'author']);
   });
 
+  it('reads the list form of columns the same way, labels written as they read', async () => {
+    const view = renderExpress(page("DataTable('git.churn',['path',{key:'commits',kind:'num'},{key:'last',kind:'date',label:'Last change'},{field:'owner'}])"), {datasets: 'ready'});
+    await ready(view);
+    expect(headers(view).map(h => h.textContent)).toEqual(['File', 'commits', 'Last change', 'owner']);
+    expect(cellsOf(rowAt(view, 0)).map(c => c.getAttribute('data-kind'))).toEqual(['path', 'num', 'date', 'author']);
+    expect(view.stateOf('t')).toBe('OK');
+  });
+
+  it('reports W_COLUMNS for columns bound to a $/path it cannot read, and draws the rest (D22)', async () => {
+    const view = renderExpress(page('DataTable($/rows,$/cols)'), {
+      data: {'/rows': [{name: 'one', n: 1}], '/cols': ['name', {key: 'n', kind: 'sparkle'}, {kind: 'bar'}]},
+    });
+    await ready(view);
+    expect(headers(view).map(h => h.textContent)).toEqual(['name', 'n']);
+    await waitFor(() => expect(view.stateOf('t')).toBe('W_COLUMNS'));
+    expect(view.reports.findLast(report => report.code === 'W_COLUMNS')!.message).toMatch(
+      /^DataTable#t: columns: unknown kind "sparkle" for column "n"\. Kinds: .*; no key: expected 'key' or \{key, kind\?, label\?\}$/,
+    );
+    view.setData('/cols', ['name', 'n']);
+    await waitFor(() => expect(view.stateOf('t')).toBe('OK'));
+  });
+
   it('sniffs columns and kinds from the rows when nothing declares them', async () => {
     const view = renderExpress(page('DataTable($/rows)'), {
       data: {'/rows': [{path: 'src/a.ts', loc: 10, ok: true, when: '2026-11-01', trend: [1, 2], isTest: false}, {path: 'src/b.ts', loc: 4, extra: 'x'}]},

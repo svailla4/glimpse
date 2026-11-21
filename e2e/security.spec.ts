@@ -304,7 +304,7 @@ test.describe('hostile content', () => {
       "root=Page($/t,[Markdown($/m),Text($/m),Callout($/m,'risk',$/m),CodeBlock($/m,'html'),CodeView('evil.md'),KeyValue({k:$/m}),DataTable('code.todos'),FileTree(),Chips([$/m]),Flowchart($/f),Button($/m,Event('go',{v:$/m}))])",
       `$/t=${JSON.stringify(payload)}`,
       `$/m=${JSON.stringify(`${payload} [js](javascript:window.__pwned=5) [data](data:text/html,<script>window.__pwned=6</script>) ![remote](https://tracker.invalid/a.png) <iframe src="https://tracker.invalid"></iframe> [ok](https://example.com/)`)}`,
-      `$/f=${JSON.stringify('A["<img src=x onerror=window.__pwned=7>"] --> B[ok]')}`,
+      `$/f={groups:{G:${JSON.stringify(payload)}},nodes:{A:{label:${JSON.stringify('<img src=x onerror=window.__pwned=7>')},group:'G'},B:'ok'},edges:[['A','B',${JSON.stringify(payload)}]]}`,
     ].join('\n');
     const shown = await glimpse.call('show', {id: 'hostile', spec});
     expect(shown.isError, shown.text).toBe(false);
@@ -342,7 +342,7 @@ test.describe('hostile content', () => {
   // the shell's policy unchanged: no eval anywhere, and nothing it does is refused.
   test('the ELK layout worker runs under the shell CSP, with no eval, and lays diagrams out without a violation', async ({page, glimpse, watched}) => {
     const graph = "{nodes:[{id:'a',label:'a',group:'g'},{id:'b',label:'b',group:'g'},{id:'c',label:'c'}],edges:[{from:'a',to:'b'},{from:'b',to:'c',label:'calls'}],groups:[{id:'g',label:'group'}]}";
-    const spec = `root=Page('Worker',[Graph(${graph},title='Graph'),Flowchart('graph LR; A[a] --> B{b?}; B -->|yes| C([c])',title='Flow'),ERDiagram([{name:'t',columns:[{name:'id',pk:true}]},{name:'u',columns:[{name:'t_id',fk:'t.id'}]}],title='Tables')])`;
+    const spec = `root=Page('Worker',[Graph(${graph},title='Graph'),Flowchart({nodes:{A:'a',B:{label:'b?',shape:'diamond'},C:{label:'c',shape:'pill'}},edges:[['A','B'],['B','C','yes']]},dir='LR',title='Flow'),ERDiagram([{name:'t',columns:[{name:'id',pk:true}]},{name:'u',columns:[{name:'t_id',fk:'t.id'}]}],title='Tables')])`;
     const shown = await glimpse.call('show', {id: 'worker', spec});
     expect(shown.isError, shown.text).toBe(false);
     await openViewer(page, glimpse);

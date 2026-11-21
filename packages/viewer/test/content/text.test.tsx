@@ -1,4 +1,5 @@
 // Text, FileRef and Callout: inline micro-markup, file refs as entities, tones and kinds.
+import {fileRefs, parseFileLoc} from '@glimpse/catalog';
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
 import {renderExpress} from '../harness.tsx';
@@ -27,6 +28,15 @@ e=Text('mono  text','mono')`,
       expect(view.cell(id).querySelector('p')?.getAttribute('data-tone')).toBe(tone);
     }
     expect(view.errors).toEqual([]);
+  });
+
+  // The server checks the refs fileRefs finds (spec/expand.ts): exactly the ones drawn here as links.
+  it('draws as links exactly the [[path]] refs the catalog extractor finds for the server to check', async () => {
+    const text = 'A [[a.ts#L1]], `[[code.ts]]`, **[[b.ts]] *[[c.ts]]***, [[ d.ts]], [[dir/]] and ``[[e.ts]]``.';
+    const view = renderExpress(`root=Page('T',[a])\na=Text(${JSON.stringify(text)})`);
+    const drawn = within(view.cell('a')).getAllByRole('button').map(link => `${link.getAttribute('data-entity-id')}${link.getAttribute('data-entity-type') === 'dir' ? '/' : ''}`);
+    expect(drawn).toEqual(fileRefs(text, false).map(loc => parseFileLoc(loc).path));
+    expect(drawn).toEqual(['a.ts', 'b.ts', 'c.ts', 'dir/']);
   });
 
   it('turns [[path#L10-20]] into a file entity: click selects, Cmd-click and `o` open, `c` copies, Escape clears', async () => {

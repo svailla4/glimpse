@@ -107,19 +107,108 @@ export function formatFileLoc(l: ParsedFileLoc): FileLoc {
   if (l.line == null) return l.path;
   return l.endLine != null && l.endLine !== l.line ? `${l.path}#L${l.line}-${l.endLine}` : `${l.path}#L${l.line}`;
 }
-const LINE_RANGE = /^\s*#?L?(\d+)(?:\s*-\s*L?(\d+))?\s*$/i;
+/** What a `mark` (CodeView, CodeBlock) reads as. */
+export interface LineMarks {
+  /** 1-based, `from <= to`, in the order written. */
+  ranges: Array<[number, number]>;
+  /** The parts that name no line, as written. */
+  ignored: string[];
+  /** The text with every part read by a guess written plainly ('lines 10–20; 30' -> '10-20,30'); absent when none was. */
+  fixed?: string;
+}
+
+// '3', '7-9', 'L7-L9'; and, as guesses: '#L7', 'lines 7-9', '7:9', 'L7:L9', '7..9', '7–9', '7 to 9', '9-7'.
+const MARK_PART = /^(#?)(?:(lines?)\s*)?L?(\d+)(?:\s*(-|–|—|:|\.\.\.?|to)\s*L?(\d+))?$/i;
+
+
+// ---------------------------------------------------------------- [[path#L10-20]] refs in prose
+// Text, Callout, Ask and Markdown draw `[[path#L10-20]]` as a file link; the viewer draws them and the server checks
+// the files they name, from these definitions. Spans are bounded (400 characters) so a text full of unmatched markers
+// still scans in linear time.
+/** One file ref: group 1 is the location, never blank at either end. Not global: build `new RegExp(FILE_REF.source, 'g')`. */
+export const FILE_REF = /\[\[(?!\s)([^[\]\n]{1,400}?)(?<!\s)\]\]/;
+/** An inline code span of Text, Callout and Ask: group 1 is the code. A ref inside it stays literal. */
+export const CODE_SPAN = /`([^`\n]{1,400})`/;
+/** Markdown's inline code, any run of backticks; and the line that opens or closes a fenced block. */
+const MD_CODE_SPAN = /(`+)[^`\n]*?\1/;
+const MD_FENCE = /^ {0,3}(`{3,}|~{3,})/;
+const INLINE_SCAN = new RegExp(`${CODE_SPAN.source}|${FILE_REF.source}`, 'g');
+const MD_SCAN = new RegExp(`${MD_CODE_SPAN.source}|${FILE_REF.source}`, 'g');
+
 /**
- * "3,7-9" -> [[3,3],[7,9]]. A part may also be written the way file anchors are: "L3", "L7-9", "L7-L9", "#L7-9".
- * Parts that are not line numbers are dropped.
+ * `text` with each `[[loc]]` file ref that is drawn as a link replaced by `[[swap(loc)]]`, or kept when `swap` returns
+ * undefined. A ref inside code is literal text, not a link, and is never passed to `swap`: an inline code span, and
+ * in Markdown (`markdown`) a fenced block too.
  */
-export function parseLineRanges(spec: string | undefined): Array<[number, number]> {
-  if (!spec) return [];
-  const out: Array<[number, number]> = [];
-  for (const part of spec.split(',')) {
-    const m = LINE_RANGE.exec(part);
-    if (m) out.push([Number(m[1]), Number(m[2] ?? m[1])]);
+export function replaceFileRefs(text: string, markdown: boolean, swap: (loc: string) => string | undefined): string {
+  const scan = markdown ? MD_SCAN : INLINE_SCAN;
+  const swapLine = (line: string): string => {
+    let out = '';
+    let last = 0;
+    for (const match of line.matchAll(scan)) {
+      const loc = match[match.length - 1];
+      const next = loc === undefined ? undefined : swap(loc);
+      if (next === undefined) continue;
+      out += `${line.slice(last, match.index)}[[${next}]]`;
+      last = match.index + match[0].length;
+    }
+    return last === 0 ? line : out + line.slice(last);
+  };
+  if (!markdown) return swapLine(text);
+  let fence: string | undefined;
+  return text.split('\n').map(line => {
+    const marker = MD_FENCE.exec(line)?.[1];
+    if (fence !== undefined) {
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length && line.trim() === marker) fence = undefined;
+      return line;
+    }
+    if (marker) { fence = marker; return line; }
+    return swapLine(line);
+  }).join('\n');
+}
+
+/** The locations of the `[[path#L10]]` refs `text` draws as links, in order, as written (see replaceFileRefs). */
+export function fileRefs(text: string, markdown: boolean): string[] {
+  const found: string[] = [];
+  replaceFileRefs(text, markdown, loc => void found.push(loc));
+  return found;
+}
+/**
+ * Decision D22: `mark` is written the way file anchors are ('3,7-9', 'L7-9'). A part written another plain way is
+ * read and the reading is returned in `fixed`; a part that names no line (lines start at 1) is returned in `ignored`,
+ * so the server and the view can say so instead of marking nothing. The server and the viewer both read marks here.
+ */
+export function readLineMarks(spec: unknown): LineMarks {
+  const out: LineMarks = {ranges: [], ignored: []};
+  if (typeof spec === 'number' && Number.isInteger(spec) && spec > 0) out.ranges.push([spec, spec]);
+  if (typeof spec !== 'string') return out;
+  let guessed = spec.includes(';');
+  const parts: string[] = [];
+  for (const part of spec.split(/[,;]/)) {
+    const text = part.trim();
+    if (text === '') continue;
+    const m = MARK_PART.exec(text);
+    const a = m ? Number(m[3]) : 0;
+    const b = m?.[5] !== undefined ? Number(m[5]) : a;
+    if (!m || a < 1 || b < 1) {
+      out.ignored.push(text);
+      parts.push(text);
+      continue;
+    }
+    const range: [number, number] = [Math.min(a, b), Math.max(a, b)];
+    out.ranges.push(range);
+    const guess = m[1] !== '' || m[2] !== undefined || (m[4] !== undefined && m[4] !== '-') || a > b;
+    guessed ||= guess;
+    parts.push(guess ? (range[0] === range[1] ? `${range[0]}` : `${range[0]}-${range[1]}`) : text);
   }
+  if (guessed) out.fixed = parts.join(',');
   return out;
+}
+
+/** What is said of mark parts that name no line, by the server (a `warn` line) and by the view (W_MARK). */
+export function ignoredMarksWarning(ignored: readonly string[]): string {
+  const shown = ignored.slice(0, 3).map(text => `'${text.length > 24 ? `${text.slice(0, 23)}…` : text}'`).join(', ');
+  return `mark ${shown}${ignored.length > 3 ? ` and ${ignored.length - 3} more` : ''} ignored: write 'L10-20' or '3,7-9'`;
 }
 
 // ---------------------------------------------------------------- tree

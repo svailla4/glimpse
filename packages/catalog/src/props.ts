@@ -21,7 +21,7 @@ export type ActionWire =
 export type DataInput<T> = Dataset<T> | T | undefined;
 
 export type PropKind =
-  | 'text' | 'number' | 'data'            // bindable (DynamicString / DynamicNumber / DynamicValue)
+  | 'text' | 'number' | 'data' | 'value'  // bindable (DynamicString / DynamicNumber / DynamicValue x2)
   | 'child' | 'children' | 'action'       // structural
   | 'enum' | 'str' | 'int' | 'num' | 'flag' | 'strings'; // static
 
@@ -89,6 +89,14 @@ export const p = {
     mk<Dyn<T | Dataset<T> | string>, DataInput<T>>('data', ref(CommonSchemas.DynamicValue, 'DynamicValue', doc), doc, {
       bindable: true, shape, source,
     }),
+  /**
+   * Bindable value (DynamicValue) the component reads itself: never a dataset or a source ref. For a prop that takes
+   * more than one form (DataTable.columns: a list, or the shorthand string it replaces). A static prop may not be a
+   * union (test/lint.test.ts); a DynamicValue is one by definition, and `$/path` may then hold the value. The viewer
+   * gets what was written or bound, unchecked, so its type is unknown: the component reads it with a pure catalog
+   * function, the one the server checks a literal with (notation.ts readColumns).
+   */
+  value: <T>(doc: string) => mk<Dyn<T>, unknown>('value', ref(CommonSchemas.DynamicValue, 'DynamicValue', doc), doc, {bindable: true}),
   /** Single child component id. */
   child: (doc: string) => mk<string, string>('child', ref(CommonSchemas.ComponentId, 'ComponentId', doc), doc),
   /** Child list (ids or a {componentId, path} template). */

@@ -69,7 +69,7 @@ describe('useSizeCap (D20: size is a maximum height)', () => {
   it('without a size step: 640 for the diagram family, 420 for every other family', async () => {
     renderComponents([
       {id: 'graph', component: 'Graph'},
-      {id: 'flow', component: 'Flowchart', src: 'A --> B'},
+      {id: 'flow', component: 'Flowchart', data: {edges: [['A', 'B']]}},
       {id: 'erd', component: 'ERDiagram', data: {tables: []}},
       {id: 'table', component: 'DataTable', data: [{a: 1}]},
       {id: 'code', component: 'CodeView'},

@@ -148,12 +148,12 @@ describe('rewrite before the first compile', () => {
     expect(compile(`root=Page('x',[Button('Go',Event('go',{n:1}))])`).fixes).toEqual([]);
   });
 
-  it('reads a list of field names, where a prop takes them as one string, as that string', () => {
+  it('reads a list of field names, where a prop takes them as one string, as that string; DataTable columns take the list as it is', () => {
     const {fixes, messages} = compile(`root=Page('x',[DataTable('git.log',columns=['sha','subject','date']),LineChart('git.activity',y=['commits'])])`);
-    expect(fixes).toEqual([`DataTable.columns ['sha','subject','date'] -> 'sha subject date'`, `LineChart.y ['commits'] -> 'commits'`]);
+    expect(fixes).toEqual([`LineChart.y ['commits'] -> 'commits'`]);
     const first = messages[0]!;
     if (!('createSurface' in first)) throw new Error('expected createSurface');
-    expect(first.createSurface.components.find(c => c.component === 'DataTable')!.columns).toBe('sha subject date');
+    expect(first.createSurface.components.find(c => c.component === 'DataTable')!.columns).toEqual(['sha', 'subject', 'date']);
   });
 
   // Finding V043: surface ids take hyphens, so part names are written that way too.

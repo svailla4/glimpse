@@ -3,7 +3,7 @@
 // charts and schemas without a direction take the one that reads larger, a dragged node's edges go round what is in
 // the way, a drill opens unselected, names are not cut while there is room, and sequence heads never touch.
 // Every fixture is invented and inline.
-import {parseSequence} from '@glimpse/catalog';
+import {cleanSequence} from '@glimpse/catalog';
 import {screen} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import {fitKeepingTail, tailsOf} from '../../src/components/diagrams/Graph.tsx';
@@ -92,8 +92,8 @@ describe('opening views after the swap review', () => {
   // 7 of 11 in view, with no minimap. It is wrapped into rows instead.
   it('opens an 11-step left-to-right chart in a 616 px plate whole, wrapped into rows, at a readable zoom', async () => {
     const steps = ['load config', 'open store', 'start server', 'mount routes', 'warm cache', 'connect queue', 'start workers', 'register jobs', 'open socket', 'serve ui', 'ready'];
-    const src = `graph LR; ${steps.map((label, i) => `S${i}[${label}]`).map((node, i, all) => (i + 1 < all.length ? `${node} --> ${all[i + 1]!.replace(/\[.*/, '')}` : '')).filter(Boolean).join('; ')}`;
-    const view = await open(`root=Page('T',[f])\nf=Flowchart('${src}',title='Boot')`, {size: {width: 616, height: 600}}, 'f', /^Flowchart/);
+    const data = `{nodes:{${steps.map((label, i) => `S${i}:'${label}'`).join(',')}},edges:[${steps.slice(1).map((_, i) => `['S${i}','S${i + 1}']`).join(',')}]}`;
+    const view = await open(`root=Page('T',[f])\nf=Flowchart(${data},dir='LR',title='Boot')`, {size: {width: 616, height: 600}}, 'f', /^Flowchart/);
     const stage = stageOf(view, 'f');
     expect(stage.parentElement!.getAttribute('data-mode')).toBe('fit');
     expect(allInside(view, 'f', 616)).toBe(true);
@@ -107,9 +107,9 @@ describe('opening views after the swap review', () => {
 
   // Charts opened in part on a canvas under 240 px got no minimap, and under 520 px wide no count.
   it('gives every diagram it opens in part a minimap (in a free corner or a strip in the controls bar) and a count', async () => {
-    const states = 'Start((start)) -->|show with root=| Created\\nCreated -->|show without root=| Patched\\nPatched -->|show without root=| Patched\\nCreated -->|show with root=| Replaced\\nPatched -->|show with root=| Replaced\\nReplaced -->|show without root=| Patched\\nCreated -->|removed| Deleted\\nPatched -->|removed| Deleted\\nReplaced -->|removed| Deleted';
+    const states = "{nodes:{Start:{label:'start',shape:'circle'}},edges:[['Start','Created','show with root='],['Created','Patched','show without root='],['Patched','Patched','show without root='],['Created','Replaced','show with root='],['Patched','Replaced','show with root='],['Replaced','Patched','show without root='],['Created','Deleted','removed'],['Patched','Deleted','removed'],['Replaced','Deleted','removed']]}";
     for (const width of [400, 510, 724]) {
-      const view = await open(`root=Page('T',[f])\nf=Flowchart('${states}',dir='LR',title='States')`, {size: {width, height: 600}}, 'f', /^Flowchart/);
+      const view = await open(`root=Page('T',[f])\nf=Flowchart(${states},dir='LR',title='States')`, {size: {width, height: 600}}, 'f', /^Flowchart/);
       const stage = stageOf(view, 'f');
       if (stage.parentElement!.getAttribute('data-mode') === 'readable') {
         expect(view.cell('f').querySelector('.react-flow__minimap'), `minimap at ${width}`).not.toBeNull();
@@ -120,17 +120,17 @@ describe('opening views after the swap review', () => {
     }
   });
 
-  // A flowchart with neither a header nor dir= was always top to bottom: a 14-step chart in a full-width plate opened
-  // at 91% with 7 of 13 in view and two thirds of the plate empty.
-  it('lays a flowchart with no header and no dir= out both ways and draws it the way that reads larger', async () => {
-    const src = 'Req[Incoming request] --> Auth{Signed in?}; Auth -->|no| Login([Redirect to login]); Auth -->|yes| Rate{Over limit?}; Rate -->|yes| E429([429 Too Many]); Rate -->|no| Cache{Cached?}; Cache -->|hit| Send[Send cached body]; Cache -->|miss| Handler[Run handler]; Handler --> DB[(Postgres)]; Handler -.-> Q[(Queue)]; Handler --> Render[Render]; Render --> Store[Write cache]; Store --> Send; Send --> Done((done)); Login --> Done; E429 --> Done';
-    const view = await open(`root=Page('T',[f])\nf=Flowchart('${src}',title='Request path')`, {size: {width: 1254, height: 700}}, 'f', /^Flowchart/);
+  // A flowchart without dir= was always top to bottom: a 14-step chart in a full-width plate opened at 91% with 7 of
+  // 13 in view and two thirds of the plate empty.
+  it('lays a flowchart with no dir= out both ways and draws it the way that reads larger', async () => {
+    const data = "{nodes:{Req:'Incoming request',Auth:{label:'Signed in?',shape:'diamond'},Login:{label:'Redirect to login',shape:'pill'},Rate:{label:'Over limit?',shape:'diamond'},E429:{label:'429 Too Many',shape:'pill'},Cache:{label:'Cached?',shape:'diamond'},Send:'Send cached body',Handler:'Run handler',DB:{label:'Postgres',shape:'store'},Q:{label:'Queue',shape:'store'},Render:'Render',Store:'Write cache',Done:{label:'done',shape:'circle'}},edges:[['Req','Auth'],['Auth','Login','no'],['Auth','Rate','yes'],['Rate','E429','yes'],['Rate','Cache','no'],['Cache','Send','hit'],['Cache','Handler','miss'],['Handler','DB'],{from:'Handler',to:'Q',dashed:true},['Handler','Render'],['Render','Store'],['Store','Send'],['Send','Done'],['Login','Done'],['E429','Done']]}";
+    const view = await open(`root=Page('T',[f])\nf=Flowchart(${data},title='Request path')`, {size: {width: 1254, height: 700}}, 'f', /^Flowchart/);
     expect(new Set(elk.requests.map(request => request.graph.layoutOptions!['elk.direction']))).toEqual(new Set(['RIGHT', 'DOWN']));
     expect(stageOf(view, 'f').getAttribute('data-dir')).toBe('LR');
     expect(stageOf(view, 'f').parentElement!.getAttribute('data-mode')).toBe('fit');
     view.unmount();
-    // a header still decides
-    const headed = await open(`root=Page('T',[f])\nf=Flowchart('flowchart TD; ${src}',title='Request path')`, {size: {width: 1254, height: 700}}, 'f', /^Flowchart/);
+    // dir= still decides
+    const headed = await open(`root=Page('T',[f])\nf=Flowchart(${data},dir='TB',title='Request path')`, {size: {width: 1254, height: 700}}, 'f', /^Flowchart/);
     expect(stageOf(headed, 'f').getAttribute('data-dir')).toBe('TB');
   });
 
@@ -262,16 +262,19 @@ describe('names after the swap review', () => {
 });
 
 describe('sequence heads after the swap review', () => {
-  const heads = (src: string, width: number) => {
-    const parsed = parseSequence(src);
-    if (!parsed.ok) throw new Error('bad source');
-    const plan = planSequence(parsed.ast, width);
+  const heads = (data: unknown, width: number) => {
+    const cleaned = cleanSequence(data);
+    if (!cleaned.ok) throw new Error(cleaned.error);
+    const plan = planSequence(cleaned.ast, width);
     return plan.actors.map(actor => ({left: actor.x - actor.w / 2, right: actor.x + actor.w / 2, text: actor.text}));
   };
 
   // Two neighbouring heads shared a border at span 6 (the longer name cut too), and two overlapped by 15 px at 760.
   it('keeps neighbouring participant boxes 16 px apart or more, and their names whole while the plate can hold them', () => {
-    const src = 'sequenceDiagram\nparticipant U as User\nparticipant C as Desk\nparticipant R as HttpCartRepository\nparticipant S as event channel\nparticipant D as audit journal\nU->>C: send\nC->>R: post message\nR->>S: open\nS-->>R: events\nR->>D: save\nS-->>C: tokens\nC-->>U: render';
+    const src = {
+      actors: {U: 'User', C: 'Desk', R: 'HttpCartRepository', S: 'event channel', D: 'audit journal'},
+      steps: [['U', 'C', 'send'], ['C', 'R', 'post message'], ['R', 'S', 'open'], ['S', 'R', 'events', 'reply'], ['R', 'D', 'save'], ['S', 'C', 'tokens', 'reply'], ['C', 'U', 'render', 'reply']],
+    };
     for (const width of [616, 694, 1254]) {
       const boxes = heads(src, width);
       for (let i = 1; i < boxes.length; i++) expect(boxes[i]!.left - boxes[i - 1]!.right, `${boxes[i - 1]!.text} | ${boxes[i]!.text} at ${width}`).toBeGreaterThanOrEqual(16);

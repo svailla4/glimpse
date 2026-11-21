@@ -212,9 +212,10 @@ export function rewrite(src: string): Rewrite {
     const prop = key !== undefined && Object.hasOwn(props, key) ? props[key]! : undefined;
     if (!prop) continue;
     // Only a value that is one token: a string or a number, not the first token of a call or a list. A list of plain
-    // strings for a prop that takes several fields in one string ('sha subject date') is that string.
+    // strings for a prop that takes several fields in one string ('commits authors') is that string. DataTable's
+    // columns take a list as it is (notation.ts readColumns).
     const next = arg.value;
-    const list = next.text === '[' && prop.kind === 'str' && (/space separated/i.test(prop.doc) || (def.name === 'DataTable' && key === 'columns')) ? stringList(text, next) : undefined;
+    const list = next.text === '[' && prop.kind === 'str' && /space separated/i.test(prop.doc) ? stringList(text, next) : undefined;
     if (list) {
       edits.push({start: list.start, end: list.end, text: JSON.stringify(list.values.join(' '))});
       fixes.push(`${def.name}.${key} [${list.values.map(value => `'${value}'`).join(',')}] -> '${list.values.join(' ')}'`);

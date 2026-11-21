@@ -1,4 +1,5 @@
 // Markdown: prose rendering and the security rules of design 2.8 (no raw HTML, http(s) links only, no remote images).
+import {fileRefs, parseFileLoc} from '@glimpse/catalog';
 import {fireEvent, waitFor, within} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
 import {renderExpress, type RenderedSpec} from '../harness.tsx';
@@ -96,6 +97,15 @@ describe('Markdown', () => {
     expect(view.getData('/ui/sel')).toEqual({type: 'file', id: 'src/__tests__/a_b.test.ts', path: 'src/__tests__/a_b.test.ts', line: 10, endLine: 20});
     expect(view.getData('/ui/file')).toBe('src/__tests__/a_b.test.ts#L10-20');
     await waitFor(() => expect(view.actions.at(-1)).toMatchObject({name: 'gl_select', sourceComponentId: 'm'}));
+  });
+
+  // The server checks the refs fileRefs finds (spec/expand.ts): exactly the ones drawn here as links.
+  it('draws as links exactly the [[path]] refs the catalog extractor finds for the server to check', async () => {
+    const source = ['**[[a.ts#L3]]** and ``[[b.ts]]`` and [[c/]]', '```', '[[fenced.ts]]', '````', '- [[d.ts]]', '~~~', '[[tilde.ts]]', '~~~', '> [[e.ts]]'].join('\n');
+    const {cell} = await renderNotes(source);
+    const drawn = within(cell).getAllByRole('button').filter(button => button.hasAttribute('data-entity-id')).map(link => `${link.getAttribute('data-entity-id')}${link.getAttribute('data-entity-type') === 'dir' ? '/' : ''}`);
+    expect(drawn).toEqual(fileRefs(source, true).map(loc => parseFileLoc(loc).path));
+    expect(drawn).toEqual(['a.ts', 'c/', 'd.ts', 'e.ts']);
   });
 
   it('renders fenced code through the code chunk or the plain fallback, never as markup', async () => {

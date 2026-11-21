@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENT_BY_NAME, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, formatFileLoc, galleryRoot, gallerySpec, parseFileLoc, parseFlow, parseLineRanges,
+  COMPONENT_BY_NAME, FILE_REF, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, cleanFlow, cleanSequence, fileRefs, formatFileLoc, galleryRoot, gallerySpec,
+  ignoredMarksWarning, parseFileLoc, readLineMarks, replaceFileRefs,
   type A2uiMessage, type ErTable, type GraphData, type WireComponent,
 } from '../src/index.ts';
 import {buildSurface, strictErrors} from '../testing/index.ts';
@@ -18,8 +19,8 @@ describe('file anchors and line ranges', () => {
     [' 12 - 18 , 30 ', [[12, 18], [30, 30]]],
     ['', []],
     [undefined, []],
-  ] as const)('parseLineRanges(%j)', (spec, ranges) => {
-    expect(parseLineRanges(spec)).toEqual(ranges);
+  ] as const)('readLineMarks(%j)', (spec, ranges) => {
+    expect(readLineMarks(spec)).toEqual({ranges, ignored: []});
   });
 
   // F041: mark='L1-60' highlighted nothing, although files are written 'path#L1-60' everywhere else.
@@ -27,16 +28,67 @@ describe('file anchors and line ranges', () => {
     ['L1-60', [[1, 60]]],
     ['L3,L7-9', [[3, 3], [7, 9]]],
     ['L7-L9', [[7, 9]]],
-    ['#L10-20', [[10, 20]]],
     ['l5', [[5, 5]]],
-    ['3, L7-9 ,#L12', [[3, 3], [7, 9], [12, 12]]],
-  ] as const)('parseLineRanges(%j) reads the file-anchor spelling', (spec, ranges) => {
-    expect(parseLineRanges(spec)).toEqual(ranges);
+  ] as const)('readLineMarks(%j) reads the file-anchor spelling as written', (spec, ranges) => {
+    expect(readLineMarks(spec)).toEqual({ranges, ignored: []});
   });
 
-  it('drops what is not a line number', () => {
-    expect(parseLineRanges('3,abc,7..9,L,12')).toEqual([[3, 3], [12, 12]]);
-    expect(parseLineRanges('3,,7')).toEqual([[3, 3], [7, 7]]);
+  // Decision D22: a plain guess is read and the reading is said; it is never dropped in silence.
+  it.each([
+    ['lines 10-20', [[10, 20]], '10-20'],
+    ['line 7', [[7, 7]], '7'],
+    ['L10:L20', [[10, 20]], '10-20'],
+    ['#L10-L20', [[10, 20]], '10-20'],
+    ['#L12', [[12, 12]], '12'],
+    ['10..20', [[10, 20]], '10-20'],
+    ['10...20', [[10, 20]], '10-20'],
+    ['10\u201320', [[10, 20]], '10-20'],
+    ['10 \u2014 20', [[10, 20]], '10-20'],
+    ['10 to 20', [[10, 20]], '10-20'],
+    ['20-10', [[10, 20]], '10-20'],
+    ['3; 7-9', [[3, 3], [7, 9]], '3,7-9'],
+    ['3, L7-9 ,#L12', [[3, 3], [7, 9], [12, 12]], '3,L7-9,12'],
+  ] as const)('readLineMarks(%j) reads a guess and says how', (spec, ranges, fixed) => {
+    expect(readLineMarks(spec)).toEqual({ranges, ignored: [], fixed});
+  });
+
+  it('returns what names no line, and keeps it in the fixed text', () => {
+    expect(readLineMarks('3,abc,L,0,3-,12')).toEqual({ranges: [[3, 3], [12, 12]], ignored: ['abc', 'L', '0', '3-']});
+    expect(readLineMarks('3,,7')).toEqual({ranges: [[3, 3], [7, 7]], ignored: []});
+    expect(readLineMarks('the loop; 10..12')).toEqual({ranges: [[10, 12]], ignored: ['the loop'], fixed: 'the loop,10-12'});
+    expect(readLineMarks(4)).toEqual({ranges: [[4, 4]], ignored: []});
+    expect(readLineMarks(0)).toEqual({ranges: [], ignored: []});
+    expect(ignoredMarksWarning(['foo'])).toBe("mark 'foo' ignored: write 'L10-20' or '3,7-9'");
+    expect(ignoredMarksWarning(['a', 'b', 'c', 'd', 'the start of the function body'])).toBe("mark 'a', 'b', 'c' and 2 more ignored: write 'L10-20' or '3,7-9'");
+    expect(ignoredMarksWarning(['the start of the function body'])).toBe("mark 'the start of the functi\u2026' ignored: write 'L10-20' or '3,7-9'");
+  });
+});
+
+describe('[[path]] file refs in prose', () => {
+  it('finds the refs drawn as links: not blank at either end, one line, not inside code', () => {
+    expect(fileRefs('See [[src/a.ts#L10-20]] and [[b.ts]].', false)).toEqual(['src/a.ts#L10-20', 'b.ts']);
+    expect(fileRefs('[[ a.ts]] [[a.ts ]] [[]] [[a\nb]] [[a[b]] [a.ts] [[ok.ts]]', false)).toEqual(['ok.ts']);
+    expect(fileRefs('`[[in/code.ts]]` then [[out.ts]] and **[[bold.ts]]**', false)).toEqual(['out.ts', 'bold.ts']);
+    expect(fileRefs(`[[${'x'.repeat(401)}]] [[${'y'.repeat(400)}]]`, false)).toEqual(['y'.repeat(400)]);
+    // Markdown: inline code of any backtick run and fenced blocks stay literal (a longer run closes a fence, as in
+    // CommonMark); text after a closed fence does not, and a fence never closed runs to the end
+    const md = 'A [[a.ts]] ``[[code.ts]]``\n```ts\n[[fenced.ts]]\n````\n[[after.ts]]\n~~~\n[[tilde.ts]]\n~~~\n[[last.ts]]\n```\n[[open.ts]]';
+    expect(fileRefs(md, true)).toEqual(['a.ts', 'after.ts', 'last.ts']);
+    // the same text read as inline markup has no fences
+    expect(fileRefs('```\n[[a.ts]]\n```', false)).toEqual(['a.ts']);
+  });
+
+  it('replaces only the refs the swap names, and leaves the rest of the text as written', () => {
+    const swap = (loc: string) => (loc.startsWith('readme') ? loc.replace('readme.md', 'README.md') : undefined);
+    expect(replaceFileRefs('[[readme.md#L2]], `[[readme.md]]` and [[src/a.ts]] [[readme.md]]', false, swap)).toBe('[[README.md#L2]], `[[readme.md]]` and [[src/a.ts]] [[README.md]]');
+    expect(replaceFileRefs('```\n[[readme.md]]\n```\n[[readme.md]]', true, swap)).toBe('```\n[[readme.md]]\n```\n[[README.md]]');
+    const text = 'no refs [[ here ]]';
+    expect(replaceFileRefs(text, false, swap)).toBe(text);
+  });
+
+  it('FILE_REF is one pattern, not global, so each user builds its own scanner', () => {
+    expect(FILE_REF.global).toBe(false);
+    expect(new RegExp(FILE_REF.source, 'g').exec('x [[a.ts#L1]]')?.[1]).toBe('a.ts#L1');
   });
 });
 
@@ -72,7 +124,7 @@ describe('gallery', () => {
     expect(layers.map(layer => Object.keys(layer)[0])).toEqual(['name', 'title', 'label']);
 
     expect(props(one('CodeView')).mark).toBe('L1-3');
-    expect(parseLineRanges(props(one('CodeView')).mark)).toEqual([[1, 3]]);
+    expect(readLineMarks(props(one('CodeView')).mark)).toEqual({ranges: [[1, 3]], ignored: []});
     expect(props(one('Markdown')).title, 'title= on Markdown draws a plate (F039)').toBe('Markdown');
   });
 
@@ -132,8 +184,11 @@ describe('gallery', () => {
     expect(table.span).toBeUndefined();
   });
 
-  it('still shows all 44 components, and its flowchart parses', () => {
+  it('still shows all 44 components, and its diagrams draw whole', () => {
     expect(new Set(surface.components.map(c => c.component)).size).toBe(COMPONENT_BY_NAME.size);
-    expect(parseFlow(props(one('Flowchart')).src).ok).toBe(true);
+    const flow = cleanFlow(props(one('Flowchart')).data);
+    expect(flow.ok && {nodes: flow.ast.nodes.length, groups: flow.ast.groups.length, fixes: flow.fixes, dropped: flow.dropped}).toEqual({nodes: 6, groups: 1, fixes: [], dropped: []});
+    const seq = cleanSequence(props(one('SequenceDiagram')).data);
+    expect(seq.ok && {actors: seq.ast.actors.length, blocks: seq.ast.steps.filter(step => step.kind === 'frame' && step.edge === 'open').length, fixes: seq.fixes, dropped: seq.dropped}).toEqual({actors: 4, blocks: 2, fixes: [], dropped: []});
   });
 });

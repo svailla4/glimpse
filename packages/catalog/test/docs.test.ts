@@ -109,7 +109,7 @@ describe('component docs', () => {
     const lines = typedSignatureList().split('\n');
     expect(lines.filter(l => l.startsWith('# '))).toHaveLength(7);
     expect(lines.filter(l => /^[ABC] /.test(l))).toHaveLength(COMPONENTS.length);
-    expect(lines).toContain('A DataTable(data*~:Rows, columns:str, sort:str, search:flag, group:str) +frame');
+    expect(lines).toContain('A DataTable(data*~:Rows, columns~:value, sort:str, search:flag, group:str) +frame');
     expect(lines).toContain("A Chips(data~:ChipItem[]='repo.stack') +frame");
   });
 

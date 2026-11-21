@@ -128,8 +128,8 @@ test.describe('D18: diagrams open readable', () => {
 
   test('Flowchart and ERDiagram draw their text at 10 px or more at the default view', async ({page, glimpse}) => {
     const schema = "$/s=[{name:'users',columns:[{name:'id',type:'uuid',pk:true},{name:'email',type:'text'},{name:'created_at',type:'timestamptz'}]},{name:'orders',columns:[{name:'id',type:'uuid',pk:true},{name:'user_id',type:'uuid',fk:'users.id'},{name:'total_cents',type:'int'},{name:'status',type:'text'}]},{name:'items',columns:[{name:'id',type:'uuid',pk:true},{name:'order_id',type:'uuid',fk:'orders.id'},{name:'sku',type:'text'},{name:'qty',type:'int'}]},{name:'payments',columns:[{name:'id',type:'uuid',pk:true},{name:'order_id',type:'uuid',fk:'orders.id'},{name:'amount_cents',type:'int'}]}]";
-    const flow = "Req[Request] --> Auth{Signed in?}; Auth -->|no| Login[Login page]; Login --> Auth; Auth -->|yes| RL{Over limit?}; RL -->|yes| E([429]); RL -->|no| H[Handler]; H --> DB[(Postgres)]; H -.-> C((cache)); H --> H; DB -->|row| H";
-    const spec = `root=Page('Diagrams',[f,e])\n${schema}\nf=Flowchart('${flow}',title='Flow',span=6)\ne=ERDiagram($/s,title='Schema',span=6)`;
+    const flow = "{nodes:{Req:'Request',Auth:{label:'Signed in?',shape:'diamond'},Login:'Login page',RL:{label:'Over limit?',shape:'diamond'},E:{label:'429',shape:'pill'},H:'Handler',DB:{label:'Postgres',shape:'store'},C:{label:'cache',shape:'circle'}},edges:[['Req','Auth'],['Auth','Login','no'],['Login','Auth'],['Auth','RL','yes'],['RL','E','yes'],['RL','H','no'],['H','DB'],{from:'H',to:'C',dashed:true},['H','H'],['DB','H','row']]}";
+    const spec = `root=Page('Diagrams',[f,e])\n${schema}\nf=Flowchart(${flow},title='Flow',span=6)\ne=ERDiagram($/s,title='Schema',span=6)`;
     const shown = await glimpse.call('show', {id: 'diagrams', spec});
     expect(shown.isError, shown.text).toBe(false);
     await openViewer(page, glimpse);

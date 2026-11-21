@@ -124,6 +124,11 @@
   .step[data-active] .note {
     stroke: var(--gl-ink);
   }
+  .dropped {
+    font: 11px var(--gl-font-mono);
+    color: var(--gl-ink-3);
+    padding: 4px 0 0;
+  }
   .noteText {
     font: 11px var(--gl-font-mono);
     fill: var(--gl-ink-2);

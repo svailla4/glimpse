@@ -4,7 +4,7 @@ import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, t
 import {
   Drafting, Empty, Icon, PlateAside, REPORT_CODES, Redline, fmtNum, toNumber, useDataset, useFollowedFile, useHostActions, useRev, useSelection, type GlView,
 } from '../../kit/index.ts';
-import {Crumbs, ignoredMarksText, inRanges, parseMarks, TokenSpans, useCapStyle} from './codekit/lines.tsx';
+import {Crumbs, ignoredMarksText, inRanges, TokenSpans, useCapStyle, useMarks} from './codekit/lines.tsx';
 import k from './codekit/lines.module.css';
 import {useFileLines} from './codekit/useFileLines.ts';
 import {VirtualRows, type VirtualRowsHandle} from './codekit/VirtualRows.tsx';
@@ -104,7 +104,7 @@ export function CodeFile(props: CodeFileProps): ReactNode {
   const total = file?.total ?? 0;
   const capStyle = useCapStyle({'--gl-digits': String(total).length});
 
-  const {ranges: marks, ignored: badMarks} = useMemo(() => parseMarks(props.mark), [props.mark]);
+  const {ranges: marks, ignored: badMarks} = useMarks(props.mark, current ? total : undefined);
   const notesState = useDataset<CodeNote[]>(props.notes);
   const {notes, dropped} = useMemo(() => readNotes(notesState.data, total), [notesState.data, total]);
   const byAnchor = useMemo(() => {

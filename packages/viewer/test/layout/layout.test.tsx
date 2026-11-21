@@ -1,7 +1,7 @@
 // packages/viewer/test/layout/layout.test.tsx - Page, Section, Plate, Grid, Row and Column from real wire messages.
-import {act, fireEvent, screen, within} from '@testing-library/react';
+import {act, fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
-import {parseCols, shareOf} from '../../src/components/layout/Grid.tsx';
+import {shareOf} from '../../src/components/layout/Grid.tsx';
 import {buildPatch, buildSurface, renderExpress, renderSpec} from '../harness.tsx';
 
 const redlines = (root: HTMLElement) => [...root.querySelectorAll('[data-gl-state="redline"]')].map(el => el.textContent);
@@ -155,14 +155,6 @@ describe('Plate', () => {
 });
 
 describe('Grid', () => {
-  it('parses counts and ratios, and rejects everything else', () => {
-    expect(parseCols('3')).toEqual([1, 1, 1]);
-    expect(parseCols(' 2:1 ')).toEqual([2, 1]);
-    expect(parseCols('1:2.5:1')).toEqual([1, 2.5, 1]);
-    expect(parseCols('40')).toHaveLength(12);
-    for (const bad of [undefined, '', '0', '-2', 'abc', '2:x', '1:0', '2:', ':', '1:-1', '3.5']) expect(parseCols(bad), String(bad)).toBeUndefined();
-  });
-
   const style = (el: HTMLElement, name: string) => el.style.getPropertyValue(name);
 
   it('lays children out on the tracks `cols` asks for', async () => {
@@ -239,6 +231,23 @@ describe('Grid', () => {
     expect(style(inner(view.cell('g')), '--gap')).toBe('0px');
     expect(redlines(view.container)).toEqual([]);
     expect(view.errors).toEqual([]);
+  });
+
+  // `cols` the server never checked (the harness renders without it): the tab draws the guess the server would
+  // write, and says what it could not read (W_COLS) until a patch gives it something it can.
+  it('draws a guess as the server reads it, and reports a `cols` it cannot read as W_COLS', async () => {
+    const spec = `root=Page('T',[g,h])\ng=Grid([Text('a'),Text('b')],'wide')\nh=Grid([Text('c'),Text('d')],'2fr 1fr')`;
+    const view = renderExpress(spec);
+    await view.settle();
+    expect(style(inner(view.cell('h')), '--cols')).toBe('minmax(0, 2fr) minmax(0, 1fr)');
+    await waitFor(() => expect(view.stateOf('g')).toBe('W_COLS'));
+    expect(view.reports.filter(report => report.code === 'W_COLS')).toEqual([
+      {code: 'W_COLS', message: "Grid#g: cols 'wide' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'", surfaceId: 'test', componentId: 'g'},
+    ]);
+    expect(view.stateOf('h')).toBe('OK');
+    view.send(buildPatch('test', buildSurface('test', spec), `g=Grid([Text('a'),Text('b')],'1:3')`));
+    await waitFor(() => expect(view.stateOf('g')).toBe('OK'));
+    expect(style(inner(view.cell('g')), '--cols')).toBe('minmax(0, 1fr) minmax(0, 3fr)');
   });
 });
 

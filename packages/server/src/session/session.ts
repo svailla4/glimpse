@@ -16,7 +16,7 @@ import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
 import {canonicalTarget, isCaseVariant} from '../sources/targets.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../spec/compile.ts';
 import {editDistance, nearest, oneLine, problem, SpecError, type Problem} from '../spec/errors.ts';
-import {boundKeys, checkRef, componentsOf, expandMessages, unboundPaths, type Expansion, type PathNames} from '../spec/expand.ts';
+import {boundKeys, checkRef, componentsOf, diagramNotes, expandMessages, unboundPaths, type Expansion, type PathNames} from '../spec/expand.ts';
 import {DatasetStore, envelopeOf, pageRows, pendingEnvelope, readsRefs, rowsOf, type Drill, type Outcome, type PageQuery} from './datasets.ts';
 import {ownEnv} from './env.ts';
 import {EventQueue, selectLine} from './events.ts';
@@ -585,8 +585,7 @@ export class Session {
       surfaces: this.surfaces.ids(),
       log: this.log,
     });
-    // The stored view, so a diagram it has is checked when this call rewrites the src it binds.
-    const expansion = expandMessages(compiled.messages, registry, names, seed);
+    const expansion = expandMessages(compiled.messages, registry, names);
     if (expansion.problems.length > 0) throw new SpecError(expansion.problems);
     // Which components the preset's own text defined (the first source of a preset call) and which the model wrote.
     const idsOf = (from: (step: number) => boolean) =>
@@ -603,7 +602,15 @@ export class Session {
     const unbound = [...unboundPaths(compiled.messages.flatMap(componentsOf), draft.record.data), ...draft.unknownKeys.map(key => `$/ds/${key}`)];
     const compiledData = new Set(compiled.messages.flatMap(message => ('updateDataModel' in message ? [topSegment(message.updateDataModel.path)]
       : 'createSurface' in message ? Object.keys(message.createSurface.dataModel ?? {}) : [])));
-    return {draft, fixes: [...compiled.fixes, ...expansion.fixes], warnings: [...compiled.warnings, ...expansion.warnings, ...unbound.map(path => `unbound ${path}`)], expansion, compiledData};
+    const defined = new Set(compiled.messages.flatMap(message => componentsOf(message).map(comp => comp.id)));
+    const diagrams = diagramNotes(draft.record.components.values(), draft.record.data, defined, compiledData);
+    return {
+      draft,
+      fixes: [...compiled.fixes, ...expansion.fixes, ...diagrams.fixes],
+      warnings: [...compiled.warnings, ...expansion.warnings, ...diagrams.warnings, ...unbound.map(path => `unbound ${path}`)],
+      expansion,
+      compiledData,
+    };
   }
 
   /**
@@ -697,6 +704,8 @@ export class Session {
       const state = await this.servable(path);
       if (state === 'ok') continue;
       if (state === 'refused') { out.push(`${where}: "${path.slice(0, 120)}" is not a file of this project (outside it, ignored, or not a regular file).`); continue; }
+      const target = await resolveInside(this.root, path);
+      if (target && (await lstat(target).then(info => info.isDirectory(), () => false))) { out.push(`${where}: "${path.slice(0, 120)}" is a directory, not a file.`); continue; }
       candidates ??= (await ctx.index.files().catch(() => [])).map(entry => entry.path);
       out.push(`${where}: file "${path.slice(0, 120)}" does not exist.${missingFileHint(path, candidates)}`);
     }

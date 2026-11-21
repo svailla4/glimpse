@@ -1,5 +1,5 @@
 // The diagram engine and plate sizing of decisions D19 and D20, end to end against the bundled server: a small
-// diagram opens fitted and centred with every node on the stage, a Flowchart flows the way its Mermaid header says
+// diagram opens fitted and centred with every node on the stage, a Flowchart flows the way dir= says
 // (dir= still wins), and plates in one row keep the height of what they show instead of growing to the tallest.
 import type {Locator, Page} from '@playwright/test';
 import {expectSettled, openViewer, type Glimpse} from './support/glimpse.ts';
@@ -95,18 +95,18 @@ test.describe('D19/D20: diagrams open whole when they can, the way they are writ
     expect(watched.problems).toEqual([]);
   });
 
-  test("a Flowchart flows the way its header says ('graph LR'); dir= wins over the header; with neither it reads larger in its plate", async ({page, glimpse}) => {
-    const chain = 'A[Start] --> B[Check the input]; B --> C[Write the row]; C --> D([Done])';
-    // Twelve steps and no header in a full-width plate: drawn top to bottom it would be squeezed to the plate's height
+  test('a Flowchart flows the way dir= says; without it, the way it reads larger in its plate', async ({page, glimpse}) => {
+    const chain = "{nodes:{A:'Start',B:'Check the input',C:'Write the row',D:{label:'Done',shape:'pill'}},edges:[['A','B'],['B','C'],['C','D']]}";
+    // Twelve steps and no dir= in a full-width plate: drawn top to bottom it would be squeezed to the plate's height
     // cap, so it is drawn left to right (the old default, top to bottom, opened it at a fraction of its size).
     const steps = ['Open the file', 'Read the header', 'Check the version', 'Parse the rows', 'Drop empty rows', 'Merge duplicates', 'Sort by key', 'Split in pages', 'Write the pages', 'Build the index', 'Write the index', 'Close the file'];
-    const long = steps.map((label, i) => `S${i}[${label}]`).slice(1).map((to, i) => `${i === 0 ? `S0[${steps[0]}]` : `S${i}`} --> ${to}`).join('; ');
+    const long = `{nodes:{${steps.map((label, i) => `S${i}:'${label}'`).join(',')}},edges:[${steps.slice(1).map((_, i) => `['S${i}','S${i + 1}']`).join(',')}]}`;
     const spec = [
-      "root=Page('Flow',[Grid([header,plain,forced]),long])",
-      `header=Flowchart('graph LR; ${chain}',title='Header LR')`,
-      `plain=Flowchart('${chain}',title='No header')`,
-      `forced=Flowchart('flowchart LR; ${chain}',dir='TB',title='dir wins')`,
-      `long=Flowchart('${long}',title='Long, no header')`,
+      "root=Page('Flow',[Grid([lr,plain,forced]),long])",
+      `lr=Flowchart(${chain},dir='LR',title='dir LR')`,
+      `plain=Flowchart(${chain},title='No dir')`,
+      `forced=Flowchart(${chain},dir='TB',title='dir TB')`,
+      `long=Flowchart(${long},title='Long, no dir')`,
     ].join('\n');
     await showSettled(page, glimpse, 'flow', spec);
     // the long chain: left to right, its first steps side by side, the drawing wider than tall
@@ -121,7 +121,7 @@ test.describe('D19/D20: diagrams open whole when they can, the way they are writ
     const drawing = union(Object.values(longShape.nodes));
     expect(drawing.w, 'long: the drawing is wider than tall').toBeGreaterThan(drawing.h);
     // a plain four-step chain in a third of the width still reads larger top to bottom
-    const expected: Record<string, 'LR' | 'TB'> = {header: 'LR', plain: 'TB', forced: 'TB'};
+    const expected: Record<string, 'LR' | 'TB'> = {lr: 'LR', plain: 'TB', forced: 'TB'};
     for (const [id, dir] of Object.entries(expected)) {
       const stage = await stageOf(page, id);
       const {nodes} = await geometry(stage);

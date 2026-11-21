@@ -164,11 +164,11 @@ deps=Graph('deps.modules packages/server',title='What depends on what',span=7)
 churn=DataTable('git.churn packages/server top=10',title='Most changed files',span=5)
 ```
 
-**Trace a flow** (`id: "round-trip"`): a diagram written in a Mermaid-like notation next to the code it describes.
+**Trace a flow** (`id: "round-trip"`): a diagram written as data next to the code it describes. Diagrams are plain data, not Mermaid text: each step is checked on its own, so one bad entry is left out and named instead of failing the page, and a diagram bound to `$/name` can be patched one node at a time.
 
 ```
 root=Page('From tool call to pixels',[flow,code])
-flow=SequenceDiagram('Agent->>Server: show(spec)\nServer->>Viewer: A2UI frame\nViewer->>Server: action\nServer-->>Agent: viewer: select file ...',title='One round trip',span=6)
+flow=SequenceDiagram({steps:[['Agent','Server','show(spec)'],['Server','Viewer','A2UI frame'],['Viewer','Server','action'],['Server','Agent','viewer: select file ...','reply']]},title='One round trip',span=6)
 code=CodeView('packages/server/src/mcp/show.ts#L1-40',mark='L1-12',title='Where it starts',size='l',span=6)
 ```
 
@@ -184,7 +184,7 @@ $/plan=[{title:'Add the middleware',status:'done'},{title:'Wire it into the rout
 
 Later, `show` with the same `id` and only `$/plan=[...]` updates the plan in place; nothing else is re-sent or re-drawn. Clicking *Redis* queues `viewer: answer rate-limiter store {"choice":"Redis"}` for the agent.
 
-The catalog prefers accepting a reasonable guess to documenting the one right spelling. `Callout(...,'warning')` becomes `warn` with a `fixed` note; `mark='L1-12'` and `mark='1-12'` both highlight; `KeyValue` and `Stats` read the same rows (`[{label, value}]`, `[{key, value}]` or an object `{Label: value}`); a `Button` action may be a plain event name (`Button('Draft it','draft')`); an `ERDiagram` takes a bare list of tables, and a column's `fk:'clients.id'` draws the relation; `Flowchart('Start --> Enter credentials --> Valid?')` works without node ids.
+The catalog prefers accepting a reasonable guess to documenting the one right spelling. `Callout(...,'warning')` becomes `warn` with a `fixed` note; `mark='L1-12'` and `mark='1-12'` both highlight; `KeyValue` and `Stats` read the same rows (`[{label, value}]`, `[{key, value}]` or an object `{Label: value}`); a `Button` action may be a plain event name (`Button('Draft it','draft')`); an `ERDiagram` takes a bare list of tables, and a column's `fk:'clients.id'` draws the relation; a `Flowchart` takes just its edges (`Flowchart([['Start','Login'],['Login','Valid?']])`) and names the nodes from them; `Grid` reads `cols='2fr 1fr'` as `'2:1'`. Nothing an author writes is dropped quietly: a guess comes back as a `fixed` line, and what Glimpse could not read or draw as a `warn` line, or as a `viewer:` line for data that reached the tab without passing the server, so the model can correct it in one step. Values are data or follow conventions models already know (`path#L10-20`, `main..HEAD`); Glimpse adds no grammar of its own.
 
 ## Components
 
@@ -256,7 +256,7 @@ npm run generate    # rewrite packages/catalog/generated and the fixtures after 
 
 ```
 packages/
-  catalog/   the catalog, defined once in zod: components, data sources, presets, notation parsers,
+  catalog/   the catalog, defined once in zod: components, data sources, presets, diagram data checks,
              generated docs and catalog.json, fixtures. DOM-free.
   viewer/    the React single-page app: the kit that binds views to A2UI, and the component library
   server/    the MCP server, the loopback viewer host, the repository analyzers
@@ -282,7 +282,7 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 
 | Budget | Limit | Now |
 |---|---|---|
-| Server instructions | 3,750 chars (hard limit 4,000) | 3,749 |
+| Server instructions | 3,750 chars (hard limit 4,000) | 3,747 |
 | `show` + `catalog` definitions | 1,500 chars | 1,147 |
 | Largest preset result (`overview`) | 1,200 chars | 1,095 |
 | Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 193.6 kB |

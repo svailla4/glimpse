@@ -565,6 +565,22 @@ describe('D14: the model learns what the viewer rendered, as component state', (
     ]);
   });
 
+  // A [[path]] ref in prose is a file link like FileRef: the model hears of one that leads nowhere, as of a file prop.
+  it('checks the [[path]] refs of literal prose at show time, as it checks file props', async () => {
+    const t = start();
+    const outcome = await t.session.show(spec('refs', `root=Page('Refs',[a,m,c])
+a=Text('See [[src/a.ts#L1]], [[src/servise.ts#L3]], [[src]], [[src/]] and \`[[src/code.ts]]\`.')
+m=Markdown('**Risk:** [[lib/gone.go]]\\n\`\`\`\\n[[src/fenced.ts]]\\n\`\`\`')
+c=Callout('Keys in [[.env]].','risk')`));
+    await outcome.checks;
+    expect(outcome.warnings).toEqual([
+      'Text#a: file "src/servise.ts" does not exist.',
+      'Text#a: "src" is a directory, not a file.',
+      'Markdown#m: file "lib/gone.go" does not exist.',
+      'Callout#c: ".env" is not a file of this project (outside it, ignored, or not a regular file).',
+    ]);
+  });
+
   it('suggests what was plausibly meant for a missing file, and says so when there is no git', async () => {
     const inventory = ['src/auth/handler.ts', 'src/auth/cache.ts', 'README.md', 'lib/spec/compile.ts', 'lib/spec/errors.ts', 'lib/spec/guard.ts', 'pkg/parser/parser.go', ...Array.from({length: 20}, (_, i) => `big/f${i}.ts`)];
     const t = start({deps: fakeDeps({inventory, git: null})});

@@ -1,13 +1,14 @@
 // Expansion (design 2.2 step 4): compiled messages are rewritten in place so that every data prop naming a source
-// becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, the Mermaid-style notation
-// (inline, or written to the path a src binds), column shorthand and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
+// becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, diagram data, DataTable
+// columns and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
 import {
-  acceptsArg, checkColumns, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, parseColumns, parseFlow, parseRef, parseSequence, PATHS,
-  shapeKinds, SOURCES, type A2uiMessage, type Field, type Prop, type SourceMeta, type SourceRef, type WireComponent,
+  acceptsArg, cleanFlow, cleanSequence, columnKey, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, normalizeCols, parseFileLoc,
+  parseRef, PATHS, readColumns, replaceFileRefs, shapeKinds, shorthandTokens, SOURCES, tokenKey, type A2uiMessage, type Field, type Prop,
+  type SourceMeta, type SourceRef, type WireComponent,
 } from '@glimpse/catalog';
+import {ignoredMarksWarning, readLineMarks} from '@glimpse/catalog';
 import {AS_ROWS, NODE_FIELDS, readsAsRows} from '../session/datasets.ts';
 import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
-import type {Seed} from './compile.ts';
 import {closeMatch, nearest, oneLine, problem, type Problem} from './errors.ts';
 import {pathProblem} from './guard.ts';
 
@@ -17,7 +18,7 @@ export interface Expansion {
   problems: Problem[];
   /** What is certain to draw wrong although the spec is valid, as `Name#id: text` (a `warn` line each). */
   warnings: string[];
-  /** Literal files named by components (CodeView, FileRef, a CodeTour stop ...): the session checks they exist. */
+  /** Literal files named by components (CodeView, FileRef, a CodeTour stop, a [[path]] ref ...): the session checks they exist. */
   files: Array<{where: string; file: string}>;
   /** Literal DiffView ranges other than the working tree: the session checks the revisions exist. */
   ranges: Array<{where: string; range: string}>;
@@ -48,6 +49,22 @@ function kindWarning(component: string, id: string, meta: SourceMeta, kinds: Rea
   return `${component}#${id}: ${meta.name} returns ${KIND_NOUN[meta.kind]}, which ${component} cannot draw: use ${instead}${asRows}. The plate will show an error.`;
 }
 
+/**
+ * Split's ratio as Split draws it, said (D22): a share rewritten to 'a:b' is a `fixed` line, and a value Split cannot
+ * read (it then opens the panes half and half) is a `warn` line.
+ */
+function splitRatioChecked(comp: WireComponent, out: Expansion): void {
+  const written = String(comp.ratio);
+  const meant = splitRatio(written);
+  if (meant !== written) {
+    comp.ratio = meant;
+    out.fixes.push(`Split.ratio '${oneLine(written, 24)}' -> '${meant}'`);
+  }
+  if (!/^\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?$/.test(meant.trim()) && !/^\d+(?:\.\d+)?%?$/.test(meant.trim())) {
+    out.warnings.push(`Split#${comp.id}: ratio '${oneLine(written, 24)}' is not a ratio: opened half and half. Write '1:2'.`);
+  }
+}
+
 /** '0.3', '.3' and '30%' as the 'a:b' ratio Split draws; anything else is returned as written. */
 export function splitRatio(text: string): string {
   const trimmed = text.trim();
@@ -57,6 +74,23 @@ export function splitRatio(text: string): string {
   const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
   const d = gcd(first, 100 - first);
   return `${first / d}:${(100 - first) / d}`;
+}
+
+/**
+ * Grid's cols as Grid reads it (normalizeCols, shared with the viewer): a guess ('2fr 1fr', '50% 50%', 'two') is
+ * written as '2:1', '1:1' or '2' with a `fixed` line; what cannot be read is drawn as equal columns, said in a `warn`.
+ */
+function gridCols(comp: WireComponent, out: Expansion): void {
+  if (typeof comp.cols !== 'string' || comp.cols.trim() === '') return;
+  const written = comp.cols;
+  const meant = normalizeCols(written);
+  if (meant === undefined) {
+    out.warnings.push(`Grid#${comp.id}: cols '${oneLine(written, 40)}' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'.`);
+    return;
+  }
+  const fix = `Grid.cols '${oneLine(written, 40)}' -> '${meant}'`;
+  if (meant !== written.replace(/\s+/g, '') && !out.fixes.includes(fix)) out.fixes.push(fix);
+  comp.cols = meant;
 }
 
 const sourceNames = (registry: SourceRegistry): string[] => [...new Set([...SOURCES.map(s => s.name), ...registry.keys()])];
@@ -137,6 +171,29 @@ function nameFiles(comp: WireComponent, name: string, props: Record<string, Prop
   }
 }
 
+/** The text props that draw `[[path#L10]]` refs as file links (shared/inline.tsx, MarkdownProse.tsx), by component. */
+const PROSE: Readonly<Record<string, {prop: string; markdown: boolean}>> = {
+  Text: {prop: 'text', markdown: false}, Callout: {prop: 'text', markdown: false}, Ask: {prop: 'prompt', markdown: false}, Markdown: {prop: 'text', markdown: true},
+};
+
+/**
+ * The `[[path#L10]]` refs of a literal text, checked as a file prop is (the session says which name no file) and
+ * written under the inventory's name in the text (V071). A ref to a directory (`[[src/auth/]]`) is not a file to check.
+ */
+function proseRefs(comp: WireComponent, name: string, out: Expansion, names: PathNames | undefined): void {
+  const prose = PROSE[name];
+  const text = prose ? comp[prose.prop] : undefined;
+  if (!prose || typeof text !== 'string') return;
+  const where = `${name}#${comp.id}`;
+  const next = replaceFileRefs(text, prose.markdown, written => {
+    if (parseFileLoc(written).path.endsWith('/')) return undefined;
+    const meant = named(written, out, names);
+    if (out.files.length < MAX_CHECKS && !out.files.some(entry => entry.where === where && entry.file === meant)) out.files.push({where, file: meant});
+    return meant === written ? undefined : meant;
+  });
+  if (next !== text) comp[prose.prop] = next;
+}
+
 // ---------------------------------------------------------------- field names (decision D15)
 /**
  * What people write for a field, and the fields it may stand for, in order of preference: the first one the dataset
@@ -207,18 +264,20 @@ export function meantField(name: string, fields: readonly Field[]): string | und
     ?? closeMatch(name, keys);
 }
 
+/** DataTable's columns: a list or the shorthand string, read by readColumns (catalog notation.ts). */
+const isColumns = (component: string, key: string): boolean => component === 'DataTable' && key === 'columns';
+
 /** Field-valued props of a component: a plain string prop documented as naming a field, and DataTable's columns. */
 const isFieldProp = (component: string, key: string, prop: Prop): boolean =>
-  prop.kind === 'str' && (/\bfield/i.test(prop.doc) || (component === 'DataTable' && key === 'columns'));
+  isColumns(component, key) || (prop.kind === 'str' && /\bfield/i.test(prop.doc));
 
 /** The field names a component's field props spell, as written (DataTable columns by key, sort without its sign). */
 function writtenFields(comp: WireComponent, name: string, props: Record<string, Prop>): string[] {
   const names: string[] = [];
   for (const [key, prop] of Object.entries(props)) {
     const value = comp[key];
-    if (typeof value !== 'string' || !isFieldProp(name, key, prop)) continue;
-    if (name === 'DataTable' && key === 'columns') names.push(...value.trim().split(/\s+/).map(token => /^[^:=]*/.exec(token)![0]));
-    else names.push(...value.split(/[\s,]+/).map(field => field.replace(/^-/, '')));
+    if (isColumns(name, key)) names.push(...readColumns(value).fields.map(column => column.key));
+    else if (typeof value === 'string' && isFieldProp(name, key, prop)) names.push(...value.split(/[\s,]+/).map(field => field.replace(/^-/, '')));
   }
   return names.filter(Boolean);
 }
@@ -253,12 +312,27 @@ function repairFields(comp: WireComponent, name: string, props: Record<string, P
   const moved = (key: string, written: string, meant: string) => out.fixes.push(`${name}.${key} '${oneLine(written, 40)}' -> '${meant}'`);
   for (const [key, prop] of Object.entries(props)) {
     const value = comp[key];
+    if (isColumns(name, key) && Array.isArray(value)) {
+      // The list form: an entry keeps its own spelling ('key', {field: ...}); one with no key is the columns check's.
+      const columns = value.flatMap(item => {
+        const named = columnKey(item);
+        if (!named) return [item];
+        const meant = meantField(named.key, fields);
+        if (meant === undefined) { dropped(key, named.key); return []; }
+        if (meant === named.key) return [item];
+        moved(key, named.key, meant);
+        return [named.prop === '' ? meant : {...(item as Record<string, unknown>), [named.prop]: meant}];
+      });
+      if (columns.length === 0) delete comp[key];
+      else comp[key] = columns;
+      continue;
+    }
     if (typeof value !== 'string' || !isFieldProp(name, key, prop) || value.trim() === '') continue;
     let next: string | undefined;
-    if (name === 'DataTable' && key === 'columns') {
+    if (isColumns(name, key)) {
       const columns: string[] = [];
-      for (const token of value.trim().split(/\s+/)) {
-        const head = /^[^:=]*/.exec(token)![0];
+      for (const token of shorthandTokens(value)) {
+        const head = tokenKey(token);
         const meant = head ? meantField(head, fields) : undefined;
         if (meant === undefined) { dropped(key, head || token); continue; }
         if (meant !== head) moved(key, head, meant);
@@ -312,9 +386,8 @@ function collectChecks(comp: WireComponent, name: string, props: Record<string, 
   const names: string[] = [];
   for (const [key, prop] of Object.entries(props)) {
     const value = comp[key];
-    if (prop.kind !== 'str' || typeof value !== 'string') continue;
-    if (name === 'DataTable' && key === 'columns') names.push(...parseColumns(value).map(column => column.key));
-    else if (/\bfield/i.test(prop.doc)) names.push(...value.split(/[\s,]+/).filter(Boolean).map(field => field.replace(/^-/, '')));
+    if (isColumns(name, key)) names.push(...readColumns(value).fields.map(column => column.key));
+    else if (prop.kind === 'str' && typeof value === 'string' && /\bfield/i.test(prop.doc)) names.push(...value.split(/[\s,]+/).filter(Boolean).map(field => field.replace(/^-/, '')));
   }
   const wanted = [...new Set(names.filter(Boolean))];
   if (wanted.length > 0 && out.fields.length < MAX_CHECKS) out.fields.push({where, key: dsKey, names: wanted});
@@ -337,6 +410,20 @@ function focusAsTarget(comp: WireComponent, name: string, text: string, registry
   return formatRef(chosen);
 }
 
+/**
+ * Decision D22: a literal `mark` (CodeView, CodeBlock) is read here. A part written another plain way ('lines 10-20',
+ * '10..20', '20-10') is rewritten as a fix; a part that names no line is a `warn` line (the tab notes it too).
+ */
+function checkMark(comp: WireComponent, name: string, out: Expansion): void {
+  if (typeof comp.mark !== 'string') return;
+  const read = readLineMarks(comp.mark);
+  if (read.fixed !== undefined) {
+    out.fixes.push(`${name}#${comp.id}: mark '${oneLine(comp.mark, 60)}' -> '${oneLine(read.fixed, 60)}'`);
+    comp.mark = read.fixed;
+  }
+  if (read.ignored.length > 0) out.warnings.push(`${name}#${comp.id}: ${ignoredMarksWarning(read.ignored)}`);
+}
+
 function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Expansion, names: PathNames | undefined): void {
   const def = COMPONENT_BY_NAME.get(comp.component);
   if (!def) return;
@@ -346,6 +433,12 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
   for (const [key, prop] of Object.entries(def.props) as Array<[string, Prop]>) {
     if (prop.kind !== 'data') continue;
     const value = comp[key];
+    // Text where a diagram takes data (the Mermaid these components once read): say what they take now.
+    if (typeof value === 'string' && DIAGRAMS[def.name]) {
+      const cleaned = DIAGRAMS[def.name]!(value);
+      if (!cleaned.ok) out.problems.push(problem('E_SHAPE', `${where(key)}: ${cleaned.error}`, {component: def.name}));
+      continue;
+    }
     let text: string | undefined;
     if (value === undefined) text = prop.source;
     else if (typeof value === 'string') {
@@ -381,80 +474,72 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
     if (!asRows && kinds && !kinds.has(checked.meta.kind)) out.warnings.push(kindWarning(def.name, comp.id, checked.meta, kinds));
   }
   // The columns as written are checked first: a kind that does not exist is the author's to fix, whatever the field.
-  if (def.name === 'DataTable' && typeof comp.columns === 'string') {
-    for (const error of checkColumns(comp.columns)) out.problems.push(problem('E_ENUM', `${where('columns')} column ${error.statement}: ${error.message}`, {component: def.name}));
+  // An entry with no key is left out and named; the rest draws. Columns bound to a $/path are the viewer's to report.
+  const columns = comp.columns;
+  if (def.name === 'DataTable' && columns !== undefined && !isBinding(columns) && !(typeof columns === 'object' && columns !== null && '@call' in columns)) {
+    for (const {column, type, message} of readColumns(columns).problems) {
+      const at = `${where('columns')}${column > 0 ? ` column ${column}` : ''}`;
+      if (type === 'kind') out.problems.push(problem('E_ENUM', `${at}: ${message}`, {component: def.name}));
+      else if (type === 'shape') out.problems.push(problem('E_SHAPE', `${at}: ${message}`, {component: def.name}));
+      else out.warnings.push(`${at}: ${type === 'dropped' ? 'not drawn: ' : ''}${message}`);
+    }
   }
   const fields = boundFields.length === 1 ? boundFields[0] : undefined;
   if (fields && fields.length > 0) repairFields(comp, def.name, def.props as Record<string, Prop>, fields, out);
   nameFiles(comp, def.name, def.props as Record<string, Prop>, out, names);
   collectChecks(comp, def.name, def.props as Record<string, Prop>, out);
-  if (def.name === 'Split' && typeof comp.ratio === 'string') comp.ratio = splitRatio(comp.ratio);
-  if (typeof comp.src === 'string') checkSource(def.name, comp.src, where('src'), out);
-}
-
-/**
- * Flowchart.src and SequenceDiagram.src, written inline or through the data model: what cannot be read is an
- * E_NOTATION per statement, a slip the parser repaired (a block left open) a `fixed` line.
- */
-function checkSource(component: string, src: string, where: string, out: Expansion): void {
-  if (component !== 'Flowchart' && component !== 'SequenceDiagram') return;
-  const parsed = component === 'Flowchart' ? parseFlow(src) : parseSequence(src);
-  if (!parsed.ok) {
-    for (const error of parsed.errors) out.problems.push(problem('E_NOTATION', `${where} statement ${error.statement}: ${error.message}`, {component}));
-    return;
-  }
-  for (const fix of parsed.fixes ?? []) out.fixes.push(`${where} line ${fix.line}: ${fix.message}`);
-}
-
-const decodeSegments = (path: string): string[] => path.split('/').filter(Boolean).map(segment => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
-const isContainer = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
-
-/** The value at `rest` (segments) inside `root`, when there is one. */
-function valueIn(root: unknown, rest: readonly string[]): {value: unknown} | undefined {
-  let node = root;
-  for (const segment of rest) {
-    if (!isContainer(node) || !Object.hasOwn(node, segment)) return undefined;
-    node = node[segment];
-  }
-  return {value: node};
-}
-
-/**
- * Every value this call's messages write at `segments`, in message order: the new surface's data model, a write to
- * the path itself, or a write to an ancestor whose value holds it. A write below the path is not one.
- */
-function valuesAt(messages: readonly A2uiMessage[], segments: readonly string[]): unknown[] {
-  const values: unknown[] = [];
-  for (const message of messages) {
-    let found: {value: unknown} | undefined;
-    if ('createSurface' in message) {
-      found = message.createSurface.dataModel ? valueIn(message.createSurface.dataModel, segments) : undefined;
-    } else if ('updateDataModel' in message) {
-      const update = message.updateDataModel;
-      const at = decodeSegments(update.path ?? '/');
-      if (at.length === 0 || at.length > segments.length || at.some((segment, i) => segment !== segments[i])) continue;
-      found = valueIn(update.value, segments.slice(at.length));
-    }
-    if (found) values.push(found.value);
-  }
-  return values;
-}
-
-/**
- * A diagram src bound to a path this call writes (`$/seq='sequenceDiagram ...'` read by `SequenceDiagram($/seq)`) is
- * checked like an inline one, whether the component is in this call or in the stored view the call patches.
- */
-function checkBoundSources(messages: readonly A2uiMessage[], out: Expansion, seed: Seed | undefined): void {
-  const own = messages.flatMap(componentsOf);
-  const ownIds = new Set(own.map(comp => comp.id));
-  for (const comp of [...own, ...(seed?.components ?? []).filter(stored => !ownIds.has(stored.id))]) {
-    if (comp.component !== 'Flowchart' && comp.component !== 'SequenceDiagram') continue;
-    const src = comp.src;
-    if (!isBinding(src) || !/^\/(?!(ds|meta|ui)(\/|$))/.test(src['@path'])) continue;
-    for (const value of valuesAt(messages, decodeSegments(src['@path']))) {
-      if (typeof value === 'string') checkSource(comp.component, value, `$${src['@path']} (${comp.component}#${comp.id}.src)`, out);
+  proseRefs(comp, def.name, out, names);
+  if ('mark' in def.props) checkMark(comp, def.name, out);
+  if (def.name === 'Split' && typeof comp.ratio === 'string') splitRatioChecked(comp, out);
+  if (def.name === 'Grid') gridCols(comp, out);
+  // Inline diagram data: what is not a diagram at all is refused, the rest draws and says what it corrected or left out.
+  // Data bound to a $/path is checked against the data model after the call (diagramNotes).
+  const clean = DIAGRAMS[def.name];
+  if (clean && comp.data !== undefined && typeof comp.data !== 'string' && !isBinding(comp.data)) {
+    const cleaned = clean(comp.data);
+    if (!cleaned.ok) out.problems.push(problem('E_SHAPE', `${where('data')}: ${cleaned.error}`, {component: def.name}));
+    else {
+      out.fixes.push(...cleaned.fixes.map(fix => `${def.name}#${comp.id}: ${fix}`));
+      out.warnings.push(...cleaned.dropped.map(drop => `${def.name}#${comp.id}: not drawn: ${drop}`));
     }
   }
+}
+
+/** The components whose data is diagram data, and how it is cleaned (catalog/src/diagrams.ts). */
+const DIAGRAMS: Readonly<Record<string, (data: unknown) => ReturnType<typeof cleanFlow> | ReturnType<typeof cleanSequence>>> = {
+  Flowchart: cleanFlow,
+  SequenceDiagram: cleanSequence,
+};
+const SERVER_PATH = /^\/(?:ds|meta|ui)(?:\/|$)/;
+
+/**
+ * What the diagrams bound to a $/path draw from the data model after a call, as `fixed` and `warn` lines: those the
+ * call defines, and those whose path the call wrote (`$/arch/nodes/G/group='api'` changes a diagram the call does not
+ * name). Inline diagram data was checked by expandComponent. `written` holds the top segments of the paths written.
+ */
+export function diagramNotes(
+  components: Iterable<WireComponent>, data: Record<string, unknown>, defined: ReadonlySet<string>, written: ReadonlySet<string>,
+): {fixes: string[]; warnings: string[]} {
+  const notes = {fixes: [] as string[], warnings: [] as string[]};
+  for (const comp of components) {
+    const clean = DIAGRAMS[comp.component];
+    if (!clean || !isBinding(comp.data)) continue;
+    const path = comp.data['@path'];
+    if (!path.startsWith('/') || SERVER_PATH.test(path)) continue;
+    if (!defined.has(comp.id) && !written.has(path.split('/').filter(Boolean)[0] ?? '')) continue;
+    const value = lookup(data, path);
+    // Nothing there is reported as an unbound path.
+    if (value === undefined) continue;
+    const where = `${comp.component}#${comp.id}`;
+    const cleaned = clean(value);
+    if (!cleaned.ok) {
+      notes.warnings.push(`${where}: E_SHAPE $${path}: ${cleaned.error}`);
+      continue;
+    }
+    notes.fixes.push(...cleaned.fixes.map(fix => `${where}: ${fix}`));
+    notes.warnings.push(...cleaned.dropped.map(drop => `${where}: not drawn: ${drop}`));
+  }
+  return notes;
 }
 
 const RESERVED = [PATHS.ds, PATHS.meta];
@@ -477,15 +562,13 @@ function checkPaths(message: A2uiMessage, out: Expansion): void {
 /**
  * Expands every message in place and collects every problem found (the caller reports the first five). `names` are
  * the inventory's spellings the session found for paths an earlier expansion of the same call recorded (V071).
- * `seed` is the stored view a patch applies to: a diagram of it may read its src from a path this call writes.
  */
-export function expandMessages(messages: A2uiMessage[], registry: SourceRegistry, names?: PathNames, seed?: Seed): Expansion {
+export function expandMessages(messages: A2uiMessage[], registry: SourceRegistry, names?: PathNames): Expansion {
   const out: Expansion = {refs: new Map(), problems: [], warnings: [], files: [], ranges: [], fields: [], fixes: [], paths: []};
   for (const message of messages) {
     checkPaths(message, out);
     for (const comp of componentsOf(message)) expandComponent(comp, registry, out, names);
   }
-  checkBoundSources(messages, out, seed);
   return out;
 }
 

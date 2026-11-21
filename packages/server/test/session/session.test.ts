@@ -173,14 +173,13 @@ describe('all or nothing', () => {
     expect(dump(t)).toBe(before);
   });
 
-  it('a patch that rewrites the src a stored diagram binds is checked like an inline src', async () => {
+  it('a patch that writes the data a stored diagram binds is checked like inline data (D21)', async () => {
     const t = start();
-    await t.session.show(spec('seq', `$/seq='A->>B: hi'\nroot=Page('S',[s])\ns=SequenceDiagram($/seq)`));
-    const before = dump(t);
-    await expect(t.session.show(spec('seq', `$/seq='A->>B: hi\\nnonsense here'`))).rejects.toThrow(/^E_NOTATION \$\/seq \(SequenceDiagram#s\.src\) statement 2: /);
-    expect(dump(t)).toBe(before);
-    const fixed = await t.session.show(spec('seq', `$/seq='A->>B: hi\\nalt cached\\nB-->>A: rows'`));
-    expect(fixed.fixes).toEqual([`$/seq (SequenceDiagram#s.src) line 2: alt closed at the end (no 'end')`]);
+    await t.session.show(spec('seq', `$/seq={steps:[['A','B','hi']]}\nroot=Page('S',[s])\ns=SequenceDiagram($/seq)`));
+    const dropped = await t.session.show(spec('seq', `$/seq/steps/1={note:'lost'}`));
+    expect(dropped.warnings).toContain("SequenceDiagram#s: not drawn: step 2: a note needs over: 'A' or over: ['A', 'B']");
+    const text = await t.session.show(spec('seq', `$/seq='A->>B: hi'`));
+    expect(text.warnings).toContainEqual(expect.stringMatching(/^SequenceDiagram#s: E_SHAPE \$\/seq: SequenceDiagram takes data, not Mermaid text/));
   });
 
   it('a patch of a view that does not exist says so', async () => {

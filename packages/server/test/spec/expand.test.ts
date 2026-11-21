@@ -4,7 +4,7 @@ import {datasetKey, GALLERY_SPEC, parseRef, SOURCE_BY_NAME, VIEWS, type A2uiMess
 import {beforeAll, describe, expect, it} from 'vitest';
 import {createRegistry} from '../../src/sources/registry.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
-import {boundKeys, checkRef, expandMessages, refSignature, splitRatio, unboundPaths} from '../../src/spec/expand.ts';
+import {boundKeys, checkRef, diagramNotes, expandMessages, refSignature, splitRatio, unboundPaths} from '../../src/spec/expand.ts';
 import {fakeSources} from '../session/fakes.ts';
 
 let tools: Toolchain;
@@ -91,39 +91,72 @@ describe('expandMessages: data props', () => {
   });
 });
 
-describe('expandMessages: notation, columns, paths', () => {
-  it('a literal Flowchart or SequenceDiagram source is parsed; errors name the statement', () => {
-    const good = expand(`root=Page('x',[Flowchart('A[Start] --> B{ok?}; B -->|yes| C([Done])'),SequenceDiagram('A->>B: hi; B-->>A: yo')])`);
+describe('expandMessages: diagram data, columns, paths', () => {
+  it('inline diagram data draws; what it corrected is fixed, what it leaves out is warn, one entry at a time', () => {
+    const good = expand(`root=Page('x',[Flowchart({nodes:{A:'Start',B:{label:'ok?',shape:'diamond'}},edges:[['A','B']]}),SequenceDiagram({steps:[['A','B','hi'],['B','A','yo','reply']]})])`);
     expect(good.problems).toEqual([]);
-    const bad = expand(`root=Page('x',[Flowchart('A --> B; B -> C'),SequenceDiagram('A->>B: hi; nonsense here')])`);
-    expect(bad.codes).toEqual(['E_NOTATION', 'E_NOTATION']);
-    expect(bad.lines[0]).toMatch(/^E_NOTATION Flowchart#root_children_0\.src statement 2: /);
-    expect(bad.lines[1]).toMatch(/^E_NOTATION SequenceDiagram#root_children_1\.src statement 2: /);
+    expect(good.fixes).toEqual([]);
+    expect(good.warnings).toEqual([]);
+    const partly = expand(`root=Page('x',[Flowchart({nodes:{A:{label:'a',shape:'cylinder'}},edges:[['A','B'],['A']]}),SequenceDiagram({steps:[['A','B','hi'],{note:'lost'}]})])`);
+    expect(partly.problems).toEqual([]);
+    expect(partly.fixes).toEqual([
+      "Flowchart#root_children_0: node A: shape 'cylinder' -> store",
+      'Flowchart#root_children_0: node B added for edge A -> B (not in nodes)',
+    ]);
+    expect(partly.warnings).toEqual([
+      "Flowchart#root_children_0: not drawn: edge 2: expected ['from', 'to', 'label'?] or {from, to}, received a list of 1",
+      "SequenceDiagram#root_children_1: not drawn: step 2: a note needs over: 'A' or over: ['A', 'B']",
+    ]);
   });
 
-  it('a src bound to a path this call writes is parsed like a literal one', () => {
-    expect(expand(`$/flow='A --> B'\nroot=Page('x',[Flowchart($/flow)])`).problems).toEqual([]);
-    const bad = expand(`$/seq='A->>B: hi\\nnonsense here'\nroot=Page('x',[seq])\nseq=SequenceDiagram($/seq)`);
-    expect(bad.lines).toEqual([expect.stringMatching(/^E_NOTATION \$\/seq \(SequenceDiagram#seq\.src\) statement 2: expected "A->>B: text"/)]);
-    // a src bound to a path nobody writes in this call is not looked for
-    expect(expand(`root=Page('x',[seq])\nseq=SequenceDiagram($/elsewhere)`).problems).toEqual([]);
+  it('Mermaid text where a diagram takes data is E_SHAPE with the shape to write instead', () => {
+    const bad = expand(`root=Page('x',[Flowchart('A --> B'),SequenceDiagram('A->>B: hi'),Flowchart(42)])`);
+    expect(bad.codes).toEqual(['E_SHAPE', 'E_SHAPE', 'E_SHAPE']);
+    expect(bad.lines[0]).toMatch(/^E_SHAPE Flowchart#root_children_0\.data: Flowchart takes data, not Mermaid text: \{nodes, edges, groups\?\}, e\.g\. \{nodes:/);
+    expect(bad.lines[1]).toMatch(/^E_SHAPE SequenceDiagram#root_children_1\.data: SequenceDiagram takes data, not Mermaid text: /);
+    expect(bad.lines[2]).toBe('E_SHAPE Flowchart#root_children_2.data: expected {nodes, edges, groups?}, received a number');
   });
 
-  // Measurement: a writer's 'alt … else … end' gave no signal at all. Blocks are frames now; a block left open, or an
-  // `end` that closes nothing, is a fixed line.
-  it('a sequence block left open or an end too many is a fixed line', () => {
-    const open = expand(`$/seq='sequenceDiagram\\nA->>S: get\\nalt hit\\nS-->>A: rows\\nelse miss\\nS->>D: compute'\nroot=Page('x',[seq])\nseq=SequenceDiagram($/seq)`);
-    expect(open.problems).toEqual([]);
-    expect(open.fixes).toEqual([`$/seq (SequenceDiagram#seq.src) line 3: alt closed at the end (no 'end')`]);
-    const inline = expand(`root=Page('x',[seq])\nseq=SequenceDiagram('A->>B: x; end')`);
-    expect(inline.fixes).toEqual([`SequenceDiagram#seq.src line 1: 'end' closes no block: skipped`]);
-    expect(expand(`root=Page('x',[seq])\nseq=SequenceDiagram('A->>B: x\\nalt ok\\nB-->>A: y\\nend')`).fixes).toEqual([]);
+  it('bound diagram data is left to diagramNotes, which reads the data model after the call', () => {
+    const out = expand(`$/flow={edges:[['A','B']]}\nroot=Page('x',[Flowchart($/flow)])`);
+    expect(out.problems).toEqual([]);
+    const flow = out.byComponent('Flowchart');
+    const data = {flow: {nodes: {A: 'a'}, edges: [['A', 'B'], ['A', 'G']], groups: {G: 'Group'}}};
+    // defined in this call: checked
+    expect(diagramNotes([flow], data, new Set([flow.id]), new Set())).toEqual({
+      fixes: [`Flowchart#${flow.id}: node B added for edge A -> B (not in nodes)`],
+      warnings: [`Flowchart#${flow.id}: not drawn: edge A -> G: G is a group; edges join nodes`, `Flowchart#${flow.id}: not drawn: group G: no nodes in it`],
+    });
+    // a later patch writes $/flow/... and names no component: still checked
+    expect(diagramNotes([flow], data, new Set(), new Set(['flow'])).warnings).toHaveLength(2);
+    // neither defined nor written: said already, not again
+    expect(diagramNotes([flow], data, new Set(), new Set(['other']))).toEqual({fixes: [], warnings: []});
+    // not a diagram at all
+    expect(diagramNotes([flow], {flow: 'A --> B'}, new Set([flow.id]), new Set()).warnings).toEqual([
+      `Flowchart#${flow.id}: E_SHAPE $/flow: Flowchart takes data, not Mermaid text: {nodes, edges, groups?}, e.g. {nodes:{A:'Request',B:{label:'Over limit?',shape:'diamond'}},edges:[['A','B'],['B','C','no']]}`,
+    ]);
   });
 
   it('an unknown column kind is E_ENUM listing the kinds', () => {
     const out = expand(`root=Page('x',[DataTable('fake.rows','path n:bars owner:author=Owned_by')])`);
     expect(out.codes).toEqual(['E_ENUM']);
     expect(out.lines[0]).toMatch(/^E_ENUM DataTable#root_children_0\.columns column 2: unknown kind "bars" for column "n"\. Kinds: text num /);
+  });
+
+  it('the list form of columns is checked entry by entry: an unknown kind is E_ENUM, the rest is warn and draws (D22)', () => {
+    const bad = expand(`root=Page('x',[DataTable('fake.rows',['path',{key:'n',kind:'bars'}])])`);
+    expect(bad.lines).toEqual([expect.stringMatching(/^E_ENUM DataTable#root_children_0\.columns column 2: unknown kind "bars" for column "n"\. Kinds: text num /)]);
+    const partly = expand(`root=Page('x',[DataTable('fake.rows',['path',{kind:'bar'},{key:'n',width:80}])])`);
+    expect(partly.problems).toEqual([]);
+    expect(partly.warnings).toEqual([
+      "DataTable#root_children_0.columns column 2: not drawn: no key: expected 'key' or {key, kind?, label?}",
+      'DataTable#root_children_0.columns column 3: ignored key width of column "n"',
+    ]);
+    // not a list or a string: an object is refused by the prop's schema, anything else by the reader
+    expect(() => expand(`root=Page('x',[DataTable('fake.rows',columns={path:true})])`)).toThrow(/E_TYPE DataTable#root_children_0 columns: /);
+    expect(expand(`root=Page('x',[DataTable('fake.rows',columns=5)])`).lines).toEqual([
+      "E_SHAPE DataTable#root_children_0.columns: expected a list ['key' or {key, kind?, label?}], received a number",
+    ]);
   });
 
   it('assignments under /ds and /meta are rejected, in a new view and in a patch', () => {
@@ -143,7 +176,7 @@ describe('expandMessages: notation, columns, paths', () => {
 
   it('collects every problem of a call', () => {
     const out = expand(`root=Page('x',[DataTable('nope.nope'),Flowchart('???'),DataTable('fake.rows','a:zzz'),DataTable('code.refs')])`);
-    expect(out.codes).toEqual(['E_SOURCE', 'E_NOTATION', 'E_ENUM', 'E_ARGS']);
+    expect(out.codes).toEqual(['E_SOURCE', 'E_SHAPE', 'E_ENUM', 'E_ARGS']);
   });
 
   it('a reserved path segment in a compiled message is E_PATH (decision D10)', () => {
@@ -226,6 +259,44 @@ describe('expandMessages: what is certain to draw wrong', () => {
     expect(out.files.map(entry => entry.file)).toEqual(['README.md#L1-5', 'README.md', 'README.md']);
   });
 
+  it('collects the literal [[path]] refs of prose for the session to check, as the tab draws them', () => {
+    const out = expand(`$/n='[[src/bound.ts]]'
+root=Page('x',[a,b,c,d,e])
+a=Text('See [[src/a.ts#L3]] and [[src/a.ts#L3]], not \`[[src/code.ts]]\`, and the dir [[src/auth/]].')
+b=Markdown('**[[src/b.ts#L1-9]]**\\n\`\`\`\\n[[src/fenced.ts]]\\n\`\`\`\\n[[src/after.ts]]')
+c=Callout('Race in [[src/c.ts]].',file='src/c2.ts')
+d=Ask('Keep [[src/d.ts]]?',['yes','no'])
+e=Markdown($/n)`);
+    expect(out.files).toEqual([
+      {where: 'Text#a', file: 'src/a.ts#L3'},
+      {where: 'Markdown#b', file: 'src/b.ts#L1-9'},
+      {where: 'Markdown#b', file: 'src/after.ts'},
+      {where: 'Callout#c', file: 'src/c2.ts'},
+      {where: 'Callout#c', file: 'src/c.ts'},
+      {where: 'Ask#d', file: 'src/d.ts'},
+    ]);
+    expect(out.paths).toEqual(['src/a.ts#L3', 'src/b.ts#L1-9', 'src/after.ts', 'src/c2.ts', 'src/c.ts', 'src/d.ts']);
+  });
+
+  // Finding V071 for refs: a ref written in another case is drawn, and checked, under the inventory's name.
+  it('writes a [[path]] ref the session found in another case under the inventory name, said once', () => {
+    const spec = `root=Page('x',[Text('Read [[readme.md#L2]], then [[readme.md#L2]] and \`[[readme.md]]\`.'),Markdown('[[Docs/Guide.md]] and [[src/ok.ts]]')])`;
+    const {messages} = compileSpec(tools, {surfaceId: 's', sources: [spec], surfaces: []});
+    const out = expandMessages(messages, registry, new Map([['readme.md#L2', 'README.md#L2'], ['Docs/Guide.md', 'docs/guide.md']]));
+    const components = 'createSurface' in messages[0]! ? messages[0].createSurface.components : [];
+    expect(components.find(c => c.component === 'Text')!.text).toBe('Read [[README.md#L2]], then [[README.md#L2]] and `[[readme.md]]`.');
+    expect(components.find(c => c.component === 'Markdown')!.text).toBe('[[docs/guide.md]] and [[src/ok.ts]]');
+    expect(out.fixes).toEqual(["path 'readme.md#L2' -> 'README.md#L2'", "path 'Docs/Guide.md' -> 'docs/guide.md'"]);
+    expect(out.files.map(entry => entry.file)).toEqual(['README.md#L2', 'docs/guide.md', 'src/ok.ts']);
+  });
+
+  it('checks at most MAX_CHECKS refs, however long the text', () => {
+    const refs = Array.from({length: 100}, (_, i) => `[[src/f${i}.ts]]`).join(' ');
+    const out = expand(`root=Page('x',[Text('${refs}')])`);
+    expect(out.files).toHaveLength(64);
+    expect(out.paths).toHaveLength(64);
+  });
+
   it('collects the field names a component asks of its dataset, once they are names the source returns', () => {
     const out = expand(`root=Page('x',[ScatterPlot('fake.rows',x='churn',y='n'),DataTable('fake.rows src','path:path=File n:num',sort='-owner',group='lang'),LineChart('fake.rows',y='n owner'),BarChart($/inline,x='a'),Treemap(value='loc'),DataTable('fake.slow',sort='zzz')])`);
     expect(out.fields).toEqual([
@@ -289,6 +360,15 @@ describe('expandMessages: field names', () => {
     expect(out.byComponent('DataTable').group).toBeUndefined();
   });
 
+  it('repairs the field names of the list form in place, keeping each entry as written', () => {
+    const out = expand(`root=Page('x',[DataTable('git.log',['sha',{key:'when',kind:'date',label:'When'},{field:'zzz'},'subject'])])`);
+    expect(out.fixes).toEqual([
+      "DataTable.columns 'when' -> 'date'",
+      "DataTable.columns 'zzz' dropped (fields: sha subject author date files add del refs)",
+    ]);
+    expect(out.byComponent('DataTable').columns).toEqual(['sha', {key: 'date', kind: 'date', label: 'When'}, 'subject']);
+  });
+
   it.each([...VIEWS.map(view => [view.name, view.build(view.targetRequired ? (view.target === 'symbol' ? 'Session' : 'src/a.ts') : undefined, {})] as const), ['gallery', GALLERY_SPEC] as const])('the %s preset names only fields its sources return', (_, source) => {
     expect(expand(source).fixes).toEqual([]);
   });
@@ -306,6 +386,76 @@ describe('expandMessages: field names', () => {
     expect(splitRatio('wide')).toBe('wide');
     const out = expand(`root=Page('x',[Split(Text('a'),Text('b'),0.3)])`);
     expect(out.byComponent('Split').ratio).toBe('3:7');
+  });
+
+  it("says what it did to Split's ratio: a share rewritten is fixed, a value Split cannot read is warn (D22)", () => {
+    const out = expand(`root=Page('x',[Split(Text('a'),Text('b'),'0.3'),Split(Text('c'),Text('d'),'1:2'),Split(Text('e'),Text('f'),'wide')])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual(["Split.ratio '0.3' -> '3:7'"]);
+    expect(out.warnings).toEqual(["Split#root_children_2: ratio 'wide' is not a ratio: opened half and half. Write '1:2'."]);
+  });
+
+  it('writes a Grid cols guess the way Grid reads it, with a fixed line, and warns about one it cannot read', () => {
+    const out = expand(`root=Page('x',[Grid([Text('a'),Text('b')],'2fr 1fr'),Grid([Text('c'),Text('d')],'50% 50%'),Grid([Text('e')],'two'),Grid([Text('f')],'1/2',id='g'),Grid([Text('h')],'2fr 1fr')])`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([]);
+    expect(out.fixes).toEqual(["Grid.cols '2fr 1fr' -> '2:1'", "Grid.cols '50% 50%' -> '1:1'", "Grid.cols 'two' -> '2'", "Grid.cols '1/2' -> '1:2'"]);
+    expect(out.components.filter(comp => comp.component === 'Grid').map(comp => comp.cols)).toEqual(['2:1', '1:1', '2', '1:2', '2:1']);
+    // what Grid reads as written says nothing, whitespace included
+    const plain = expand(`root=Page('x',[Grid([Text('a')],'3'),Grid([Text('b')],' 1 : 2 '),Grid([Text('c')])])`);
+    expect([plain.fixes, plain.warnings]).toEqual([[], []]);
+    expect(plain.components.filter(comp => comp.component === 'Grid').map(comp => comp.cols)).toEqual(['3', '1:2', undefined]);
+    // a number is quoted by the repair first, then read
+    expect(expand(`root=Page('x',[Grid([Text('a')],40)])`).fixes).toContain("Grid.cols '40' -> '12'");
+  });
+
+  it('warns about a Grid cols it cannot read and leaves it as written', () => {
+    const out = expand(`root=Page('x',[Grid([Text('a'),Text('b')],'wide',id='g'),Grid([Text('c')],'200px 1fr',id='h')])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual([]);
+    expect(out.warnings).toEqual([
+      "Grid#g: cols 'wide' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'.",
+      "Grid#h: cols '200px 1fr' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'.",
+    ]);
+    expect(out.byComponent('Grid').cols).toBe('wide');
+  });
+});
+
+// Decision D22: a mark that reads as a guess is rewritten and said; a part that names no line is a warn line.
+describe('expandMessages: mark', () => {
+  it('rewrites a guessed mark and says it as a fix', () => {
+    const out = expand(`root=Page('x',[a,b,c,d,e,f])\na=CodeView('src/a.ts',mark='lines 10-20')\nb=CodeView('src/a.ts',mark='L10:L20')\nc=CodeView('src/a.ts',mark='#L10-L20')\nd=CodeBlock('x','ts',mark='10..20')\ne=CodeView('src/a.ts',mark='10\u201320')\nf=CodeView('src/a.ts',mark='20-10')`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([]);
+    expect(out.fixes).toEqual([
+      "CodeView#a: mark 'lines 10-20' -> '10-20'",
+      "CodeView#b: mark 'L10:L20' -> '10-20'",
+      "CodeView#c: mark '#L10-L20' -> '10-20'",
+      "CodeBlock#d: mark '10..20' -> '10-20'",
+      "CodeView#e: mark '10\u201320' -> '10-20'",
+      "CodeView#f: mark '20-10' -> '10-20'",
+    ]);
+    expect(out.components.filter(comp => 'mark' in comp).map(comp => comp.mark)).toEqual(Array(6).fill('10-20'));
+  });
+
+  it('leaves a mark written the documented way alone', () => {
+    const out = expand(`root=Page('x',[CodeView('src/a.ts',mark='L3,L7-9'),CodeBlock('x','ts',mark='3, 7-9'),CodeView('src/a.ts')])`);
+    expect(out.fixes).toEqual([]);
+    expect(out.warnings).toEqual([]);
+    expect(out.byComponent('CodeView').mark).toBe('L3,L7-9');
+  });
+
+  it('warns about the parts that name no line and keeps the rest', () => {
+    const out = expand(`root=Page('x',[a,b])\na=CodeView('src/a.ts',mark='foo')\nb=CodeBlock('x','ts',mark='the loop; 10..12, 0')`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([
+      "CodeView#a: mark 'foo' ignored: write 'L10-20' or '3,7-9'",
+      "CodeBlock#b: mark 'the loop', '0' ignored: write 'L10-20' or '3,7-9'",
+    ]);
+    expect(out.fixes).toEqual(["CodeBlock#b: mark 'the loop; 10..12, 0' -> 'the loop,10-12,0'"]);
+    // a number is a line (the compiler writes it as text); 0 is not one
+    expect(expand(`root=Page('x',[CodeView('src/a.ts',mark=12)])`).warnings).toEqual([]);
+    expect(expand(`root=Page('x',[CodeView('src/a.ts',mark=0,id='z')])`).warnings).toEqual(["CodeView#z: mark '0' ignored: write 'L10-20' or '3,7-9'"]);
   });
 });
 

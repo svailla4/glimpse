@@ -30,7 +30,7 @@ describe('compiler message patterns', () => {
     ['E_UNKNOWN', `root=page('x',[])`, /^Component 'page' is not defined in the catalog\.$/],
     ['E_PROP', `root=Page('x',[DataTable('git.churn',colums='path')])`, /^Property 'colums' is not a valid property of component 'DataTable'\.$/],
     ['E_ENUM', `root=Page('x',[Callout('y','danger')])`, /^Value 'danger' is not a valid enum choice for property 'kind' of component 'Callout'\./],
-    ['E_REQUIRED', `root=Page('x',[Flowchart()])`, /^Component 'Flowchart' is missing required property 'src'\.$/],
+    ['E_REQUIRED', `root=Page('x',[Flowchart()])`, /^Component 'Flowchart' is missing required property 'data'\.$/],
     ['E_TYPE', `root=Page('x',[Text('a',span=13)])`, /^Validation failed for component 'Text' \(root_children_0\): span: Number must be less than or equal to 12$/],
     ['E_TYPE', `root=Page('x',[Tabs('A',[Text('a')])])`, /^Validation failed for component 'Tabs' \(root_children_0\): labels: Expected array, received string$/],
     ['E_REF', `root=Page('x',[Split(a,b)])\na=Text('a')`, /^Component 'root_children_0' references non-existent component 'b' in field 'end'/],
@@ -79,7 +79,7 @@ describe('problem texts', () => {
   });
 
   it('E_REQUIRED names the prop', () => {
-    expect(text(`root=Page('x',[Flowchart()])`)).toBe('E_REQUIRED Flowchart: missing required prop "src".');
+    expect(text(`root=Page('x',[Flowchart()])`)).toBe('E_REQUIRED Flowchart: missing required prop "data".');
   });
 
   it('E_TYPE keeps only the first zod issue and says what the prop accepts', () => {

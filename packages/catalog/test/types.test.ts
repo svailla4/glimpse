@@ -15,7 +15,7 @@ type PageWire = WireProps<typeof Page>;
 
 export type Probes = [
   Expect<Eq<TableView['data'], DataInput<Rows>>>,
-  Expect<Eq<TableView['columns'], string | undefined>>,
+  Expect<Eq<TableView['columns'], unknown>>,
   Expect<Eq<TableView['title'], string | undefined>>,
   Expect<Eq<TableView['size'], 's' | 'm' | 'l' | 'xl' | 'fill' | undefined>>,
   Expect<Eq<TableView['span'], number | undefined>>,
