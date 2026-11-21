@@ -2468,15 +2468,15 @@ var init_types = __esm({
           });
         }
         if (this._def.catchall instanceof ZodNever) {
-          const unknownKeys = this._def.unknownKeys;
-          if (unknownKeys === "passthrough") {
+          const unknownKeys2 = this._def.unknownKeys;
+          if (unknownKeys2 === "passthrough") {
             for (const key2 of extraKeys) {
               pairs.push({
                 key: { status: "valid", value: key2 },
                 value: { status: "valid", value: ctx.data[key2] }
               });
             }
-          } else if (unknownKeys === "strict") {
+          } else if (unknownKeys2 === "strict") {
             if (extraKeys.length > 0) {
               addIssueToContext(ctx, {
                 code: ZodIssueCode.unrecognized_keys,
@@ -2484,7 +2484,7 @@ var init_types = __esm({
               });
               status.dirty();
             }
-          } else if (unknownKeys === "strip") {
+          } else if (unknownKeys2 === "strip") {
           } else {
             throw new Error(`Internal ZodObject error: invalid unknownKeys value.`);
           }
@@ -5309,11 +5309,11 @@ function settleDeep(value) {
     return items.some(isThenable) ? Promise.all(items) : value;
   }
   if (isPlainObject(value)) {
-    const entries = Object.entries(value).map(([key2, item]) => [key2, settleDeep(item)]);
-    if (!entries.some(([, item]) => isThenable(item))) {
+    const entries2 = Object.entries(value).map(([key2, item]) => [key2, settleDeep(item)]);
+    if (!entries2.some(([, item]) => isThenable(item))) {
       return value;
     }
-    return Promise.all(entries.map(([, item]) => item)).then((settled) => Object.fromEntries(entries.map(([key2], i10) => [key2, settled[i10]])));
+    return Promise.all(entries2.map(([, item]) => item)).then((settled) => Object.fromEntries(entries2.map(([key2], i10) => [key2, settled[i10]])));
   }
   return value;
 }
@@ -8552,13 +8552,13 @@ var init_spec_shape = __esm({
         const unordered = required3.filter((key2) => !order?.includes(key2));
         if (required3.length > 0)
           result["required"] = order ? [...order, ...unordered] : required3;
-        const unknownKeys = def["unknownKeys"];
+        const unknownKeys2 = def["unknownKeys"];
         const catchall = def["catchall"];
-        const keyword = annotation.closure ?? (unknownKeys === "strict" ? "additionalProperties" : "none");
+        const keyword = annotation.closure ?? (unknownKeys2 === "strict" ? "additionalProperties" : "none");
         if (catchall && defOf(catchall).typeName !== "ZodNever") {
           result[keyword === "none" ? "additionalProperties" : keyword] = this.toJson(catchall, catalogDefs);
         } else if (keyword !== "none") {
-          result[keyword] = unknownKeys === "passthrough";
+          result[keyword] = unknownKeys2 === "passthrough";
         }
         return result;
       }
@@ -8644,7 +8644,7 @@ function isFunctionListItem(definition) {
 function retainedDefs(defs, before, after, extensionFields) {
   if (!defs)
     return defs;
-  const definitions2 = (entries) => entries.map((entry) => entryDefinition(entry, defs)).filter((d5) => d5 !== void 0);
+  const definitions2 = (entries2) => entries2.map((entry) => entryDefinition(entry, defs)).filter((d5) => d5 !== void 0);
   const reachedBefore = reachableDefs(definitions2(before), defs);
   const unconditional = Object.keys(defs).filter((name3) => !reachedBefore.has(name3));
   const reachedAfter = reachableDefs([...definitions2(after), extensionFields, ...unconditional.map((name3) => defs[name3])], defs);
@@ -8997,8 +8997,8 @@ function canonicalJsonStringify(val) {
     return `[${val.map(canonicalJsonStringify).join(",")}]`;
   }
   const keys2 = Object.keys(val).sort();
-  const entries = keys2.map((k4) => `${JSON.stringify(k4)}:${canonicalJsonStringify(val[k4])}`);
-  return `{${entries.join(",")}}`;
+  const entries2 = keys2.map((k4) => `${JSON.stringify(k4)}:${canonicalJsonStringify(val[k4])}`);
+  return `{${entries2.join(",")}}`;
 }
 function finalizePropertyZod(baseZod, propSchema, rootDoc, visitedPointers, defCache) {
   let result = baseZod;
@@ -10955,7 +10955,7 @@ var init_types2 = __esm({
        * @throws {A2uiCatalogError} If a name is not an entry of this catalog.
        */
       derive(options) {
-        const pick4 = (kind, own6, wanted) => {
+        const pick5 = (kind, own6, wanted) => {
           if (wanted === void 0)
             return [...own6.values()];
           return wanted.map((item) => {
@@ -10968,7 +10968,7 @@ var init_types2 = __esm({
             return entry;
           });
         };
-        return this.rebuild(pick4("component", this.components, options.components), pick4("function", this.functions, options.functions), { id: options.catalogId, instructions: options.instructions });
+        return this.rebuild(pick5("component", this.components, options.components), pick5("function", this.functions, options.functions), { id: options.catalogId, instructions: options.instructions });
       }
       /**
        * Builds a catalog with this catalog's version, theme and layout, the given
@@ -29667,6 +29667,14 @@ var init_props = __esm({
         shape,
         source
       }),
+      /**
+       * Bindable value (DynamicValue) the component reads itself: never a dataset or a source ref. For a prop that takes
+       * more than one form (DataTable.columns: a list, or the shorthand string it replaces). A static prop may not be a
+       * union (test/lint.test.ts); a DynamicValue is one by definition, and `$/path` may then hold the value. The viewer
+       * gets what was written or bound, unchecked, so its type is unknown: the component reads it with a pure catalog
+       * function, the one the server checks a literal with (notation.ts readColumns).
+       */
+      value: (doc) => mk("value", ref(CommonSchemas.DynamicValue, "DynamicValue", doc), doc, { bindable: true }),
       /** Single child component id. */
       child: (doc) => mk("child", ref(CommonSchemas.ComponentId, "ComponentId", doc), doc),
       /** Child list (ids or a {componentId, path} template). */
@@ -29675,9 +29683,9 @@ var init_props = __esm({
       action: (doc) => mk("action", ref(CommonSchemas.Action, "Action", doc), doc),
       /**
        * Static enum. Values are appended to the description so they show up in every generated prompt.
-       * `aliases` maps other words to one of the values (lower-case keys).
+       * `aliases` maps other words to one of the values (lower-case keys); the `quiet` ones are rewritten without a word.
        */
-      enum: (values, doc, aliases) => mk("enum", external_exports.enum(values).describe(`${doc} One of: ${values.join("|")}.`), doc, { values, ...aliases ? { aliases } : {} }),
+      enum: (values, doc, aliases, quiet) => mk("enum", external_exports.enum(values).describe(`${doc} One of: ${values.join("|")}.`), doc, { values, ...aliases ? { aliases } : {}, ...quiet ? { quiet } : {} }),
       /** Static string. */
       str: (doc) => mk("str", external_exports.string().describe(doc), doc),
       /** Static integer. */
@@ -29703,10 +29711,76 @@ function formatFileLoc(l6) {
   if (l6.line == null) return l6.path;
   return l6.endLine != null && l6.endLine !== l6.line ? `${l6.path}#L${l6.line}-${l6.endLine}` : `${l6.path}#L${l6.line}`;
 }
-var PATHS;
+function replaceFileRefs(text5, markdown3, swap) {
+  const scan = markdown3 ? MD_SCAN : INLINE_SCAN;
+  const swapLine = (line) => {
+    let out = "";
+    let last = 0;
+    for (const match of line.matchAll(scan)) {
+      const loc = match[match.length - 1];
+      const next = loc === void 0 ? void 0 : swap(loc);
+      if (next === void 0) continue;
+      out += `${line.slice(last, match.index)}[[${next}]]`;
+      last = match.index + match[0].length;
+    }
+    return last === 0 ? line : out + line.slice(last);
+  };
+  if (!markdown3) return swapLine(text5);
+  let fence;
+  return text5.split("\n").map((line) => {
+    const marker = MD_FENCE.exec(line)?.[1];
+    if (fence !== void 0) {
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length && line.trim() === marker) fence = void 0;
+      return line;
+    }
+    if (marker) {
+      fence = marker;
+      return line;
+    }
+    return swapLine(line);
+  }).join("\n");
+}
+function readLineMarks(spec2) {
+  const out = { ranges: [], ignored: [] };
+  if (typeof spec2 === "number" && Number.isInteger(spec2) && spec2 > 0) out.ranges.push([spec2, spec2]);
+  if (typeof spec2 !== "string") return out;
+  let guessed = spec2.includes(";");
+  const parts = [];
+  for (const part of spec2.split(/[,;]/)) {
+    const text5 = part.trim();
+    if (text5 === "") continue;
+    const m8 = MARK_PART.exec(text5);
+    const a5 = m8 ? Number(m8[3]) : 0;
+    const b6 = m8?.[5] !== void 0 ? Number(m8[5]) : a5;
+    if (!m8 || a5 < 1 || b6 < 1) {
+      out.ignored.push(text5);
+      parts.push(text5);
+      continue;
+    }
+    const range2 = [Math.min(a5, b6), Math.max(a5, b6)];
+    out.ranges.push(range2);
+    const guess = m8[1] !== "" || m8[2] !== void 0 || m8[4] !== void 0 && m8[4] !== "-" || a5 > b6;
+    guessed ||= guess;
+    parts.push(guess ? range2[0] === range2[1] ? `${range2[0]}` : `${range2[0]}-${range2[1]}` : text5);
+  }
+  if (guessed) out.fixed = parts.join(",");
+  return out;
+}
+function ignoredMarksWarning(ignored) {
+  const shown = ignored.slice(0, 3).map((text5) => `'${text5.length > 24 ? `${text5.slice(0, 23)}\u2026` : text5}'`).join(", ");
+  return `mark ${shown}${ignored.length > 3 ? ` and ${ignored.length - 3} more` : ""} ignored: write 'L10-20' or '3,7-9'`;
+}
+var MARK_PART, FILE_REF, CODE_SPAN, MD_CODE_SPAN, MD_FENCE, INLINE_SCAN, MD_SCAN, PATHS;
 var init_datasets = __esm({
   "packages/catalog/src/datasets.ts"() {
     "use strict";
+    MARK_PART = /^(#?)(?:(lines?)\s*)?L?(\d+)(?:\s*(-|–|—|:|\.\.\.?|to)\s*L?(\d+))?$/i;
+    FILE_REF = /\[\[(?!\s)([^[\]\n]{1,400}?)(?<!\s)\]\]/;
+    CODE_SPAN = /`([^`\n]{1,400})`/;
+    MD_CODE_SPAN = /(`+)[^`\n]*?\1/;
+    MD_FENCE = /^ {0,3}(`{3,}|~{3,})/;
+    INLINE_SCAN = new RegExp(`${CODE_SPAN.source}|${FILE_REF.source}`, "g");
+    MD_SCAN = new RegExp(`${MD_CODE_SPAN.source}|${FILE_REF.source}`, "g");
     PATHS = {
       ds: "/ds",
       uiSel: "/ui/sel",
@@ -29890,7 +29964,7 @@ var init_components3 = __esm({
         success: "tip",
         hint: "tip",
         idea: "tip"
-      })),
+      }, ["info", "success"])),
       title: opt(p5.text("Bold lead-in.")),
       file: opt(p5.text("File anchor 'path#L10-20'.")),
       ...CELL
@@ -29990,10 +30064,11 @@ var init_components3 = __esm({
       chunk: "table",
       tier: "A",
       doc: "Virtualized sortable table; columns come from the dataset unless given.",
-      example: "DataTable('git.hotspots top=25','path commits:bar complexity:bar owner',sort='-score',title='Hotspots')"
+      example: "DataTable('git.hotspots top=25',['path',{key:'commits',kind:'bar'},'owner'],sort='-score',title='Hotspots')"
     }, {
-      data: p5.data("Rows", "Rows: source ref, $/path or inline list of objects. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph."),
-      columns: opt(p5.str("Shorthand 'key[:kind][=Label] ...'. Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
+      data: p5.data("Rows", "Source ref, $/path or inline rows. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph."),
+      // Two forms (the list, and the presets' shorthand string), so a DynamicValue (p.value), read by readColumns (notation.ts).
+      columns: opt(p5.value("[{key, kind?, label?} | 'key'] (or field/name, title). Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
       sort: opt(p5.str("'field' or '-field'.")),
       search: minor(opt(p5.flag("Show the search box. Default: when more than 20 rows."))),
       group: minor(opt(p5.str("Group rows by this field."))),
@@ -30185,21 +30260,21 @@ var init_components3 = __esm({
       family: "diagram",
       chunk: "diagrams",
       tier: "B",
-      doc: "Flowchart or state machine from Mermaid-style arrow notation.",
-      example: "Flowchart('Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429])')"
+      doc: "Boxes and arrows written as data: flows, state machines, grouped parts.",
+      example: "Flowchart({nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond'}},edges:[['Req','RL'],['RL','H','no']]})"
     }, {
-      src: p5.text("Statements split by ';' or newline: 'A[Label] --> B{Decision}', '-->|label|', '-.->' dashed. Shapes: [box] {diamond} ([pill]) [(store)] ((circle))."),
-      dir: opt(p5.enum(["TB", "LR"], "Flow direction; wins over a src header ('graph LR'). Default: the header's, else whichever reads larger in its plate.", DIR_ALIASES)),
+      data: p5.data("FlowData", "Nodes, edges and groups (FlowData below)."),
+      dir: opt(p5.enum(["TB", "LR"], "Flow direction. Default: whichever reads larger in its plate.", DIR_ALIASES)),
       ...FRAME
     });
     SequenceDiagram = component("SequenceDiagram", {
       family: "diagram",
       chunk: "diagrams",
       tier: "B",
-      doc: "Lifelines and messages from Mermaid-style sequence notation.",
-      example: "SequenceDiagram('User->>API: POST /login; API->>Auth: verify; Auth-->>API: token; API-->>User: 200')"
+      doc: "Lifelines and numbered messages written as data, with notes and loop/alt frames.",
+      example: "SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify'],['Auth','API','token','reply'],['API','User','200','reply']]})"
     }, {
-      src: p5.text("Statements split by ';' or newline: 'A->>B: call', 'B-->>A: reply', 'A-)B: async', 'Note over A,B: text'."),
+      data: p5.data("SeqData", "Actors and steps: messages, notes, blocks (SeqData below)."),
       ...FRAME
     });
     Layers = component("Layers", {
@@ -30741,7 +30816,7 @@ layout=Section('Layout',[Plate('Plate',[Text('A plate groups several children un
 content=Section('Content',[Stats($/g/kpis),Chips(['TypeScript','Go',{label:'PostgreSQL',tone:'info'},{label:'1 cycle',tone:'warn'}]),Markdown('Prose with **bold**, \`code\`, a list:\\n- one\\n- two\\n\\nand a file ref [[${file}#L1]].',title='Markdown',span=6),Column([Text('Lead text introduces a plate.','lead'),Text('Body text with \`inline code\` and [[${file}#L3]].'),Text('Caption text in serif italic.','caption'),FileRef('${file}#L${at(0, 11)}'),Row([Stat(38,'commits (30d)',delta=6,spark=[2,4,3,8,12,9]),Sparkline([3,5,4,9,12,7])])],span=6),Callout('Reads the balance before taking the row lock.','risk',title='Race',file='${file}#L1',span=4),Callout('Tokens are cached for 15 minutes.','note',span=4),Callout('Per-IP or per-user limits?','question',span=4),Steps($/g/plan,2,title='Steps',span=5),KeyValue({Language:'TypeScript',Entry:'${file}',Tests:true,Maintainers:['Mira','Jon'],Size:131072},2,title='KeyValue',span=4),List([{title:'redis',sub:'npm',value:14},{title:'zod',sub:'npm',value:9},{title:'pg',sub:'npm',value:4}],title='List',span=3)])
 data=Section('Data',[DataTable($/g/files,'path:path lang:lang loc:num commits:bar complexity:heat owner:author last:date trend:spark delta:delta ok:bool',sort='-commits',search=true,title='DataTable',size='m'),FileTree($/g/tree,heat='churn',title='FileTree',size='m',span=5),JsonView($/g/config,2,title='JsonView',size='m',span=7),CommitList($/g/commits,title='CommitList')])
 charts=Section('Charts',[SegmentedBar($/g/langs,'lang','loc',title='SegmentedBar',span=12),BarChart($/g/files,'path','commits',title='BarChart',span=6),LineChart($/g/weeks,'week','commits','module',mode='stacked',title='LineChart',span=6),ScatterPlot($/g/files,'commits','complexity',r='loc',label='path',quadrants=true,title='ScatterPlot',span=6),Histogram($/g/files,'loc',title='Histogram',span=6),Heatmap($/g/matrix,'to','from','weight',title='Heatmap',span=4),CalendarHeatmap($/g/days,title='CalendarHeatmap',span=8),Treemap($/g/tree,title='Treemap',size='l',span=7),Icicle($/g/tree,title='Icicle',size='l',span=5)])
-diagrams=Section('Diagrams',[Graph($/g/graph,title='Graph',span=7),Layers([{name:'Interface',items:['ui',{label:'api',file:'src/api/routes.ts'}]},{title:'Domain',items:['auth'],note:'owns sessions'},{label:'Storage',items:['postgres','redis']}],title='Layers',span=5),Flowchart('Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429]); H --> DB[(Postgres)]; H -.-> C((cache))',title='Flowchart',span=6),SequenceDiagram('User->>API: POST /login; API->>Auth: verify(password); Auth->>DB: find user; DB-->>Auth: row; Note over Auth,DB: constant-time compare; Auth-->>API: token; API-->>User: 200',title='SequenceDiagram',span=6),ERDiagram($/g/schema,title='ERDiagram')])
+diagrams=Section('Diagrams',[Graph($/g/graph,title='Graph',span=7),Layers([{name:'Interface',items:['ui',{label:'api',file:'src/api/routes.ts'}]},{title:'Domain',items:['auth'],note:'owns sessions'},{label:'Storage',items:['postgres','redis']}],title='Layers',span=5),Flowchart({groups:{svc:'Service'},nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond',group:'svc'},H:{label:'Handler',group:'svc'},E:{label:'429',shape:'pill'},DB:{label:'Postgres',shape:'store'},C:{label:'cache',shape:'circle'}},edges:[['Req','RL'],['RL','H','no'],['RL','E','yes'],['H','DB'],{from:'H',to:'C',dashed:true}]},title='Flowchart',span=6),SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify(password)'],{loop:'each key',steps:[['Auth','DB','find user'],['DB','Auth','row','reply']]},{note:'constant-time compare',over:['Auth','DB']},{alt:'valid',steps:[['Auth','API','token','reply'],['API','User','200','reply']],else:[{label:'invalid',steps:[['API','User','401','reply']]}]}]},title='SequenceDiagram',span=6),ERDiagram($/g/schema,title='ERDiagram')])
 code=Section('Code',[CodeBlock('export async function take(ip: string) {\\n  const n = await redis.incr(\`rl:\${ip}\`);\\n  return n <= 100;\\n}','ts',mark='2',title='CodeBlock',span=6),SymbolOutline('${file}',title='SymbolOutline',size='m',span=6),CodeView('${file}#L${at(0, 39)}',mark='L${at(0, 2)}',notes=[{line:${at(1)},text:'Notes anchor to lines.',kind:'note'}],title='CodeView',size='m',span=6),DiffView(title='DiffView (working tree)',size='m',span=6),CodeTour([{file:'${file}#L${at(0, 11)}',title:'Start here',note:'A stop shows one range of a file.'},{file:'${file}#L${at(12, 29)}',note:'The next stop scrolls to its own range.'}],title='CodeTour',size='l')])
 input=Section('Input',[Button('Queue an event',Event('demo_pressed',{from:'gallery'}),'primary',span=3),Button('Quiet',Event('demo_quiet'),'quiet',span=3),Ask('Which store backs the limiter?',['Redis','In-memory'],'store',span=6)])`;
 }
@@ -30928,7 +31003,7 @@ log=${range2 === "wt" || range2 === "staged" ? `List('code.todos top=8',title='O
         name: "feature",
         doc: "Follow a feature while it is built: plan, design, notes, live working-tree diff, blast radius.",
         slots: { "/plan": "StepItem[]: [{title,note?,status?,file?}] with status todo|doing|done|blocked|skipped.", "/notes": "Markdown notes." },
-        replace: { design: "the design drawing: design=Flowchart('A[Request] --> B{OK?}',title='Design') or design=SequenceDiagram(...)" },
+        replace: { design: "the design drawing: $/design={nodes:{A:'Request',B:{label:'OK?',shape:'diamond'}},edges:[['A','B']]}; design=Flowchart($/design,title='Design'), or design=SequenceDiagram({steps:[...]})" },
         build: () => `$/plan=[]
 $/notes=''
 root=Page('Feature',[Grid([plan,design],'1:2'),notes,changes,impact],'working tree')
@@ -31048,14 +31123,13 @@ CUSTOM: show{id:"auth-flow", spec} with spec in A2UI Express:
   root=Page('Title',[...])  nested calls; positional args in signature order, then name=value; _ skips an optional
   name=Comp(...)  named part: usable as a child, patchable later
   $/path=value  set data, e.g. $/plan=[{title:'A',status:'doing'}]; $/path as an argument binds to it
-  'single' or "double" quoted strings; statements end with newline or ';'
 PATCH: show{id, spec} without root= changes only what it names: $/path=... or name=Comp(...) (a new name is appended). A preset's id is its view name; results list the parts. root= replaces the layout and keeps the data.
-DATA: a data argument is a source ref, a $/path or small inline rows. Ref: '<source> [path|range|symbol] [top=N] [since=90d]', e.g. DataTable('git.churn src/auth top=20') or BarChart('git.churn by=module'). Results list the fields; tables and charts pick columns and axes. data? omitted = the default source.
+DATA: a data argument is a source ref, a $/path or small inline rows. Ref: '<source> [path|range|symbol] [top=N] [since=90d]', e.g. DataTable('git.churn src/auth top=20') or BarChart('git.churn by=module'). data? omitted = the default source.
 Sources: ${sourceGroups()}
 Graphs (deps.modules, deps.files, diff.impact) need Graph().
-ROWS you write: Stats|KeyValue [{label,value}] Layers [{name,items:['a','b']}] ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}]
+INLINE: Stats|KeyValue [{label,value}] Layers [{name,items:['a','b']}] ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}] Flowchart {nodes:{A:{label,shape?,group?}},edges:[['A','B','x'?]],groups?} SequenceDiagram {steps:[['A','B','x','reply'?],{note,over},{loop:'x',steps}]}
 CODE: CodeView('src/a.ts#L10-40') and DiffView('main..HEAD') read from disk; DiffView() is the live working tree; files are 'path#L10-20' everywhere.
-LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it, so FileTree() beside CodeView() is a file browser.
+LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it: FileTree() beside CodeView() is a file browser.
 SHARED, not listed below: span=1..12 on all (12-column grid); title= (numbered plate), note=, size=s|m|l|xl|fill (only a max height) on Text, Markdown, Chips, Stats, KeyValue, Steps, List, Data, Charts, Diagrams, Code (not Sparkline, CodeBlock).
 Components (? optional; catalog{} lists more):
 ${componentIndex({ brief: true })}
@@ -31144,6 +31218,14 @@ var init_docs = __esm({
         sig: "{nodes: [{id, label, sub?, group?, status?: added|modified|deleted|affected, file?}], edges: [{from, to, label?, weight?, kind?: solid|dashed}], groups?: [{id, label}]}",
         example: "{nodes:[{id:'api',label:'api'},{id:'db',label:'db',sub:'postgres'}],edges:[{from:'api',to:'db',label:'reads'}]}"
       },
+      FlowData: {
+        sig: "{nodes: {ID: 'label' | {label, shape?: box|diamond|pill|store|circle, group?}}, edges: [['from','to','label'?] | {from, to, label?, dashed?}], groups?: {ID: 'label' | {label, parent?}}}; or lists [{id, ...}]. Bound to $/name, a node patches: $/name/nodes/ID={label:'...'}",
+        example: "{groups:{api:'API'},nodes:{R:{label:'routes',group:'api'},L:{label:'Over limit?',shape:'diamond',group:'api'},P:{label:'Postgres',shape:'store'}},edges:[['R','L'],{from:'L',to:'P',label:'no',dashed:true}]}"
+      },
+      SeqData: {
+        sig: "{actors?: ['A', 'B'] | {A: 'Label'}, steps: [['from', 'to', 'label', 'sync'|'reply'|'async'?] | {from, to, label?, arrow?} | {note, over: 'A' | ['A', 'B']} | {loop|alt|opt|par|critical|break|group: 'label', steps, else?: [{label, steps}]}]}; or just the steps list",
+        example: "{actors:{U:'User',A:'API',D:'DB'},steps:[['U','A','POST /login'],{alt:'valid password',steps:[['A','D','insert session'],['A','U','200','reply']],else:[{label:'wrong password',steps:[['A','U','401','reply']]}]}]}"
+      },
       TourStop: {
         sig: "{file: 'path#L10-40', note, title?}",
         example: "[{file:'src/auth/service.ts#L20-58',title:'Entry point',note:'Validates the credentials.'},{file:'src/auth/cache.ts#L5-30',note:'Token cache.'}]"
@@ -31187,14 +31269,15 @@ tour=CodeTour([{file:'src/auth/service.ts#L20-58',title:'Entry point',note:'Vali
         when: "Before and while building something: the plan, the design and the live diff.",
         view: "feature",
         spec: `$/plan=[{title:'Add limiter middleware',status:'doing',file:'src/api/limiter.ts'},{title:'Wire into the router'},{title:'Tests'}]
-design=Flowchart('Req[Request] --> RL{Over limit?}; RL -->|no| H[Handler]; RL -->|yes| E([429])',title='Design')`
+$/design={nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond'},H:'Handler',E:{label:'429',shape:'pill'}},edges:[['Req','RL'],['RL','H','no'],['RL','E','yes']]}
+design=Flowchart($/design,title='Design')`
       },
       {
         title: "Trace a request",
         when: "The user asks what happens when something is called.",
         id: "login",
         spec: `root=Page('Login request',[seq,tour])
-seq=SequenceDiagram('User->>API: POST /login; API->>Auth: verify(password); Auth->>DB: find user; DB-->>Auth: row; Auth-->>API: token; API-->>User: 200',title='Sequence',span=6)
+seq=SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify(password)'],['Auth','DB','find user'],['DB','Auth','row','reply'],['Auth','API','token','reply'],['API','User','200','reply']]},title='Sequence',span=6)
 tour=CodeTour([{file:'src/api/routes.ts#L12-30',title:'Route',note:'Parses the body and calls the service.'},{file:'src/auth/service.ts#L20-58',title:'Service',note:'Constant-time compare, then issues the token.'}],title='In the code',span=6)`
       },
       {
@@ -31229,190 +31312,378 @@ var init_transport = __esm({
   }
 });
 
-// packages/catalog/src/notation.ts
-function splitOutsideBrackets(line) {
+// packages/catalog/src/diagrams.ts
+function entries(raw3, what, dropped) {
+  if (raw3 === void 0 || raw3 === null) return [];
+  if (isRecord(raw3)) return Object.entries(raw3).map(([id, value]) => [id.trim(), value]).filter(([id]) => id !== "");
+  if (!Array.isArray(raw3)) {
+    dropped.add(`${what}: expected a map {ID: ...} or a list, received ${describeValue(raw3)}`);
+    return [];
+  }
   const out = [];
-  let depth = 0;
-  let pipe3 = false;
-  let quote = false;
-  let start = 0;
-  for (let i10 = 0; i10 < line.length; i10++) {
-    const c8 = line[i10];
-    if (quote) {
-      if (c8 === '"') quote = false;
+  raw3.forEach((item, i10) => {
+    const id = isRecord(item) ? textOf(item.id) : textOf(item);
+    if (id === void 0) dropped.add(`${what} ${i10 + 1}: no id`);
+    else out.push([id, item]);
+  });
+  return out;
+}
+function cleanFlow(data) {
+  if (typeof data === "string") {
+    return { ok: false, error: `Flowchart takes data, not Mermaid text: {nodes, edges, groups?}, e.g. ${FLOW_EXAMPLE}` };
+  }
+  const root2 = Array.isArray(data) ? { edges: data } : data;
+  if (!isRecord(root2)) return { ok: false, error: `expected {nodes, edges, groups?}, received ${describeValue(data)}` };
+  const fixes = new Notes();
+  const dropped = new Notes();
+  const groups = /* @__PURE__ */ new Map();
+  for (const [id, raw3] of entries(root2.groups, "group", dropped)) {
+    if (groups.has(id)) {
+      dropped.add(`group ${clip(id)}: repeated`);
       continue;
     }
-    if (c8 === '"') quote = true;
-    else if (c8 === "|" && depth === 0) pipe3 = !pipe3;
-    else if (pipe3) continue;
-    else if (c8 === "[" || c8 === "(" || c8 === "{") depth++;
-    else if (c8 === "]" || c8 === ")" || c8 === "}") depth = Math.max(0, depth - 1);
-    else if (c8 === ";" && depth === 0) {
-      out.push(line.slice(start, i10));
-      start = i10 + 1;
-    }
+    const o12 = isRecord(raw3) ? raw3 : {};
+    if (isRecord(raw3)) dropped.ignore("group", unknownKeys(raw3, GROUP_KEYS));
+    const label = labelOf(raw3, Array.isArray(root2.groups), id);
+    const parent = textOf(pick2(o12, ["parent", "group", "in"]));
+    groups.set(id, { id, label, ...parent !== void 0 && parent !== id ? { parent } : {} });
   }
-  out.push(line.slice(start));
-  return out;
-}
-function statements(src, header, bracketAware) {
-  const out = [];
-  for (const line of src.split(/\r?\n/)) {
-    if (line.trim().startsWith("%%")) continue;
-    for (const part of bracketAware ? splitOutsideBrackets(line) : line.split(";")) {
-      const text5 = part.trim();
-      if (text5 && !text5.startsWith("%%")) out.push(text5);
+  const nodes = /* @__PURE__ */ new Map();
+  const addGroup = (id, by) => {
+    if (groups.has(id)) return;
+    groups.set(id, { id, label: id });
+    fixes.add(`group ${clip(id)} added for ${by} (not in groups)`);
+  };
+  for (const [id, raw3] of entries(root2.nodes, "node", dropped)) {
+    if (nodes.has(id)) {
+      dropped.add(`node ${clip(id)}: repeated`);
+      continue;
     }
+    if (groups.has(id)) {
+      dropped.add(`node ${clip(id)}: the id of a group`);
+      continue;
+    }
+    const o12 = isRecord(raw3) ? raw3 : {};
+    if (isRecord(raw3)) dropped.ignore("node", unknownKeys(raw3, NODE_KEYS));
+    const label = labelOf(raw3, Array.isArray(root2.nodes), id);
+    let shape = "box";
+    const written = textOf(pick2(o12, ["shape", "type"]));
+    if (written !== void 0) {
+      const lower = written.toLowerCase();
+      if (SHAPE_SET.has(lower)) shape = lower;
+      else if (SHAPE_ALIASES[lower]) {
+        shape = SHAPE_ALIASES[lower];
+        fixes.add(`node ${clip(id)}: shape '${clip(written, 20)}' -> ${shape}`);
+      } else fixes.add(`node ${clip(id)}: shape '${clip(written, 20)}' drawn as box (shapes: ${FLOW_SHAPES.join(" ")})`);
+    }
+    const group = textOf(pick2(o12, ["group", "parent", "in"]));
+    if (group !== void 0) addGroup(group, `node ${clip(id)}`);
+    nodes.set(id, { id, label, shape, ...group !== void 0 ? { group } : {} });
   }
-  if (out.length > 0 && header.test(out[0])) out.shift();
-  return out;
-}
-function unquote(label) {
-  const t7 = label.trim();
-  return t7.length >= 2 && t7.startsWith('"') && t7.endsWith('"') ? t7.slice(1, -1) : t7;
-}
-function freeNode(rest) {
-  const stop = rest.search(/--|-\.|==|&/);
-  const raw3 = stop < 0 ? rest : rest.slice(0, stop);
-  const text5 = raw3.trim();
-  const label = /^"[^"]+"$/.test(text5) ? text5.slice(1, -1).trim() : text5;
-  if (label === "" || /[[\]{}()|<>"]/.test(label) || /^[A-Za-z_][A-Za-z0-9_]*$/.test(label)) return void 0;
-  const slug = label.replace(/[^\p{L}\p{N}]+/gu, "_").replace(/^_+|_+$/g, "");
-  if (slug === "") return void 0;
-  return { id: /^[\p{L}_]/u.test(slug) ? slug : `n_${slug}`, label, length: raw3.length };
-}
-function parseFlowStatement(text5, b6) {
-  let pos = 0;
-  const rest = () => text5.slice(pos);
-  const skip = () => {
-    while (pos < text5.length && /\s/.test(text5[pos])) pos++;
+  const declared = nodes.size > 0;
+  const edges = [];
+  const rawEdges = root2.edges ?? root2.links;
+  if (rawEdges !== void 0 && !Array.isArray(rawEdges)) dropped.add(`edges: expected a list, received ${describeValue(rawEdges)}`);
+  const end = (id, edge) => {
+    if (nodes.has(id)) return true;
+    if (groups.has(id)) {
+      dropped.add(`edge ${edge}: ${clip(id)} is a group; edges join nodes`);
+      return false;
+    }
+    nodes.set(id, { id, label: id, shape: "box" });
+    if (declared) fixes.add(`node ${clip(id)} added for edge ${edge} (not in nodes)`);
+    return true;
   };
-  const found = () => pos >= text5.length ? "end of statement" : `"${clip(rest(), 16)}"`;
-  const node3 = () => {
-    skip();
-    const free = freeNode(rest());
-    if (free) {
-      pos += free.length;
-      if (!b6.nodes.has(free.id)) b6.nodes.set(free.id, { id: free.id, label: free.label, shape: free.label.endsWith("?") ? "diamond" : "box", explicit: true });
-      return free.id;
+  (Array.isArray(rawEdges) ? rawEdges : []).forEach((raw3, i10) => {
+    let from;
+    let to;
+    let label;
+    let dashed = false;
+    if (Array.isArray(raw3)) {
+      [from, to, label] = [textOf(raw3[0]), textOf(raw3[1]), textOf(raw3[2])];
+      if (raw3.length > 3) dropped.ignore("edge", ["4th item"]);
+    } else if (isRecord(raw3)) {
+      dropped.ignore("edge", unknownKeys(raw3, EDGE_KEYS));
+      from = textOf(pick2(raw3, EDGE_FROM));
+      to = textOf(pick2(raw3, EDGE_TO));
+      label = textOf(pick2(raw3, LABEL_KEYS));
+      const style = textOf(pick2(raw3, ["kind", "style"]))?.toLowerCase();
+      dashed = raw3.dashed === true || style === "dashed" || style === "dotted";
     }
-    const m8 = ID.exec(rest());
-    if (!m8) throw new FlowSyntaxError(`expected a node id at column ${pos + 1}, found ${found()}`);
-    const id = m8[0];
-    pos += id.length;
-    let shape;
-    let label = id;
-    for (const [open3, close, kind] of SHAPES2) {
-      if (!text5.startsWith(open3, pos)) continue;
-      const from2 = pos + open3.length;
-      const quoted2 = /^\s*"/.test(text5.slice(from2)) ? text5.indexOf('"', text5.indexOf('"', from2) + 1) : -1;
-      const end = text5.indexOf(close, quoted2 >= 0 ? quoted2 + 1 : from2);
-      if (end < 0) throw new FlowSyntaxError(`unclosed "${open3}" in node ${id} (column ${pos + 1})`);
-      label = unquote(text5.slice(from2, end)) || id;
-      shape = kind;
-      pos = end + close.length;
-      break;
+    if (from === void 0 || to === void 0) {
+      dropped.add(`edge ${i10 + 1}: expected ['from', 'to', 'label'?] or {from, to}, received ${Array.isArray(raw3) ? `a list of ${raw3.length}` : describeValue(raw3)}`);
+      return;
     }
-    const known = b6.nodes.get(id);
-    if (!known) b6.nodes.set(id, { id, label, shape: shape ?? "box", explicit: shape !== void 0 });
-    else if (!known.explicit && shape !== void 0) Object.assign(known, { label, shape, explicit: true });
-    return id;
-  };
-  const group = () => {
-    const ids = [node3()];
-    for (skip(); text5[pos] === "&"; skip()) {
-      pos++;
-      ids.push(node3());
-    }
-    return ids;
-  };
-  const edge = () => {
-    const m8 = ARROW.exec(rest());
-    if (m8) {
-      pos += m8[0].length;
-      const label = m8[2]?.trim();
-      return { dashed: m8[1].includes("."), ...label ? { label: unquote(label) } : {} };
-    }
-    for (const [re3, dashed] of ARROW_TEXT) {
-      const t7 = re3.exec(rest());
-      if (!t7) continue;
-      pos += t7[0].length;
-      return { dashed, label: unquote(t7[1]) };
-    }
-    throw new FlowSyntaxError(`expected an arrow (-->, -->|label|, -- label -->, -.->) at column ${pos + 1}, found ${found()}`);
-  };
-  let from = group();
-  for (skip(); pos < text5.length; skip()) {
-    const e9 = edge();
-    const to = group();
-    for (const a5 of from) {
-      for (const z4 of to) b6.edges.push({ from: a5, to: z4, ...e9.label ? { label: e9.label } : {}, ...e9.dashed ? { dashed: true } : {} });
-    }
-    from = to;
-  }
-}
-function parseFlow(src) {
-  const b6 = { nodes: /* @__PURE__ */ new Map(), edges: [] };
-  const errors = [];
-  statements(src, FLOW_HEADER, true).forEach((text5, i10) => {
-    if (FLOW_IGNORED.test(text5)) return;
-    try {
-      parseFlowStatement(text5, b6);
-    } catch (e9) {
-      if (!(e9 instanceof FlowSyntaxError)) throw e9;
-      errors.push({ statement: i10 + 1, message: e9.message });
-    }
+    const name3 = `${clip(from, 20)} -> ${clip(to, 20)}`;
+    if (!end(from, name3) || !end(to, name3)) return;
+    edges.push({ from, to, ...label !== void 0 ? { label } : {}, ...dashed ? { dashed: true } : {} });
   });
-  if (errors.length === 0 && b6.nodes.size === 0) errors.push({ statement: 1, message: 'no statements: expected something like "A[Start] --> B{Decision}"' });
-  if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, ast: { nodes: [...b6.nodes.values()].map(({ id, label, shape }) => ({ id, label, shape })), edges: b6.edges } };
+  for (const group of [...groups.values()]) if (group.parent !== void 0) addGroup(group.parent, `group ${clip(group.id)}`);
+  for (const group of groups.values()) {
+    const seen = /* @__PURE__ */ new Set([group.id]);
+    for (let at = group.parent; at !== void 0; at = groups.get(at)?.parent) {
+      if (seen.has(at)) {
+        dropped.add(`group ${clip(group.id)}: parent ${clip(group.parent)} (a cycle)`);
+        delete group.parent;
+        break;
+      }
+      seen.add(at);
+    }
+  }
+  const held = /* @__PURE__ */ new Set();
+  for (const node3 of nodes.values()) for (let at = node3.group; at !== void 0 && !held.has(at); at = groups.get(at)?.parent) held.add(at);
+  for (const group of groups.values()) if (!held.has(group.id)) dropped.add(`group ${clip(group.id)}: no nodes in it`);
+  return {
+    ok: true,
+    ast: { nodes: [...nodes.values()], edges, groups: [...groups.values()].filter((group) => held.has(group.id)) },
+    fixes: fixes.list(),
+    dropped: dropped.list()
+  };
 }
-function parseSequence(src) {
+function cleanSequence(data) {
+  if (typeof data === "string") {
+    return { ok: false, error: `SequenceDiagram takes data, not Mermaid text: {actors?, steps}, e.g. ${SEQ_EXAMPLE}` };
+  }
+  const root2 = Array.isArray(data) ? { steps: data } : data;
+  if (!isRecord(root2)) return { ok: false, error: `expected {actors?, steps} or a list of steps, received ${describeValue(data)}` };
+  const rawSteps = root2.steps ?? root2.messages;
+  if (rawSteps !== void 0 && !Array.isArray(rawSteps)) return { ok: false, error: `steps: expected a list, received ${describeValue(rawSteps)}` };
+  const fixes = new Notes();
+  const dropped = new Notes();
   const actors = /* @__PURE__ */ new Map();
-  const steps = [];
-  const errors = [];
-  const actor = (id, label) => {
-    const known = actors.get(id);
-    if (!known) actors.set(id, { id, label: label ?? id });
-    else if (label) known.label = label;
+  const rawActors = root2.actors ?? root2.participants;
+  for (const [id, raw3] of entries(rawActors, "actor", dropped)) {
+    if (actors.has(id)) continue;
+    actors.set(id, { id, label: labelOf(raw3, Array.isArray(rawActors), id) });
+  }
+  const declared = actors.size > 0;
+  const actor = (id) => {
+    if (!actors.has(id)) {
+      actors.set(id, { id, label: id });
+      if (declared) fixes.add(`actor ${clip(id)} added (not in actors)`);
+    }
     return id;
   };
-  statements(src, SEQ_HEADER, false).forEach((text5, i10) => {
-    const fail = (message) => {
-      errors.push({ statement: i10 + 1, message });
-    };
-    let m8 = SEQ_PARTICIPANT.exec(text5);
-    if (m8) {
-      const id = m8[1].trim();
-      if (isActorId(id)) actor(id, m8[2]?.trim());
-      else fail(`"${clip(id)}" is not an actor name: expected "participant A" or "participant A as Label"`);
-      return;
+  const arrowOf = (written, where) => {
+    if (written === void 0) return "sync";
+    const lower = written.toLowerCase();
+    if (SEQ_ARROW_SET.has(lower)) return lower;
+    if (ARROW_ALIASES[lower]) {
+      fixes.add(`${where}: arrow '${clip(written, 20)}' -> ${ARROW_ALIASES[lower]}`);
+      return ARROW_ALIASES[lower];
     }
-    m8 = SEQ_NOTE.exec(text5);
-    if (m8) {
-      const over = m8[1].split(",").map((a5) => a5.trim()).filter(Boolean);
-      const bad = over.find((a5) => !isActorId(a5));
-      if (over.length === 0 || bad !== void 0) fail(`a note needs actor names${bad === void 0 ? "" : `, found "${clip(bad)}"`}: "Note over A,B: text"`);
-      else steps.push({ kind: "note", over: over.map((a5) => actor(a5)), text: m8[2].trim() });
-      return;
+    fixes.add(`${where}: arrow '${clip(written, 20)}' drawn as sync (arrows: sync reply async)`);
+    return "sync";
+  };
+  const blockOf = (o12) => {
+    for (const key2 of Object.keys(o12)) {
+      const lower = key2.toLowerCase();
+      if (BLOCK_SET.has(lower)) return { op: lower, label: textOf(o12[key2]) };
+      if (BLOCK_ALIASES[lower]) return { op: BLOCK_ALIASES[lower], label: textOf(o12[key2]), alias: key2 };
+      if (UNFRAMED.has(lower)) return { label: textOf(o12[key2]), alias: key2 };
     }
-    for (const pattern of SEQ_MESSAGES) {
-      m8 = pattern.exec(text5);
-      if (!m8) continue;
-      const from = m8[1].trim();
-      const to = m8[3].trim();
-      if (!isActorId(from) || !isActorId(to)) fail(`a message needs an actor on both sides of the arrow: "A${m8[2]}B: text", found "${clip(text5)}"`);
-      else steps.push({ kind: "message", from: actor(from), to: actor(to), label: (m8[4] ?? "").trim(), arrow: SEQ_ARROWS[m8[2]] });
-      return;
-    }
-    if (SEQ_IGNORED.test(text5)) return;
-    fail(`expected "A->>B: text", "A-->>B: text", "A-)B: text", "Note over A: text" or "participant A", found "${clip(text5)}"`);
-  });
-  if (errors.length === 0 && steps.length === 0) errors.push({ statement: 1, message: 'no messages: expected something like "User->>API: POST /login"' });
-  if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, ast: { actors: [...actors.values()], steps } };
+    const named2 = textOf(o12.block ?? (Array.isArray(o12.steps) ? o12.type : void 0))?.toLowerCase();
+    if (named2 === void 0) return void 0;
+    const op = BLOCK_SET.has(named2) ? named2 : BLOCK_ALIASES[named2];
+    return { ...op ? { op } : {}, label: textOf(pick2(o12, LABEL_KEYS)), ...op !== named2 ? { alias: named2 } : {} };
+  };
+  const walk = (list, depth, path2) => {
+    const out = [];
+    list.forEach((raw3, i10) => {
+      const where = `step ${path2}${i10 + 1}`;
+      if (Array.isArray(raw3)) {
+        const [from2, to2, label, arrow] = [textOf(raw3[0]), textOf(raw3[1]), textOf(raw3[2]) ?? "", textOf(raw3[3])];
+        if (from2 === void 0 || to2 === void 0) {
+          dropped.add(`${where}: expected ['from', 'to', 'label'?, arrow?], received a list of ${raw3.length}`);
+          return;
+        }
+        out.push({ kind: "message", from: actor(from2), to: actor(to2), label, arrow: arrowOf(arrow, where) });
+        return;
+      }
+      if (!isRecord(raw3)) {
+        dropped.add(`${where}: expected a message, note or block, received ${describeValue(raw3)}`);
+        return;
+      }
+      if (raw3.note !== void 0) {
+        dropped.ignore("note", unknownKeys(raw3, NOTE_KEYS));
+        const text5 = textOf(raw3.note) ?? "";
+        const overRaw = pick2(raw3, ["over", "actor", "actors", "on"]);
+        const over = (Array.isArray(overRaw) ? overRaw : [overRaw]).map(textOf).filter((id) => id !== void 0);
+        if (over.length === 0) {
+          dropped.add(`${where}: a note needs over: 'A' or over: ['A', 'B']`);
+          return;
+        }
+        out.push({ kind: "note", over: over.map(actor), text: text5 });
+        return;
+      }
+      const block = blockOf(raw3);
+      if (block) {
+        dropped.ignore("block", unknownKeys(raw3, BLOCK_KEYS));
+        if (block.alias !== void 0) fixes.add(`${where}: block '${clip(block.alias, 20)}' ${block.op ? `-> ${block.op}` : "drawn without a frame"}`);
+        const own6 = Array.isArray(raw3.steps) ? raw3.steps : [];
+        const elseRaw = raw3.else ?? raw3.and;
+        const branchesRaw = [{ label: block.label, steps: own6 }];
+        if (Array.isArray(elseRaw)) {
+          const branchList = elseRaw.length > 0 && elseRaw.every((item) => isRecord(item) && Array.isArray(item.steps));
+          if (branchList) for (const item of elseRaw) branchesRaw.push({ label: textOf(pick2(item, LABEL_KEYS)), steps: item.steps });
+          else branchesRaw.push({ steps: elseRaw });
+        } else if (isRecord(elseRaw) && Array.isArray(elseRaw.steps)) branchesRaw.push({ label: textOf(pick2(elseRaw, LABEL_KEYS)), steps: elseRaw.steps });
+        else if (elseRaw !== void 0) dropped.add(`${where}: else: expected [{label, steps}], received ${describeValue(elseRaw)}`);
+        const branches = branchesRaw.map((branch, b6) => ({
+          label: branch.label ?? "",
+          steps: depth >= MAX_DEPTH ? [] : walk(branch.steps, depth + 1, `${path2}${i10 + 1}.${branchesRaw.length > 1 ? `${b6 + 1}.` : ""}`)
+        }));
+        if (depth >= MAX_DEPTH) {
+          dropped.add(`${where}: blocks nested deeper than ${MAX_DEPTH}`);
+          return;
+        }
+        if (branches.every((branch) => branch.steps.length === 0)) {
+          dropped.add(`${where}: ${block.op ?? "group"} block with no steps`);
+          return;
+        }
+        if (!block.op) {
+          for (const branch of branches) out.push(...branch.steps);
+          return;
+        }
+        out.push({ kind: "frame", edge: "open", op: block.op, label: branches[0].label });
+        branches.forEach((branch, b6) => {
+          if (b6 > 0) out.push({ kind: "frame", edge: "else", label: branch.label });
+          out.push(...branch.steps);
+        });
+        out.push({ kind: "frame", edge: "end" });
+        return;
+      }
+      const from = textOf(pick2(raw3, EDGE_FROM));
+      const to = textOf(pick2(raw3, EDGE_TO));
+      if (from === void 0 || to === void 0) {
+        dropped.add(`${where}: expected {from, to, label?}, {note, over} or a block such as {loop: 'label', steps}`);
+        return;
+      }
+      dropped.ignore("message", unknownKeys(raw3, MESSAGE_KEYS));
+      out.push({ kind: "message", from: actor(from), to: actor(to), label: textOf(pick2(raw3, LABEL_KEYS)) ?? "", arrow: arrowOf(textOf(pick2(raw3, ["arrow", "kind", "type"])), where) });
+    });
+    return out;
+  };
+  const steps = walk(Array.isArray(rawSteps) ? rawSteps : [], 0, "");
+  return { ok: true, ast: { actors: [...actors.values()], steps }, fixes: fixes.list(), dropped: dropped.list() };
 }
-function splitColumn(token3) {
+var LABEL_KEYS, MAX_NOTES, MAX_DEPTH, isRecord, textOf, pick2, clip, describeValue, Notes, unknownKeys, labelOf, FLOW_SHAPES, SHAPE_SET, SHAPE_ALIASES, NODE_KEYS, EDGE_FROM, EDGE_TO, EDGE_KEYS, GROUP_KEYS, FLOW_EXAMPLE, SEQ_BLOCKS, SEQ_ARROW_SET, ARROW_ALIASES, BLOCK_SET, BLOCK_ALIASES, UNFRAMED, MESSAGE_KEYS, NOTE_KEYS, BLOCK_KEYS, SEQ_EXAMPLE;
+var init_diagrams = __esm({
+  "packages/catalog/src/diagrams.ts"() {
+    "use strict";
+    LABEL_KEYS = ["label", "text", "name", "title"];
+    MAX_NOTES = 8;
+    MAX_DEPTH = 6;
+    isRecord = (v5) => typeof v5 === "object" && v5 !== null && !Array.isArray(v5);
+    textOf = (v5) => typeof v5 === "string" && v5.trim() !== "" ? v5.trim() : typeof v5 === "number" && Number.isFinite(v5) ? String(v5) : void 0;
+    pick2 = (o12, keys2) => {
+      for (const key2 of keys2) if (o12[key2] !== void 0) return o12[key2];
+      return void 0;
+    };
+    clip = (text5, max = 40) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
+    describeValue = (v5) => v5 === null ? "null" : Array.isArray(v5) ? "an array" : typeof v5 === "object" ? "an object" : `a ${typeof v5}`;
+    Notes = class {
+      lines = [];
+      more = 0;
+      add(line) {
+        if (this.lines.length < MAX_NOTES) this.lines.push(line);
+        else this.more++;
+      }
+      /** Unknown keys, gathered across entries of one kind: one line for all of them. */
+      ignored = /* @__PURE__ */ new Map();
+      ignore(what, keys2) {
+        for (const key2 of keys2) {
+          const set = this.ignored.get(what) ?? /* @__PURE__ */ new Set();
+          set.add(key2);
+          this.ignored.set(what, set);
+        }
+      }
+      list() {
+        const out = [...this.lines];
+        for (const [what, keys2] of this.ignored) out.push(`ignored ${what} ${keys2.size === 1 ? "key" : "keys"} ${[...keys2].slice(0, 6).join(", ")}${keys2.size > 6 ? ", \u2026" : ""}`);
+        if (this.more > 0) out.push(`and ${this.more} more`);
+        return out;
+      }
+    };
+    unknownKeys = (o12, known) => Object.keys(o12).filter((key2) => !known.has(key2));
+    labelOf = (raw3, inList, id) => isRecord(raw3) ? textOf(pick2(raw3, LABEL_KEYS)) ?? id : inList ? id : textOf(raw3) ?? id;
+    FLOW_SHAPES = ["box", "diamond", "pill", "store", "circle"];
+    SHAPE_SET = new Set(FLOW_SHAPES);
+    SHAPE_ALIASES = {
+      rect: "box",
+      rectangle: "box",
+      square: "box",
+      process: "box",
+      node: "box",
+      subroutine: "box",
+      decision: "diamond",
+      rhombus: "diamond",
+      choice: "diamond",
+      condition: "diamond",
+      question: "diamond",
+      hexagon: "diamond",
+      stadium: "pill",
+      rounded: "pill",
+      round: "pill",
+      terminal: "pill",
+      start: "pill",
+      end: "pill",
+      capsule: "pill",
+      store: "store",
+      database: "store",
+      db: "store",
+      cylinder: "store",
+      storage: "store",
+      datastore: "store",
+      oval: "circle",
+      ellipse: "circle",
+      event: "circle"
+    };
+    NODE_KEYS = /* @__PURE__ */ new Set(["id", ...LABEL_KEYS, "shape", "type", "group", "parent", "in"]);
+    EDGE_FROM = ["from", "source", "src"];
+    EDGE_TO = ["to", "target", "dst"];
+    EDGE_KEYS = /* @__PURE__ */ new Set([...EDGE_FROM, ...EDGE_TO, ...LABEL_KEYS, "dashed", "kind", "style"]);
+    GROUP_KEYS = /* @__PURE__ */ new Set(["id", ...LABEL_KEYS, "parent", "group", "in"]);
+    FLOW_EXAMPLE = "{nodes:{A:'Request',B:{label:'Over limit?',shape:'diamond'}},edges:[['A','B'],['B','C','no']]}";
+    SEQ_BLOCKS = ["loop", "alt", "opt", "par", "critical", "break"];
+    SEQ_ARROW_SET = /* @__PURE__ */ new Set(["sync", "reply", "async"]);
+    ARROW_ALIASES = {
+      call: "sync",
+      request: "sync",
+      solid: "sync",
+      send: "sync",
+      return: "reply",
+      response: "reply",
+      dashed: "reply",
+      result: "reply",
+      back: "reply",
+      event: "async",
+      message: "async",
+      fire: "async",
+      emit: "async",
+      publish: "async"
+    };
+    BLOCK_SET = new Set(SEQ_BLOCKS);
+    BLOCK_ALIASES = { while: "loop", repeat: "loop", if: "alt", optional: "opt", parallel: "par" };
+    UNFRAMED = /* @__PURE__ */ new Set(["group", "rect", "box"]);
+    MESSAGE_KEYS = /* @__PURE__ */ new Set([...EDGE_FROM, ...EDGE_TO, ...LABEL_KEYS, "arrow", "kind", "type"]);
+    NOTE_KEYS = /* @__PURE__ */ new Set(["note", "over", "actor", "actors", "on"]);
+    BLOCK_KEYS = /* @__PURE__ */ new Set([...SEQ_BLOCKS, ...Object.keys(BLOCK_ALIASES), ...UNFRAMED, "type", "block", ...LABEL_KEYS, "steps", "else", "and"]);
+    SEQ_EXAMPLE = "{steps:[['User','API','POST /login'],['API','User','200','reply']]}";
+  }
+});
+
+// packages/catalog/src/notation.ts
+function columnKey(item) {
+  if (typeof item === "string") return item.trim() !== "" ? { key: item.trim(), prop: "" } : void 0;
+  if (!isRecord2(item)) return void 0;
+  for (const prop of KEY_PROPS) {
+    const value = item[prop];
+    if (typeof value === "string" && value.trim() !== "") return { key: value.trim(), prop };
+  }
+  return void 0;
+}
+function splitToken(token3) {
   const eq = token3.indexOf("=");
   const head2 = eq >= 0 ? token3.slice(0, eq) : token3;
   const colon2 = head2.indexOf(":");
@@ -31422,69 +31693,58 @@ function splitColumn(token3) {
     ...eq >= 0 ? { label: token3.slice(eq + 1).replace(/_/g, " ") } : {}
   };
 }
-function parseColumns(spec2) {
+function readColumns(value) {
   const fields2 = [];
-  for (const token3 of spec2.trim().split(/\s+/).filter(Boolean)) {
-    const { key: key2, kind, label } = splitColumn(token3);
-    if (!key2) continue;
-    fields2.push({ key: key2, ...kind && KIND_SET.has(kind) ? { kind } : {}, ...label ? { label } : {} });
+  const problems = [];
+  if (value === void 0 || value === null) return { fields: fields2, problems };
+  if (typeof value === "string") {
+    shorthandTokens(value).forEach((token3, i10) => {
+      const { key: key2, kind, label } = splitToken(token3);
+      if (!key2) {
+        problems.push({ column: i10 + 1, type: "dropped", message: `"${clip2(token3)}" has no field name` });
+        return;
+      }
+      const known = kind !== void 0 && KIND_SET.has(kind);
+      if (kind !== void 0 && !known) problems.push({ column: i10 + 1, type: "kind", message: unknownKind(kind, key2) });
+      fields2.push({ key: key2, ...known ? { kind } : {}, ...label ? { label } : {} });
+    });
+    return { fields: fields2, problems };
   }
-  return fields2;
-}
-function checkColumns(spec2) {
-  const errors = [];
-  spec2.trim().split(/\s+/).filter(Boolean).forEach((token3, i10) => {
-    const { key: key2, kind } = splitColumn(token3);
-    if (!key2) errors.push({ statement: i10 + 1, message: `column "${clip(token3)}" has no field name` });
-    else if (kind !== void 0 && !KIND_SET.has(kind)) errors.push({ statement: i10 + 1, message: `unknown kind "${kind}" for column "${key2}". Kinds: ${FIELD_KINDS.join(" ")}` });
+  if (!Array.isArray(value)) {
+    problems.push({ column: 0, type: "shape", message: `expected a list [${ITEM_HINT}], received ${describeValue2(value)}` });
+    return { fields: fields2, problems };
+  }
+  value.forEach((item, i10) => {
+    const column = i10 + 1;
+    const named2 = columnKey(item);
+    if (!named2) {
+      problems.push({ column, type: "dropped", message: isRecord2(item) ? `no key: expected ${ITEM_HINT}` : `expected ${ITEM_HINT}, received ${describeValue2(item)}` });
+      return;
+    }
+    if (!isRecord2(item)) {
+      fields2.push({ key: named2.key });
+      return;
+    }
+    const { key: key2 } = named2;
+    let kind;
+    if (item.kind !== void 0) {
+      if (typeof item.kind === "string" && KIND_SET.has(item.kind)) kind = item.kind;
+      else problems.push({ column, type: "kind", message: unknownKind(item.kind, key2) });
+    }
+    const label = LABEL_PROPS.map((prop) => item[prop]).find((text5) => typeof text5 === "string" && text5.trim() !== "");
+    const ignored = Object.keys(item).filter((prop) => !ITEM_PROPS.has(prop));
+    if (ignored.length > 0) problems.push({ column, type: "ignored", message: `ignored ${ignored.length === 1 ? "key" : "keys"} ${ignored.slice(0, 6).join(", ")} of column "${clip2(key2)}"` });
+    fields2.push({ key: key2, ...kind ? { kind } : {}, ...label ? { label: label.trim() } : {} });
   });
-  return errors;
+  return { fields: fields2, problems };
 }
-var clip, FLOW_HEADER, FLOW_IGNORED, ID, SHAPES2, ARROW, ARROW_TEXT, FlowSyntaxError, SEQ_HEADER, SEQ_IGNORED, SEQ_PARTICIPANT, SEQ_NOTE, seqMessage, SEQ_MESSAGES, SEQ_ARROWS, isActorId, FIELD_KINDS, KIND_SET;
+var clip2, isRecord2, describeValue2, FIELD_KINDS, KIND_SET, KEY_PROPS, LABEL_PROPS, ITEM_PROPS, ITEM_HINT, unknownKind, shorthandTokens, tokenKey;
 var init_notation = __esm({
   "packages/catalog/src/notation.ts"() {
     "use strict";
-    clip = (text5, max = 40) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
-    FLOW_HEADER = /^(?:flowchart|graph)(?:\s+(?:TD|TB|BT|LR|RL))?$/i;
-    FLOW_IGNORED = /^(?:classDef|class|style|linkStyle|click|direction|subgraph)\b|^end$/;
-    ID = /^[A-Za-z_][A-Za-z0-9_]*/;
-    SHAPES2 = [
-      ["([", "])", "pill"],
-      ["[(", ")]", "store"],
-      ["((", "))", "circle"],
-      ["{{", "}}", "diamond"],
-      ["[", "]", "box"],
-      ["{", "}", "diamond"],
-      ["(", ")", "box"]
-    ];
-    ARROW = /^(-\.+->|-{2,}>|={2,}>|-{3,})\s*(?:\|([^|]*)\|)?/;
-    ARROW_TEXT = [
-      [/^--\s+(.+?)\s+-{2,}>/, false],
-      // -- label -->
-      [/^-\.\s*(.+?)\s*\.+->/, true],
-      // -. label .->
-      [/^==\s+(.+?)\s+={2,}>/, false]
-      // == label ==>
-    ];
-    FlowSyntaxError = class extends Error {
-    };
-    SEQ_HEADER = /^sequenceDiagram$/i;
-    SEQ_IGNORED = /^(?:autonumber|activate|deactivate|title|loop|alt|else|opt|par|and|rect|critical|option|break|box)\b|^end$/i;
-    SEQ_PARTICIPANT = /^(?:participant|actor)\s+(.+?)(?:\s+as\s+(.+))?$/i;
-    SEQ_NOTE = /^note\s+(?:over|left\s+of|right\s+of)\s+([^:]+?)\s*:\s*(.*)$/i;
-    seqMessage = (arrows) => new RegExp(`^([^:]+?)\\s*(${arrows})\\s*[+-]?\\s*([^:]*?)\\s*(?::\\s*(.*))?$`);
-    SEQ_MESSAGES = [seqMessage("-->>|->>|--\\)|-\\)|-->|->"), seqMessage("--x|-x")];
-    SEQ_ARROWS = {
-      "->>": "sync",
-      "->": "sync",
-      "-x": "sync",
-      "-->>": "reply",
-      "-->": "reply",
-      "--x": "reply",
-      "-)": "async",
-      "--)": "async"
-    };
-    isActorId = (id) => /^[\p{L}\p{N}_]/u.test(id) && !/--?>|--?\)/.test(id);
+    clip2 = (text5, max = 40) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
+    isRecord2 = (v5) => typeof v5 === "object" && v5 !== null && !Array.isArray(v5);
+    describeValue2 = (v5) => v5 === null ? "null" : Array.isArray(v5) ? "an array" : typeof v5 === "object" ? "an object" : `a ${typeof v5}`;
     FIELD_KINDS = [
       "text",
       "num",
@@ -31507,6 +31767,13 @@ var init_notation = __esm({
       "bool"
     ];
     KIND_SET = new Set(FIELD_KINDS);
+    KEY_PROPS = ["key", "field", "name"];
+    LABEL_PROPS = ["label", "title"];
+    ITEM_PROPS = /* @__PURE__ */ new Set([...KEY_PROPS, "kind", ...LABEL_PROPS]);
+    ITEM_HINT = "'key' or {key, kind?, label?}";
+    unknownKind = (kind, key2) => `unknown kind ${typeof kind === "string" ? `"${clip2(kind, 20)}"` : describeValue2(kind)} for column "${clip2(key2)}". Kinds: ${FIELD_KINDS.join(" ")}`;
+    shorthandTokens = (spec2) => spec2.trim().split(/\s+/).filter(Boolean);
+    tokenKey = (token3) => /^[^:=]*/.exec(token3)[0];
   }
 });
 
@@ -31575,6 +31842,39 @@ var init_normalize = __esm({
   }
 });
 
+// packages/catalog/src/grid.ts
+function normalizeCols(cols) {
+  const text5 = cols.trim().toLowerCase();
+  const count2 = COUNT.exec(text5);
+  if (count2) {
+    const word = count2[1] ?? count2[2];
+    const n10 = /^\d+$/.test(word) ? Number(word) : WORDS.indexOf(word) + 1;
+    if (n10 >= 1) return String(Math.min(n10, MAX_TRACKS));
+  }
+  const weights = text5.split(SEPARATOR).map((part) => WEIGHT.exec(part));
+  if (weights.length < 2 || weights.length > MAX_TRACKS || weights.some((weight) => !weight || !(Number(weight[1]) > 0))) return void 0;
+  const units = new Set(weights.map((weight) => weight[2] ?? ""));
+  if (units.size > 1) return void 0;
+  const written = weights.map((weight) => weight[1]);
+  if (units.has("%") && written.every((weight) => /^\d+$/.test(weight))) {
+    const d5 = written.map(Number).reduce(gcd);
+    return written.map((weight) => Number(weight) / d5).join(":");
+  }
+  return written.join(":");
+}
+var MAX_TRACKS, WORDS, COUNT, SEPARATOR, WEIGHT, gcd;
+var init_grid = __esm({
+  "packages/catalog/src/grid.ts"() {
+    "use strict";
+    MAX_TRACKS = 12;
+    WORDS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+    COUNT = /^(?:(\d+|[a-z]+)(?:\s*col(?:umn)?s?)?|repeat\(\s*(\d+)\s*,\s*1fr\s*\))$/;
+    SEPARATOR = /\s*[:,/;|]\s*|\s+/;
+    WEIGHT = /^(\d+(?:\.\d+)?|\.\d+)(fr|%)?$/;
+    gcd = (a5, b6) => b6 === 0 ? a5 : gcd(b6, a5 % b6);
+  }
+});
+
 // packages/catalog/src/index.ts
 var init_src = __esm({
   "packages/catalog/src/index.ts"() {
@@ -31588,8 +31888,10 @@ var init_src = __esm({
     init_views();
     init_gallery();
     init_transport();
+    init_diagrams();
     init_notation();
     init_normalize();
+    init_grid();
   }
 });
 
@@ -31721,7 +32023,7 @@ __export(util_exports, {
   own: () => own,
   parsedType: () => parsedType,
   partial: () => partial,
-  pick: () => pick2,
+  pick: () => pick3,
   prefixIssues: () => prefixIssues,
   primitiveTypes: () => primitiveTypes,
   promiseAllObject: () => promiseAllObject,
@@ -31756,9 +32058,9 @@ function assertNever(_x) {
 }
 function assert(_5) {
 }
-function getEnumValues(entries) {
-  const numericValues = Object.values(entries).filter((v5) => typeof v5 === "number");
-  const values = Object.entries(entries).filter(([k4, _5]) => numericValues.indexOf(+k4) === -1).map(([_5, v5]) => v5);
+function getEnumValues(entries2) {
+  const numericValues = Object.values(entries2).filter((v5) => typeof v5 === "number");
+  const values = Object.entries(entries2).filter(([k4, _5]) => numericValues.indexOf(+k4) === -1).map(([_5, v5]) => v5);
   return values;
 }
 function joinValues(array3, separator = "|") {
@@ -32021,7 +32323,7 @@ function optionalKeys(shape) {
     return shape[k4]._zod.optin !== void 0 && shape[k4]._zod.optout === "optional";
   });
 }
-function pick2(schema, mask) {
+function pick3(schema, mask) {
   const currDef = schema._zod.def;
   const checks2 = currDef.checks;
   const hasChecks = checks2 && checks2.length > 0;
@@ -37454,10 +37756,10 @@ function record(keyType, valueType, params) {
   });
 }
 function _enum(values, params) {
-  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v5) => [v5, v5])) : values;
+  const entries2 = Array.isArray(values) ? Object.fromEntries(values.map((v5) => [v5, v5])) : values;
   return new ZodEnum2({
     type: "enum",
-    entries,
+    entries: entries2,
     ...util_exports.normalizeParams(params)
   });
 }
@@ -39542,7 +39844,7 @@ __export(util_exports2, {
   own: () => own2,
   parsedType: () => parsedType2,
   partial: () => partial2,
-  pick: () => pick3,
+  pick: () => pick4,
   prefixIssues: () => prefixIssues2,
   primitiveTypes: () => primitiveTypes2,
   promiseAllObject: () => promiseAllObject2,
@@ -39577,9 +39879,9 @@ function assertNever2(_x) {
 }
 function assert2(_5) {
 }
-function getEnumValues2(entries) {
-  const numericValues = Object.values(entries).filter((v5) => typeof v5 === "number");
-  const values = Object.entries(entries).filter(([k4, _5]) => numericValues.indexOf(+k4) === -1).map(([_5, v5]) => v5);
+function getEnumValues2(entries2) {
+  const numericValues = Object.values(entries2).filter((v5) => typeof v5 === "number");
+  const values = Object.entries(entries2).filter(([k4, _5]) => numericValues.indexOf(+k4) === -1).map(([_5, v5]) => v5);
   return values;
 }
 function joinValues2(array3, separator = "|") {
@@ -39842,7 +40144,7 @@ function optionalKeys2(shape) {
     return shape[k4]._zod.optin !== void 0 && shape[k4]._zod.optout === "optional";
   });
 }
-function pick3(schema, mask) {
+function pick4(schema, mask) {
   const currDef = schema._zod.def;
   const checks2 = currDef.checks;
   const hasChecks = checks2 && checks2.length > 0;
@@ -45381,10 +45683,10 @@ function record2(keyType, valueType, params) {
   });
 }
 function _enum2(values, params) {
-  const entries = Array.isArray(values) ? Object.fromEntries(values.map((v5) => [v5, v5])) : values;
+  const entries2 = Array.isArray(values) ? Object.fromEntries(values.map((v5) => [v5, v5])) : values;
   return new ZodEnum3({
     type: "enum",
-    entries,
+    entries: entries2,
     ...util_exports2.normalizeParams(params)
   });
 }
@@ -61144,9 +61446,9 @@ function reportLine(surfaceId2, component2, code, message) {
   return `viewer: error ${name(surfaceId2)} ${reportText(component2, code, message)}`;
 }
 function reportText(component2, code, message) {
-  return `${component2.replace(/[^\w#.-]/g, "_").slice(0, 80)}: ${name(code)} ${clip2(oneLine(message, MAX_TEXT), MAX_TEXT)}`.trim();
+  return `${component2.replace(/[^\w#.-]/g, "_").slice(0, 80)}: ${name(code)} ${clip3(oneLine(message, MAX_TEXT), MAX_TEXT)}`.trim();
 }
-var MAX_REPORT_LINES, MAX_TEXT, name, clip2, foldLine, idOf, ReportStore;
+var MAX_REPORT_LINES, MAX_TEXT, name, clip3, foldLine, idOf, ReportStore;
 var init_reports = __esm({
   "packages/server/src/session/reports.ts"() {
     "use strict";
@@ -61155,7 +61457,7 @@ var init_reports = __esm({
     MAX_REPORT_LINES = 8;
     MAX_TEXT = 200;
     name = (value) => value.replace(/[^\w.-]/g, "_").slice(0, 64) || "_";
-    clip2 = (text5, max) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
+    clip3 = (text5, max) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
     foldLine = (surfaceId2, count2) => `viewer: error ${name(surfaceId2)} (+${count2} more parts could not be drawn)`;
     idOf = (component2) => component2.slice(component2.indexOf("#") + 1);
     ReportStore = class {
@@ -61260,7 +61562,7 @@ var init_reports = __esm({
 // packages/server/src/session/events.ts
 function token(value, max = MAX_VALUE) {
   const text5 = typeof value === "string" ? value : JSON.stringify(value) ?? "";
-  return /^[\w@./#:~+-]+$/.test(text5) ? clip3(text5, max) : jsonQuote(clip3(text5, max));
+  return /^[\w@./#:~+-]+$/.test(text5) ? clip4(text5, max) : jsonQuote(clip4(text5, max));
 }
 function selectLine(ref2, surfaceId2) {
   const where = ref2.path !== void 0 && (ref2.type === "file" || ref2.type === "symbol" || ref2.type === "row") ? formatFileLoc({ path: ref2.path, ...ref2.line !== void 0 ? { line: ref2.line } : {}, ...ref2.endLine !== void 0 ? { endLine: ref2.endLine } : {} }) : ref2.id;
@@ -61271,11 +61573,11 @@ function actionLine(verb, surfaceId2, action, context) {
   let json2 = "";
   if (typeof context === "object" && context !== null && Object.keys(context).length > 0) {
     json2 = JSON.stringify(context);
-    json2 = json2.length > MAX_VALUE ? jsonQuote(clip3(json2)) : escapeSeparators(escapeInvisible(json2, true));
+    json2 = json2.length > MAX_VALUE ? jsonQuote(clip4(json2)) : escapeSeparators(escapeInvisible(json2, true));
   }
   return `${PREFIX} ${verb} ${name2(surfaceId2)} ${name2(action)}${json2 ? " " + json2 : ""}`;
 }
-var MAX_EVENTS, MAX_VALUE, PREFIX, clip3, name2, EventQueue;
+var MAX_EVENTS, MAX_VALUE, PREFIX, clip4, name2, EventQueue;
 var init_events3 = __esm({
   "packages/server/src/session/events.ts"() {
     "use strict";
@@ -61286,7 +61588,7 @@ var init_events3 = __esm({
     MAX_EVENTS = 100;
     MAX_VALUE = 300;
     PREFIX = "viewer:";
-    clip3 = (text5, max = MAX_VALUE) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
+    clip4 = (text5, max = MAX_VALUE) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
     name2 = (value) => value.replace(/[^\w.-]/g, "_").slice(0, 64) || "_";
     EventQueue = class {
       entries = [];
@@ -61328,7 +61630,7 @@ var init_events3 = __esm({
         while (this.entries.length > 0) {
           const next = this.entries[0].line;
           if (lines.length > 0 && used + next.length + 1 > maxChars) break;
-          lines.push(maxChars === Infinity ? next : clip3(next, maxChars));
+          lines.push(maxChars === Infinity ? next : clip4(next, maxChars));
           used += next.length + 1;
           this.entries.shift();
         }
@@ -61359,18 +61661,18 @@ var init_events3 = __esm({
 
 // packages/server/src/session/actions.ts
 function parseAction(value) {
-  if (!isRecord(value) || !text(value.name) || value.name === "" || !text(value.surfaceId) || !text(value.sourceComponentId)) return void 0;
+  if (!isRecord3(value) || !text(value.name) || value.name === "" || !text(value.surfaceId) || !text(value.sourceComponentId)) return void 0;
   return {
     name: value.name,
     surfaceId: value.surfaceId,
     sourceComponentId: value.sourceComponentId,
     timestamp: text(value.timestamp) ? value.timestamp : "",
-    context: isRecord(value.context) ? value.context : {}
+    context: isRecord3(value.context) ? value.context : {}
   };
 }
 function parseEntity(value) {
   if (value === null) return null;
-  if (!isRecord(value) || typeof value.type !== "string" || !ENTITY_TYPES.has(value.type) || !text(value.id) || value.id === "") return void 0;
+  if (!isRecord3(value) || typeof value.type !== "string" || !ENTITY_TYPES.has(value.type) || !text(value.id) || value.id === "") return void 0;
   return {
     type: value.type,
     id: value.id,
@@ -61380,7 +61682,7 @@ function parseEntity(value) {
     ...text(value.label) ? { label: value.label } : {}
   };
 }
-var ENTITY_TYPES, MAX_TEXT2, isRecord, text, lineNumber, ActionRouter;
+var ENTITY_TYPES, MAX_TEXT2, isRecord3, text, lineNumber, ActionRouter;
 var init_actions = __esm({
   "packages/server/src/session/actions.ts"() {
     "use strict";
@@ -61388,7 +61690,7 @@ var init_actions = __esm({
     init_events3();
     ENTITY_TYPES = /* @__PURE__ */ new Set(["file", "dir", "module", "package", "symbol", "author", "commit", "node", "row"]);
     MAX_TEXT2 = 1024;
-    isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+    isRecord3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
     text = (value) => typeof value === "string" && value.length <= MAX_TEXT2;
     lineNumber = (value) => typeof value === "number" && Number.isInteger(value) && value > 0 && value < 1e7;
     ActionRouter = class {
@@ -61400,8 +61702,8 @@ var init_actions = __esm({
       }
       /** Handles one renderer-to-agent message. Returns false when it was malformed or addressed nothing that exists. */
       handle(message) {
-        if (!isRecord(message) || message.version !== "1.0") return false;
-        if (isRecord(message.error)) {
+        if (!isRecord3(message) || message.version !== "1.0") return false;
+        if (isRecord3(message.error)) {
           const { code, surfaceId: surfaceId2 } = message.error;
           const detail = typeof message.error.message === "string" ? message.error.message.slice(0, MAX_TEXT2) : void 0;
           const report2 = text(code) && text(detail) && text(surfaceId2) ? /^([A-Za-z][A-Za-z0-9]{0,39})#([^\s:]{1,120}):(?: ([\s\S]*))?$/.exec(detail) : null;
@@ -63508,7 +63810,7 @@ function scanSymbols(code, scan, lines, unit) {
     symbol.endLine = endLineOf(code, lines, symbol.line, scan);
     const depth = stack.filter((entry) => entry.kind !== "impl").length;
     if (symbol.endLine > symbol.line) stack.push(symbol);
-    if (symbol.kind === "impl" || depth > MAX_DEPTH) continue;
+    if (symbol.kind === "impl" || depth > MAX_DEPTH2) continue;
     if (out.length >= MAX_SYMBOLS) {
       uncounted++;
       continue;
@@ -63591,7 +63893,7 @@ function scanHeadings(text5) {
   const open3 = [];
   raw3.forEach((heading, index2) => {
     while (open3.length > 0 && open3.at(-1).level >= heading.level) open3.pop();
-    const depth = Math.min(open3.length, MAX_DEPTH);
+    const depth = Math.min(open3.length, MAX_DEPTH2);
     open3.push(heading);
     const next = raw3.slice(index2 + 1).find((other) => other.level <= heading.level);
     const endLine = next ? next.line - 1 : last;
@@ -63636,7 +63938,7 @@ function scanFile(text5, language) {
   if (pkg) facts.pkg = pkg.replace(/`/g, "");
   return facts;
 }
-var TAB_WIDTH, LONG_LINE, MAX_SYMBOLS, MAX_TODOS, MAX_IMPORTS, MAX_DEPTH, IMPORTS, PACKAGE_DECL, KEYWORD_KIND, TS_MODS, SYMBOLS, NOT_A_NAME, CLASS_LIKE, QUOTES, LOOK_BEHIND, LINE_COMMENT, TODO_TAG, C_NOT_A_FUNCTION, CLOSERS, ATX, FENCE, MAX_HEADING;
+var TAB_WIDTH, LONG_LINE, MAX_SYMBOLS, MAX_TODOS, MAX_IMPORTS, MAX_DEPTH2, IMPORTS, PACKAGE_DECL, KEYWORD_KIND, TS_MODS, SYMBOLS, NOT_A_NAME, CLASS_LIKE, QUOTES, LOOK_BEHIND, LINE_COMMENT, TODO_TAG, C_NOT_A_FUNCTION, CLOSERS, ATX, FENCE, MAX_HEADING;
 var init_facts = __esm({
   "packages/server/src/analyze/facts.ts"() {
     "use strict";
@@ -63645,7 +63947,7 @@ var init_facts = __esm({
     MAX_SYMBOLS = 2e3;
     MAX_TODOS = 50;
     MAX_IMPORTS = 2e3;
-    MAX_DEPTH = 3;
+    MAX_DEPTH2 = 3;
     IMPORTS = {
       ts: [
         {
@@ -64226,21 +64528,21 @@ async function walkFiles(root2, limit = MAX_FILES) {
   const stack = [{ dir: "", rules: [] }];
   while (stack.length > 0 && !capped) {
     const { dir, rules: inherited } = stack.pop();
-    let entries;
+    let entries2;
     try {
-      entries = readdirSync(dir ? `${root2}/${dir}` : root2, { withFileTypes: true });
+      entries2 = readdirSync(dir ? `${root2}/${dir}` : root2, { withFileTypes: true });
     } catch {
       unreadable++;
       continue;
     }
     let rules = inherited;
-    if (entries.some((entry) => entry.name === ".gitignore" && entry.isFile())) {
+    if (entries2.some((entry) => entry.name === ".gitignore" && entry.isFile())) {
       try {
         rules = [...inherited, { base: dir, matcher: (0, import_ignore.default)().add(readFileSync(`${root2}/${dir ? `${dir}/` : ""}.gitignore`, "utf8")) }];
       } catch {
       }
     }
-    for (const entry of entries) {
+    for (const entry of entries2) {
       if (ALWAYS_SKIPPED.has(entry.name)) continue;
       const isDir = entry.isDirectory();
       if (!isDir && !entry.isFile()) continue;
@@ -64373,7 +64675,7 @@ function readRecord(root2, path2, tracked, cache2) {
 }
 async function scanFiles(root2, listing, cache2) {
   const pause = createSlicer();
-  const entries = [];
+  const entries2 = [];
   const facts = /* @__PURE__ */ new Map();
   const live = /* @__PURE__ */ new Set();
   let unreadable = 0;
@@ -64398,7 +64700,7 @@ async function scanFiles(root2, listing, cache2) {
     if (record3) {
       cache2.set(file.path, record3);
       live.add(file.path);
-      entries.push(record3.entry);
+      entries2.push(record3.entry);
       if (record3.facts) facts.set(file.path, record3.facts);
       if (hit) reused++;
     }
@@ -64411,7 +64713,7 @@ async function scanFiles(root2, listing, cache2) {
   const warnings = [...listing.warnings];
   if (unreadable > 0) warnings.push(`${count(unreadable, "file")} could not be read`);
   if (oversized > 0) warnings.push(`${count(oversized, "file")} over 2 MB counted by size only`);
-  return { source: listing.source, entries, facts, warnings, reused };
+  return { source: listing.source, entries: entries2, facts, warnings, reused };
 }
 var import_ignore, MAX_READ_BYTES, MAX_FILES, SNIFF_BYTES, MINIFIED_LINE, SLICE_MS, count, byPath;
 var init_inventory = __esm({
@@ -64515,22 +64817,22 @@ function cutModules(files, options = {}) {
   for (; ; ) {
     for (const dir of [...clusters]) descend(dir, chainEnd(dir, true));
     if (size() >= max) break;
-    let pick4;
+    let pick5;
     for (const dir of clusters) {
       const entry = stats.get(chainEnd(dir, false));
       const parts = entry.children.length + (entry.directWeight > 0 ? 1 : 0);
       if (parts < 2 || entry.sources < MIN_SPLIT_FILES && !abovePackage.has(dir)) continue;
-      if (pick4 === void 0) {
-        pick4 = dir;
+      if (pick5 === void 0) {
+        pick5 = dir;
         continue;
       }
-      const best = stats.get(pick4);
-      const preferred = Number(insidePackage(dir)) - Number(insidePackage(pick4));
-      if (preferred < 0 || preferred === 0 && (entry.weight > best.weight || entry.weight === best.weight && dir < pick4)) pick4 = dir;
+      const best = stats.get(pick5);
+      const preferred = Number(insidePackage(dir)) - Number(insidePackage(pick5));
+      if (preferred < 0 || preferred === 0 && (entry.weight > best.weight || entry.weight === best.weight && dir < pick5)) pick5 = dir;
     }
-    if (pick4 === void 0) break;
-    const end = chainEnd(pick4, false);
-    descend(pick4, end);
+    if (pick5 === void 0) break;
+    const end = chainEnd(pick5, false);
+    descend(pick5, end);
     if (!splitDir(end, max - size() + 1)) break;
   }
   const idOf2 = (dir) => dir === "" ? "." : dir;
@@ -73348,18 +73650,18 @@ function resolveImports(files, facts, manifests) {
   const isPackageDir = (dir) => fileSet.has(dir ? `${dir}/__init__.py` : "__init__.py");
   const pyDeclared = manifests.packages.filter((pkg) => pkg.ecosystem === "pypi").map((pkg) => ({ dir: pkg.dir, names: new Set(pkg.deps.map(pyName)) }));
   const declaredAbove = (from, top) => pyDeclared.some((declared) => under(from, declared.dir) && declared.names.has(pyName(top)));
-  const anchorOf = (pick4, module) => {
-    const parts = pick4.replace(/\.pyi?$/, "").split("/");
+  const anchorOf = (pick5, module) => {
+    const parts = pick5.replace(/\.pyi?$/, "").split("/");
     if (parts.at(-1) === "__init__") parts.pop();
     return parts.slice(0, Math.max(0, parts.length - module.split(".").length)).join("/");
   };
-  const reachable = (from, pick4, module) => {
-    const anchor3 = anchorOf(pick4, module);
+  const reachable = (from, pick5, module) => {
+    const anchor3 = anchorOf(pick5, module);
     if (pythonRoots.has(anchor3)) return true;
     const dir = dirName(from);
     if (anchor3 === dir) {
       if (!isPackageDir(dir)) return true;
-      return !module.includes(".") && baseName(pick4) !== "__init__.py" && !declaredAbove(from, module);
+      return !module.includes(".") && baseName(pick5) !== "__init__.py" && !declaredAbove(from, module);
     }
     return module.includes(".") && !isPackageDir(anchor3);
   };
@@ -73394,13 +73696,13 @@ function resolveImports(files, facts, manifests) {
     };
     if (spec2.includes(".") || !PYTHON_STDLIB.has(spec2)) {
       for (const name3 of imp.names ?? []) {
-        const pick4 = pickFor(`${spec2}.${name3}`);
-        if (pick4) return { file: pick4 };
+        const pick5 = pickFor(`${spec2}.${name3}`);
+        if (pick5) return { file: pick5 };
       }
     }
     for (let module = spec2; ; module = module.slice(0, module.lastIndexOf("."))) {
-      const pick4 = pickFor(module);
-      if (pick4) return { file: pick4 };
+      const pick5 = pickFor(module);
+      if (pick5) return { file: pick5 };
       if (!module.includes(".")) break;
     }
     return PYTHON_STDLIB.has(top) ? "builtin" : { ext: top };
@@ -73963,15 +74265,15 @@ function scanSpec(text5) {
 }
 function restoreBuiltins() {
   const changed = [];
-  for (const { target: target2, name: name3, entries } of BUILTINS) {
+  for (const { target: target2, name: name3, entries: entries2 } of BUILTINS) {
     const now = Reflect.ownKeys(target2);
-    if (now.length === entries.size && now.every((key2) => entries.has(key2) && same(Reflect.getOwnPropertyDescriptor(target2, key2), entries.get(key2)))) continue;
+    if (now.length === entries2.size && now.every((key2) => entries2.has(key2) && same(Reflect.getOwnPropertyDescriptor(target2, key2), entries2.get(key2)))) continue;
     for (const key2 of now) {
-      if (entries.has(key2)) continue;
+      if (entries2.has(key2)) continue;
       changed.push(`${name3}.${String(key2)}`);
       Reflect.deleteProperty(target2, key2);
     }
-    for (const [key2, descriptor] of entries) {
+    for (const [key2, descriptor] of entries2) {
       if (same(Reflect.getOwnPropertyDescriptor(target2, key2), descriptor)) continue;
       changed.push(`${name3}.${String(key2)}`);
       try {
@@ -74134,7 +74436,7 @@ function rewrite(src) {
     const prop = key2 !== void 0 && Object.hasOwn(props, key2) ? props[key2] : void 0;
     if (!prop) continue;
     const next = arg.value;
-    const list = next.text === "[" && prop.kind === "str" && (/space separated/i.test(prop.doc) || def.name === "DataTable" && key2 === "columns") ? stringList2(text5, next) : void 0;
+    const list = next.text === "[" && prop.kind === "str" && /space separated/i.test(prop.doc) ? stringList2(text5, next) : void 0;
     if (list) {
       edits.push({ start: list.start, end: list.end, text: JSON.stringify(list.values.join(" ")) });
       fixes.push(`${def.name}.${key2} [${list.values.map((value) => `'${value}'`).join(",")}] -> '${list.values.join(" ")}'`);
@@ -74146,7 +74448,7 @@ function rewrite(src) {
       const target2 = enumValue(prop, value) ?? enumMeant(value, prop.values);
       if (!target2) continue;
       edits.push({ start: next.start, end: next.end, text: JSON.stringify(target2) });
-      fixes.push(`${def.name}.${key2} ${value} -> ${target2}`);
+      if (!prop.quiet?.includes(value.trim().toLowerCase())) fixes.push(`${def.name}.${key2} ${value} -> ${target2}`);
     } else if ((prop.kind === "str" || prop.kind === "text") && next.kind === "number" && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:%)?$/.test(next.text)) {
       edits.push({ start: next.start, end: next.end, text: JSON.stringify(next.text) });
     } else if (prop.kind === "action" && next.kind === "string") {
@@ -85014,20 +85316,20 @@ var init_dist3 = __esm({
         if (this.isEmpty()) {
           return "[]";
         }
-        const entries = [];
+        const entries2 = [];
         for (let i10 = 0; i10 < this.returnStates.length; i10++) {
           if (this.returnStates[i10] === PredictionContext.EMPTY_RETURN_STATE) {
-            entries.push("$");
+            entries2.push("$");
             continue;
           }
-          entries.push(this.returnStates[i10].toString());
+          entries2.push(this.returnStates[i10].toString());
           if (this.parents[i10]) {
-            entries.push(this.parents[i10].toString());
+            entries2.push(this.parents[i10].toString());
           } else {
-            entries.push("null");
+            entries2.push("null");
           }
         }
-        return `[${entries.join(", ")}]`;
+        return `[${entries2.join(", ")}]`;
       }
     };
     createSingletonPredictionContext = /* @__PURE__ */ __name((parent, returnState) => {
@@ -97829,11 +98131,11 @@ var init_dist3 = __esm({
         return pairs;
       }
       toString() {
-        const entries = [];
+        const entries2 = [];
         this.forEach((value, key2) => {
-          entries.push(`${key2}=[${value.join(", ")}]`);
+          entries2.push(`${key2}=[${value.join(", ")}]`);
         });
-        return `{${entries.join(", ")}}`;
+        return `{${entries2.join(", ")}}`;
       }
     };
     CannotInvokeStartRuleError = class extends Error {
@@ -107309,10 +107611,10 @@ function parseExpress(source) {
   const tree = parser.program();
   const firstErrorLine = errorListener.errors.length > 0 ? errorListener.errors[0][0] : void 0;
   const visitor = new ExpressAstVisitor(firstErrorLine);
-  const statements2 = visitor.visit(tree) ?? [];
+  const statements = visitor.visit(tree) ?? [];
   return {
     errors: errorListener.errors,
-    statements: statements2
+    statements
   };
 }
 var ExpressErrorListener, ExpressAstVisitor, IDENT_START2, IDENT_CHARS, IDENTIFIER, SQL_COMMENT_OR_TOKEN_REGEX, DECLARED_LHS_REGEX, SPLIT_LHS_REGEX, SPLIT_DATA_PATH_REGEX, IDENT_ONLY_REGEX, ASSIGN_EQUALS_REGEX, SPLIT_ARG_IDENT_REGEX;
@@ -107337,7 +107639,7 @@ var init_visitor = __esm({
       constructor(firstErrorLine) {
         super();
         this.visitProgram = (ctx) => {
-          const statements2 = [];
+          const statements = [];
           for (const stmtCtx of ctx.statement()) {
             if (this.firstErrorLine !== void 0 && stmtCtx.start !== null && stmtCtx.start.line >= this.firstErrorLine) {
               break;
@@ -107345,12 +107647,12 @@ var init_visitor = __esm({
             try {
               const stmt = this.visit(stmtCtx);
               if (stmt !== null && stmt !== void 0) {
-                statements2.push(stmt);
+                statements.push(stmt);
               }
             } catch {
             }
           }
-          return statements2;
+          return statements;
         };
         this.visitStatement = (ctx) => {
           if (ctx.assignment()) {
@@ -107379,12 +107681,12 @@ var init_visitor = __esm({
           return ctx.expression().map((expr) => this.visit(expr));
         };
         this.visitMap = (ctx) => {
-          const entries = {};
+          const entries2 = {};
           for (const entry of ctx.map_entry()) {
             const [k4, v5] = this.visit(entry);
-            setOwnEntry(entries, k4, v5);
+            setOwnEntry(entries2, k4, v5);
           }
-          return { kind: "map", entries };
+          return { kind: "map", entries: entries2 };
         };
         this.visitMap_entry = (ctx) => {
           let k4;
@@ -107980,8 +108282,8 @@ var init_compiler = __esm({
         }
         const defaultKeys = targetMajorMinor[0] >= 1 ? { path: "@path", call: "@call" } : { path: "path", call: "call" };
         const ctx = new CompileContext(defaultKeys, !options.isFinal);
-        const statements2 = this.parseIncrementalStatements(dslText, options.isFinal, options.cachePrefix ?? true);
-        const units = this.compiler.buildUnits(statements2, this.surfaceId, targetMajorMinor);
+        const statements = this.parseIncrementalStatements(dslText, options.isFinal, options.cachePrefix ?? true);
+        const units = this.compiler.buildUnits(statements, this.surfaceId, targetMajorMinor);
         if (units.length === 0) {
           if (options.isFinal) {
             throw new ExpressUndefinedRootError("root");
@@ -107999,19 +108301,19 @@ var init_compiler = __esm({
         if (this.cachedPrefix && dslText.startsWith(this.cachedPrefix) && isValidPrefixBoundary(dslText, this.cachedPrefix.length)) {
           const tail = dslText.slice(this.cachedPrefix.length);
           const tailStatements = tail.trim() ? this.compiler.parseStatements(tail, true, false) : [];
-          const statements3 = [...this.cachedStatements, ...tailStatements];
+          const statements2 = [...this.cachedStatements, ...tailStatements];
           if (cachePrefix) {
             this.cachedPrefix = dslText;
-            this.cachedStatements = statements3;
+            this.cachedStatements = statements2;
           }
-          return statements3;
+          return statements2;
         }
-        const statements2 = this.compiler.parseStatements(dslText, true, false);
+        const statements = this.compiler.parseStatements(dslText, true, false);
         if (cachePrefix) {
           this.cachedPrefix = dslText;
-          this.cachedStatements = statements2;
+          this.cachedStatements = statements;
         }
-        return statements2;
+        return statements;
       }
       compileUnit(idx, unit, ctx, targetMajorMinor, isFinal, activeSurfaces) {
         if (unit.kind === "delete") {
@@ -108543,10 +108845,10 @@ var init_compiler = __esm({
       /**
        * Groups parsed AST statements into surface scopes, deletes, and standalone calls.
        */
-      buildUnits(statements2, surfaceId2, targetMajorMinor) {
+      buildUnits(statements, surfaceId2, targetMajorMinor) {
         const units = [];
         let currentScope = null;
-        for (const stmt of statements2) {
+        for (const stmt of statements) {
           const [stmtType, ...stmtArgs] = stmt;
           if (stmtType === "EXPR") {
             currentScope = this.appendExprUnit(stmtArgs[0], currentScope, units, targetMajorMinor);
@@ -108746,8 +109048,8 @@ var init_compiler = __esm({
         }
         const defaultKeys = targetMajorMinor[0] >= 1 ? { path: "@path", call: "@call" } : { path: "path", call: "call" };
         const ctx = new CompileContext(defaultKeys);
-        const statements2 = this.parseStatements(dslText, isFinal);
-        const units = this.buildUnits(statements2, surfaceId2, targetMajorMinor);
+        const statements = this.parseStatements(dslText, isFinal);
+        const units = this.buildUnits(statements, surfaceId2, targetMajorMinor);
         if (units.length === 0) {
           throw new ExpressUndefinedRootError("root");
         }
@@ -109264,9 +109566,9 @@ var init_compiler = __esm({
         }
         return val;
       }
-      compileMapLiteral(entries, rawSymbols, compIds, ctx, targetMajorMinor, isAction, slot) {
+      compileMapLiteral(entries2, rawSymbols, compIds, ctx, targetMajorMinor, isAction, slot) {
         const dictRes = {};
-        for (const [k4, v5] of Object.entries(entries)) {
+        for (const [k4, v5] of Object.entries(entries2)) {
           const entrySlot = propertySlot(slot, k4);
           const entryIsAction = isAction || isActionSlot(entrySlot?.schema);
           const entryPropType = entrySlot ? resolvePropertyType(entrySlot.helper, k4, entrySlot.schema) : void 0;
@@ -111994,11 +112296,11 @@ function serializeYamlValue(key2, value, indent = 0) {
 ${items.join("\n")}`;
   }
   if (typeof value === "object") {
-    const entries = Object.entries(value);
-    if (entries.length === 0) {
+    const entries2 = Object.entries(value);
+    if (entries2.length === 0) {
       return `${keyPrefix} {}`;
     }
-    const lines = entries.map(([k4, v5]) => serializeYamlValue(k4, v5, indent + 2));
+    const lines = entries2.map(([k4, v5]) => serializeYamlValue(k4, v5, indent + 2));
     return `${keyPrefix}
 ${lines.join("\n")}`;
   }
@@ -112062,8 +112364,8 @@ ${this.content.trim()}
       constructor(skills) {
         this.skills = /* @__PURE__ */ new Map();
         if (skills) {
-          const entries = typeof skills[Symbol.iterator] === "function" ? skills : Object.entries(skills);
-          for (const [k4, v5] of entries) {
+          const entries2 = typeof skills[Symbol.iterator] === "function" ? skills : Object.entries(skills);
+          for (const [k4, v5] of entries2) {
             this.skills.set(validateSkillFilename(k4), v5);
           }
         }
@@ -112986,14 +113288,37 @@ function kindWarning(component2, id, meta5, kinds) {
   const asRows = meta5.kind === "graph" && kinds.has("rows") ? ` (query{ref:'${meta5.name}'} lists its nodes as rows)` : "";
   return `${component2}#${id}: ${meta5.name} returns ${KIND_NOUN[meta5.kind]}, which ${component2} cannot draw: use ${instead}${asRows}. The plate will show an error.`;
 }
+function splitRatioChecked(comp, out) {
+  const written = String(comp.ratio);
+  const meant = splitRatio(written);
+  if (meant !== written) {
+    comp.ratio = meant;
+    out.fixes.push(`Split.ratio '${oneLine(written, 24)}' -> '${meant}'`);
+  }
+  if (!/^\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?$/.test(meant.trim()) && !/^\d+(?:\.\d+)?%?$/.test(meant.trim())) {
+    out.warnings.push(`Split#${comp.id}: ratio '${oneLine(written, 24)}' is not a ratio: opened half and half. Write '1:2'.`);
+  }
+}
 function splitRatio(text5) {
   const trimmed2 = text5.trim();
   const share2 = /^(?:0?\.\d+)$/.test(trimmed2) ? Number(trimmed2) : /^\d{1,2}(?:\.\d+)?%$/.test(trimmed2) ? Number(trimmed2.slice(0, -1)) / 100 : void 0;
   if (share2 === void 0 || !(share2 > 0 && share2 < 1)) return /^\d+\s*\/\s*\d+$/.test(trimmed2) ? trimmed2.replace(/\s*\/\s*/, ":") : text5;
   const first = Math.round(share2 * 100);
-  const gcd = (a5, b6) => b6 === 0 ? a5 : gcd(b6, a5 % b6);
-  const d5 = gcd(first, 100 - first);
+  const gcd2 = (a5, b6) => b6 === 0 ? a5 : gcd2(b6, a5 % b6);
+  const d5 = gcd2(first, 100 - first);
   return `${first / d5}:${(100 - first) / d5}`;
+}
+function gridCols(comp, out) {
+  if (typeof comp.cols !== "string" || comp.cols.trim() === "") return;
+  const written = comp.cols;
+  const meant = normalizeCols(written);
+  if (meant === void 0) {
+    out.warnings.push(`Grid#${comp.id}: cols '${oneLine(written, 40)}' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'.`);
+    return;
+  }
+  const fix = `Grid.cols '${oneLine(written, 40)}' -> '${meant}'`;
+  if (meant !== written.replace(/\s+/g, "") && !out.fixes.includes(fix)) out.fixes.push(fix);
+  comp.cols = meant;
 }
 function refSignature(meta5) {
   const target2 = meta5.target ? meta5.targetRequired ? ` <${meta5.target}>` : ` [${meta5.target}]` : "";
@@ -113049,6 +113374,19 @@ function nameFiles(comp, name3, props, out, names) {
     }
   }
 }
+function proseRefs(comp, name3, out, names) {
+  const prose = PROSE[name3];
+  const text5 = prose ? comp[prose.prop] : void 0;
+  if (!prose || typeof text5 !== "string") return;
+  const where = `${name3}#${comp.id}`;
+  const next = replaceFileRefs(text5, prose.markdown, (written) => {
+    if (parseFileLoc(written).path.endsWith("/")) return void 0;
+    const meant = named(written, out, names);
+    if (out.files.length < MAX_CHECKS && !out.files.some((entry) => entry.where === where && entry.file === meant)) out.files.push({ where, file: meant });
+    return meant === written ? void 0 : meant;
+  });
+  if (next !== text5) comp[prose.prop] = next;
+}
 function knownFields(meta5, ref2) {
   const declared = fieldsFor(meta5, ref2.args).fields;
   if (!declared || declared.length === 0) return void 0;
@@ -113066,9 +113404,8 @@ function writtenFields(comp, name3, props) {
   const names = [];
   for (const [key2, prop] of Object.entries(props)) {
     const value = comp[key2];
-    if (typeof value !== "string" || !isFieldProp(name3, key2, prop)) continue;
-    if (name3 === "DataTable" && key2 === "columns") names.push(...value.trim().split(/\s+/).map((token3) => /^[^:=]*/.exec(token3)[0]));
-    else names.push(...value.split(/[\s,]+/).map((field) => field.replace(/^-/, "")));
+    if (isColumns(name3, key2)) names.push(...readColumns(value).fields.map((column) => column.key));
+    else if (typeof value === "string" && isFieldProp(name3, key2, prop)) names.push(...value.split(/[\s,]+/).map((field) => field.replace(/^-/, "")));
   }
   return names.filter(Boolean);
 }
@@ -113092,12 +113429,29 @@ function repairFields(comp, name3, props, fields2, out) {
   const moved = (key2, written, meant) => out.fixes.push(`${name3}.${key2} '${oneLine(written, 40)}' -> '${meant}'`);
   for (const [key2, prop] of Object.entries(props)) {
     const value = comp[key2];
+    if (isColumns(name3, key2) && Array.isArray(value)) {
+      const columns = value.flatMap((item) => {
+        const named2 = columnKey(item);
+        if (!named2) return [item];
+        const meant = meantField(named2.key, fields2);
+        if (meant === void 0) {
+          dropped(key2, named2.key);
+          return [];
+        }
+        if (meant === named2.key) return [item];
+        moved(key2, named2.key, meant);
+        return [named2.prop === "" ? meant : { ...item, [named2.prop]: meant }];
+      });
+      if (columns.length === 0) delete comp[key2];
+      else comp[key2] = columns;
+      continue;
+    }
     if (typeof value !== "string" || !isFieldProp(name3, key2, prop) || value.trim() === "") continue;
     let next;
-    if (name3 === "DataTable" && key2 === "columns") {
+    if (isColumns(name3, key2)) {
       const columns = [];
-      for (const token3 of value.trim().split(/\s+/)) {
-        const head2 = /^[^:=]*/.exec(token3)[0];
+      for (const token3 of shorthandTokens(value)) {
+        const head2 = tokenKey(token3);
         const meant = head2 ? meantField(head2, fields2) : void 0;
         if (meant === void 0) {
           dropped(key2, head2 || token3);
@@ -113152,9 +113506,8 @@ function collectChecks(comp, name3, props, out) {
   const names = [];
   for (const [key2, prop] of Object.entries(props)) {
     const value = comp[key2];
-    if (prop.kind !== "str" || typeof value !== "string") continue;
-    if (name3 === "DataTable" && key2 === "columns") names.push(...parseColumns(value).map((column) => column.key));
-    else if (/\bfield/i.test(prop.doc)) names.push(...value.split(/[\s,]+/).filter(Boolean).map((field) => field.replace(/^-/, "")));
+    if (isColumns(name3, key2)) names.push(...readColumns(value).fields.map((column) => column.key));
+    else if (prop.kind === "str" && typeof value === "string" && /\bfield/i.test(prop.doc)) names.push(...value.split(/[\s,]+/).filter(Boolean).map((field) => field.replace(/^-/, "")));
   }
   const wanted = [...new Set(names.filter(Boolean))];
   if (wanted.length > 0 && out.fields.length < MAX_CHECKS) out.fields.push({ where, key: dsKey, names: wanted });
@@ -113170,6 +113523,15 @@ function focusAsTarget(comp, name3, text5, registry3, out) {
   out.fixes.push(`${name3} '${formatRef(ref2)}' -> '${formatRef(chosen)}' (focus= names its ${meta5.target})`);
   return formatRef(chosen);
 }
+function checkMark(comp, name3, out) {
+  if (typeof comp.mark !== "string") return;
+  const read = readLineMarks(comp.mark);
+  if (read.fixed !== void 0) {
+    out.fixes.push(`${name3}#${comp.id}: mark '${oneLine(comp.mark, 60)}' -> '${oneLine(read.fixed, 60)}'`);
+    comp.mark = read.fixed;
+  }
+  if (read.ignored.length > 0) out.warnings.push(`${name3}#${comp.id}: ${ignoredMarksWarning(read.ignored)}`);
+}
 function expandComponent(comp, registry3, out, names) {
   const def = COMPONENT_BY_NAME.get(comp.component);
   if (!def) return;
@@ -113178,6 +113540,11 @@ function expandComponent(comp, registry3, out, names) {
   for (const [key2, prop] of Object.entries(def.props)) {
     if (prop.kind !== "data") continue;
     const value = comp[key2];
+    if (typeof value === "string" && DIAGRAMS[def.name]) {
+      const cleaned = DIAGRAMS[def.name](value);
+      if (!cleaned.ok) out.problems.push(problem("E_SHAPE", `${where(key2)}: ${cleaned.error}`, { component: def.name }));
+      continue;
+    }
     let text5;
     if (value === void 0) text5 = prop.source;
     else if (typeof value === "string") {
@@ -113212,20 +113579,53 @@ function expandComponent(comp, registry3, out, names) {
     boundFields.push(asRows ? NODE_FIELDS : checked.meta.kind === "rows" ? knownFields(checked.meta, ref2) : void 0);
     if (!asRows && kinds && !kinds.has(checked.meta.kind)) out.warnings.push(kindWarning(def.name, comp.id, checked.meta, kinds));
   }
-  if (def.name === "DataTable" && typeof comp.columns === "string") {
-    for (const error3 of checkColumns(comp.columns)) out.problems.push(problem("E_ENUM", `${where("columns")} column ${error3.statement}: ${error3.message}`, { component: def.name }));
+  const columns = comp.columns;
+  if (def.name === "DataTable" && columns !== void 0 && !isBinding(columns) && !(typeof columns === "object" && columns !== null && "@call" in columns)) {
+    for (const { column, type: type2, message } of readColumns(columns).problems) {
+      const at = `${where("columns")}${column > 0 ? ` column ${column}` : ""}`;
+      if (type2 === "kind") out.problems.push(problem("E_ENUM", `${at}: ${message}`, { component: def.name }));
+      else if (type2 === "shape") out.problems.push(problem("E_SHAPE", `${at}: ${message}`, { component: def.name }));
+      else out.warnings.push(`${at}: ${type2 === "dropped" ? "not drawn: " : ""}${message}`);
+    }
   }
   const fields2 = boundFields.length === 1 ? boundFields[0] : void 0;
   if (fields2 && fields2.length > 0) repairFields(comp, def.name, def.props, fields2, out);
   nameFiles(comp, def.name, def.props, out, names);
   collectChecks(comp, def.name, def.props, out);
-  if (def.name === "Split" && typeof comp.ratio === "string") comp.ratio = splitRatio(comp.ratio);
-  if ((def.name === "Flowchart" || def.name === "SequenceDiagram") && typeof comp.src === "string") {
-    const parsed = def.name === "Flowchart" ? parseFlow(comp.src) : parseSequence(comp.src);
-    if (!parsed.ok) {
-      for (const error3 of parsed.errors) out.problems.push(problem("E_NOTATION", `${where("src")} statement ${error3.statement}: ${error3.message}`, { component: def.name }));
+  proseRefs(comp, def.name, out, names);
+  if ("mark" in def.props) checkMark(comp, def.name, out);
+  if (def.name === "Split" && typeof comp.ratio === "string") splitRatioChecked(comp, out);
+  if (def.name === "Grid") gridCols(comp, out);
+  const clean2 = DIAGRAMS[def.name];
+  if (clean2 && comp.data !== void 0 && typeof comp.data !== "string" && !isBinding(comp.data)) {
+    const cleaned = clean2(comp.data);
+    if (!cleaned.ok) out.problems.push(problem("E_SHAPE", `${where("data")}: ${cleaned.error}`, { component: def.name }));
+    else {
+      out.fixes.push(...cleaned.fixes.map((fix) => `${def.name}#${comp.id}: ${fix}`));
+      out.warnings.push(...cleaned.dropped.map((drop) => `${def.name}#${comp.id}: not drawn: ${drop}`));
     }
   }
+}
+function diagramNotes(components, data, defined, written) {
+  const notes = { fixes: [], warnings: [] };
+  for (const comp of components) {
+    const clean2 = DIAGRAMS[comp.component];
+    if (!clean2 || !isBinding(comp.data)) continue;
+    const path2 = comp.data["@path"];
+    if (!path2.startsWith("/") || SERVER_PATH.test(path2)) continue;
+    if (!defined.has(comp.id) && !written.has(path2.split("/").filter(Boolean)[0] ?? "")) continue;
+    const value = lookup(data, path2);
+    if (value === void 0) continue;
+    const where = `${comp.component}#${comp.id}`;
+    const cleaned = clean2(value);
+    if (!cleaned.ok) {
+      notes.warnings.push(`${where}: E_SHAPE $${path2}: ${cleaned.error}`);
+      continue;
+    }
+    notes.fixes.push(...cleaned.fixes.map((fix) => `${where}: ${fix}`));
+    notes.warnings.push(...cleaned.dropped.map((drop) => `${where}: not drawn: ${drop}`));
+  }
+  return notes;
 }
 function checkPaths(message, out) {
   const refuse = (path2) => out.problems.push(problem("E_PATH", `$${path2} cannot be assigned: /ds and /meta are written by the server. Name a source in a data argument instead.`));
@@ -113282,10 +113682,11 @@ function boundKeys(components) {
   }
   return keys2;
 }
-var KIND_NOUN, sourceNames, allowsString, isBinding, MAX_CHECKS, PATH_TARGET, FIELD_SYNONYMS, UNDECLARED_FIELDS, squash, isFieldProp, RESERVED, reservedPath;
+var KIND_NOUN, sourceNames, allowsString, isBinding, MAX_CHECKS, PATH_TARGET, PROSE, FIELD_SYNONYMS, UNDECLARED_FIELDS, squash, isColumns, isFieldProp, DIAGRAMS, SERVER_PATH, RESERVED, reservedPath;
 var init_expand = __esm({
   "packages/server/src/spec/expand.ts"() {
     "use strict";
+    init_src();
     init_src();
     init_datasets2();
     init_registry();
@@ -113297,6 +113698,12 @@ var init_expand = __esm({
     isBinding = (value) => typeof value === "object" && value !== null && typeof value["@path"] === "string";
     MAX_CHECKS = 64;
     PATH_TARGET = /* @__PURE__ */ new Set(["path", "path|range"]);
+    PROSE = {
+      Text: { prop: "text", markdown: false },
+      Callout: { prop: "text", markdown: false },
+      Ask: { prop: "prompt", markdown: false },
+      Markdown: { prop: "text", markdown: true }
+    };
     FIELD_SYNONYMS = {
       churn: ["commits", "changes"],
       changes: ["commits"],
@@ -113422,7 +113829,13 @@ var init_expand = __esm({
       "code.todos": ["owner"]
     };
     squash = (text5) => text5.toLowerCase().replace(/[^a-z0-9]/g, "");
-    isFieldProp = (component2, key2, prop) => prop.kind === "str" && (/\bfield/i.test(prop.doc) || component2 === "DataTable" && key2 === "columns");
+    isColumns = (component2, key2) => component2 === "DataTable" && key2 === "columns";
+    isFieldProp = (component2, key2, prop) => isColumns(component2, key2) || prop.kind === "str" && /\bfield/i.test(prop.doc);
+    DIAGRAMS = {
+      Flowchart: cleanFlow,
+      SequenceDiagram: cleanSequence
+    };
+    SERVER_PATH = /^\/(?:ds|meta|ui)(?:\/|$)/;
     RESERVED = [PATHS.ds, PATHS.meta];
     reservedPath = (path2) => RESERVED.find((root2) => path2 === root2 || path2.startsWith(root2 + "/"));
   }
@@ -113452,18 +113865,18 @@ async function gitStamp(root2, runGit, signal2) {
     runGit(["rev-parse", "HEAD", "--abbrev-ref", "HEAD"], signal2 ? { signal: signal2 } : void 0).then((out) => out.toString("utf8").trim().replace(/\s+/g, " "), () => "unborn"),
     runGit(["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."], signal2 ? { signal: signal2 } : void 0)
   ]);
-  const entries = status.toString("utf8").split("\0").filter(Boolean);
-  const paths = [...new Set(entries.map((entry) => /^[ MADRCUT?!]{2} /.test(entry) ? entry.slice(3) : entry))].sort();
-  return [head2, ...entries, ...await stampAll(root2, paths.slice(0, MAX_STAMPED))];
+  const entries2 = status.toString("utf8").split("\0").filter(Boolean);
+  const paths = [...new Set(entries2.map((entry) => /^[ MADRCUT?!]{2} /.test(entry) ? entry.slice(3) : entry))].sort();
+  return [head2, ...entries2, ...await stampAll(root2, paths.slice(0, MAX_STAMPED))];
 }
 async function walkStamp(root2) {
   const out = [];
   const queue = [""];
   while (queue.length > 0 && out.length < MAX_WALKED) {
     const dir = queue.shift();
-    const entries = await readdir(join4(root2, dir), { withFileTypes: true }).catch(() => []);
+    const entries2 = await readdir(join4(root2, dir), { withFileTypes: true }).catch(() => []);
     const files = [];
-    for (const entry of entries.sort((a5, b6) => a5.name < b6.name ? -1 : a5.name > b6.name ? 1 : 0)) {
+    for (const entry of entries2.sort((a5, b6) => a5.name < b6.name ? -1 : a5.name > b6.name ? 1 : 0)) {
       const path2 = dir ? `${dir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         if (!SKIPPED_DIRS.has(entry.name)) queue.push(path2);
@@ -113816,11 +114229,11 @@ var init_surfaces = __esm({
         const known = new Map([...current?.bindings ?? [], ...options.refs]);
         const bound = boundKeys(components.values());
         const bindings = /* @__PURE__ */ new Map();
-        const unknownKeys = [];
+        const unknownKeys2 = [];
         for (const key2 of bound) {
           const ref2 = known.get(key2);
           if (ref2) bindings.set(key2, ref2);
-          else unknownKeys.push(key2);
+          else unknownKeys2.push(key2);
         }
         const mode = !previous ? "create" : !current || rootRedefined || lostProp || pruned > 0 ? "replace" : "patch";
         const inPlace = mode === "replace" && previous !== void 0 && [...previous.components.keys()].every((compId) => components.has(compId)) ? { previous, changed: new Set([...components].filter(([compId, comp]) => defined.has(compId) || !sameJson2(previous.components.get(compId), comp)).map(([compId]) => compId)) } : void 0;
@@ -113853,7 +114266,7 @@ var init_surfaces = __esm({
           createdAt: previous?.createdAt ?? options.now,
           updatedAt: options.now
         };
-        return { record: record3, mode, ...inPlace ? { inPlace } : {}, delta: mode === "patch" ? wholeSlots(messages, data) : [], newKeys, unknownKeys };
+        return { record: record3, mode, ...inPlace ? { inPlace } : {}, delta: mode === "patch" ? wholeSlots(messages, data) : [], newKeys, unknownKeys: unknownKeys2 };
       }
       /** Stores the draft. Returns the ids evicted to keep at most MAX_SURFACES (least recently updated first). */
       commit(draft) {
@@ -113981,7 +114394,7 @@ function drillOf(own6, target2) {
   const up = parent === "" || parent === base || base !== "" && !parent.startsWith(`${base}/`) ? "" : parent;
   return { target: target2, up };
 }
-var SLOT_COUNT, TREE_DEBOUNCE_MS, NO_GIT_POLL_MS, MAX_CHECK_WARNINGS, GALLERY_PICK_MS, PROSE, SLOT_SOURCES, deleteSurface, setData, describe3, GALLERY_CANDIDATES, FIRST_SCREEN, SMALL_DIR, hasDotGit, topSegment, Session;
+var SLOT_COUNT, TREE_DEBOUNCE_MS, NO_GIT_POLL_MS, MAX_CHECK_WARNINGS, GALLERY_PICK_MS, PROSE2, SLOT_SOURCES, deleteSurface, setData, describe3, GALLERY_CANDIDATES, FIRST_SCREEN, SMALL_DIR, hasDotGit, topSegment, Session;
 var init_session = __esm({
   "packages/server/src/session/session.ts"() {
     "use strict";
@@ -114006,7 +114419,7 @@ var init_session = __esm({
     NO_GIT_POLL_MS = 3e3;
     MAX_CHECK_WARNINGS = 6;
     GALLERY_PICK_MS = 3e3;
-    PROSE = /\.(?:md|mdx|markdown|txt|rst|adoc|ipynb)$/i;
+    PROSE2 = /\.(?:md|mdx|markdown|txt|rst|adoc|ipynb)$/i;
     SLOT_SOURCES = { lang: "files.langs", module: "deps.modules", author: "git.authors" };
     deleteSurface = (surfaceId2) => ({ version: PROTOCOL_VERSION, deleteSurface: { surfaceId: surfaceId2 } });
     setData = (surfaceId2, path2, value) => ({ version: PROTOCOL_VERSION, updateDataModel: { surfaceId: surfaceId2, path: path2, value } });
@@ -114173,7 +114586,7 @@ var init_session = __esm({
           const [files, facts] = await Promise.all([ctx.index.files(), ctx.index.facts()]);
           const ranked = [];
           for (const file of files) {
-            if (file.binary || file.generated || file.isTest || file.loc < 30 || PROSE.test(file.path)) continue;
+            if (file.binary || file.generated || file.isTest || file.loc < 30 || PROSE2.test(file.path)) continue;
             const symbols = facts.get(file.path)?.symbols.length ?? 0;
             if (symbols < 3) continue;
             ranked.push({ path: file.path, score: Math.min(symbols, 12) * 4 - Math.abs(Math.log2(file.loc / 150)) * 3 - file.path.split("/").length });
@@ -114213,7 +114626,7 @@ var init_session = __esm({
             const weight = /* @__PURE__ */ new Map();
             const langOf2 = (file) => file.lang ?? "";
             for (const file of files) if (!file.generated && !file.binary) weight.set(langOf2(file), (weight.get(langOf2(file)) ?? 0) + file.loc);
-            const declared = files.filter((file) => !file.generated && !file.binary && !PROSE.test(file.path) && inScope(file.path, scope2)).map((file) => ({ file, symbol: facts.get(file.path)?.symbols.find((symbol) => symbol.name === name3 && symbol.kind !== "heading") })).filter((found) => found.symbol !== void 0).sort((a5, b6) => (weight.get(langOf2(b6.file)) ?? 0) - (weight.get(langOf2(a5.file)) ?? 0) || Number(a5.file.isTest) - Number(b6.file.isTest) || (a5.file.path < b6.file.path ? -1 : a5.file.path > b6.file.path ? 1 : 0));
+            const declared = files.filter((file) => !file.generated && !file.binary && !PROSE2.test(file.path) && inScope(file.path, scope2)).map((file) => ({ file, symbol: facts.get(file.path)?.symbols.find((symbol) => symbol.name === name3 && symbol.kind !== "heading") })).filter((found) => found.symbol !== void 0).sort((a5, b6) => (weight.get(langOf2(b6.file)) ?? 0) - (weight.get(langOf2(a5.file)) ?? 0) || Number(a5.file.isTest) - Number(b6.file.isTest) || (a5.file.path < b6.file.path ? -1 : a5.file.path > b6.file.path ? 1 : 0));
             const first = declared[0];
             return first ? formatFileLoc({ path: first.file.path, line: first.symbol.line }) : void 0;
           }
@@ -114224,7 +114637,7 @@ var init_session = __esm({
           if (readme) return readme.path;
           let best;
           for (const file of inside2) {
-            if (file.binary || file.generated || file.isTest || PROSE.test(file.path)) continue;
+            if (file.binary || file.generated || file.isTest || PROSE2.test(file.path)) continue;
             if (!best || file.loc > best.loc || file.loc === best.loc && file.path < best.path) best = file;
           }
           return best?.path;
@@ -114294,9 +114707,10 @@ var init_session = __esm({
       // ---------------------------------------------------------------- show
       prepare(request, tools, registry3, names) {
         const current = request.fresh ? void 0 : this.surfaces.get(request.id);
+        const seed = current ? { components: [...current.components.values()], data: current.data } : void 0;
         const compiled = compileSpec(tools, {
           surfaceId: request.id,
-          ...current ? { seed: { components: [...current.components.values()], data: current.data } } : {},
+          ...seed ? { seed } : {},
           sources: request.sources,
           surfaces: this.surfaces.ids(),
           log: this.log
@@ -114315,7 +114729,15 @@ var init_session = __esm({
         });
         const unbound = [...unboundPaths(compiled.messages.flatMap(componentsOf), draft.record.data), ...draft.unknownKeys.map((key2) => `$/ds/${key2}`)];
         const compiledData = new Set(compiled.messages.flatMap((message) => "updateDataModel" in message ? [topSegment(message.updateDataModel.path)] : "createSurface" in message ? Object.keys(message.createSurface.dataModel ?? {}) : []));
-        return { draft, fixes: [...compiled.fixes, ...expansion.fixes], warnings: [...compiled.warnings, ...expansion.warnings, ...unbound.map((path2) => `unbound ${path2}`)], expansion, compiledData };
+        const defined = new Set(compiled.messages.flatMap((message) => componentsOf(message).map((comp) => comp.id)));
+        const diagrams = diagramNotes(draft.record.components.values(), draft.record.data, defined, compiledData);
+        return {
+          draft,
+          fixes: [...compiled.fixes, ...expansion.fixes, ...diagrams.fixes],
+          warnings: [...compiled.warnings, ...expansion.warnings, ...diagrams.warnings, ...unbound.map((path2) => `unbound ${path2}`)],
+          expansion,
+          compiledData
+        };
       }
       /**
        * Design 2.2, steps 2 to 9. Throws SpecError when the call is invalid; nothing has changed in that case.
@@ -114396,6 +114818,11 @@ var init_session = __esm({
           if (state === "ok") continue;
           if (state === "refused") {
             out.push(`${where}: "${path2.slice(0, 120)}" is not a file of this project (outside it, ignored, or not a regular file).`);
+            continue;
+          }
+          const target2 = await resolveInside(this.root, path2);
+          if (target2 && await lstat2(target2).then((info) => info.isDirectory(), () => false)) {
+            out.push(`${where}: "${path2.slice(0, 120)}" is a directory, not a file.`);
             continue;
           }
           candidates ??= (await ctx.index.files().catch(() => [])).map((entry) => entry.path);
@@ -114874,7 +115301,7 @@ function showText(report2) {
   const head2 = [okLine(outcome, report2.elapsedMs)];
   for (const fix of outcome.fixes.slice(0, MAX_FIXES)) head2.push(`fixed ${oneLine(fix, 120)}`);
   if (outcome.fixes.length > MAX_FIXES) head2.push(`fixed (+${outcome.fixes.length - MAX_FIXES} more repairs)`);
-  if (report2.repo) head2.push(clip4(report2.repo, 200));
+  if (report2.repo) head2.push(clip5(report2.repo, 200));
   const warnings = [...outcome.warnings, ...report2.late ?? []];
   const ds = [];
   let unchanged = 0;
@@ -114886,7 +115313,7 @@ function showText(report2) {
       const notes = (state?.warnings ?? []).map((warning) => oneLine(warning, 120)).filter((note) => note && !caveats.has(note));
       for (const note of notes) caveats.add(note);
       const summary = state?.status === "ready" ? oneLine(state.summary || "ready", 160) : "pending";
-      ds.push({ ref: clip4(ref2, 120), summary: notes.length > 0 ? clip4(`${summary}; ${notes.join("; ")}`, 280) : summary });
+      ds.push({ ref: clip5(ref2, 120), summary: notes.length > 0 ? clip5(`${summary}; ${notes.join("; ")}`, 280) : summary });
     }
   }
   const distinct = [...new Set(warnings.map((warning) => oneLine(warning, 200)).filter(Boolean))];
@@ -114896,8 +115323,8 @@ function showText(report2) {
   const fixed = () => sizeOf([...head2, ...parts ? [parts] : [], ...warn]) + (unchanged > 0 ? 24 : 0);
   fitSummaries(ds, RESULT_BUDGET - fixed());
   const dsSize = () => ds.reduce((sum, line) => sum + line.ref.length + line.summary.length + 7, 0);
-  if (fixed() + dsSize() > RESULT_BUDGET && parts.length > 160) parts = clip4(parts, 160);
-  for (let i10 = warn.length - 1; i10 >= 0 && fixed() + dsSize() > RESULT_BUDGET; i10--) warn[i10] = clip4(warn[i10], 100);
+  if (fixed() + dsSize() > RESULT_BUDGET && parts.length > 160) parts = clip5(parts, 160);
+  for (let i10 = warn.length - 1; i10 >= 0 && fixed() + dsSize() > RESULT_BUDGET; i10--) warn[i10] = clip5(warn[i10], 100);
   let folded = 0;
   if (fixed() + dsSize() > RESULT_BUDGET) {
     while (ds.length > 1 && fixed() + dsSize() + 52 > RESULT_BUDGET) {
@@ -114923,7 +115350,7 @@ function showText(report2) {
   ];
   return [shield(lines.join("\n")), ...report2.events].join("\n");
 }
-var text3, failed, viewerLines, showFailure, RESULT_BUDGET, MIN_SUMMARY, MAX_WARNINGS2, MAX_FIXES, clip4, sizeOf;
+var text3, failed, viewerLines, showFailure, RESULT_BUDGET, MIN_SUMMARY, MAX_WARNINGS2, MAX_FIXES, clip5, sizeOf;
 var init_result = __esm({
   "packages/server/src/mcp/result.ts"() {
     "use strict";
@@ -114936,7 +115363,7 @@ var init_result = __esm({
     MIN_SUMMARY = 48;
     MAX_WARNINGS2 = 8;
     MAX_FIXES = 6;
-    clip4 = (value, max) => value.length > max ? value.slice(0, Math.max(1, max - 1)).trimEnd() + "\u2026" : value;
+    clip5 = (value, max) => value.length > max ? value.slice(0, Math.max(1, max - 1)).trimEnd() + "\u2026" : value;
     sizeOf = (lines) => lines.reduce((sum, line) => sum + line.length + 1, 0);
   }
 });
@@ -115074,17 +115501,17 @@ var init_pendingContext = __esm({
 
 // packages/server/src/mcp/query.ts
 function cell(value, first = false) {
-  if (isRecord2(value) && typeof value.add === "number" && typeof value.del === "number" && Object.keys(value).length === 2) return `+${value.add} -${value.del}`;
+  if (isRecord4(value) && typeof value.add === "number" && typeof value.del === "number" && Object.keys(value).length === 2) return `+${value.add} -${value.del}`;
   const raw3 = value === null || value === void 0 ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
   const clipped = raw3.length > MAX_CELL ? raw3.slice(0, MAX_CELL - 1) + "\u2026" : raw3;
   const seen = skeleton(clipped);
   return UNSAFE_CHAR.test(clipped) || readsAsViewerLine(clipped) || first && FRAMING.test(seen) ? jsonQuote(clipped) : clipped;
 }
 function asRecords(rows) {
-  const records = rows.filter(isRecord2);
+  const records = rows.filter(isRecord4);
   if (records.length === rows.length) return records;
   const key2 = records.some((row) => Object.hasOwn(row, "label")) ? "label" : "value";
-  return rows.map((row) => isRecord2(row) ? row : { [key2]: row });
+  return rows.map((row) => isRecord4(row) ? row : { [key2]: row });
 }
 function rowsText(rows, fieldKeys, wanted, limit, total) {
   const records = asRecords(rows);
@@ -115106,7 +115533,7 @@ function treeText(root2, limit) {
   const stack = [root2];
   while (stack.length > 0) {
     const node3 = stack.pop();
-    if (!isRecord2(node3) || seen.has(node3)) continue;
+    if (!isRecord4(node3) || seen.has(node3)) continue;
     seen.add(node3);
     total++;
     if (rows.length < limit) rows.push([node3.path === "" ? "." : node3.path, node3.files, node3.loc]);
@@ -115116,8 +115543,8 @@ function treeText(root2, limit) {
 total=${total} returned=${rows.length}`;
 }
 function graphText(graph, limit, cutFrom) {
-  const nodes = (Array.isArray(graph.nodes) ? graph.nodes : []).filter(isRecord2);
-  const edges = (Array.isArray(graph.edges) ? graph.edges : []).filter(isRecord2);
+  const nodes = (Array.isArray(graph.nodes) ? graph.nodes : []).filter(isRecord4);
+  const edges = (Array.isArray(graph.edges) ? graph.edges : []).filter(isRecord4);
   const shownNodes = nodes.slice(0, limit);
   const shownEdges = [...edges].sort((a5, b6) => (Number(b6.weight) || 0) - (Number(a5.weight) || 0)).slice(0, limit);
   const total = Math.max(nodes.length, Number.isFinite(cutFrom) ? cutFrom : 0);
@@ -115140,13 +115567,13 @@ async function queryTool(session, args) {
     const { meta: meta5, result } = outcome;
     const caveats = boundWarnings(result.warnings ?? []);
     let body3;
-    if (meta5.kind === "tree" && isRecord2(result.data)) body3 = treeText(result.data, limit);
-    else if (meta5.kind === "graph" && isRecord2(result.data)) body3 = graphText(result.data, limit, result.truncated?.total);
+    if (meta5.kind === "tree" && isRecord4(result.data)) body3 = treeText(result.data, limit);
+    else if (meta5.kind === "graph" && isRecord4(result.data)) body3 = graphText(result.data, limit, result.truncated?.total);
     else if (Array.isArray(result.data)) {
       const rows = "top" in ref2.args ? result.data : result.allRows ?? result.data;
       const total = Math.max(result.total ?? 0, result.truncated?.total ?? 0, result.allRows?.length ?? 0, rows.length);
       body3 = rowsText(rows, (result.fields ?? meta5.fields)?.map((field) => field.key), wanted, limit, total);
-    } else if (isRecord2(result.data)) body3 = `${tsv(["key", "value"], Object.entries(result.data))}
+    } else if (isRecord4(result.data)) body3 = `${tsv(["key", "value"], Object.entries(result.data))}
 total=${Object.keys(result.data).length} returned=${Object.keys(result.data).length}`;
     else body3 = `${cell(result.data, true)}
 total=1 returned=1`;
@@ -115155,7 +115582,7 @@ total=1 returned=1`;
     return failure3(error3);
   }
 }
-var QUERY_DESCRIPTION, QUERY_SCHEMA, DEFAULT_LIMIT, MAX_LIMIT, MAX_CELL, wild, FRAMING, tsv, isRecord2, fieldOf;
+var QUERY_DESCRIPTION, QUERY_SCHEMA, DEFAULT_LIMIT, MAX_LIMIT, MAX_CELL, wild, FRAMING, tsv, isRecord4, fieldOf;
 var init_query2 = __esm({
   "packages/server/src/mcp/query.ts"() {
     "use strict";
@@ -115179,7 +115606,7 @@ var init_query2 = __esm({
     wild = (word) => [...word].map((ch) => /[a-z]/.test(ch) ? `[${ch}\\P{ASCII}]` : ch).join("");
     FRAMING = new RegExp(`^\\s*(?:(?:${["ok", "warn", "fixed", "repo", "ds", "parts", "slots", "sig"].map(wild).join("|")})\\s|${wild("total")}=|${wild("edges")}$|${wild("e")}_[a-z_]+\\s|${wild("nothing was rendered")})`, "u");
     tsv = (header, rows) => [header.join("	"), ...rows.map((row) => row.map((value, i10) => cell(value, i10 === 0)).join("	"))].join("\n");
-    isRecord2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+    isRecord4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
     fieldOf = (row, key2) => Object.hasOwn(row, key2) ? row[key2] : void 0;
   }
 });
@@ -125525,7 +125952,7 @@ function guessEmbeddedLanguages(code, _lang, highlighter2) {
   const bundle = highlighter2.getBundledLanguages();
   return [...langs].filter((l6) => l6 && bundle[l6]);
 }
-function splitToken(token3, offsets) {
+function splitToken2(token3, offsets) {
   let lastOffset = 0;
   const tokens = [];
   for (const offset of offsets) {
@@ -125565,7 +125992,7 @@ function splitTokens(tokens, breakpoints) {
       if (start === end) return token3;
       const breakpointsInToken = sorted.slice(start, end);
       for (let index2 = 0; index2 < breakpointsInToken.length; index2++) breakpointsInToken[index2] -= token3.offset;
-      return splitToken(token3, breakpointsInToken);
+      return splitToken2(token3, breakpointsInToken);
     });
   });
 }
@@ -125840,7 +126267,7 @@ function parseColor(sequence) {
     };
   }
 }
-function parseSequence2(sequence) {
+function parseSequence(sequence) {
   const commands = [];
   while (sequence.length > 0) {
     const code = sequence.shift();
@@ -125935,7 +126362,7 @@ function createAnsiSequenceParser() {
         decorations: new Set(decorations2)
       });
       if (findResult.sequence) {
-        const commands = parseSequence2(findResult.sequence);
+        const commands = parseSequence(findResult.sequence);
         for (const styleToken of commands) if (styleToken.type === "resetAll") {
           foreground = null;
           background = null;
@@ -126854,7 +127281,7 @@ __export(core_exports5, {
   normalizeTheme: () => normalizeTheme,
   resolveColorReplacements: () => resolveColorReplacements,
   splitLines: () => splitLines,
-  splitToken: () => splitToken,
+  splitToken: () => splitToken2,
   splitTokens: () => splitTokens,
   stringifyTokenStyle: () => stringifyTokenStyle,
   toArray: () => toArray,
@@ -130867,24 +131294,24 @@ var init_args = __esm({
 async function load(ctx, target2, signal2) {
   const git = requireGit(ctx);
   const changes = await listChanges(ctx, target2, signal2);
-  let entries = /* @__PURE__ */ new Map();
+  let entries2 = /* @__PURE__ */ new Map();
   if (changes.files.length > 0) {
     try {
-      entries = new Map((await ctx.index.files()).map((file) => [file.path, file]));
+      entries2 = new Map((await ctx.index.files()).map((file) => [file.path, file]));
     } catch (error3) {
       ctx.log(`glimpse: diff sources run without the file index: ${error3 instanceof Error ? error3.message : String(error3)}`);
     }
     signal2.throwIfAborted();
   }
   const warnings = [...changes.warnings, ...git.shallow && changes.range.kind === "commits" ? [SHALLOW_WARNING] : []];
-  return { changes, entries, warnings };
+  return { changes, entries: entries2, warnings };
 }
-function changeTree(files, entries, budget) {
+function changeTree(files, entries2, budget) {
   const root2 = draftDir("", "");
   let total = 1;
   for (const file of files) {
-    const entry = entries.get(file.path);
-    const lang35 = langOf(file, entries);
+    const entry = entries2.get(file.path);
+    const lang35 = langOf(file, entries2);
     const parts = file.path.split("/");
     let dir = root2;
     for (let depth = 0; depth < parts.length; depth++) {
@@ -130955,15 +131382,15 @@ var init_diff4 = __esm({
       if (!found) throw new Error(`source ${name3} is not in the catalog`);
       return found;
     };
-    langOf = (file, entries) => entries.get(file.path)?.lang ?? langOfPath(file.path)?.name;
-    testOf = (file, entries) => entries.get(file.path)?.isTest ?? isTestPath(file.path);
+    langOf = (file, entries2) => entries2.get(file.path)?.lang ?? langOfPath(file.path)?.name;
+    testOf = (file, entries2) => entries2.get(file.path)?.isTest ?? isTestPath(file.path);
     bySize2 = (a5, b6) => b6.add + b6.del - (a5.add + a5.del) || (a5.path < b6.path ? -1 : a5.path > b6.path ? 1 : 0);
     withWarnings = (warnings) => warnings.length > 0 ? { warnings } : {};
     totalsNote = (changes) => `${changes.range.label}: ${changes.totals.files} ${changes.totals.files === 1 ? "file" : "files"} +${changes.totals.add} -${changes.totals.del}`;
     diffStats = {
       meta: meta3("diff.stats"),
       async run(ctx, ref2, signal2) {
-        const { changes, entries, warnings } = await load(ctx, ref2.target, signal2);
+        const { changes, entries: entries2, warnings } = await load(ctx, ref2.target, signal2);
         const { range: range2, totals } = changes;
         let commits = 0;
         if (range2.logArgs) {
@@ -130971,7 +131398,7 @@ var init_diff4 = __esm({
           const counted = await ctx.runGit(["rev-list", "--count", "--no-merges", ...within2.length > 0 ? [FULL_HISTORY] : [], ...range2.logArgs, ...within2], { signal: signal2 });
           commits = Number(counted.toString("utf8").trim()) || 0;
         }
-        const tests = changes.files.filter((file) => testOf(file, entries)).length;
+        const tests = changes.files.filter((file) => testOf(file, entries2)).length;
         const data = [
           { label: "Files changed", value: totals.files },
           { label: "Added", value: totals.add, tone: "good" },
@@ -130991,9 +131418,9 @@ var init_diff4 = __esm({
       meta: meta3("diff.files"),
       async run(ctx, ref2, signal2) {
         const top = topOf2(ref2);
-        const { changes, entries, warnings } = await load(ctx, ref2.target, signal2);
+        const { changes, entries: entries2, warnings } = await load(ctx, ref2.target, signal2);
         const rows = [...changes.files].sort(bySize2).map((file) => {
-          const lang35 = langOf(file, entries);
+          const lang35 = langOf(file, entries2);
           return {
             path: file.path,
             ...file.from ? { from: file.from } : {},
@@ -131002,7 +131429,7 @@ var init_diff4 = __esm({
             del: file.del,
             delta: { add: file.add, del: file.del },
             ...lang35 ? { lang: lang35 } : {},
-            isTest: testOf(file, entries)
+            isTest: testOf(file, entries2)
           };
         });
         return cutRows(diffFiles.meta, rows, {
@@ -131017,8 +131444,8 @@ var init_diff4 = __esm({
     diffTree = {
       meta: meta3("diff.tree"),
       async run(ctx, ref2, signal2) {
-        const { changes, entries, warnings } = await load(ctx, ref2.target, signal2);
-        const tree = changeTree(changes.files, entries, diffTree.meta.budget);
+        const { changes, entries: entries2, warnings } = await load(ctx, ref2.target, signal2);
+        const tree = changeTree(changes.files, entries2, diffTree.meta.budget);
         return {
           data: tree.root,
           total: tree.total,
@@ -131446,9 +131873,9 @@ function gitHotspots(nowMs) {
       const h7 = await history(ctx, ref2, signal2, nowMs());
       const [files, facts] = await Promise.all([ctx.index.files(), ctx.index.facts()]);
       signal2.throwIfAborted();
-      const entries = new Map(files.map((file) => [file.path, file]));
+      const entries2 = new Map(files.map((file) => [file.path, file]));
       const candidates = fileStats(h7.log, h7.has).flatMap((stat3) => {
-        const entry = entries.get(stat3.path);
+        const entry = entries2.get(stat3.path);
         const fact = facts.get(stat3.path);
         if (!entry || !fact || entry.generated || entry.binary || languageOf(stat3.path)?.kind !== "code") return [];
         return [{ stat: stat3, complexity: Number.isFinite(fact.complexity) ? Math.max(0, fact.complexity) : 0, sloc: entry.sloc, isTest: entry.isTest }];

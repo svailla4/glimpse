@@ -1,12 +1,12 @@
 {
   "name": "glimpse",
   "displayName": "Glimpse",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Generative UI for codebases: render overviews, dependency graphs, hotspots, diffs and code tours of any repository in a local browser viewer.",
   "author": {
     "name": "Glimpse"
   },
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "FSL-1.1-ALv2",
   "keywords": [
     "visualization",
     "codebase",
