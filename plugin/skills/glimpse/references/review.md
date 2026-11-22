@@ -17,7 +17,7 @@ A finding may show the few lines it is about: `CodeView('path#L38-46',mark='41')
 
 ## Before you show it
 
-Does every finding name a real file and line, and could the author fix it from the text alone? Read the diff from git (`DiffView('a..b')`): a `CodeView` reads the working tree, which may not be the code under review.
+Fit the page to one decision: about eight parts. A choice that changes no code is a line in the verdict, not a plate of its own, and "Where to look" says what to check, not the links the findings already carry. Does every finding name a real file and line, and could the author fix it from the text alone? Read the diff from git (`DiffView('a..b')`): a `CodeView` reads the working tree, which may not be the code under review.
 
 Then run the reader check in SKILL.md, for the person who decides whether this change can merge.
 

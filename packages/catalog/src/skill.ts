@@ -12,14 +12,19 @@ export const SKILL_NAME = 'glimpse';
 export const SKILL_DESCRIPTION =
   'Draw live views of a codebase in the local Glimpse browser tab: designing or planning a feature before it is built, reviewing a change or a pull request, explaining existing code or onboarding onto it, and quick looks (overview, dependency map, hotspots, history, a file, a diff). Use whenever the user asks to see, show, visualize, map, design, plan, review, explain or walk through code, or when a picture of the code would answer faster than text.';
 
-/** The fresh reader's questions (SKILL.md, "The reader check"); `<who>` and `<act>` are filled in by the author. */
+/**
+ * The fresh reader's questions (SKILL.md, "The reader check"); `<who>`, `<act>` and `<root>` are filled in by the
+ * author. Question 6 is the one a reader of the page alone cannot answer: in the benchmark that tested this skill, the
+ * pages that won still carried a wrong budget figure and a line range that opened the wrong function.
+ */
 export const READER_PROMPT = `You have never seen this project, but you know software. This is a page drawn for <who> so they can <act>. Parts written as a source, such as 'git.churn src top=10', are tables and charts the tab fills from the repository; [[path#L10]] and file: values are links to code.
 1. In two sentences: what does the page tell you is being built, changed or explained, and why? If you cannot say, say what stopped you.
 2. Which words or names would you have to look up?
 3. For each figure, its one claim in a sentence. Name any figure whose claim you cannot state, and any arrow without a label.
 4. Where does code or detail crowd out the intent? Which part has nothing to say?
 5. What would you still have to ask before you could <act>?
-Answer in under 200 words.`;
+6. Only now, open the repository at <root>: pick the three claims the decision rests on most (a number, a line range, what a part does) and check them. Say which are wrong.
+Answer in under 250 words.`;
 
 interface Guide { name: GuideName; title: string; command: string; argument: string; scope?: string; reader: string; act: string; body: string }
 
@@ -72,7 +77,7 @@ A finding may show the few lines it is about: \`CodeView('path#L38-46',mark='41'
 
 ## Before you show it
 
-Does every finding name a real file and line, and could the author fix it from the text alone? Read the diff from git (\`DiffView('a..b')\`): a \`CodeView\` reads the working tree, which may not be the code under review.`,
+Fit the page to one decision: about eight parts. A choice that changes no code is a line in the verdict, not a plate of its own, and "Where to look" says what to check, not the links the findings already carry. Does every finding name a real file and line, and could the author fix it from the text alone? Read the diff from git (\`DiffView('a..b')\`): a \`CodeView\` reads the working tree, which may not be the code under review.`,
   },
   {
     name: 'explain', title: 'Explain existing code', command: 'Explain a part of the codebase, or how something works, as a Glimpse page',
@@ -171,7 +176,7 @@ The page is a blueprint handed to the people who will build, approve or maintain
 4. **One figure, one claim.** Each diagram or chart makes one point, and its \`title=\` states it as a sentence ("Every request passes the limiter first"), not a label ("Architecture"). Every arrow says what moves along it (\`'count +1'\`, \`'over the limit'\`). To compare, draw the difference: before and after, or the new parts in a group of their own.
 5. **Code is evidence.** Show code only where a few lines prove or illustrate a point: a contract, a pattern to copy, the line with the bug. Cite real lines (\`'path#L10-24'\`), mark the ones that matter and say in a note why they are there. The rest of the code is one click away (below), not on the page.
 6. **Say what does not change.** What stays the same and what is out of scope are part of the picture; a reader trusts a change whose edges are drawn.
-7. **Every reason has a source.** Reasons come from the code, the commits, the pull request, a decision log or the user. A reason you inferred says so ("inferred from the tests"). Leave a reason out rather than invent one.
+7. **Every reason and every number has a source.** Reasons come from the code, the commits, the pull request, a decision log or the user; a reason you inferred says so ("inferred from the tests"), and a reason you cannot find is left out. A number, a count or a line range on the page was read in this session, not remembered or estimated: take counts from \`query\` or the code, and open the file to check that \`path#L10-24\` starts at the thing you name (the server checks that a file exists, not what its lines hold).
 8. **Only parts with something to say.** Leave out a plate that would be empty, generic or a list of every file. A shorter page that is all signal reads faster.
 
 ## Use the live tab
@@ -188,11 +193,11 @@ The tab is not a document sent once. Use what a static page cannot do:
 Before you tell the user a design, a review or an explanation is ready (not for a quick look or a small patch), check it with a reader who has not seen this conversation:
 
 1. Draw the page with \`show\`.
-2. Start a fresh agent with no context from this conversation (in Claude Code, the Agent tool). Give it the spec you sent, the \`show\` result and this prompt, with \`<who>\` and \`<act>\` filled in from the guide:
+2. Start a fresh agent with no context from this conversation (in Claude Code, the Agent tool). Give it the spec you sent, the \`show\` result and this prompt, with \`<who>\` and \`<act>\` filled in from the guide and \`<root>\` the repository's path:
 
 ${READER_PROMPT.split('\n').map(line => `   > ${line}`).join('\n')}
 
-3. Patch what it found, then tell the user. Without a way to start an agent, answer the five questions yourself, as strictly as a stranger would.
+3. Patch what it found, then tell the user. Without a way to start an agent, answer the six questions yourself, as strictly as a stranger would.
 
 ## Writing the spec
 

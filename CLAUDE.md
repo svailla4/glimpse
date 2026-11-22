@@ -309,3 +309,13 @@ Decisions explained here:
   every recipe and allows no `fixed` line and no `warn` line but the missing example paths. The live tab is what no
   static-page skill covers: code behind a click, linked parts, questions answered in the tab, patches instead of
   redraws. The server instructions are unchanged (they stay within their budget); all of this is skill text.
+  Measured (2026-11-22, v0.1.6, one run per task, so a direction and not a statistic): the same three requests (design
+  comments on a view, review pull request #11, explain how a `show` call becomes a page) drawn by fresh agents with the
+  old skill and with this one, scored blind on seven criteria out of 35: design 23 -> 29, review 17 -> 32, explain
+  19 -> 29. Code on the page fell from a 4-stop tour (about 154 lines) to two short sketches in the design, and from
+  a 13-stop tour (about 447 lines) to none in the explanation, the code opening from the map on a click. The cost:
+  specs 1.7 to 2.9 times longer and about 4.7 minutes a page instead of 3.3, most of it the reader check. The judge
+  still found a wrong budget figure and a line range opening the wrong function on the winning pages, and a review
+  of 12 parts for one merge decision: hence numbers and ranges read in the session (rule 7), the reader's sixth
+  question (check three claims in the repository) and the review's limit of about eight parts.
+  Not done: re-measuring after those three changes; a check that a cited line range starts at the symbol it names.
