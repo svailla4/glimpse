@@ -46,6 +46,8 @@ export const HOST_ACTION_PREFIX = 'gl_';
 export interface HostActionContext {
   /** Selection changed (debounced 150 ms by the viewer). Stored as pending context for the agent. */
   gl_select: {ref: EntityRef | null};
+  /** A Slider's number (decision D25); the server takes the path from the Slider's own binding. */
+  gl_set: {value: number};
   /** Open in the user's editor. */
   gl_open: {file: FileLoc};
   /** Re-run dataset `ds` of this surface with a new positional target ("" = back to the original). */

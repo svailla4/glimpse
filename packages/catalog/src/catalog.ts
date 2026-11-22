@@ -1,5 +1,6 @@
 // packages/catalog/src/catalog.ts
 import {Catalog} from '@a2ui/web_core/v1_0';
+import {calcApis} from './calc.ts';
 import {COMPONENTS} from './components.ts';
 
 /** Permanent. A breaking catalog change mints urn:glimpse:catalog:v2 and the viewer registers both. */
@@ -12,6 +13,7 @@ export const CATALOG_INSTRUCTIONS = [
   'Data, chart, diagram and code components, and Text, Markdown, Chips and Stats, draw their own plate frame when given title=.',
   'Code and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.',
   'The current selection is at /ui/sel ({type,id,path?,line?,nodes?}); the selected file is at /ui/file ("path#L10-20").',
+  'Functions add, sub, mul and div(a, b) take numbers, bindings or calls. A Slider writes the number its value binds (host action gl_set).',
 ].join('\n');
 
 /** Schema-only catalog: validation, Express compilation and toJson() in Node. Never imports @a2ui/react. */
@@ -25,7 +27,7 @@ export function createApiCatalog() {
       ...(c.allowedParents ? {allowedParents: c.allowedParents} : {}),
       ...(c.allowedChildren ? {allowedChildren: c.allowedChildren} : {}),
     })),
-    [],
+    calcApis(),
     {instructions: CATALOG_INSTRUCTIONS, title: 'Glimpse', description: 'Generative UI for codebases.'},
   );
 }

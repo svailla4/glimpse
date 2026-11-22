@@ -4,10 +4,10 @@ Generative UI for codebases. Glimpse lets a coding agent *show* you a repository
 
 Glimpse is two things:
 
-- **A component library**: 44 React components behind an [A2UI](https://a2ui.org) v1.0 catalog, drawn in one design language, Linework.
+- **A component library**: 45 React components behind an [A2UI](https://a2ui.org) v1.0 catalog, drawn in one design language, Linework.
 - **An MCP server** with five tools. It compiles the agent's spec, runs the repository analyzers, and hosts the viewer on `127.0.0.1`.
 
-**Status: working but young.** All 44 components, the 26 data sources, the ten preset views and the five tools are implemented and covered by unit, component and end-to-end tests. It has been run on macOS with Chromium only and has had one round of testing with a model writing the specs. [Status and known limitations](#status-and-known-limitations) has the details.
+**Status: working but young.** All 45 components, the 26 data sources, the ten preset views and the five tools are implemented and covered by unit, component and end-to-end tests. It has been run on macOS with Chromium only and has had one round of testing with a model writing the specs. [Status and known limitations](#status-and-known-limitations) has the details.
 
 ## What it looks like
 
@@ -188,7 +188,7 @@ The catalog prefers accepting a reasonable guess to documenting the one right sp
 
 ## Components
 
-44 components in seven families. `catalog{names:["DataTable"]}` returns any signature with its props, the shape of its data and an example; `show{view:"gallery"}` draws them all.
+45 components in seven families. `catalog{names:["DataTable"]}` returns any signature with its props, the shape of its data and an example; `show{view:"gallery"}` draws them all.
 
 | Family | Components |
 |---|---|
@@ -198,7 +198,7 @@ The catalog prefers accepting a reasonable guess to documenting the one right sp
 | Charts (10) | `Sparkline` `SegmentedBar` `BarChart` `LineChart` `ScatterPlot` `Histogram` `Heatmap` `CalendarHeatmap` `Treemap` `Icicle` |
 | Diagrams (5) | `Graph` `Flowchart` `SequenceDiagram` `Layers` `ERDiagram` |
 | Code (5) | `CodeBlock` `CodeView` `DiffView` `CodeTour` `SymbolOutline` |
-| Input (2) | `Button` `Ask` |
+| Input (3) | `Button` `Ask` `Slider` |
 
 Charts are Glimpse's own SVG on `d3-scale`, `d3-shape` and `d3-hierarchy`. `Graph`, `Flowchart` and `ERDiagram` are laid out by [ELK](https://eclipse.dev/elk/) (`elkjs`, layered: group frames sized around their members, orthogonal edges routed across them, ports for table columns) in a Web Worker, and drawn with [React Flow](https://reactflow.dev) (`@xyflow/react`) in the same hairline style; both load only when a page first shows one of these diagrams. `SequenceDiagram` and `Layers` are drawn directly in SVG and HTML; a `SequenceDiagram` draws Mermaid's `alt`, `opt`, `loop`, `par`, `critical` and `break` blocks as labelled frames, with a dashed divider for each `else`, `and` or `option`, and closes a block left open with a `fixed` line. Its arrow keys step through the messages and select each in turn, so a message whose actors stand for Flowchart nodes lights its route there, including the nodes it passes through (`via`). A Flowchart node with a `note` or a `file` is marked with a dot; its note shows on hover and in the plate's margin when it is selected, and its file opens with Cmd-click. A diagram is as tall as it is at the scale that fits the plate's width, up to the plate's maximum: when all of it is readable there (text at 10 px or more on screen) it opens fitted and centred, otherwise at a readable zoom with pan, zoom and a minimap. Tables and code views are virtualised; syntax highlighting is done by the server (Shiki) and sent as token classes, never as markup.
 
@@ -282,10 +282,10 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 
 | Budget | Limit | Now |
 |---|---|---|
-| Server instructions | 3,750 chars (hard limit 4,000) | 3,749 |
+| Server instructions | 3,750 chars (hard limit 4,000) | 3,748 |
 | `show` + `catalog` definitions | 1,500 chars | 1,147 |
 | Largest preset result (`overview`) | 1,200 chars | 1,095 |
-| Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 195.0 kB |
+| Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 194.1 kB |
 | Largest other lazy chunk, gzip | 120 kB | 46.8 kB |
 | Diagram engine, gzip: ELK worker, React Flow, diagrams chunk | 515 kB, 90 kB, 43 kB | 448.4 kB, 77.7 kB, 37.7 kB |
 

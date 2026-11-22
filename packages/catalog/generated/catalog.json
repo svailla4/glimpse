@@ -5,7 +5,7 @@
   "title": "Glimpse",
   "description": "Generative UI for codebases.",
   "catalogId": "urn:glimpse:catalog:v1",
-  "instructions": "Root is Page(title, children). Children flow on a 12-column grid; every component takes span=1..12.\nData props take a /ds binding (server dataset), any other binding, or an inline value. Datasets are self-describing: tables and charts need no column or axis props.\nData, chart, diagram and code components, and Text, Markdown, Chips and Stats, draw their own plate frame when given title=.\nCode and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.\nThe current selection is at /ui/sel ({type,id,path?,line?,nodes?}); the selected file is at /ui/file (\"path#L10-20\").",
+  "instructions": "Root is Page(title, children). Children flow on a 12-column grid; every component takes span=1..12.\nData props take a /ds binding (server dataset), any other binding, or an inline value. Datasets are self-describing: tables and charts need no column or axis props.\nData, chart, diagram and code components, and Text, Markdown, Chips and Stats, draw their own plate frame when given title=.\nCode and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.\nThe current selection is at /ui/sel ({type,id,path?,line?,nodes?}); the selected file is at /ui/file (\"path#L10-20\").\nFunctions add, sub, mul and div(a, b) take numbers, bindings or calls. A Slider writes the number its value binds (host action gl_set).",
   "components": {
     "Page": {
       "type": "object",
@@ -632,7 +632,7 @@
         },
         "value": {
           "$ref": "common_types.json#/$defs/DynamicValue",
-          "description": "Number or short string."
+          "description": "Number, short string or a call, e.g. div($/w/seats,60)."
         },
         "label": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -659,7 +659,7 @@
             "pct",
             "duration"
           ],
-          "description": "Number format. Default compact. One of: num|compact|bytes|pct|duration."
+          "description": "Number format. Default: in full below 10,000, else compact. One of: num|compact|bytes|pct|duration."
         },
         "span": {
           "type": "integer",
@@ -2118,6 +2118,180 @@
         "prompt",
         "options"
       ]
+    },
+    "Slider": {
+      "type": "object",
+      "description": "A number the user sets: a field, and a range when min and max are given. Calls reading it update.",
+      "properties": {
+        "component": {
+          "const": "Slider"
+        },
+        "label": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Caption."
+        },
+        "value": {
+          "$ref": "common_types.json#/$defs/DynamicNumber",
+          "description": "The $/path it writes; seed it: $/w={seats:50000}. Compute from it in any value, inline rows too: add|sub|mul|div(a, b) of numbers, $/paths or calls."
+        },
+        "min": {
+          "type": "number",
+          "description": "Lowest value. With max, a range is drawn too."
+        },
+        "max": {
+          "type": "number",
+          "description": "Highest value."
+        },
+        "step": {
+          "type": "number",
+          "description": "Step. Default: a hundredth of max-min, else any."
+        },
+        "unit": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "Unit after the field."
+        },
+        "span": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Grid columns 1-12."
+        }
+      },
+      "required": [
+        "component",
+        "label",
+        "value"
+      ]
+    }
+  },
+  "functions": {
+    "add": {
+      "type": "object",
+      "description": "a + b.",
+      "returnType": "number",
+      "properties": {
+        "@call": {
+          "const": "add"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "$ref": "common_types.json#/$defs/DynamicNumber",
+              "description": "First operand."
+            },
+            "b": {
+              "$ref": "common_types.json#/$defs/DynamicNumber",
+              "description": "Second operand."
+            }
+          },
+          "required": [
+            "a",
+            "b"
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ]
+    },
+    "sub": {
+      "type": "object",
+      "description": "a - b.",
+      "returnType": "number",
+      "properties": {
+        "@call": {
+          "const": "sub"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "$ref": "common_types.json#/$defs/DynamicNumber",
+              "description": "First operand."
+            },
+            "b": {
+              "$ref": "common_types.json#/$defs/DynamicNumber",
+              "description": "Second operand."
+            }
+          },
+          "required": [
+            "a",
+            "b"
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ]
+    },
+    "mul": {
+      "type": "object",
+      "description": "a * b.",
+      "returnType": "number",
+      "properties": {
+        "@call": {
+          "const": "mul"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "$ref": "common_types.json#/$defs/DynamicNumber",
+              "description": "First operand."
+            },
+            "b": {
+              "$ref": "common_types.json#/$defs/DynamicNumber",
+              "description": "Second operand."
+            }
+          },
+          "required": [
+            "a",
+            "b"
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ]
+    },
+    "div": {
+      "type": "object",
+      "description": "a / b; no value when b is 0.",
+      "returnType": "number",
+      "properties": {
+        "@call": {
+          "const": "div"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "$ref": "common_types.json#/$defs/DynamicNumber",
+              "description": "First operand."
+            },
+            "b": {
+              "$ref": "common_types.json#/$defs/DynamicNumber",
+              "description": "Second operand."
+            }
+          },
+          "required": [
+            "a",
+            "b"
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ]
     }
   },
   "$defs": {
@@ -2254,6 +2428,9 @@
         },
         {
           "$ref": "#/components/Ask"
+        },
+        {
+          "$ref": "#/components/Slider"
         }
       ],
       "discriminator": {
@@ -2261,7 +2438,20 @@
       }
     },
     "anyFunction": {
-      "not": {}
+      "oneOf": [
+        {
+          "$ref": "#/functions/add"
+        },
+        {
+          "$ref": "#/functions/sub"
+        },
+        {
+          "$ref": "#/functions/mul"
+        },
+        {
+          "$ref": "#/functions/div"
+        }
+      ]
     }
   }
 }

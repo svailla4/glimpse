@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {COMPONENT_BY_NAME, COMPONENTS, SHARED_PROPS, SOURCE_BY_NAME, enumValue, hasFrame, parseRef, type Prop} from '../src/index.ts';
+import {COMPONENT_BY_NAME, COMPONENT_EXAMPLES, COMPONENTS, SHARED_PROPS, SOURCE_BY_NAME, enumValue, hasFrame, parseRef, type Prop} from '../src/index.ts';
 import {buildSurface, strictErrors} from '../testing/index.ts';
 import {exampleSpec} from './support.ts';
 
@@ -10,9 +10,9 @@ const propsOf = (def: (typeof COMPONENTS)[number]) => Object.entries(def.props) 
 const propOf = (component: string, key: string): Prop => (COMPONENT_BY_NAME.get(component)!.props as Record<string, Prop>)[key]!;
 
 describe('catalog lint', () => {
-  it('has 44 uniquely named components and none is called Surface', () => {
-    expect(COMPONENTS).toHaveLength(44);
-    expect(COMPONENT_BY_NAME.size).toBe(44);
+  it('has 45 uniquely named components and none is called Surface', () => {
+    expect(COMPONENTS).toHaveLength(45);
+    expect(COMPONENT_BY_NAME.size).toBe(45);
     expect(COMPONENT_BY_NAME.has('Surface')).toBe(false);
     for (const def of COMPONENTS) expect(def.name, def.name).toMatch(/^[A-Z][A-Za-z0-9]*$/);
   });
@@ -93,7 +93,7 @@ describe('catalog lint', () => {
     expect((propOf('Steps', 'current')).doc).toMatch(/counting from 1/);
   });
 
-  it.each(COMPONENTS.map(def => [def.name, def.example] as const))('the %s example compiles and is strictly valid', (name, example) => {
+  it.each(COMPONENTS.map(def => [def.name, COMPONENT_EXAMPLES[def.name]] as const))('the %s example compiles and is strictly valid', (name, example) => {
     const messages = buildSurface('example', exampleSpec(example));
     const first = messages[0]!;
     expect('createSurface' in first).toBe(true);

@@ -2,8 +2,8 @@ import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENTS, EXAMPLES, INSTRUCTIONS_BUDGET, INSTRUCTIONS_LINE_MAX, INSTRUCTIONS_TARGET, SHAPES, SHARED_PROPS, SKILL_DESCRIPTION, SOURCES, VIEWS, VIEW_INDEX, componentDoc,
-  componentIndex, componentsDrawing, exampleCall, examplesDoc, hasFrame, partsOf, serverInstructions, shapeKinds, shapesOf, signatureOf,
+  COMPONENT_EXAMPLES, COMPONENTS, EXAMPLES, INSTRUCTIONS_BUDGET, INSTRUCTIONS_LINE_MAX, INSTRUCTIONS_TARGET, SHAPES, SHARED_PROPS, SKILL_DESCRIPTION, SOURCES, VIEWS, VIEW_INDEX, componentDoc,
+  calcDoc, componentIndex, componentsDrawing, exampleCall, examplesDoc, hasFrame, partsOf, serverInstructions, shapeKinds, shapesOf, signatureOf,
   skillMarkdown, sourceDoc, sourceGroups, sourceIndex, typedSignatureList, viewDoc, viewGroups, type Prop,
 } from '../src/index.ts';
 import {buildArtifacts} from '../testing/artifacts.ts';
@@ -71,6 +71,16 @@ describe('server instructions', () => {
     expect(graphs![1]!.split(', ')).toEqual(SOURCES.filter(s => s.kind === 'graph').map(s => s.name));
   });
 
+  // Decision D25: one index entry for the Slider, paid for by cutting '; catalog{} lists more' from the Components
+  // header (the MORE line already says catalog{} details components). The functions are found through the Slider and
+  // Stat docs, catalog{names:['div']} and the compile errors, not through the instructions.
+  it('list the Slider and keep the Components header short', () => {
+    expect(text).toContain('\nInput: Button(label, action, tone?) Ask(prompt, options, name?) Slider(label, value)\n');
+    expect(text).toContain('\nComponents (? optional):\n');
+    expect(componentDoc('Slider')).toContain('add|sub|mul|div(a, b) of numbers, $/paths or calls');
+    expect(componentDoc('Stat')).toContain('a call, e.g. div($/w/seats,60)');
+  });
+
   it('say which components take the frame props, and that is every component that does', () => {
     const m = / on ([A-Za-z, ]+) \(not ([A-Za-z, ]+)\)\.$/.exec(text.split('\n').find(l => l.startsWith('SHARED'))!)!;
     const families: Record<string, string> = {Data: 'data', Charts: 'chart', Diagrams: 'diagram', Code: 'code'};
@@ -113,13 +123,22 @@ describe('component docs', () => {
     expect(lines).toContain("A Chips(data~:ChipItem[]='repo.stack') +frame");
   });
 
+  // Decision D25: what catalog{names:['div']} answers (not budgeted, but held to a component entry's size).
+  it('calcDoc names the four functions, and its example compiles', () => {
+    const doc = calcDoc();
+    expect(doc.startsWith('add|sub|mul|div(a, b) - a+b, a-b, a*b, a/b; ')).toBe(true);
+    expect(doc.length).toBeLessThanOrEqual(1000);
+    const example = /^ {2}e\.g\. (.*)$/m.exec(doc)![1]!;
+    expect(strictErrors(buildSurface('calc', `$/w={seats:50000,conv:0.6,secs:120}\nroot=Page('Calc',[${example}])`))).toEqual([]);
+  });
+
   it.each(COMPONENTS.map(def => [def.name, def] as const))('componentDoc(%s) is a compact, complete entry', (name, def) => {
     const doc = componentDoc(name)!;
     expect(doc.length).toBeGreaterThanOrEqual(100);
     expect(doc.length).toBeLessThanOrEqual(1000);
     expect(doc.startsWith(signatureOf(def))).toBe(true);
     expect(doc).toContain(def.doc);
-    expect(doc.endsWith(`  e.g. ${def.example}`)).toBe(true);
+    expect(doc.endsWith(`  e.g. ${COMPONENT_EXAMPLES[def.name]}`)).toBe(true);
     const frame = hasFrame(def);
     for (const key of Object.keys(def.props)) {
       if (key === 'span') continue;

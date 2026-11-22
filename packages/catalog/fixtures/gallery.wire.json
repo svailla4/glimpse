@@ -106,7 +106,9 @@
           "children": [
             "input_children_0",
             "input_children_1",
-            "input_children_2"
+            "input_children_2",
+            "input_children_3",
+            "input_children_4"
           ]
         },
         {
@@ -833,6 +835,39 @@
             "In-memory"
           ],
           "name": "store",
+          "span": 6
+        },
+        {
+          "id": "input_children_3",
+          "component": "Slider",
+          "label": "Seats on sale",
+          "value": {
+            "@path": "/g/seats"
+          },
+          "min": 1000,
+          "max": 200000,
+          "step": 1000,
+          "span": 6
+        },
+        {
+          "id": "input_children_4",
+          "component": "Stat",
+          "value": {
+            "@call": "div",
+            "args": {
+              "a": {
+                "@call": "mul",
+                "args": {
+                  "a": {
+                    "@path": "/g/seats"
+                  },
+                  "b": 0.6
+                }
+              },
+              "b": 120
+            }
+          },
+          "label": "checkout req/s",
           "span": 6
         }
       ],
@@ -1597,7 +1632,8 @@
             "workspaces": [
               "packages/*"
             ]
-          }
+          },
+          "seats": 50000
         },
         "ds": {},
         "ui": {

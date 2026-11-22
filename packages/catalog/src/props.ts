@@ -115,6 +115,8 @@ export const p = {
   /** Static integer. */
   int: (doc: string, min = 0, max = 1_000_000) =>
     mk<number, number>('int', z.number().int().min(min).max(max).describe(doc), doc),
+  /** Static number (decision D25: Slider min, max and step). */
+  num: (doc: string) => mk<number, number>('num', z.number().finite().describe(doc), doc),
   /** Static boolean. */
   flag: (doc: string) => mk<boolean, boolean>('flag', z.boolean().describe(doc), doc),
   /** Static string list. */
@@ -146,10 +148,8 @@ export interface ComponentMeta {
   family: Family;
   chunk: Chunk;
   tier: Tier;
-  /** One line, <= 80 chars: used in catalog.json, docs and the instructions index. */
+  /** One line, <= 100 chars (test/lint.test.ts): used in catalog.json, docs and the instructions index. */
   doc: string;
-  /** One Express example line (compiled in CI). */
-  example: string;
   allowedParents?: string[];
   allowedChildren?: string[];
 }

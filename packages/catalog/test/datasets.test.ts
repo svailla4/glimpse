@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENT_BY_NAME, FILE_REF, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, cleanFlow, cleanItems, cleanLayers, cleanSchema, cleanSequence, fileRefs, formatFileLoc, galleryData,
+  COMPONENT_BY_NAME, FILE_REF, GALLERY_DATA, GALLERY_ROOT, GALLERY_SPEC, callsIn, cleanFlow, cleanItems, cleanLayers, cleanSchema, cleanSequence, explainValue, fileRefs, formatFileLoc, galleryData,
   galleryRoot, gallerySpec,
   ignoredMarksWarning, parseFileLoc, readLineMarks, replaceFileRefs,
   type A2uiMessage, type ErTable, type GraphData, type WireComponent,
@@ -206,7 +206,7 @@ describe('gallery', () => {
     expect(table.span).toBeUndefined();
   });
 
-  it('still shows all 44 components, and its diagrams draw whole', () => {
+  it('still shows all 45 components, and its diagrams draw whole', () => {
     expect(new Set(surface.components.map(c => c.component)).size).toBe(COMPONENT_BY_NAME.size);
     const flow = cleanFlow(props(one('Flowchart')).data);
     expect(flow.ok && {nodes: flow.ast.nodes.length, groups: flow.ast.groups.length, fixes: flow.fixes, dropped: flow.dropped}).toEqual({nodes: 6, groups: 1, fixes: [], dropped: []});
@@ -230,5 +230,14 @@ describe('gallery', () => {
     expect(flow.ast.edges.some(e => e.from === 'H' && e.to === 'DB')).toBe(true);
     const ids = new Set(flow.ast.nodes.map(n => n.id));
     for (const id of ['DB', 'H']) expect(ids.has(id), id).toBe(true);
+  });
+  // Decision D25: the Input section's Stat is computed from the number its Slider sets.
+  it('computes a Stat from the Slider it shows: 250 checkout req/s at 50,000 seats', () => {
+    expect(props(one('Slider'))).toMatchObject({value: {'@path': '/g/seats'}, min: 1000, max: 200000, step: 1000});
+    expect(model.g.seats).toBe(50000);
+    const computed = surface.components.flatMap(c => callsIn(c).map(({at, call}) => ({id: c.id, at, call})));
+    expect(computed.map(({at}) => at)).toEqual(['value']);
+    const read = (path: string) => path.split('/').slice(1).reduce<unknown>((v, key) => (v as Record<string, unknown>)?.[key], model);
+    expect(explainValue(computed[0]!.call, read)).toEqual({value: 250});
   });
 });

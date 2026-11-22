@@ -2,7 +2,7 @@
 // test supplies, so kit tests do not depend on any component package being finished.
 import {A2uiSurface, type ReactCatalogComponent} from '@a2ui/react';
 import {Catalog, MessageProcessor, type ActionPayload} from '@a2ui/web_core/v1_0';
-import {CATALOG_ID, COMPONENTS, type A2uiMessage, type DataClient} from '@glimpse/catalog';
+import {CATALOG_ID, COMPONENTS, calcFunctions, type A2uiMessage, type DataClient} from '@glimpse/catalog';
 import {createFixtureHost} from '@glimpse/catalog/fixtures';
 import {buildSurface, type BuildSurfaceOptions} from '@glimpse/catalog/testing';
 import {act, render} from '@testing-library/react';
@@ -27,7 +27,7 @@ export function renderStub(spec: string, views: Record<string, GlView<any>>, opt
   for (const def of COMPONENTS) all[def.name] = views[def.name] ?? fallback(def.name);
   const module: ViewModule = {views: all};
   const loaders: ChunkLoaders = {layout: module, content: module, table: module, charts: module, diagrams: module, code: module};
-  const catalog = new Catalog<ReactCatalogComponent>(CATALOG_ID, '1.0', COMPONENTS.map(def => implement(def as never, loaders, kitSlots)), []);
+  const catalog = new Catalog<ReactCatalogComponent>(CATALOG_ID, '1.0', COMPONENTS.map(def => implement(def as never, loaders, kitSlots)), calcFunctions());
   const actions: ActionPayload[] = [];
   const reports: RenderReport[] = [];
   const states: RenderReport[] = [];

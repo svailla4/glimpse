@@ -35,7 +35,7 @@ function placeOf(options: GalleryOptions): {file: string; at: (from: number, to?
 
 /**
  * The fixture data under $/g. The plan's steps and the `users` table name lines of `options.file`, and the
- * `sessions` table stands for the gallery Flowchart's node DB (decision D24).
+ * `sessions` table stands for the gallery Flowchart's node DB (decision D24). `seats` is the Slider's number.
  */
 export function galleryData(options: GalleryOptions = {}): string {
   const {file, at} = placeOf(options);
@@ -69,7 +69,8 @@ $/g/plan=[{title:'Add limiter middleware',note:'Sliding window per IP.',status:'
 $/g/schema=[{name:'users',file:'${file}#L${at(0)}',columns:[{name:'id',type:'uuid',pk:true},{name:'email',type:'text'},{name:'created_at',type:'timestamptz'}]},
  {name:'sessions',node:'DB',columns:[{name:'id',type:'uuid',pk:true},{name:'user_id',type:'uuid',fk:'users.id'},{name:'expires_at',type:'timestamptz',nullable:true}]},
  {name:'orders',columns:[{name:'id',type:'uuid',pk:true},{name:'user_id',type:'uuid',fk:'users.id'},{name:'status',type:'text'},{name:'currency',type:'text'},{name:'subtotal_cents',type:'int'},{name:'tax_cents',type:'int'},{name:'shipping_cents',type:'int'},{name:'total_cents',type:'int'},{name:'coupon',type:'text',nullable:true},{name:'ship_to',type:'jsonb'},{name:'bill_to',type:'jsonb'},{name:'placed_at',type:'timestamptz'},{name:'paid_at',type:'timestamptz',nullable:true},{name:'shipped_at',type:'timestamptz',nullable:true},{name:'cancelled_at',type:'timestamptz',nullable:true}]}]
-$/g/config={name:'demo',private:true,scripts:{dev:'vite',test:'vitest run'},engines:{node:'>=20'},workspaces:['packages/*']}`;
+$/g/config={name:'demo',private:true,scripts:{dev:'vite',test:'vitest run'},engines:{node:'>=20'},workspaces:['packages/*']}
+$/g/seats=50000`;
 }
 
 export const GALLERY_DATA = galleryData();
@@ -80,7 +81,8 @@ export const GALLERY_DATA = galleryData();
  * a table wide enough to fold), Layers rows named by `title` and `label`, `mark='L1-3'`, graph nodes with a status,
  * and `title=` on Markdown. It also links its diagrams (decision D24): a Layers item, the `sessions` table and the
  * DB actor stand for Flowchart node DB (which has a note and a file), and actor Auth for node H, so a click on DB
- * lights all of them and the message Auth -> DB lights the edge H -> DB.
+ * lights all of them and the message Auth -> DB lights the edge H -> DB. The Input section computes a Stat from the
+ * number its Slider sets (decision D25): `div(mul($/g/seats,0.6),120)`, 250 at the seed.
  */
 export function galleryRoot(options: GalleryOptions = {}): string {
   const {file, at} = placeOf(options);
@@ -91,7 +93,7 @@ data=Section('Data',[DataTable($/g/files,'path:path lang:lang loc:num commits:ba
 charts=Section('Charts',[SegmentedBar($/g/langs,'lang','loc',title='SegmentedBar',span=12),BarChart($/g/files,'path','commits',title='BarChart',span=6),LineChart($/g/weeks,'week','commits','module',mode='stacked',title='LineChart',span=6),ScatterPlot($/g/files,'commits','complexity',r='loc',label='path',quadrants=true,title='ScatterPlot',span=6),Histogram($/g/files,'loc',title='Histogram',span=6),Heatmap($/g/matrix,'to','from','weight',title='Heatmap',span=4),CalendarHeatmap($/g/days,title='CalendarHeatmap',span=8),Treemap($/g/tree,title='Treemap',size='l',span=7),Icicle($/g/tree,title='Icicle',size='l',span=5)])
 diagrams=Section('Diagrams',[Graph($/g/graph,title='Graph',span=7),Layers([{name:'Interface',items:['ui',{label:'api',file:'${file}'}]},{title:'Domain',items:['auth'],note:'owns sessions'},{label:'Storage',items:[{label:'postgres',node:'DB'},'redis']}],title='Layers',span=5),Flowchart({groups:{svc:'Service'},nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond',group:'svc'},H:{label:'Handler',group:'svc'},E:{label:'429',shape:'pill'},DB:{label:'Postgres',shape:'store',note:'users and sessions',file:'${file}'},C:{label:'cache',shape:'circle'}},edges:[['Req','RL'],['RL','H','no'],['RL','E','yes'],['H','DB'],{from:'H',to:'C',dashed:true}]},title='Flowchart',span=6),SequenceDiagram({actors:{User:'User',API:'API',Auth:{label:'Auth',node:'H'},DB:'DB'},steps:[['User','API','POST /login'],['API','Auth','verify(password)'],{loop:'each key',steps:[['Auth','DB','find user'],['DB','Auth','row','reply']]},{note:'constant-time compare',over:['Auth','DB']},{alt:'valid',steps:[['Auth','API','token','reply'],['API','User','200','reply']],else:[{label:'invalid',steps:[['API','User','401','reply']]}]}]},title='SequenceDiagram',span=6),ERDiagram($/g/schema,title='ERDiagram')])
 code=Section('Code',[CodeBlock('export async function take(ip: string) {\\n  const n = await redis.incr(\`rl:\${ip}\`);\\n  return n <= 100;\\n}','ts',mark='2',title='CodeBlock',span=6),SymbolOutline('${file}',title='SymbolOutline',size='m',span=6),CodeView('${file}#L${at(0, 39)}',mark='L${at(0, 2)}',notes=[{line:${at(1)},text:'Notes anchor to lines.',kind:'note'}],title='CodeView',size='m',span=6),DiffView(title='DiffView (working tree)',size='m',span=6),CodeTour([{file:'${file}#L${at(0, 11)}',title:'Start here',note:'A stop shows one range of a file.'},{file:'${file}#L${at(12, 29)}',note:'The next stop scrolls to its own range.'}],title='CodeTour',size='l')])
-input=Section('Input',[Button('Queue an event',Event('demo_pressed',{from:'gallery'}),'primary',span=3),Button('Quiet',Event('demo_quiet'),'quiet',span=3),Ask('Which store backs the limiter?',['Redis','In-memory'],'store',span=6)])`;
+input=Section('Input',[Button('Queue an event',Event('demo_pressed',{from:'gallery'}),'primary',span=3),Button('Quiet',Event('demo_quiet'),'quiet',span=3),Ask('Which store backs the limiter?',['Redis','In-memory'],'store',span=6),Slider('Seats on sale',$/g/seats,1000,200000,step=1000,span=6),Stat(div(mul($/g/seats,0.6),120),'checkout req/s',span=6)])`;
 }
 
 /** The whole gallery spec: fixture data, then the layout (see GalleryOptions). */

@@ -129,7 +129,7 @@ describe('show', () => {
       expect(outcome.warnings).toEqual([]);
       await outcome.checks;
       expect(outcome.warnings).toEqual([]);
-      expect(new Set([...t.session.surfaces.get('gallery')!.components.values()].map(c => c.component)).size).toBe(44);
+      expect(new Set([...t.session.surfaces.get('gallery')!.components.values()].map(c => c.component)).size).toBe(45);
     } finally {
       t.session.dispose();
       await repo.cleanup();
