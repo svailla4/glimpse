@@ -1,9 +1,9 @@
 // Regression tests for decision D14 in the code family: what a code view reports is the state of the whole component.
-// A part of it (one file of a diff, a CodeBlock borrowed into Markdown) never speaks for the component (V062), and a
+// A part of it (one file of a diff, one stop of a tour) never speaks for the component (V062), and a
 // truthful empty or a view waiting for a selection is an I_* state, never a problem told to the agent.
 import {fireEvent, waitFor} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
-import {renderExpress, renderSpec} from '../harness.tsx';
+import {renderExpress} from '../harness.tsx';
 
 const DIFF = {
   range: 'wt',
@@ -27,27 +27,6 @@ describe('D14 in the code family (V062)', () => {
     expect(cell.querySelector('[data-path="a.ts"]')).not.toBeNull();
     expect(view.reports).toEqual([]);
     expect(view.stateOf('d')).toBe('OK');
-  });
-
-  it('a Markdown with an empty code fence is not an empty Markdown', async () => {
-    const text = '# Setup\n\nRun the generator, then commit the result.\n\n```sh\n```\n\nThat is all.';
-    const view = renderSpec([
-      {
-        version: '1.0',
-        createSurface: {
-          surfaceId: 's',
-          catalogId: 'urn:glimpse:catalog:v1',
-          components: [
-            {id: 'root', component: 'Page', title: 'T', children: ['m']},
-            {id: 'm', component: 'Markdown', text, title: 'Notes'},
-          ],
-        },
-      } as never,
-    ]);
-    await view.settle();
-    await view.settle();
-    expect(view.cell('m').textContent).toContain('Run the generator');
-    expect(view.reports).toEqual([]);
   });
 
   it('a clean working tree is a truthful empty (I_EMPTY), not a problem', async () => {

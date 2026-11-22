@@ -108,7 +108,7 @@ test.describe('D17: layout', () => {
   test.use({viewport: {width: 1440, height: 900}});
 
   test('a two-column Grid with span=6 children is side by side at 1440 px', async ({page, glimpse}) => {
-    const spec = "root=Page('Grid',[g])\ng=Grid([a,b])\na=Markdown('left',title='Left',span=6)\nb=Markdown('right',title='Right',span=6)";
+    const spec = "root=Page('Grid',[g])\ng=Grid([a,b])\na=Text('left',title='Left',span=6)\nb=Text('right',title='Right',span=6)";
     const shown = await glimpse.call('show', {id: 'grid', spec});
     expect(shown.isError, shown.text).toBe(false);
     await openViewer(page, glimpse);

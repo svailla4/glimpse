@@ -46,7 +46,7 @@ describe('normalizeSpec', () => {
     [`a=Text('it's 'quoted'.trim())`, `a=Text("it's 'quoted".trim())`],
     // output cut short is still one string, apostrophes and all: nothing after them looks like code
     [`a=Text('don't stop`, `a=Text("don't stop"`],
-    [`a=Markdown('It's a call to foo(bar) and`, `a=Markdown("It's a call to foo(bar) and"`],
+    [`a=Text('It's a call to foo(bar) and`, `a=Text("It's a call to foo(bar) and"`],
     [`a=Text('the users' data (all of it`, `a=Text("the users' data (all of it"`],
     // a string that does close is never second-guessed
     [`a=Text('5' 6" boards (pine)')`, `a=Text("5' 6\\" boards (pine)")`],

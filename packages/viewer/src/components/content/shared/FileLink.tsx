@@ -1,5 +1,5 @@
 // A file location as a link (design 5.3 FileRef): PathText inside an EntityLink, dotted underline on hover, struck
-// through when the host says the file does not exist. Text, Markdown and Callout render [[path#L10]] refs with it.
+// through when the host says the file does not exist. Text, Callout and Ask render [[path#L10]] refs with it.
 import type {DataClient, FileLoc} from '@glimpse/catalog';
 import {useContext, useEffect, useMemo, useState, type JSX} from 'react';
 import {EntityLink, HostContext, PathText, fileEntity, marksSelection, useRev, useSelection} from '../../../kit/index.ts';

@@ -35,7 +35,7 @@ e=Text('mono  text','mono')`,
     const text = 'A [[a.ts#L1]], `[[code.ts]]`, **[[b.ts]] *[[c.ts]]***, [[ d.ts]], [[dir/]] and ``[[e.ts]]``.';
     const view = renderExpress(`root=Page('T',[a])\na=Text(${JSON.stringify(text)})`);
     const drawn = within(view.cell('a')).getAllByRole('button').map(link => `${link.getAttribute('data-entity-id')}${link.getAttribute('data-entity-type') === 'dir' ? '/' : ''}`);
-    expect(drawn).toEqual(fileRefs(text, false).map(loc => parseFileLoc(loc).path));
+    expect(drawn).toEqual(fileRefs(text).map(loc => parseFileLoc(loc).path));
     expect(drawn).toEqual(['a.ts', 'b.ts', 'c.ts', 'dir/']);
   });
 

@@ -22,4 +22,19 @@
     font-feature-settings: 'tnum' 1, 'zero' 1;
     white-space: pre-wrap;
   }
+
+  /* Long text (Text.tsx, decision D24): columns of at least 34em once the box is 992 px wide, two in a full-width
+     plate, three on a wide page. Orphans and widows keep a short paragraph from being split across two columns. */
+  .long {
+    container: text / inline-size;
+    min-width: 0;
+  }
+  @container text (min-width: 992px) {
+    .long > .text {
+      columns: 34em 3;
+      column-gap: 40px;
+      orphans: 2;
+      widows: 2;
+    }
+  }
 }

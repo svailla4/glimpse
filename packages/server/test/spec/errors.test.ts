@@ -24,7 +24,7 @@ const ctx = {surfaceId: 's', exists: false, surfaces: ['overview']};
 
 describe('compiler message patterns', () => {
   it.each([
-    ['E_SYNTAX', `root=Page('x',[Markdown('x')]`, /^Failed to parse expression: Syntax error at line 2:\d+: .*<EOF>/],
+    ['E_SYNTAX', `root=Page('x',[Text('x')]`, /^Failed to parse expression: Syntax error at line 2:\d+: .*<EOF>/],
     ['E_SYNTAX', `root=Page('x',[a-b])`, /^Syntax error at line 2:16: token recognition error/],
     ['E_UNKNOWN', `root=Page('x',[DataTabel('git.churn')])`, /^Function 'DataTabel' is not defined in the catalog\.$/],
     ['E_UNKNOWN', `root=page('x',[])`, /^Component 'page' is not defined in the catalog\.$/],
@@ -62,7 +62,7 @@ describe('problem texts', () => {
   };
 
   it('E_SYNTAX reports the line the author wrote (the header line is not counted)', () => {
-    expect(text(`root=Page('x',[Markdown('x')]`)).toMatch(/^E_SYNTAX line 1 col \d+: .*'<EOF>'/);
+    expect(text(`root=Page('x',[Text('x')]`)).toMatch(/^E_SYNTAX line 1 col \d+: .*'<EOF>'/);
     expect(text(`root=Page('x',[a])\na=Text('ok')\nb=Text('a'`)).toMatch(/^E_SYNTAX line 3 col /);
   });
 

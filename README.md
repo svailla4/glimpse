@@ -4,10 +4,10 @@ Generative UI for codebases. Glimpse lets a coding agent *show* you a repository
 
 Glimpse is two things:
 
-- **A component library**: 44 React components behind an [A2UI](https://a2ui.org) v1.0 catalog, drawn in one design language, Linework.
+- **A component library**: 43 React components behind an [A2UI](https://a2ui.org) v1.0 catalog, drawn in one design language, Linework.
 - **An MCP server** with five tools. It compiles the agent's spec, runs the repository analyzers, and hosts the viewer on `127.0.0.1`.
 
-**Status: working but young.** All 44 components, the 26 data sources, the ten preset views and the five tools are implemented and covered by unit, component and end-to-end tests. It has been run on macOS with Chromium only and has had one round of testing with a model writing the specs. [Status and known limitations](#status-and-known-limitations) has the details.
+**Status: working but young.** All 43 components, the 26 data sources, the ten preset views and the five tools are implemented and covered by unit, component and end-to-end tests. It has been run on macOS with Chromium only and has had one round of testing with a model writing the specs. [Status and known limitations](#status-and-known-limitations) has the details.
 
 ## What it looks like
 
@@ -159,7 +159,7 @@ The three examples below were run against this repository exactly as written (`s
 
 ```
 root=Page('The server package',[intro,deps,churn],'packages/server')
-intro=Markdown('Requests enter in **mcp/show.ts**; see [[packages/server/src/mcp/show.ts#L1]].')
+intro=Text('Requests enter in **mcp/show.ts**; see [[packages/server/src/mcp/show.ts#L1]].')
 deps=Graph('deps.modules packages/server',title='What depends on what',span=7)
 churn=DataTable('git.churn packages/server top=10',title='Most changed files',span=5)
 ```
@@ -188,12 +188,12 @@ The catalog prefers accepting a reasonable guess to documenting the one right sp
 
 ## Components
 
-44 components in seven families. `catalog{names:["DataTable"]}` returns any signature with its props, the shape of its data and an example; `show{view:"gallery"}` draws them all.
+43 components in seven families. `catalog{names:["DataTable"]}` returns any signature with its props, the shape of its data and an example; `show{view:"gallery"}` draws them all.
 
 | Family | Components |
 |---|---|
 | Layout (8) | `Page` `Plate` `Section` `Grid` `Row` `Column` `Tabs` `Split` |
-| Content (10) | `Text` `Markdown` `Callout` `KeyValue` `Chips` `FileRef` `Steps` `Stat` `Stats` `List` |
+| Content (9) | `Text` `Callout` `KeyValue` `Chips` `FileRef` `Steps` `Stat` `Stats` `List` |
 | Data (4) | `DataTable` `FileTree` `CommitList` `JsonView` |
 | Charts (10) | `Sparkline` `SegmentedBar` `BarChart` `LineChart` `ScatterPlot` `Histogram` `Heatmap` `CalendarHeatmap` `Treemap` `Icicle` |
 | Diagrams (5) | `Graph` `Flowchart` `SequenceDiagram` `Layers` `ERDiagram` |
@@ -231,7 +231,7 @@ Glimpse reads your code and serves it over HTTP, so the boundaries matter.
 - **Loopback only.** The viewer host binds `127.0.0.1`. Every request is checked for an expected `Host` (DNS rebinding), a same-origin `Origin` and `Sec-Fetch-Site` (cross-site requests); `POST` bodies must be JSON; no CORS header and no cookie is ever sent.
 - **A per-session token.** `/api/*` needs a 256-bit random token, compared in constant time. It travels in the URL fragment, which browsers do not send, and is kept in `sessionStorage`.
 - **Only inventoried files are served.** The file, outline and diff endpoints answer only for paths in the repository's file inventory, so `.git/**` and ignored files (a `.env`, build output) are refused even with the token.
-- **Hostile repository content cannot script the page.** The content security policy is `default-src 'none'; script-src 'self'; style-src 'self'` with no inline exceptions. Markdown is rendered with raw HTML disabled, only `http(s)` links, and no remote images; code is text nodes with class names.
+- **Hostile repository content cannot script the page.** The content security policy is `default-src 'none'; script-src 'self'; style-src 'self'` with no inline exceptions. Text is drawn as text nodes with inline code, emphasis and file refs only, never as HTML; code is text nodes with class names.
 - **Hostile repository content cannot speak for you.** What you do in the tab reaches the agent as single lines with a fixed `viewer:` prefix, JSON-escaped and length-capped, and the instructions tell the agent to treat them as data. Text that comes from the repository (file names, author names, commit subjects, query rows) is quoted wherever it could start a line with that prefix, so a commit cannot forge your click on an approval button.
 - **Nothing from the repository is executed.** "Open in editor" starts only `GLIMPSE_EDITOR` or a known editor found on the PATH, never the system's default opener, which would run a script or an app bundle. Specs cannot reach object prototypes: data paths with `__proto__`, `constructor` or `prototype` are rejected.
 - **Bounded.** 12 views, 100 queued events, 5 tabs (a browser gives a site six connections, and a sixth event stream would leave none for loading data), capped file sizes and git output.
@@ -282,7 +282,7 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 
 | Budget | Limit | Now |
 |---|---|---|
-| Server instructions | 3,750 chars (hard limit 4,000) | 3,747 |
+| Server instructions | 3,750 chars (hard limit 4,000) | 3,722 |
 | `show` + `catalog` definitions | 1,500 chars | 1,147 |
 | Largest preset result (`overview`) | 1,200 chars | 1,095 |
 | Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 193.6 kB |

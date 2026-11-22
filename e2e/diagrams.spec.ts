@@ -143,7 +143,7 @@ test.describe('D19/D20: diagrams open whole when they can, the way they are writ
     const rows = Array.from({length: 24}, (_, i) => `{name:'row ${i + 1}',n:${i + 1}}`).join(',');
     const spec = [
       "root=Page('Row',[short,tall,small])",
-      "short=Markdown('Two lines of prose.\\n\\nNothing more.',title='Short',span=4)",
+      "short=Text('Two lines of prose.\\n\\nNothing more.',title='Short',span=4)",
       `tall=DataTable([${rows}],title='Tall',span=4)`,
       "small=Graph({nodes:[{id:'a',label:'a'},{id:'b',label:'b'}],edges:[{from:'a',to:'b'}]},title='Two nodes',span=4)",
     ].join('\n');

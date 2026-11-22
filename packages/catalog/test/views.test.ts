@@ -208,7 +208,7 @@ describe('preset views', () => {
   it('feature shows the person a neutral design plate and tells the agent, in the catalog, what to put there', () => {
     const {surface} = compiled('feature');
     const design = surface.components.find(c => c.id === 'design') as unknown as {component: string; text: string; title: string};
-    expect(design).toMatchObject({component: 'Markdown', title: 'Design'});
+    expect(design).toMatchObject({component: 'Text', title: 'Design'});
     expect(design.text).not.toMatch(/design=|Flowchart|Replace/);
     expect(VIEW_BY_NAME.get('feature')!.replace).toHaveProperty('design');
     expect(VIEW_BY_NAME.get('feature')!.replace!.design).toMatch(/design=Flowchart\(.*design=SequenceDiagram\(/);

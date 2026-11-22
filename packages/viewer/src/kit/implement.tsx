@@ -167,10 +167,10 @@ class Quiet extends Component<{fallback: ReactNode; children: ReactNode}, {faile
 }
 
 /**
- * A view that another chunk owns, for use inside your own view (design 5.3: Markdown renders fenced code through
- * CodeBlock; 5.7: CodeTour uses Steps and CodeView). Call it once at module scope, with the other chunk's INDEX:
- *   const Code = borrowView<typeof C.CodeBlock>(() => import('../code/index.ts'), 'CodeBlock', PlainCode);
- *   ... <Code id={id} props={{code, lang}} child={() => null} />
+ * A view that another chunk owns, for use inside your own view (design 5.7: CodeTour uses Steps). Call it once at
+ * module scope, with the other chunk's INDEX:
+ *   const Steps = borrowView<typeof C.Steps>(() => import('../content/index.ts'), 'Steps', LocalSteps);
+ *   ... <Steps id={id} props={{data}} child={() => null} />
  * `Fallback` renders while that chunk loads, when it has no such view yet, when it fails to load and when the
  * borrowed view throws, so your component never depends on another package being finished. Never import another
  * chunk's component file by path. Pass your own component `id`: actions and selection need a real component id.

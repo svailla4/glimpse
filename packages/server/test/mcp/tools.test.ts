@@ -242,14 +242,14 @@ describe('showTool', () => {
       deps.createRepoIndex = (...args) => ({...index(...args), canonical: async (path: string) => (path.toLowerCase() === 'docs/readme.md' ? 'Docs/README.md' : undefined)});
       const t = testSession(own.root, {deps});
       live.push(t);
-      const lines = body(await showTool(t.session, {id: 'r', spec: "root=Page('x',[n])\nn=Markdown('Start at [[docs/readme.md#L1]].')"}, 100)).split('\n');
+      const lines = body(await showTool(t.session, {id: 'r', spec: "root=Page('x',[n])\nn=Text('Start at [[docs/readme.md#L1]].')"}, 100)).split('\n');
       const text = t.session.surfaces.get('r')!.components.get('n')!.text;
       if (CASE_INSENSITIVE) {
         expect(lines).toContain("fixed path 'docs/readme.md#L1' -> 'Docs/README.md#L1'");
         expect(text).toBe('Start at [[Docs/README.md#L1]].');
         expect(lines.filter(line => line.startsWith('warn'))).toEqual([]);
       } else {
-        expect(lines).toContain('warn Markdown#n: file "docs/readme.md" does not exist. Nearest: Docs/README.md');
+        expect(lines).toContain('warn Text#n: file "docs/readme.md" does not exist. Nearest: Docs/README.md');
         expect(text).toBe('Start at [[docs/readme.md#L1]].');
       }
     } finally {

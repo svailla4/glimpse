@@ -198,7 +198,7 @@ export function useReportState(code: string | undefined, message = '', pending =
 /**
  * Marks what it wraps as a part of the component, not the component: an Empty, a Redline or a Drafting inside it is
  * drawn but never reported as the component's state (one binary file of a diff, one stop of a tour, a borrowed
- * CodeBlock inside Markdown). borrowView() wraps every borrowed view in it. A single state can say the same with
+ * Steps inside CodeTour). borrowView() wraps every borrowed view in it. A single state can say the same with
  * <Empty part /> or <Redline part />.
  */
 export function Subpart(p: {children: ReactNode}): ReactNode {

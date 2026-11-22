@@ -5,7 +5,7 @@
   "title": "Glimpse",
   "description": "Generative UI for codebases.",
   "catalogId": "urn:glimpse:catalog:v1",
-  "instructions": "Root is Page(title, children). Children flow on a 12-column grid; every component takes span=1..12.\nData props take a /ds binding (server dataset), any other binding, or an inline value. Datasets are self-describing: tables and charts need no column or axis props.\nData, chart, diagram and code components, and Text, Markdown, Chips and Stats, draw their own plate frame when given title=.\nCode and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.\nThe current selection is at /ui/sel ({type,id,path?,line?}); the selected file is at /ui/file (\"path#L10-20\").",
+  "instructions": "Root is Page(title, children). Children flow on a 12-column grid; every component takes span=1..12.\nData props take a /ds binding (server dataset), any other binding, or an inline value. Datasets are self-describing: tables and charts need no column or axis props.\nData, chart, diagram and code components, and Text, Chips and Stats, draw their own plate frame when given title=.\nCode and diffs are read from disk by the renderer host: CodeView(file) and DiffView(range) carry no file contents.\nThe current selection is at /ui/sel ({type,id,path?,line?}); the selected file is at /ui/file (\"path#L10-20\").",
   "components": {
     "Page": {
       "type": "object",
@@ -325,7 +325,7 @@
     },
     "Text": {
       "type": "object",
-      "description": "Short text with inline `code`, *em*, **strong** and [[path#L10]] file refs.",
+      "description": "Text with inline `code`, *em*, **strong** and [[path#L10]] file refs; line breaks are kept.",
       "properties": {
         "component": {
           "const": "Text"
@@ -344,48 +344,6 @@
             "mono"
           ],
           "description": "Style. One of: body|lead|dim|caption|mono."
-        },
-        "title": {
-          "$ref": "common_types.json#/$defs/DynamicString",
-          "description": "Plate title; draws the numbered frame."
-        },
-        "note": {
-          "$ref": "common_types.json#/$defs/DynamicString",
-          "description": "Caption under the plate."
-        },
-        "size": {
-          "type": "string",
-          "enum": [
-            "s",
-            "m",
-            "l",
-            "xl",
-            "fill"
-          ],
-          "description": "Max height 160/280/420/640px or the viewport; shorter content gives a shorter plate. One of: s|m|l|xl|fill."
-        },
-        "span": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 12,
-          "description": "Grid columns 1-12."
-        }
-      },
-      "required": [
-        "component",
-        "text"
-      ]
-    },
-    "Markdown": {
-      "type": "object",
-      "description": "Prose in Markdown (GFM tables, fenced code, [[path#L10]] refs). Raw HTML is ignored.",
-      "properties": {
-        "component": {
-          "const": "Markdown"
-        },
-        "text": {
-          "$ref": "common_types.json#/$defs/DynamicString",
-          "description": "Markdown source."
         },
         "title": {
           "$ref": "common_types.json#/$defs/DynamicString",
@@ -2149,9 +2107,6 @@
         },
         {
           "$ref": "#/components/Text"
-        },
-        {
-          "$ref": "#/components/Markdown"
         },
         {
           "$ref": "#/components/Callout"

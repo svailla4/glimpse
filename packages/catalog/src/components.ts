@@ -46,7 +46,7 @@ const TREE_COLOR_ALIASES = {language: 'lang', commits: 'churn', heat: 'churn'} a
 export const Page = component('Page', {
   family: 'layout', chunk: 'layout', tier: 'A', allowedParents: ['Surface'],
   doc: 'View root: masthead (title, subtitle, repo provenance) over a 12-column grid.',
-  example: "root=Page('Auth flow',[Markdown('Login goes through **AuthService**.')])",
+  example: "root=Page('Auth flow',[Text('Login goes through **AuthService**.')])",
 }, {
   title: p.text('View title.'),
   children: p.children('Plates and other content, top to bottom.'),
@@ -134,25 +134,16 @@ export const Split = component('Split', {
   ...CELL,
 });
 
-// ---- content (10) ----------------------------------------------------------------------------------------------
+// ---- content (9) ----------------------------------------------------------------------------------------------
 export const Text = component('Text', {
   family: 'content', chunk: 'content', tier: 'A',
-  doc: 'Short text with inline `code`, *em*, **strong** and [[path#L10]] file refs.',
+  doc: 'Text with inline `code`, *em*, **strong** and [[path#L10]] file refs; line breaks are kept.',
   example: "Text('Entry point is [[src/main.ts#L12]].','lead')",
 }, {
   text: p.text('Text with inline micro-markup. No HTML.'),
   tone: opt(p.enum(['body', 'lead', 'dim', 'caption', 'mono'], 'Style.', {
     normal: 'body', default: 'body', muted: 'dim', secondary: 'dim', subtle: 'dim', small: 'caption', code: 'mono', heading: 'lead', title: 'lead',
   })),
-  ...FRAME,
-});
-
-export const Markdown = component('Markdown', {
-  family: 'content', chunk: 'content', tier: 'A',
-  doc: 'Prose in Markdown (GFM tables, fenced code, [[path#L10]] refs). Raw HTML is ignored.',
-  example: "Markdown($/notes)",
-}, {
-  text: p.text('Markdown source.'),
   ...FRAME,
 });
 
@@ -551,7 +542,7 @@ export const Ask = component('Ask', {
 
 export const COMPONENTS = [
   Page, Plate, Section, Grid, Row, Column, Tabs, Split,
-  Text, Markdown, Callout, KeyValue, Chips, FileRef, Steps, Stat, Stats, List,
+  Text, Callout, KeyValue, Chips, FileRef, Steps, Stat, Stats, List,
   DataTable, FileTree, CommitList, JsonView,
   Sparkline, SegmentedBar, BarChart, LineChart, ScatterPlot, Histogram, Heatmap, CalendarHeatmap, Treemap, Icicle,
   Graph, Flowchart, SequenceDiagram, Layers, ERDiagram,

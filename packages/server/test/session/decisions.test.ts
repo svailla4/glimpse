@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 const spec = (id: string, text: string) => ({id, sources: [text], fresh: false});
-const BASE = `$/notes='hi'\nroot=Page('Demo',[notes,table,slow])\nnotes=Markdown($/notes)\ntable=DataTable('fake.rows src top=5',title='Rows')\nslow=DataTable('fake.slow')`;
+const BASE = `$/notes='hi'\nroot=Page('Demo',[notes,table,slow])\nnotes=Text($/notes)\ntable=DataTable('fake.rows src top=5',title='Rows')\nslow=DataTable('fake.slow')`;
 const dataUpdates = (frames: Frame[]) => frames.flatMap(f => f.messages).flatMap(m => ('updateDataModel' in m ? [m.updateDataModel] : []));
 const created = (frame: Frame) => (frame.messages.find(m => 'createSurface' in m) as Extract<A2uiMessage, {createSurface: unknown}>).createSurface;
 const action = (name: string, context: Record<string, unknown> = {}, source = 'root', surfaceId = 'demo') =>
@@ -358,7 +358,7 @@ describe('D14: the model learns what the viewer rendered, as component state', (
     // a second tab, or a re-render, says the same thing: still one line
     expect(router.handle(report('E_SHAPE', 'DataTable#table: expected an array of rows, received an object'))).toBe(true);
     expect(router.handle(report('W_EMPTY', 'DataTable#slow: no rows'))).toBe(true);
-    expect(router.handle(report('I_EMPTY', 'Markdown#notes: nothing yet'))).toBe(true);
+    expect(router.handle(report('I_EMPTY', 'Text#notes: nothing yet'))).toBe(true);
     expect(t.session.events.drain()).toEqual([
       'viewer: error demo DataTable#table: E_SHAPE expected an array of rows, received an object',
       'viewer: error demo DataTable#slow: W_EMPTY no rows',
@@ -570,13 +570,13 @@ describe('D14: the model learns what the viewer rendered, as component state', (
     const t = start();
     const outcome = await t.session.show(spec('refs', `root=Page('Refs',[a,m,c])
 a=Text('See [[src/a.ts#L1]], [[src/servise.ts#L3]], [[src]], [[src/]] and \`[[src/code.ts]]\`.')
-m=Markdown('**Risk:** [[lib/gone.go]]\\n\`\`\`\\n[[src/fenced.ts]]\\n\`\`\`')
+m=Text('**Risk:** [[lib/gone.go]]')
 c=Callout('Keys in [[.env]].','risk')`));
     await outcome.checks;
     expect(outcome.warnings).toEqual([
       'Text#a: file "src/servise.ts" does not exist.',
       'Text#a: "src" is a directory, not a file.',
-      'Markdown#m: file "lib/gone.go" does not exist.',
+      'Text#m: file "lib/gone.go" does not exist.',
       'Callout#c: ".env" is not a file of this project (outside it, ignored, or not a regular file).',
     ]);
   });
@@ -715,12 +715,12 @@ describe('adding a part to a preset', () => {
     const overview = VIEW_BY_NAME.get('overview')!.build(undefined, {});
     await t.session.show({id: 'overview', sources: [overview], fresh: true, view: 'overview'});
     const before = t.session.surfaces.get('overview')!.components.get('root')!;
-    const outcome = await t.session.show({id: 'overview', sources: [overview, `notes=Markdown('Look at the TODOs.')\ntodos=DataTable('fake.rows',title='TODO comments')`], fresh: true, view: 'overview'});
+    const outcome = await t.session.show({id: 'overview', sources: [overview, `notes=Text('Look at the TODOs.')\ntodos=DataTable('fake.rows',title='TODO comments')`], fresh: true, view: 'overview'});
     expect(outcome.fixes).toEqual(['todos appended to root (resend root=... to place it elsewhere)']);
     const root = t.session.surfaces.get('overview')!.components.get('root')!;
     expect(root.children).toEqual([...(before.children as string[]), 'todos']);
     expect({...root, children: undefined}).toEqual({...before, children: undefined});
-    expect(t.session.surfaces.get('overview')!.components.get('notes')).toMatchObject({component: 'Markdown', text: 'Look at the TODOs.'});
+    expect(t.session.surfaces.get('overview')!.components.get('notes')).toMatchObject({component: 'Text', text: 'Look at the TODOs.'});
     expect(outcome.parts).toContain('todos');
   });
 
@@ -754,10 +754,10 @@ describe('a replace that keeps every part is sent in place', () => {
     await until(() => t.session.surfaces.get('demo')!.ds[key]?.status === 'ready' && t.session.surfaces.get('demo')!.drills.size === 1);
     // the tab drew a redline in the table (unchanged below) and an empty state in notes (changed below)
     router.handle(report('E_SHAPE', 'DataTable#slow: expected rows'));
-    router.handle(report('W_EMPTY', 'Markdown#notes: nothing bound'));
+    router.handle(report('W_EMPTY', 'Text#notes: nothing bound'));
     const from = t.host.frames.length;
 
-    const replaced = await t.session.show(spec('demo', `root=Page('Demo, revised',[notes,table,slow,extra])\nnotes=Markdown($/notes,title='Notes')\nextra=Text('new')`));
+    const replaced = await t.session.show(spec('demo', `root=Page('Demo, revised',[notes,table,slow,extra])\nnotes=Text($/notes,title='Notes')\nextra=Text('new')`));
     expect(replaced.mode).toBe('replace');
     const frame = frameOf(t, from);
     expect(kinds(frame)).not.toContain('deleteSurface');
@@ -771,7 +771,7 @@ describe('a replace that keeps every part is sent in place', () => {
     expect(dataUpdates([frame]).map(u => u.path)).toContain('/meta');
     // decision D14: the state of the unchanged table stays; that of the redefined notes is reported afresh
     expect(t.session.events.reports.get('demo', 'DataTable#slow')?.code).toBe('E_SHAPE');
-    expect(t.session.events.reports.get('demo', 'Markdown#notes')).toBeUndefined();
+    expect(t.session.events.reports.get('demo', 'Text#notes')).toBeUndefined();
     expect(t.session.events.drain()).toEqual(['viewer: error demo DataTable#slow: E_SHAPE expected rows']);
     expect(replaced.parts).toEqual(['notes', 'table', 'slow', 'extra']);
   });

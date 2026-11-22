@@ -122,57 +122,39 @@ const MARK_PART = /^(#?)(?:(lines?)\s*)?L?(\d+)(?:\s*(-|–|—|:|\.\.\.?|to)\s*
 
 
 // ---------------------------------------------------------------- [[path#L10-20]] refs in prose
-// Text, Callout, Ask and Markdown draw `[[path#L10-20]]` as a file link; the viewer draws them and the server checks
-// the files they name, from these definitions. Spans are bounded (400 characters) so a text full of unmatched markers
-// still scans in linear time.
+// Text, Callout and Ask draw `[[path#L10-20]]` as a file link; the viewer draws them and the server checks the files
+// they name, from these definitions. Spans are bounded (400 characters) so a text full of unmatched markers still
+// scans in linear time.
 /** One file ref: group 1 is the location, never blank at either end. Not global: build `new RegExp(FILE_REF.source, 'g')`. */
 export const FILE_REF = /\[\[(?!\s)([^[\]\n]{1,400}?)(?<!\s)\]\]/;
 /** An inline code span of Text, Callout and Ask: group 1 is the code. A ref inside it stays literal. */
 export const CODE_SPAN = /`([^`\n]{1,400})`/;
-/** Markdown's inline code, any run of backticks; and the line that opens or closes a fenced block. */
-const MD_CODE_SPAN = /(`+)[^`\n]*?\1/;
-const MD_FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const INLINE_SCAN = new RegExp(`${CODE_SPAN.source}|${FILE_REF.source}`, 'g');
-const MD_SCAN = new RegExp(`${MD_CODE_SPAN.source}|${FILE_REF.source}`, 'g');
 
 /**
  * `text` with each `[[loc]]` file ref that is drawn as a link replaced by `[[swap(loc)]]`, or kept when `swap` returns
- * undefined. A ref inside code is literal text, not a link, and is never passed to `swap`: an inline code span, and
- * in Markdown (`markdown`) a fenced block too.
+ * undefined. A ref inside an inline code span is literal text, not a link, and is never passed to `swap`.
  */
-export function replaceFileRefs(text: string, markdown: boolean, swap: (loc: string) => string | undefined): string {
-  const scan = markdown ? MD_SCAN : INLINE_SCAN;
-  const swapLine = (line: string): string => {
-    let out = '';
-    let last = 0;
-    for (const match of line.matchAll(scan)) {
-      const loc = match[match.length - 1];
-      const next = loc === undefined ? undefined : swap(loc);
-      if (next === undefined) continue;
-      out += `${line.slice(last, match.index)}[[${next}]]`;
-      last = match.index + match[0].length;
-    }
-    return last === 0 ? line : out + line.slice(last);
-  };
-  if (!markdown) return swapLine(text);
-  let fence: string | undefined;
-  return text.split('\n').map(line => {
-    const marker = MD_FENCE.exec(line)?.[1];
-    if (fence !== undefined) {
-      if (marker && marker[0] === fence[0] && marker.length >= fence.length && line.trim() === marker) fence = undefined;
-      return line;
-    }
-    if (marker) { fence = marker; return line; }
-    return swapLine(line);
-  }).join('\n');
+export function replaceFileRefs(text: string, swap: (loc: string) => string | undefined): string {
+  let out = '';
+  let last = 0;
+  for (const match of text.matchAll(INLINE_SCAN)) {
+    const loc = match[match.length - 1];
+    const next = loc === undefined ? undefined : swap(loc);
+    if (next === undefined) continue;
+    out += `${text.slice(last, match.index)}[[${next}]]`;
+    last = match.index + match[0].length;
+  }
+  return last === 0 ? text : out + text.slice(last);
 }
 
 /** The locations of the `[[path#L10]]` refs `text` draws as links, in order, as written (see replaceFileRefs). */
-export function fileRefs(text: string, markdown: boolean): string[] {
+export function fileRefs(text: string): string[] {
   const found: string[] = [];
-  replaceFileRefs(text, markdown, loc => void found.push(loc));
+  replaceFileRefs(text, loc => void found.push(loc));
   return found;
 }
+
 /**
  * Decision D22: `mark` is written the way file anchors are ('3,7-9', 'L7-9'). A part written another plain way is
  * read and the reading is returned in `fixed`; a part that names no line (lines start at 1) is returned in `ignored`,

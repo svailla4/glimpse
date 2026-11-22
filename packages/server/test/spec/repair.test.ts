@@ -41,7 +41,7 @@ describe('repair', () => {
   });
 
   it('closes brackets left open at the end of the input', () => {
-    expect(repair('root=Page("x",[Markdown("y"),Grid([Text("a")', {kind: 'eof'})).toEqual({text: 'root=Page("x",[Markdown("y"),Grid([Text("a")])])', note: 'end of input -> ])])'});
+    expect(repair('root=Page("x",[Callout("y"),Grid([Text("a")', {kind: 'eof'})).toEqual({text: 'root=Page("x",[Callout("y"),Grid([Text("a")])])', note: 'end of input -> ])])'});
     expect(repair('$/plan=[{title:"A"', {kind: 'eof'})?.text).toBe('$/plan=[{title:"A"}]');
   });
 
@@ -64,9 +64,24 @@ describe('repair inside compileSpec', () => {
     expect(first.createSurface.components[1]).toEqual({id: 'root_children_0', component: 'DataTable', data: 'fake.rows', columns: 'path'});
   });
 
+  // Decision D24: Markdown was removed; a spec written from habit or from an older skill still draws, as Text, and the
+  // model hears what Text does not draw.
+  it('draws a removed Markdown as Text and says what Text does not carry over', () => {
+    const {messages, fixes} = compile(`root=Page('x',[Markdown('hi'),notes])\nnotes=Markdown($/notes,title='Notes')`);
+    expect(fixes).toEqual(['Markdown -> Text: headings, tables and code fences show as written: use Section, DataTable, CodeBlock']);
+    // a result prints a fix in at most 120 characters (mcp/result.ts): the note must arrive whole
+    expect(fixes[0]!.length).toBeLessThanOrEqual(120);
+    const first = messages[0]!;
+    if (!('createSurface' in first)) throw new Error('expected createSurface');
+    expect(first.createSurface.components.slice(1)).toEqual([
+      {id: 'notes', component: 'Text', text: {'@path': '/notes'}, title: 'Notes'},
+      {id: 'root_children_0', component: 'Text', text: 'hi'},
+    ]);
+  });
+
   it('gives up after six repairs', () => {
-    expect(compile(`root=Page('x',[Texxt('a'),Markdwn('b'),Callot('c'),Chps(),Sttat(1),Lisst([])])`).fixes).toHaveLength(6);
-    expect(() => compile(`root=Page('x',[Texxt('a'),Markdwn('b'),Callot('c'),Chps(),Sttat(1),Lisst([]),Stepz([])])`)).toThrow(/^E_UNKNOWN /);
+    expect(compile(`root=Page('x',[Texxt('a'),Colum([]),Callot('c'),Chps(),Sttat(1),Lisst([])])`).fixes).toHaveLength(6);
+    expect(() => compile(`root=Page('x',[Texxt('a'),Colum([]),Callot('c'),Chps(),Sttat(1),Lisst([]),Stepz([])])`)).toThrow(/^E_UNKNOWN /);
   });
 
   it('does not guess at an enum value that resembles nothing, nor at references', () => {
@@ -209,10 +224,10 @@ describe('errors that point at the mistake', () => {
 
   // Finding V040: a missing closing quote swallowed the next component into prose, with a bare ok.
   it('a string that runs on into the next component is a warning that says where', () => {
-    expect(compile(`root=Page('Unclosed',[Markdown('this string never ends), Text('after')])`).warnings).toEqual([
-      "line 1 col 32: this string runs on into Text(...), so that part is drawn as text. A ' closes a string only before , ) ] } : = ; or a line end; check its quotes.",
+    expect(compile(`root=Page('Unclosed',[Text('this string never ends), Text('after')])`).warnings).toEqual([
+      "line 1 col 28: this string runs on into Text(...), so that part is drawn as text. A ' closes a string only before , ) ] } : = ; or a line end; check its quotes.",
     ]);
-    expect(compile(`root=Page('Fine',[Markdown('Use Text(...) for a label, and DataTable for rows.')])`).warnings).toEqual([]);
+    expect(compile(`root=Page('Fine',[Text('Use Text(...) for a label, and DataTable for rows.')])`).warnings).toEqual([]);
   });
 });
 
