@@ -96,9 +96,11 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, api: A
   }
   if (pathname === '/api/renderer') {
     need('POST', req);
-    const body = await readJson(req) as {messages?: unknown};
+    const body = await readJson(req) as {messages?: unknown; states?: unknown};
     if (typeof body !== 'object' || body === null || !Array.isArray(body.messages)) throw new HttpError(400, 'E_ARGS', 'expected {messages: [...]}');
     for (const message of body.messages.slice(0, MAX_MESSAGES)) api.router.handle(message);
+    // Decision D27: component states that are not errors (I_*, OK) come beside the A2UI messages, not as messages.
+    if (Array.isArray(body.states)) for (const state of body.states.slice(0, MAX_MESSAGES)) api.router.state(state);
     res.writeHead(204, {'cache-control': 'no-store'});
     res.end();
     return;

@@ -84,7 +84,7 @@ describe('surface ids with hyphens (D2, F031)', () => {
 describe('a component state is state, not an event (D14, V051, V060, V061)', () => {
   /** States arrive at the end of the task that rendered them. */
   const flush = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  const statesOf = (transport: ScriptedTransport, label: string) => errorsOf(transport.sent).filter(error => error.message.startsWith(`${label}: `)).map(error => error.code);
+  const statesOf = (transport: ScriptedTransport, label: string) => transport.reports.filter(report => report.label === label).map(report => report.code);
 
   it('says the state of every component when it is drawn: OK, or what it shows instead', async () => {
     const {transport} = mount();
@@ -94,9 +94,14 @@ describe('a component state is state, not an event (D14, V051, V060, V061)', () 
     expect(errorsOf(transport.sent).find(error => error.message.startsWith('List#l: '))).toEqual({code: 'W_EMPTY', message: 'List#l: no items', surfaceId: 'a'});
     expect(statesOf(transport, 'Text#t')).toEqual(['OK']);
     expect(statesOf(transport, 'Page#root')).toEqual(['OK']);
-    // one post for the whole first render
-    expect(transport.sent.filter(message => 'error' in message)).toHaveLength(3);
+    // D27: only the problem is an A2UI renderer error; OK goes beside the messages, as data
+    expect(transport.sent.filter(message => 'error' in message)).toHaveLength(1);
     expect(transport.sent.every(message => message.version === '1.0')).toBe(true);
+    expect(transport.states).toEqual(expect.arrayContaining([
+      {surfaceId: 'a', component: 'Text', id: 't', code: 'OK', message: 'ok'},
+      {surfaceId: 'a', component: 'Page', id: 'root', code: 'OK', message: 'ok'},
+    ]));
+    expect(transport.states.every(state => state.code === 'OK' || state.code.startsWith('I_'))).toBe(true);
   });
 
   it('says it again when an update redefines the component and it is still broken: in-place replace, patch, same props', async () => {
@@ -151,7 +156,7 @@ describe('a component state is state, not an event (D14, V051, V060, V061)', () 
     await flush();
     expect(statesOf(transport, 'List#l')).toEqual(['W_EMPTY', 'W_EMPTY']);
     const before = transport.sent.length;
-    session.reportState({code: 'W_EMPTY', message: 'List#l: x', surfaceId: 'gone', componentId: 'l'});
+    session.reportState({code: 'W_EMPTY', message: 'List#l: x', surfaceId: 'gone', name: 'List', componentId: 'l', text: 'x'});
     await flush();
     expect(transport.sent).toHaveLength(before);
   });
@@ -162,7 +167,7 @@ describe('a component state is state, not an event (D14, V051, V060, V061)', () 
     await flush();
     act(() => transport.emit({type: 'bye', reason: 'shutdown'}));
     const before = transport.sent.length;
-    session.reportState({code: 'W_EMPTY', message: 'Text#t: nothing', surfaceId: 'a', componentId: 't'});
+    session.reportState({code: 'W_EMPTY', message: 'Text#t: nothing', surfaceId: 'a', name: 'Text', componentId: 't', text: 'nothing'});
     await flush();
     expect(transport.sent).toHaveLength(before);
   });

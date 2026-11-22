@@ -362,14 +362,14 @@ describe('what a component draws is its state for the host (D3, D14, F032, V060-
     expect(codes(view, 'root')).toEqual(['OK']);
     view.setData(CHURN, {...datasetFixture('git.churn'), data: []});
     await flushReports();
-    expect(view.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no data from git.churn', surfaceId: 'test', componentId: 'a'}]);
+    expect(view.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no data from git.churn', surfaceId: 'test', name: 'DataTable', componentId: 'a', text: 'no data from git.churn'}]);
     // the source says why it is empty: a truthful answer, not something for the model to fix
     view.setData(CHURN, {...datasetFixture('git.churn'), data: [], note: 'no import cycles'});
     await flushReports();
-    expect(view.reports.at(-1)).toEqual({code: 'I_EMPTY', message: 'DataTable#a: no import cycles (git.churn)', surfaceId: 'test', componentId: 'a'});
+    expect(view.reports.at(-1)).toEqual({code: 'I_EMPTY', message: 'DataTable#a: no import cycles (git.churn)', surfaceId: 'test', name: 'DataTable', componentId: 'a', text: 'no import cycles (git.churn)'});
     view.setData(`/ds/${datasetKey(parseRef('git.log'))}`, {$ds: datasetKey(parseRef('git.log')), kind: 'rows', status: 'error', source: 'git.log', error: {code: 'E_NO_GIT', message: 'not a git repository'}});
     await flushReports();
-    expect(view.reports.at(-1)).toEqual({code: 'E_NO_GIT', message: 'DataTable#b: not a git repository', surfaceId: 'test', componentId: 'b'});
+    expect(view.reports.at(-1)).toEqual({code: 'E_NO_GIT', message: 'DataTable#b: not a git repository', surfaceId: 'test', name: 'DataTable', componentId: 'b', text: 'not a git repository'});
     // a pending dataset is not a state worth telling, and it does not withdraw anything either
     const before = view.states.length;
     view.setData(`/ds/${datasetKey(parseRef('git.authors'))}`, pendingDataset('git.authors'));
@@ -378,7 +378,7 @@ describe('what a component draws is its state for the host (D3, D14, F032, V060-
     // inline data that is empty is the spec's own: W_EMPTY
     const inline = renderStub(`$/rows=[]\n${page('DataTable($/rows)')}`, {DataTable: Gated});
     await flushReports();
-    expect(inline.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no items', surfaceId: 'test', componentId: 'a'}]);
+    expect(inline.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no items', surfaceId: 'test', name: 'DataTable', componentId: 'a', text: 'no items'}]);
   });
 
   it('reports again when the state changes, withdraws it with OK, and says nothing for the same state rendered again', async () => {
@@ -429,11 +429,11 @@ describe('what a component draws is its state for the host (D3, D14, F032, V060-
     const view = renderStub(`root=Page('T',[a,b,c])\na=DataTable('git.churn')\nb=CodeView()\nc=SymbolOutline()`, {DataTable: Boom, CodeView: Own, SymbolOutline: Waiting});
     spy.mockRestore();
     await flushReports();
-    expect(view.reports).toContainEqual({code: 'E_RENDER', message: 'DataTable#a: view bug', surfaceId: 'test', componentId: 'a'});
+    expect(view.reports).toContainEqual({code: 'E_RENDER', message: 'DataTable#a: view bug', surfaceId: 'test', name: 'DataTable', componentId: 'a', text: 'view bug'});
     // one state per component: the redline wins over the empty line beside it
-    expect(view.reports.filter(report => report.componentId === 'b')).toEqual([{code: 'E_SHAPE', message: 'CodeView#b: expected text', surfaceId: 'test', componentId: 'b'}]);
+    expect(view.reports.filter(report => report.componentId === 'b')).toEqual([{code: 'E_SHAPE', message: 'CodeView#b: expected text', surfaceId: 'test', name: 'CodeView', componentId: 'b', text: 'expected text'}]);
     // a view that waits for a selection says so with an I_ code
-    expect(view.reports).toContainEqual({code: 'I_WAITING', message: 'SymbolOutline#c: no file selected', surfaceId: 'test', componentId: 'c'});
+    expect(view.reports).toContainEqual({code: 'I_WAITING', message: 'SymbolOutline#c: no file selected', surfaceId: 'test', name: 'SymbolOutline', componentId: 'c', text: 'no file selected'});
   });
 
   it('a part of a component never speaks for it: <Subpart>, part, and every borrowed view (V062)', async () => {
@@ -462,7 +462,7 @@ describe('what a component draws is its state for the host (D3, D14, F032, V060-
     };
     const view = renderStub(`$/f='zzz'\n${page('Graph($/f)')}`, {Graph: Focus});
     await flushReports();
-    expect(view.reports).toEqual([{code: 'W_FOCUS', message: 'Graph#a: focus "zzz" matches no node', surfaceId: 'test', componentId: 'a'}]);
+    expect(view.reports).toEqual([{code: 'W_FOCUS', message: 'Graph#a: focus "zzz" matches no node', surfaceId: 'test', name: 'Graph', componentId: 'a', text: 'focus "zzz" matches no node'}]);
     view.setData('/f', 'src');
     await flushReports();
     expect(codes(view, 'a')).toEqual(['W_FOCUS', 'OK']);
@@ -679,7 +679,7 @@ describe('the error boundary of a component (F078)', () => {
     view.setData('/msg', 'boom');
     await flushReports();
     expect(view.cell('a').querySelector('[data-gl-state="redline"]')?.getAttribute('data-code')).toBe('E_RENDER');
-    expect(view.reports).toEqual([{code: 'E_RENDER', message: 'Text#a: view bug on this value', surfaceId: 'test', componentId: 'a'}]);
+    expect(view.reports).toEqual([{code: 'E_RENDER', message: 'Text#a: view bug on this value', surfaceId: 'test', name: 'Text', componentId: 'a', text: 'view bug on this value'}]);
     // something else rendering the cell again does not retry a view whose props are the same (V066: a real re-render,
     // the update names the component and its cell renders once more, which the report again proves)
     const tried = attempts;

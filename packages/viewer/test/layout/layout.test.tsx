@@ -242,7 +242,7 @@ describe('Grid', () => {
     expect(style(inner(view.cell('h')), '--cols')).toBe('minmax(0, 2fr) minmax(0, 1fr)');
     await waitFor(() => expect(view.stateOf('g')).toBe('W_COLS'));
     expect(view.reports.filter(report => report.code === 'W_COLS')).toEqual([
-      {code: 'W_COLS', message: "Grid#g: cols 'wide' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'", surfaceId: 'test', componentId: 'g'},
+      {code: 'W_COLS', message: "Grid#g: cols 'wide' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'", surfaceId: 'test', name: 'Grid', componentId: 'g', text: "cols 'wide' is not a count or a ratio: drawn as equal columns. Write '3' or '2:1'"},
     ]);
     expect(view.stateOf('h')).toBe('OK');
     view.send(buildPatch('test', buildSurface('test', spec), `g=Grid([Text('a'),Text('b')],'1:3')`));

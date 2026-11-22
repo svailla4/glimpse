@@ -2,8 +2,8 @@
 // The live link to the Glimpse host over loopback HTTP (design 2.5): server events arrive on one EventSource
 // (`GET /api/events?t=<token>`, frames named `glimpse`), everything else is fetch with the bearer token.
 import type {
-  DataClient, DiffPayload, DiffQuery, FileQuery, FileSlice, Health, HighlightResult, LinkStatus, OutlineResult, RendererMessage, RowsPage,
-  RowsQuery, ServerEvent, Transport,
+  ComponentState, DataClient, DiffPayload, DiffQuery, FileQuery, FileSlice, Health, HighlightResult, LinkStatus, OutlineResult, RendererMessage,
+  RowsPage, RowsQuery, ServerEvent, Transport,
 } from '@glimpse/catalog';
 
 /**
@@ -159,14 +159,14 @@ export function createHubTransport(options: HubOptions): HubTransport {
       };
     },
     linkEnd: () => linkEnd,
-    send(messages: RendererMessage[]): void {
-      if (ended || messages.length === 0) return;
+    send(messages: RendererMessage[], states?: ComponentState[]): void {
+      if (ended || (messages.length === 0 && !states?.length)) return;
       // Fire and forget: an action that cannot be delivered has nobody to report to. keepalive lets a post that
       // was made while the tab is closing still reach the host.
       void request(`${base}/api/renderer`, {
         method: 'POST',
         headers: {authorization, 'content-type': 'application/json'},
-        body: JSON.stringify({messages}),
+        body: JSON.stringify(states?.length ? {messages, states} : {messages}),
         keepalive: true,
       }).catch(() => {});
     },
