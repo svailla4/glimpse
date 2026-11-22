@@ -572,7 +572,7 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
         aria-busy={remote && pager.loading ? true : undefined}
         onKeyDown={onKeyDown}
       >
-        <div className={s.inner} style={{minWidth, ['--gl-table-cols' as never]: template}}>
+        <div className={s.inner} style={{minWidth, '--gl-table-cols': template}}>
           <div className={s.head} role="row" aria-rowindex={1}>
             {columns.map((column, i) => {
               const sorted = sort?.key === column.key ? sort : undefined;

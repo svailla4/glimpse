@@ -79,6 +79,9 @@ which `.github/workflows/release.yml` writes (decision `release-every-merge`):
   mutable (the A2UI surface and component models, a closure over outside state) is cached and never read again: read
   it through `useSyncExternalStore` (`kit/subscribe.ts`). A `useMemo` or `useCallback` dependency the callback does
   not read is dropped: make a refetch trigger part of the value. The viewer tests run compiled code.
+- **A CSS custom property in a `style` object is a plain key: `style={{'--gl-span': span}}`.** `packages/viewer/src/css.d.ts`
+  types every `--name` key, so it needs no cast and no helper. Never write `['--x' as never]` or `{...} as CSSProperties`:
+  a cast is not checked, and the React Compiler leaves a function with a cast inside an object key uncompiled.
 - Do not commit `plugin/dist`. Never add a shipped dependency without a licence the build allows (`scripts/notices.ts`).
 
 ## Decision log
@@ -341,8 +344,11 @@ Decisions explained here:
   refetched (they are fields of the request now); `useCalcNote` read a Slider's bound path from the component model
   during render, so a Slider the spec rebound kept its old path (now a `useSyncExternalStore` snapshot through
   `subscribeComponent`, with a test); the test harness read the surface during render and kept the deleted one.
-  Not done: about 39 functions are left uncompiled, which the compiler does silently (they run as written): most read
-  a ref during render (the latest-value pattern in `kit/hooks.ts`, `kit/report.ts`, flowkit, `chartkit/Chart.tsx`),
-  some use syntax it does not read yet (`{[k as T]: ...}`, `||=`, `??=`, a getter in an object literal), and
+  Nine components were left uncompiled by a cast inside a style key (`['--kv-cols' as never]`); `css.d.ts` now types
+  custom properties, so every cast and the `vars()` helper went (see Rules that are easy to break), and they compile:
+  the eager script 204.6 -> 205.4 kB, table 28.8 -> 34.2, code 20.5 -> 22.0 kB.
+  Not done: 30 functions are left uncompiled (184 compile), which the compiler does silently (they run as written):
+  most read a ref during render (the latest-value pattern in `kit/hooks.ts`, `kit/report.ts`, flowkit,
+  `chartkit/Chart.tsx`), some use syntax it does not read yet (`||=`, `??=`, a getter in an object literal), and
   `table/nav.ts` uses `@tanstack/react-virtual`, which it marks incompatible. `DateCell` is compiled, so its age
   ("3 d") is kept until its date changes, also across midnight. No lint rule for the Rules of React (Biome has none).

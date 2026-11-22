@@ -23,7 +23,7 @@ export const CalloutView: GlView<typeof C.Callout> = ({id, props}) => {
   const kindName = props.kind && Object.hasOwn(KINDS, props.kind) ? props.kind : 'note';
   const kind = KINDS[kindName];
   return (
-    <aside className={styles.callout} data-kind={kindName} style={{['--callout-ink' as never]: kind.ink}}>
+    <aside className={styles.callout} data-kind={kindName} style={{'--callout-ink': kind.ink}}>
       <div className={styles.tag}>{kind.tag}</div>
       {text.trim() !== '' || title !== '' ? (
         <p className={styles.body}>

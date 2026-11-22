@@ -137,7 +137,7 @@ export const ListView: GlView<typeof C.List> = ({id, props}) => {
         if (items.length === 0) return <Empty message={`no rows to list: List takes [{title, sub?, value?, file?}] or rows with a text field, got ${shapeHint(data)}`} code="W_SHAPE" />;
         return (
           <div className={styles.wrap}>
-            <ol className={styles.list} ref={roving.ref} onKeyDown={roving.onKeyDown} style={{['--list-rank' as never]: rankWidth}}>
+            <ol className={styles.list} ref={roving.ref} onKeyDown={roving.onKeyDown} style={{'--list-rank': rankWidth}}>
               {shown.map((item, i) => {
                 const tone = toneMark(item.tone);
                 const share = largest > 0 && item.amount !== undefined ? Math.max(2, (Math.abs(item.amount) / largest) * 100) : 0;

@@ -1,4 +1,4 @@
-import type {CSSProperties, JSX, ReactNode} from 'react';
+import type {JSX, ReactNode} from 'react';
 import {useSizeCap} from '../../kit/index.ts';
 import s from './shell.module.css';
 
@@ -10,5 +10,5 @@ import s from './shell.module.css';
  */
 export function Shell(p: {children: ReactNode}): JSX.Element {
   const cap = useSizeCap();
-  return <div className={s.shell} style={{'--gl-cap': `${cap}px`} as CSSProperties}>{p.children}</div>;
+  return <div className={s.shell} style={{'--gl-cap': `${cap}px`}}>{p.children}</div>;
 }

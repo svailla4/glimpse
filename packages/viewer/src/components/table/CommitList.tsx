@@ -163,7 +163,7 @@ const CommitItem = memo(function CommitItem({index, top, commit, loading, slot, 
         </span>
       ) : null}
       {commit.author ? (
-        <span className={s.author} title={commit.author} style={{['--gl-commit-ink' as never]: catVar(slot)}}>
+        <span className={s.author} title={commit.author} style={{'--gl-commit-ink': catVar(slot)}}>
           <span aria-hidden="true">{initials(commit.author)}</span>
           <span className={s.hidden}>{commit.author}</span>
         </span>
@@ -282,7 +282,7 @@ function List({id, props, rows, skipped, ds, remote}: ListProps): JSX.Element {
   if (malformed > 0) notes.push(`${fmtNum(malformed)} malformed ${malformed === 1 ? 'row' : 'rows'}`);
 
   return (
-    <div className={s.root} data-gl-commits="" style={{['--gl-commit-counts' as never]: `${countsWidth}px`}}>
+    <div className={s.root} data-gl-commits="" style={{'--gl-commit-counts': `${countsWidth}px`}}>
       {notes.length > 0 || pager.error ? (
         <PlateAside>
           {pager.error ? <span className={s.failed} role="alert">commits failed to load: {pager.error}</span> : null}
