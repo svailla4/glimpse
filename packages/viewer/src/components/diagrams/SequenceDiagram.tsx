@@ -1,6 +1,6 @@
 // SequenceDiagram: lifelines, messages, notes and blocks written as data (design 5.6, decision diagrams-are-data). No layout
 // library: columns are actors, rows are steps, a block is a frame round its rows. It opens fitted to its cell (MIN_SCALE)
-// and scrolls under sticky actors; the bar under it zooms as flowkit's does (buttons, + - 0 1, a pinch).
+// and scrolls under sticky actors; the bar under it is flowkit's (decision one-zoom-bar): buttons, + - 0 1, a pinch.
 import type * as C from '@glimpse/catalog';
 import {cleanSequence, seqLeaves, type EntityRef, type SeqArrow, type SeqAst} from '@glimpse/catalog';
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode} from 'react';
@@ -506,7 +506,7 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
     scroll.scrollLeft = a.x * scale - a.at.x;
     scroll.scrollTop = a.y * scale - a.at.y;
   }, [scale]);
-  // The bar's buttons and the keys + - 0 1 (ZoomBar). Fit to view: the whole drawing in the cell's width and the
+  // The bar's buttons and the keys + - 0 1 (ZoomBar, decision one-zoom-bar). Fit to view: the whole drawing in the cell's width and the
   // plate's height; actual size: 100%.
   const zoomActions: ZoomActions = {
     onZoomOut: () => zoomTo(scale / ZOOM_STEP),

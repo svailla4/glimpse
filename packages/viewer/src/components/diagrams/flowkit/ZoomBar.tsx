@@ -1,6 +1,8 @@
-// The zoom bar every diagram draws: how much of it is in view, the zoom, and zoom out, zoom in, fit to view and actual
-// size, with the same keys (+ - 0 1) on the focused drawing. One bar, so Graph, Flowchart, ERDiagram (flowkit) and
-// SequenceDiagram zoom alike; each diagram does its own zoom arithmetic and places the bar.
+// The zoom bar every diagram draws (decision one-zoom-bar): how much of it is in view, the zoom, and zoom out, zoom in,
+// fit to view and actual size, with the same keys (+ - 0 1) on the focused drawing. One bar, so Graph, Flowchart,
+// ERDiagram (flowkit) and SequenceDiagram zoom alike; each diagram does its own zoom arithmetic and places the bar.
+// Why: SequenceDiagram once had no zoom at all, beside diagrams that did, which read as a missing feature; a second
+// copy of the bar would drift the same way. A diagram that zooms draws this bar, and a change to the bar is made here.
 import type {MouseEvent} from 'react';
 import {Icon} from '../../../kit/index.ts';
 import css from './ZoomBar.module.css';

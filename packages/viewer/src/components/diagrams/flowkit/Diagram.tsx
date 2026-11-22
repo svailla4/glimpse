@@ -812,7 +812,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
     const from = view();
     setView({zoom: 1, x: at.x - (at.x - from.x) / from.zoom, y: at.y - (at.y - from.y) / from.zoom});
   }, [pivot, view, setView]);
-  // The bar's buttons and the keys + - 0 1 (ZoomBar).
+  // The bar's buttons and the keys + - 0 1 (ZoomBar, decision one-zoom-bar).
   const zoomActions: ZoomActions = {onZoomOut: () => zoomBy(1 / ZOOM_STEP), onZoomIn: () => zoomBy(ZOOM_STEP), onFit: fit, onReset: reset};
 
   const reading = useCallback(() => {
