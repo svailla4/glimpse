@@ -420,9 +420,13 @@ Decisions explained here:
   drawing, recompute every ratio and count on the page and look for a part another part's reason rules out. Glimpse
   then scored 34, 32 and 29 (mean 31.7, 233 s, 101k tokens) against the same artifact pages re-scored 31, 30 and 27
   (mean 29.3, 108k tokens). The extra time is the agent writing about 20% more and checking it, not the tool.
-  Not done: a second judge (one judge moved the same artifact pages by up to 5 points between rounds, so a 2.4-point
-  lead is a direction); which of the four rules bought what (a run without the self-check); the time a small feature
-  design takes now.
+  Two more blind judges confirmed it: 33.7 against 28.7, and 31.7 against 29.7 (one judge moved the same artifact
+  pages by up to 5 points between rounds, so no single judge is enough). A guide as light as the artifact's, only which
+  component draws which part, scored 25.0 in 161 s in the same pass: the artifact carries its reasoning in three times
+  as much prose, and Glimpse's compact components (a label, a note, a row) are written tersely unless the guide says
+  what a review needs. So the rules stay, and their cost (about 70 s a design) buys about 7 points.
+  Not done: which of the four rules bought what (a run without the self-check alone); the time a small feature design
+  takes now.
 - **`ask-options-carry-notes`: an Ask option may say what picking it means (2026-11-22).** `Ask.options` takes
   `['A', {label, note}]`, read by `readOptions` (catalog `options.ts`, apart from `notation.ts` because Ask is in the
   eager chunk) on the server and in the tab. The note is set under its label and is the tile's accessible
