@@ -213,10 +213,11 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   arguments and no `sub`; `round`; storing inputs under `/ui`.
   Budgets: instructions 3,748 (`Components (? optional):` paid for the Slider index entry). The eager script did not
   fit: the 45 component `example` strings moved from `ComponentMeta` to `COMPONENT_EXAMPLES` in docs.ts, since the tab
-  never reads them (about 1.4 kB gzip); it is 194,159 of 195,000 bytes with the Slider. GRAMMAR rule 9 is shorter
+  never reads them (about 1.4 kB gzip); it is 194,207 of 195,000 bytes with the Slider. GRAMMAR rule 9 is shorter
   than designed, to stay under F043's 1,600 characters.
   Not done: a call reading `/ds` is not checked at show time; the model resets a number only by writing its leaf
   path; a second tab sees a set number at its next snapshot; a number set after the session ended changes only the
-  tab; a step of 0 or less is read as no step without a report. A call in data bound to a `$/path` is not computed
+  tab; a step of 0 or less is read as no step without a report; a call with a relative `$path` is warned at show
+  time but left out of the `viewer: set` line. A call in data bound to a `$/path` is not computed
   (the `$/data` warning says so), and the tab then draws a diagram label holding one as its id, without a report of
   its own.
