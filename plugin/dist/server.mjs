@@ -30307,7 +30307,8 @@ var init_components3 = __esm({
       doc: "Decision card: the user picks one option; the pick is queued for the agent."
     }, {
       prompt: p5.text("Question (inline micro-markup)."),
-      options: p5.strings("Choices."),
+      // A value prop, read by readOptions (catalog options.ts), since a static prop may not be a union (decision ask-options-carry-notes).
+      options: p5.value("Choices: ['A','B'], or [{label, note?}] where note says what picking it means or costs."),
       name: opt(p5.str("Event name. Default 'answer'.")),
       ...CELL
     });
@@ -31305,7 +31306,7 @@ var init_docs = __esm({
       CodeTour: "CodeTour([{file:'src/auth/service.ts#L20-58',note:'Entry point.'},{file:'src/auth/cache.ts#L5-30',note:'Token cache.'}])",
       SymbolOutline: "SymbolOutline()",
       Button: "Button('Approve plan',Event('approve',{plan:1}),'primary')",
-      Ask: "Ask('Which store backs the limiter?',['Redis','In-memory'],'store')",
+      Ask: "Ask('Which store backs the limiter?',['Redis',{label:'In-memory',note:'One instance only; counts reset on restart'}],'store')",
       Slider: "Row([Slider('Seats',$/w/seats,1000,200000,step=1000),Stat(div(mul($/w/seats,0.6),120),'checkout req/s')])"
     };
     FRAME_LINE = "  +frame: title= (draws the numbered plate) note= size=s|m|l|xl|fill (max height)";
@@ -31326,7 +31327,7 @@ shape=Flowchart($/shape,title='Every request passes the limiter before a handler
 why=Column([Callout('Counts live in memory: there is one instance today. The store is an interface, so Redis can replace it when we run more.','decision','Counter store'),Callout('A fixed one-minute window rather than a sliding one: simpler to reason about. A burst of 200 across a window edge is accepted.','decision','Window'),Callout('The admin router is mounted before the API router, so it skips the limiter. That is wanted; a test pins it.','risk','Admin routes')],span=5)
 scope=Callout('Limits per user, quotas per plan, and a report of who was limited.','note','Not in this change')
 plan=Steps([{title:'Limiter and counter store',file:'src/api/limiter.ts',note:'Checked by behaviours 1 and 3'},{title:'Mount it in front of the API router',file:'src/api/routes.ts#L12',note:'Checked by behaviour 2'},{title:'Test that admin routes skip it',file:'test/api/admin.test.ts',note:'Behaviour 4'}],title='Work plan')
-ask=Ask('What limit should a key get? The first is what I would build.',['100 a minute','1,000 an hour','Set per key'],'limit')`
+ask=Ask('What limit should a key get? The first is what I would build.',[{label:'100 a minute',note:'Stops the batch jobs; a burst of 200 across a minute edge passes'},{label:'1,000 an hour',note:'A batch job can still run for minutes before it is stopped'},{label:'Set per key',note:'An admin screen and a column on keys: about a week more'}],'limit')`
       },
       {
         title: "Review a change",
@@ -32147,10 +32148,64 @@ var init_calls = __esm({
   }
 });
 
+// packages/catalog/src/options.ts
+function readOptions(value) {
+  const options = [];
+  const problems = [];
+  const renamed = [];
+  if (value === void 0 || value === null) return { options, problems, renamed };
+  if (!Array.isArray(value)) {
+    problems.push({ option: 0, type: "shape", message: `expected a list [${ITEM_HINT}], received ${describe(value)}` });
+    return { options, problems, renamed };
+  }
+  const seen = /* @__PURE__ */ new Set();
+  value.forEach((item, i10) => {
+    const option2 = i10 + 1;
+    const labelKey = isRecord3(item) ? LABEL_KEYS2.find((key2) => textOf3(item[key2])) : void 0;
+    const label = isRecord3(item) ? labelKey ? textOf3(item[labelKey]) : void 0 : textOf3(item);
+    if (!label) {
+      problems.push({ option: option2, type: "dropped", message: isRecord3(item) ? `no label: expected ${ITEM_HINT}` : `expected ${ITEM_HINT}, received ${describe(item)}` });
+      return;
+    }
+    if (seen.has(label)) {
+      problems.push({ option: option2, type: "dropped", message: `"${clip2(label)}" repeats an earlier option` });
+      return;
+    }
+    seen.add(label);
+    if (!isRecord3(item)) {
+      options.push({ label });
+      return;
+    }
+    const noteKey = NOTE_KEYS2.find((key2) => textOf3(item[key2]));
+    const note = noteKey ? textOf3(item[noteKey]) : void 0;
+    if (labelKey && labelKey !== "label") renamed.push({ option: option2, from: labelKey, to: "label" });
+    if (noteKey && noteKey !== "note") renamed.push({ option: option2, from: noteKey, to: "note" });
+    const ignored = Object.keys(item).filter((key2) => !READ_KEYS.has(key2) || key2 !== labelKey && key2 !== noteKey && textOf3(item[key2]) !== void 0);
+    if (ignored.length > 0) problems.push({ option: option2, type: "ignored", message: `ignored ${ignored.length === 1 ? "key" : "keys"} ${ignored.slice(0, 6).join(", ")} of option "${clip2(label)}"` });
+    options.push(note ? { label, note } : { label });
+  });
+  return { options, problems, renamed };
+}
+var LABEL_KEYS2, NOTE_KEYS2, READ_KEYS, ITEM_HINT, MAX_CLIP, isRecord3, clip2, textOf3, describe;
+var init_options = __esm({
+  "packages/catalog/src/options.ts"() {
+    "use strict";
+    LABEL_KEYS2 = ["label", "title", "text", "name", "value"];
+    NOTE_KEYS2 = ["note", "description", "detail", "details", "why", "cost"];
+    READ_KEYS = /* @__PURE__ */ new Set([...LABEL_KEYS2, ...NOTE_KEYS2]);
+    ITEM_HINT = "'label' or {label, note?}";
+    MAX_CLIP = 40;
+    isRecord3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+    clip2 = (text5) => text5.length > MAX_CLIP ? `${text5.slice(0, MAX_CLIP - 1)}\u2026` : text5;
+    textOf3 = (value) => typeof value === "string" && value.trim() !== "" ? value.trim() : void 0;
+    describe = (value) => value === null ? "null" : Array.isArray(value) ? "a list" : typeof value === "string" ? `"${clip2(value)}"` : typeof value === "object" ? "an object" : `${typeof value} ${String(value)}`;
+  }
+});
+
 // packages/catalog/src/notation.ts
 function columnKey(item) {
   if (typeof item === "string") return item.trim() !== "" ? { key: item.trim(), prop: "" } : void 0;
-  if (!isRecord3(item)) return void 0;
+  if (!isRecord4(item)) return void 0;
   for (const prop of KEY_PROPS) {
     const value = item[prop];
     if (typeof value === "string" && value.trim() !== "") return { key: value.trim(), prop };
@@ -32175,7 +32230,7 @@ function readColumns(value) {
     shorthandTokens(value).forEach((token3, i10) => {
       const { key: key2, kind, label } = splitToken(token3);
       if (!key2) {
-        problems.push({ column: i10 + 1, type: "dropped", message: `"${clip2(token3)}" has no field name` });
+        problems.push({ column: i10 + 1, type: "dropped", message: `"${clip3(token3)}" has no field name` });
         return;
       }
       const known = kind !== void 0 && KIND_SET.has(kind);
@@ -32185,17 +32240,17 @@ function readColumns(value) {
     return { fields: fields2, problems };
   }
   if (!Array.isArray(value)) {
-    problems.push({ column: 0, type: "shape", message: `expected a list [${ITEM_HINT}], received ${describeValue2(value)}` });
+    problems.push({ column: 0, type: "shape", message: `expected a list [${ITEM_HINT2}], received ${describeValue2(value)}` });
     return { fields: fields2, problems };
   }
   value.forEach((item, i10) => {
     const column = i10 + 1;
     const named2 = columnKey(item);
     if (!named2) {
-      problems.push({ column, type: "dropped", message: isRecord3(item) ? `no key: expected ${ITEM_HINT}` : `expected ${ITEM_HINT}, received ${describeValue2(item)}` });
+      problems.push({ column, type: "dropped", message: isRecord4(item) ? `no key: expected ${ITEM_HINT2}` : `expected ${ITEM_HINT2}, received ${describeValue2(item)}` });
       return;
     }
-    if (!isRecord3(item)) {
+    if (!isRecord4(item)) {
       fields2.push({ key: named2.key });
       return;
     }
@@ -32207,17 +32262,17 @@ function readColumns(value) {
     }
     const label = LABEL_PROPS.map((prop) => item[prop]).find((text5) => typeof text5 === "string" && text5.trim() !== "");
     const ignored = Object.keys(item).filter((prop) => !ITEM_PROPS.has(prop));
-    if (ignored.length > 0) problems.push({ column, type: "ignored", message: `ignored ${ignored.length === 1 ? "key" : "keys"} ${ignored.slice(0, 6).join(", ")} of column "${clip2(key2)}"` });
+    if (ignored.length > 0) problems.push({ column, type: "ignored", message: `ignored ${ignored.length === 1 ? "key" : "keys"} ${ignored.slice(0, 6).join(", ")} of column "${clip3(key2)}"` });
     fields2.push({ key: key2, ...kind ? { kind } : {}, ...label ? { label: label.trim() } : {} });
   });
   return { fields: fields2, problems };
 }
-var clip2, isRecord3, describeValue2, FIELD_KINDS, KIND_SET, KEY_PROPS, LABEL_PROPS, ITEM_PROPS, ITEM_HINT, unknownKind, shorthandTokens, tokenKey;
+var clip3, isRecord4, describeValue2, FIELD_KINDS, KIND_SET, KEY_PROPS, LABEL_PROPS, ITEM_PROPS, ITEM_HINT2, unknownKind, shorthandTokens, tokenKey;
 var init_notation = __esm({
   "packages/catalog/src/notation.ts"() {
     "use strict";
-    clip2 = (text5, max = 40) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
-    isRecord3 = (v5) => typeof v5 === "object" && v5 !== null && !Array.isArray(v5);
+    clip3 = (text5, max = 40) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
+    isRecord4 = (v5) => typeof v5 === "object" && v5 !== null && !Array.isArray(v5);
     describeValue2 = (v5) => v5 === null ? "null" : Array.isArray(v5) ? "an array" : typeof v5 === "object" ? "an object" : `a ${typeof v5}`;
     FIELD_KINDS = [
       "text",
@@ -32244,8 +32299,8 @@ var init_notation = __esm({
     KEY_PROPS = ["key", "field", "name"];
     LABEL_PROPS = ["label", "title"];
     ITEM_PROPS = /* @__PURE__ */ new Set([...KEY_PROPS, "kind", ...LABEL_PROPS]);
-    ITEM_HINT = "'key' or {key, kind?, label?}";
-    unknownKind = (kind, key2) => `unknown kind ${typeof kind === "string" ? `"${clip2(kind, 20)}"` : describeValue2(kind)} for column "${clip2(key2)}". Kinds: ${FIELD_KINDS.join(" ")}`;
+    ITEM_HINT2 = "'key' or {key, kind?, label?}";
+    unknownKind = (kind, key2) => `unknown kind ${typeof kind === "string" ? `"${clip3(kind, 20)}"` : describeValue2(kind)} for column "${clip3(key2)}". Kinds: ${FIELD_KINDS.join(" ")}`;
     shorthandTokens = (spec2) => spec2.trim().split(/\s+/).filter(Boolean);
     tokenKey = (token3) => /^[^:=]*/.exec(token3)[0];
   }
@@ -32368,6 +32423,7 @@ var init_src = __esm({
     init_rowlinks();
     init_calc();
     init_calls();
+    init_options();
     init_notation();
     init_normalize();
     init_grid();
@@ -61962,9 +62018,9 @@ function reportLine(surfaceId2, component2, code, message) {
   return `viewer: error ${name(surfaceId2)} ${reportText(component2, code, message)}`;
 }
 function reportText(component2, code, message) {
-  return `${component2.replace(/[^\w#.-]/g, "_").slice(0, 80)}: ${name(code)} ${clip3(oneLine(message, MAX_TEXT), MAX_TEXT)}`.trim();
+  return `${component2.replace(/[^\w#.-]/g, "_").slice(0, 80)}: ${name(code)} ${clip4(oneLine(message, MAX_TEXT), MAX_TEXT)}`.trim();
 }
-var MAX_REPORT_LINES, MAX_TEXT, name, clip3, foldLine, idOf, ReportStore;
+var MAX_REPORT_LINES, MAX_TEXT, name, clip4, foldLine, idOf, ReportStore;
 var init_reports = __esm({
   "packages/server/src/session/reports.ts"() {
     "use strict";
@@ -61973,7 +62029,7 @@ var init_reports = __esm({
     MAX_REPORT_LINES = 8;
     MAX_TEXT = 200;
     name = (value) => value.replace(/[^\w.-]/g, "_").slice(0, 64) || "_";
-    clip3 = (text5, max) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
+    clip4 = (text5, max) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
     foldLine = (surfaceId2, count2) => `viewer: error ${name(surfaceId2)} (+${count2} more parts could not be drawn)`;
     idOf = (component2) => component2.slice(component2.indexOf("#") + 1);
     ReportStore = class {
@@ -62078,7 +62134,7 @@ var init_reports = __esm({
 // packages/server/src/session/events.ts
 function token(value, max = MAX_VALUE) {
   const text5 = typeof value === "string" ? value : JSON.stringify(value) ?? "";
-  return /^[\w@./#:~+-]+$/.test(text5) ? clip4(text5, max) : jsonQuote(clip4(text5, max));
+  return /^[\w@./#:~+-]+$/.test(text5) ? clip5(text5, max) : jsonQuote(clip5(text5, max));
 }
 function selectLine(ref2, surfaceId2) {
   const loc = ref2.path !== void 0 ? formatFileLoc({ path: ref2.path, ...ref2.line !== void 0 ? { line: ref2.line } : {}, ...ref2.endLine !== void 0 ? { endLine: ref2.endLine } : {} }) : void 0;
@@ -62093,7 +62149,7 @@ function actionLine(verb, surfaceId2, action, context) {
   let json2 = "";
   if (typeof context === "object" && context !== null && Object.keys(context).length > 0) {
     json2 = JSON.stringify(context);
-    json2 = json2.length > MAX_VALUE ? jsonQuote(clip4(json2)) : escapeSeparators(escapeInvisible(json2, true));
+    json2 = json2.length > MAX_VALUE ? jsonQuote(clip5(json2)) : escapeSeparators(escapeInvisible(json2, true));
   }
   return `${PREFIX} ${verb} ${name2(surfaceId2)} ${name2(action)}${json2 ? " " + json2 : ""}`;
 }
@@ -62109,9 +62165,9 @@ function setLine(path2, value, surfaceId2, computed2) {
   });
   if (groups.size > MAX_SET_PARTS) parts.push(`and ${groups.size - MAX_SET_PARTS} more`);
   const items = parts.join("; ");
-  return `${PREFIX} set $${token(path2)} ${String(value)} (${name2(surfaceId2)})${items ? ` -> ${escapeSeparators(escapeInvisible(clip4(items), true))}` : ""}`;
+  return `${PREFIX} set $${token(path2)} ${String(value)} (${name2(surfaceId2)})${items ? ` -> ${escapeSeparators(escapeInvisible(clip5(items), true))}` : ""}`;
 }
-var MAX_EVENTS, MAX_VALUE, PREFIX, clip4, name2, MAX_SET_PARTS, EventQueue;
+var MAX_EVENTS, MAX_VALUE, PREFIX, clip5, name2, MAX_SET_PARTS, EventQueue;
 var init_events3 = __esm({
   "packages/server/src/session/events.ts"() {
     "use strict";
@@ -62122,7 +62178,7 @@ var init_events3 = __esm({
     MAX_EVENTS = 100;
     MAX_VALUE = 300;
     PREFIX = "viewer:";
-    clip4 = (text5, max = MAX_VALUE) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
+    clip5 = (text5, max = MAX_VALUE) => text5.length > max ? text5.slice(0, max - 1) + "\u2026" : text5;
     name2 = (value) => value.replace(/[^\w.-]/g, "_").slice(0, 64) || "_";
     MAX_SET_PARTS = 8;
     EventQueue = class {
@@ -62168,7 +62224,7 @@ var init_events3 = __esm({
         while (this.entries.length > 0) {
           const next = this.entries[0].line;
           if (lines.length > 0 && used + next.length + 1 > maxChars) break;
-          lines.push(maxChars === Infinity ? next : clip4(next, maxChars));
+          lines.push(maxChars === Infinity ? next : clip5(next, maxChars));
           used += next.length + 1;
           this.entries.shift();
         }
@@ -62199,18 +62255,18 @@ var init_events3 = __esm({
 
 // packages/server/src/session/actions.ts
 function parseAction(value) {
-  if (!isRecord4(value) || !text(value.name) || value.name === "" || !text(value.surfaceId) || !text(value.sourceComponentId)) return void 0;
+  if (!isRecord5(value) || !text(value.name) || value.name === "" || !text(value.surfaceId) || !text(value.sourceComponentId)) return void 0;
   return {
     name: value.name,
     surfaceId: value.surfaceId,
     sourceComponentId: value.sourceComponentId,
     timestamp: text(value.timestamp) ? value.timestamp : "",
-    context: isRecord4(value.context) ? value.context : {}
+    context: isRecord5(value.context) ? value.context : {}
   };
 }
 function parseEntity(value) {
   if (value === null) return null;
-  if (!isRecord4(value) || typeof value.type !== "string" || !ENTITY_TYPES2.has(value.type) || !text(value.id) || value.id === "") return void 0;
+  if (!isRecord5(value) || typeof value.type !== "string" || !ENTITY_TYPES2.has(value.type) || !text(value.id) || value.id === "") return void 0;
   return {
     type: value.type,
     id: value.id,
@@ -62221,7 +62277,7 @@ function parseEntity(value) {
     ...nodeIds(value.nodes) ? { nodes: [...value.nodes] } : {}
   };
 }
-var ENTITY_TYPES2, MAX_TEXT2, MAX_NODE_ID, isRecord4, text, lineNumber, nodeIds, ActionRouter;
+var ENTITY_TYPES2, MAX_TEXT2, MAX_NODE_ID, isRecord5, text, lineNumber, nodeIds, ActionRouter;
 var init_actions = __esm({
   "packages/server/src/session/actions.ts"() {
     "use strict";
@@ -62230,7 +62286,7 @@ var init_actions = __esm({
     ENTITY_TYPES2 = new Set(ENTITY_TYPES);
     MAX_TEXT2 = 1024;
     MAX_NODE_ID = 200;
-    isRecord4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+    isRecord5 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
     text = (value) => typeof value === "string" && value.length <= MAX_TEXT2;
     lineNumber = (value) => typeof value === "number" && Number.isInteger(value) && value > 0 && value < 1e7;
     nodeIds = (value) => Array.isArray(value) && value.length > 0 && value.length <= MAX_ENTITY_NODES && value.every((id) => typeof id === "string" && id !== "" && id.length <= MAX_NODE_ID);
@@ -62247,7 +62303,7 @@ var init_actions = __esm({
        * renderer errors. Returns false when it was malformed or names nothing that exists.
        */
       state(value) {
-        if (!isRecord4(value)) return false;
+        if (!isRecord5(value)) return false;
         const { surfaceId: surfaceId2, component: component2, id, code } = value;
         if (!text(surfaceId2) || !text(component2) || !text(id) || !text(code)) return false;
         if (code !== REPORT_OK && !/^I_[A-Z0-9_]{1,30}$/.test(code)) return false;
@@ -62256,8 +62312,8 @@ var init_actions = __esm({
       }
       /** Handles one renderer-to-agent message. Returns false when it was malformed or addressed nothing that exists. */
       handle(message) {
-        if (!isRecord4(message) || message.version !== "1.0") return false;
-        if (isRecord4(message.error)) {
+        if (!isRecord5(message) || message.version !== "1.0") return false;
+        if (isRecord5(message.error)) {
           const { code, surfaceId: surfaceId2 } = message.error;
           const detail = typeof message.error.message === "string" ? message.error.message.slice(0, MAX_TEXT2) : void 0;
           const report2 = text(code) && text(detail) && text(surfaceId2) ? /^([A-Za-z][A-Za-z0-9]{0,39})#([^\s:]{1,120}):(?: ([\s\S]*))?$/.exec(detail) : null;
@@ -113703,7 +113759,7 @@ function asDrawn(value, read = () => void 0) {
       return "value" in got && typeof got.value === "number" ? got.value : 0;
     }
     if (Array.isArray(v5)) return v5.map(walk);
-    if (isRecord5(v5)) return Object.fromEntries(Object.entries(v5).map(([key2, item]) => [key2, walk(item)]));
+    if (isRecord6(v5)) return Object.fromEntries(Object.entries(v5).map(([key2, item]) => [key2, walk(item)]));
     return v5;
   };
   const drawn = walk(value);
@@ -113790,15 +113846,15 @@ function linkNotes(components, data, defined, written) {
   }
   return lines;
 }
-var NONE4, isRecord5, textOf3, withFile, withNodes, AUTHORED, TEXT_DIAGRAMS, isBinding2, SERVER_PATH, topSegment, MAX_LINK_IDS;
+var NONE4, isRecord6, textOf4, withFile, withNodes, AUTHORED, TEXT_DIAGRAMS, isBinding2, SERVER_PATH, topSegment, MAX_LINK_IDS;
 var init_authored = __esm({
   "packages/server/src/spec/authored.ts"() {
     "use strict";
     init_src();
     init_errors7();
     NONE4 = { declares: [], links: [], files: [] };
-    isRecord5 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-    textOf3 = (value) => typeof value === "string" && value.trim() !== "" ? value.trim() : typeof value === "number" && Number.isFinite(value) ? String(value) : void 0;
+    isRecord6 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+    textOf4 = (value) => typeof value === "string" && value.trim() !== "" ? value.trim() : typeof value === "number" && Number.isFinite(value) ? String(value) : void 0;
     withFile = (at) => (item) => item.file !== void 0 ? [{ at: at(item), file: item.file }] : [];
     withNodes = (at) => (item) => item.nodes?.length ? [{ at: at(item), ids: item.nodes }] : [];
     AUTHORED = {
@@ -113833,9 +113889,9 @@ var init_authored = __esm({
       // Graph data is drawn as it is written; only its node ids matter here.
       Graph: (value) => ({
         ok: true,
-        ast: { ...NONE4, declares: (isRecord5(value) && Array.isArray(value.nodes) ? value.nodes : []).flatMap((node3) => {
-          const id = isRecord5(node3) ? textOf3(node3.id) : void 0;
-          return id !== void 0 ? [{ id, label: textOf3(node3.label) ?? id }] : [];
+        ast: { ...NONE4, declares: (isRecord6(value) && Array.isArray(value.nodes) ? value.nodes : []).flatMap((node3) => {
+          const id = isRecord6(node3) ? textOf4(node3.id) : void 0;
+          return id !== void 0 ? [{ id, label: textOf4(node3.label) ?? id }] : [];
         }) },
         fixes: [],
         dropped: [],
@@ -114235,6 +114291,18 @@ function meantField(name3, fields2) {
   if (!wanted) return void 0;
   return keys2.find((key2) => squash(key2) === wanted) ?? fields2.find((field) => field.label !== void 0 && squash(field.label) === wanted)?.key ?? (Object.hasOwn(FIELD_SYNONYMS, wanted) ? FIELD_SYNONYMS[wanted].find((key2) => keys2.includes(key2)) : void 0) ?? keys2.find((key2) => squash(key2) === wanted.replace(/s$/, "") || squash(key2) === `${wanted}s`) ?? closeMatch(name3, keys2);
 }
+function askOptions(comp, out, where) {
+  const value = comp.options;
+  if (value === void 0 || isDynamic(value)) return;
+  const read = readOptions(value);
+  for (const { option: option2, from, to } of read.renamed) out.fixes.push(`${where("options")} option ${option2}: ${from} -> ${to}`);
+  for (const { option: option2, type: type2, message } of read.problems) {
+    const at = `${where("options")}${option2 > 0 ? ` option ${option2}` : ""}`;
+    if (type2 === "shape") out.problems.push(problem("E_SHAPE", `${at}: ${message}`, { component: "Ask" }));
+    else out.warnings.push(`${at}: ${type2 === "dropped" ? "not drawn: " : ""}${message}`);
+  }
+  if (read.renamed.length > 0 || read.problems.length > 0) comp.options = read.options.map((option2) => option2.note ? option2 : option2.label);
+}
 function writtenFields(comp, name3, props) {
   const names = [];
   for (const [key2, prop] of Object.entries(props)) {
@@ -114446,6 +114514,7 @@ function expandComponent(comp, registry3, out, names) {
       else out.warnings.push(`${at}: ${type2 === "dropped" ? "not drawn: " : ""}${message}`);
     }
   }
+  if (def.name === "Ask") askOptions(comp, out, where);
   const fields2 = boundFields.length === 1 ? boundFields[0] : void 0;
   if (fields2 && fields2.length > 0) repairFields(comp, def.name, def.props, fields2, out);
   nameFiles(comp, def.name, def.props, out, names);
@@ -115319,7 +115388,7 @@ function drillOf(own6, target2) {
   const up = parent === "" || parent === base || base !== "" && !parent.startsWith(`${base}/`) ? "" : parent;
   return { target: target2, up };
 }
-var SLOT_COUNT, TREE_DEBOUNCE_MS, NO_GIT_POLL_MS, MAX_CHECK_WARNINGS, GALLERY_PICK_MS, PROSE2, SLOT_SOURCES, deleteSurface, setData, describe3, GALLERY_CANDIDATES, FIRST_SCREEN, SMALL_DIR, hasDotGit, topSegment2, Session;
+var SLOT_COUNT, TREE_DEBOUNCE_MS, NO_GIT_POLL_MS, MAX_CHECK_WARNINGS, GALLERY_PICK_MS, PROSE2, SLOT_SOURCES, deleteSurface, setData, describe4, GALLERY_CANDIDATES, FIRST_SCREEN, SMALL_DIR, hasDotGit, topSegment2, Session;
 var init_session = __esm({
   "packages/server/src/session/session.ts"() {
     "use strict";
@@ -115350,7 +115419,7 @@ var init_session = __esm({
     SLOT_SOURCES = { lang: "files.langs", module: "deps.modules", author: "git.authors" };
     deleteSurface = (surfaceId2) => ({ version: PROTOCOL_VERSION, deleteSurface: { surfaceId: surfaceId2 } });
     setData = (surfaceId2, path2, value) => ({ version: PROTOCOL_VERSION, updateDataModel: { surfaceId: surfaceId2, path: path2, value } });
-    describe3 = (error3) => error3 instanceof Error ? error3.message : String(error3);
+    describe4 = (error3) => error3 instanceof Error ? error3.message : String(error3);
     GALLERY_CANDIDATES = 12;
     FIRST_SCREEN = 30;
     SMALL_DIR = 12;
@@ -115592,7 +115661,7 @@ var init_session = __esm({
         try {
           this.host?.publish(surfaceId2, messages);
         } catch (error3) {
-          this.log(`glimpse: could not publish to the tab: ${describe3(error3)}`);
+          this.log(`glimpse: could not publish to the tab: ${describe4(error3)}`);
         }
       }
       /** One snapshot frame per surface, for a tab that connects or reconnects. */
@@ -115713,8 +115782,8 @@ var init_session = __esm({
           this.tabsChanged(host.tabs());
           void this.assignSlots();
         } catch (error3) {
-          this.log(`glimpse: show ${record3.id} was committed, then failed to publish: ${describe3(error3)}`);
-          warnings.push(`the view is stored but could not be sent to the tab (${describe3(error3).slice(0, 120)}); reload the tab`);
+          this.log(`glimpse: show ${record3.id} was committed, then failed to publish: ${describe4(error3)}`);
+          warnings.push(`the view is stored but could not be sent to the tab (${describe4(error3).slice(0, 120)}); reload the tab`);
         }
         const first = this.shows++ === 0;
         const outcome = {
@@ -115732,7 +115801,7 @@ var init_session = __esm({
           slots: draft.mode === "patch" ? [] : liveSlots(record3, prepared.compiledData).map((key2) => `$/${key2}`),
           first
         };
-        outcome.checks = this.checkNamed(services, expansion).then((found) => void outcome.warnings.push(...found), (error3) => this.log(`glimpse: checking the files a view names failed: ${describe3(error3)}`));
+        outcome.checks = this.checkNamed(services, expansion).then((found) => void outcome.warnings.push(...found), (error3) => this.log(`glimpse: checking the files a view names failed: ${describe4(error3)}`));
         return outcome;
       }
       /**
@@ -115947,7 +116016,7 @@ var init_session = __esm({
             changed = changed || Object.keys(next).length > 0;
           }));
           if (changed) this.publishMeta();
-        })().catch((error3) => this.log(`glimpse: colour slots failed: ${describe3(error3)}`)).finally(() => {
+        })().catch((error3) => this.log(`glimpse: colour slots failed: ${describe4(error3)}`)).finally(() => {
           this.slotsRun = void 0;
         });
         return this.slotsRun;
@@ -116021,7 +116090,7 @@ var init_session = __esm({
         this.looking = (async () => {
           if (await this.moved(services)) this.treePending = true;
           await this.flushTree();
-        })().catch((error3) => this.log(`glimpse: looking at the working tree failed: ${describe3(error3)}`)).finally(() => {
+        })().catch((error3) => this.log(`glimpse: looking at the working tree failed: ${describe4(error3)}`)).finally(() => {
           this.looking = void 0;
         });
         return this.looking;
@@ -116060,7 +116129,7 @@ var init_session = __esm({
             });
             this.rerun(record3, keys2, false);
           }
-        }).catch((error3) => this.log(`glimpse: refreshing after a change failed: ${describe3(error3)}`));
+        }).catch((error3) => this.log(`glimpse: refreshing after a change failed: ${describe4(error3)}`));
         this.refreshing = run;
         return run;
       }
@@ -116262,7 +116331,7 @@ function showText(report2) {
   const head2 = [okLine(outcome, report2.elapsedMs)];
   for (const fix of outcome.fixes.slice(0, MAX_FIXES)) head2.push(`fixed ${oneLine(fix, 120)}`);
   if (outcome.fixes.length > MAX_FIXES) head2.push(`fixed (+${outcome.fixes.length - MAX_FIXES} more repairs)`);
-  if (report2.repo) head2.push(clip5(report2.repo, 200));
+  if (report2.repo) head2.push(clip6(report2.repo, 200));
   const warnings = [...outcome.warnings, ...report2.late ?? []];
   const ds = [];
   let unchanged = 0;
@@ -116274,7 +116343,7 @@ function showText(report2) {
       const notes = (state?.warnings ?? []).map((warning) => oneLine(warning, 120)).filter((note) => note && !caveats.has(note));
       for (const note of notes) caveats.add(note);
       const summary = state?.status === "ready" ? oneLine(state.summary || "ready", 160) : "pending";
-      ds.push({ ref: clip5(ref2, 120), summary: notes.length > 0 ? clip5(`${summary}; ${notes.join("; ")}`, 280) : summary });
+      ds.push({ ref: clip6(ref2, 120), summary: notes.length > 0 ? clip6(`${summary}; ${notes.join("; ")}`, 280) : summary });
     }
   }
   const distinct = [...new Set(warnings.map((warning) => oneLine(warning, 200)).filter(Boolean))];
@@ -116284,8 +116353,8 @@ function showText(report2) {
   const fixed = () => sizeOf([...head2, ...parts ? [parts] : [], ...warn]) + (unchanged > 0 ? 24 : 0);
   fitSummaries(ds, RESULT_BUDGET - fixed());
   const dsSize = () => ds.reduce((sum, line) => sum + line.ref.length + line.summary.length + 7, 0);
-  if (fixed() + dsSize() > RESULT_BUDGET && parts.length > 160) parts = clip5(parts, 160);
-  for (let i10 = warn.length - 1; i10 >= 0 && fixed() + dsSize() > RESULT_BUDGET; i10--) warn[i10] = clip5(warn[i10], 100);
+  if (fixed() + dsSize() > RESULT_BUDGET && parts.length > 160) parts = clip6(parts, 160);
+  for (let i10 = warn.length - 1; i10 >= 0 && fixed() + dsSize() > RESULT_BUDGET; i10--) warn[i10] = clip6(warn[i10], 100);
   let folded = 0;
   if (fixed() + dsSize() > RESULT_BUDGET) {
     while (ds.length > 1 && fixed() + dsSize() + 52 > RESULT_BUDGET) {
@@ -116311,7 +116380,7 @@ function showText(report2) {
   ];
   return [shield(lines.join("\n")), ...report2.events].join("\n");
 }
-var text3, failed, viewerLines, showFailure, RESULT_BUDGET, MIN_SUMMARY, MAX_WARNINGS2, MAX_FIXES, clip5, sizeOf;
+var text3, failed, viewerLines, showFailure, RESULT_BUDGET, MIN_SUMMARY, MAX_WARNINGS2, MAX_FIXES, clip6, sizeOf;
 var init_result = __esm({
   "packages/server/src/mcp/result.ts"() {
     "use strict";
@@ -116324,7 +116393,7 @@ var init_result = __esm({
     MIN_SUMMARY = 48;
     MAX_WARNINGS2 = 8;
     MAX_FIXES = 6;
-    clip5 = (value, max) => value.length > max ? value.slice(0, Math.max(1, max - 1)).trimEnd() + "\u2026" : value;
+    clip6 = (value, max) => value.length > max ? value.slice(0, Math.max(1, max - 1)).trimEnd() + "\u2026" : value;
     sizeOf = (lines) => lines.reduce((sum, line) => sum + line.length + 1, 0);
   }
 });
@@ -116474,17 +116543,17 @@ var init_pendingContext = __esm({
 
 // packages/server/src/mcp/query.ts
 function cell(value, first = false) {
-  if (isRecord6(value) && typeof value.add === "number" && typeof value.del === "number" && Object.keys(value).length === 2) return `+${value.add} -${value.del}`;
+  if (isRecord7(value) && typeof value.add === "number" && typeof value.del === "number" && Object.keys(value).length === 2) return `+${value.add} -${value.del}`;
   const raw3 = value === null || value === void 0 ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
   const clipped = raw3.length > MAX_CELL ? raw3.slice(0, MAX_CELL - 1) + "\u2026" : raw3;
   const seen = skeleton(clipped);
   return UNSAFE_CHAR.test(clipped) || readsAsViewerLine(clipped) || first && FRAMING.test(seen) ? jsonQuote(clipped) : clipped;
 }
 function asRecords(rows) {
-  const records = rows.filter(isRecord6);
+  const records = rows.filter(isRecord7);
   if (records.length === rows.length) return records;
   const key2 = records.some((row) => Object.hasOwn(row, "label")) ? "label" : "value";
-  return rows.map((row) => isRecord6(row) ? row : { [key2]: row });
+  return rows.map((row) => isRecord7(row) ? row : { [key2]: row });
 }
 function rowsText(rows, fieldKeys, wanted, limit, total) {
   const records = asRecords(rows);
@@ -116506,7 +116575,7 @@ function treeText(root2, limit) {
   const stack = [root2];
   while (stack.length > 0) {
     const node3 = stack.pop();
-    if (!isRecord6(node3) || seen.has(node3)) continue;
+    if (!isRecord7(node3) || seen.has(node3)) continue;
     seen.add(node3);
     total++;
     if (rows.length < limit) rows.push([node3.path === "" ? "." : node3.path, node3.files, node3.loc]);
@@ -116516,8 +116585,8 @@ function treeText(root2, limit) {
 total=${total} returned=${rows.length}`;
 }
 function graphText(graph, limit, cutFrom) {
-  const nodes = (Array.isArray(graph.nodes) ? graph.nodes : []).filter(isRecord6);
-  const edges = (Array.isArray(graph.edges) ? graph.edges : []).filter(isRecord6);
+  const nodes = (Array.isArray(graph.nodes) ? graph.nodes : []).filter(isRecord7);
+  const edges = (Array.isArray(graph.edges) ? graph.edges : []).filter(isRecord7);
   const shownNodes = nodes.slice(0, limit);
   const shownEdges = [...edges].sort((a5, b6) => (Number(b6.weight) || 0) - (Number(a5.weight) || 0)).slice(0, limit);
   const total = Math.max(nodes.length, Number.isFinite(cutFrom) ? cutFrom : 0);
@@ -116540,13 +116609,13 @@ async function queryTool(session, args) {
     const { meta: meta5, result } = outcome;
     const caveats = boundWarnings(result.warnings ?? []);
     let body3;
-    if (meta5.kind === "tree" && isRecord6(result.data)) body3 = treeText(result.data, limit);
-    else if (meta5.kind === "graph" && isRecord6(result.data)) body3 = graphText(result.data, limit, result.truncated?.total);
+    if (meta5.kind === "tree" && isRecord7(result.data)) body3 = treeText(result.data, limit);
+    else if (meta5.kind === "graph" && isRecord7(result.data)) body3 = graphText(result.data, limit, result.truncated?.total);
     else if (Array.isArray(result.data)) {
       const rows = "top" in ref2.args ? result.data : result.allRows ?? result.data;
       const total = Math.max(result.total ?? 0, result.truncated?.total ?? 0, result.allRows?.length ?? 0, rows.length);
       body3 = rowsText(rows, (result.fields ?? meta5.fields)?.map((field) => field.key), wanted, limit, total);
-    } else if (isRecord6(result.data)) body3 = `${tsv(["key", "value"], Object.entries(result.data))}
+    } else if (isRecord7(result.data)) body3 = `${tsv(["key", "value"], Object.entries(result.data))}
 total=${Object.keys(result.data).length} returned=${Object.keys(result.data).length}`;
     else body3 = `${cell(result.data, true)}
 total=1 returned=1`;
@@ -116555,7 +116624,7 @@ total=1 returned=1`;
     return failure3(error3);
   }
 }
-var QUERY_DESCRIPTION, QUERY_SCHEMA, DEFAULT_LIMIT, MAX_LIMIT, MAX_CELL, wild, FRAMING, tsv, isRecord6, fieldOf;
+var QUERY_DESCRIPTION, QUERY_SCHEMA, DEFAULT_LIMIT, MAX_LIMIT, MAX_CELL, wild, FRAMING, tsv, isRecord7, fieldOf;
 var init_query2 = __esm({
   "packages/server/src/mcp/query.ts"() {
     "use strict";
@@ -116579,7 +116648,7 @@ var init_query2 = __esm({
     wild = (word) => [...word].map((ch) => /[a-z]/.test(ch) ? `[${ch}\\P{ASCII}]` : ch).join("");
     FRAMING = new RegExp(`^\\s*(?:(?:${["ok", "warn", "fixed", "repo", "ds", "parts", "slots", "sig"].map(wild).join("|")})\\s|${wild("total")}=|${wild("edges")}$|${wild("e")}_[a-z_]+\\s|${wild("nothing was rendered")})`, "u");
     tsv = (header, rows) => [header.join("	"), ...rows.map((row) => row.map((value, i10) => cell(value, i10 === 0)).join("	"))].join("\n");
-    isRecord6 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+    isRecord7 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
     fieldOf = (row, key2) => Object.hasOwn(row, key2) ? row[key2] : void 0;
   }
 });
