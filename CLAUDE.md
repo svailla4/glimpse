@@ -134,3 +134,20 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   Tried and dropped: placing a lone text plate beside the next plate (a shared `pairProse` in the viewer, a `fixed`
   line from the server). It moved the hole below the text and halved the neighbour (a graph opened zoomed, with a
   minimap). Stretching plates to the height of their row would undo D20.
+- **D27: only a problem is an A2UI renderer error (2026-11-21).** The tab posts a W_* or E_* report as an A2UI
+  `error` message (`Name#id: text`), and I_* and OK as Glimpse `ComponentState`s in `RendererPost.states` (catalog
+  `transport.ts`), beside the A2UI messages. The server refuses a problem posted as a state, and an I_* or OK posted
+  as an `error` is only logged, never stored as the component's state (`ActionRouter.state`, server `actions.ts`).
+  Why: the A2UI docs use `error` for validation and rendering failures. A truthful empty state ("no import cycles")
+  or "draws as asked" is neither, so sending them as `error` bent the protocol (found by checking Glimpse against
+  a2ui.org through context7). The model sees no change: the same report store, the same `viewer:` lines.
+- **D28: no A2UI over MCP (2026-11-21).** The owner's call. The a2ui.org guide "A2UI over MCP" has the MCP server
+  serve layout templates as `a2ui://` resources (`application/a2ui+json`), return `updateDataModel` in tool results
+  with `_meta.ui.resourceUri`, and take clicks and errors as `a2ui_action` and `a2ui_error` tool calls, so that the
+  MCP host draws the UI inline. Glimpse does not do this, and should not be made to.
+  Why: Glimpse is meant to be used in the browser. Its views are drawn in its own tab beside the conversation, not
+  inside the host, and that is what lets a view be large and live (a watched tree, drilling, a selection the code
+  follows) and read files, diffs and table pages from the local server's HTTP endpoints, which an MCP host cannot
+  reach. Following the guide would also cost two tool definitions from the instruction budget and put view data in
+  tool results, which the model reads. Glimpse is not another MCP server whose UI the host renders. Revisit only if
+  Glimpse is ever meant to draw inside a host.

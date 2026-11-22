@@ -2,7 +2,7 @@
 // A Transport with no server behind it, for the dev harness (`?fixture=gallery`) and for looking at components
 // while they are built: it replays canned surfaces and answers data requests from the FixtureHost. The fixture data
 // is loaded with dynamic imports, so none of it is in the eager bundle.
-import type {A2uiMessage, LinkStatus, RendererMessage, ServerEvent, SurfaceInfo, Transport} from '@glimpse/catalog';
+import type {A2uiMessage, ComponentState, LinkStatus, RendererMessage, ServerEvent, SurfaceInfo, Transport} from '@glimpse/catalog';
 import {CATALOG_ID} from '@glimpse/catalog';
 import type {FixtureHost} from '@glimpse/catalog/fixtures';
 
@@ -68,11 +68,13 @@ async function load(name: FixtureName): Promise<FixtureData> {
 
 /**
  * Replays the fixture as a host would: `hello`, then one snapshot frame per surface. `gl_close` deletes the surface,
- * like the server does; every other action is kept in `sent` for inspection from the console.
+ * like the server does; every other message is kept in `sent` and every component state in `states`, for inspection
+ * from the console.
  */
-export function createFixtureTransport(name: FixtureName = 'gallery'): Transport & {sent: RendererMessage[]} {
+export function createFixtureTransport(name: FixtureName = 'gallery'): Transport & {sent: RendererMessage[]; states: ComponentState[]} {
   const data = load(name);
   const sent: RendererMessage[] = [];
+  const states: ComponentState[] = [];
   let emit: ((event: ServerEvent) => void) | undefined;
   let infos: SurfaceInfo[] = [];
   let seq = 0;
@@ -81,6 +83,7 @@ export function createFixtureTransport(name: FixtureName = 'gallery'): Transport
 
   return {
     sent,
+    states,
     rows: host('rows'),
     file: host('file'),
     diff: host('diff'),
@@ -112,8 +115,9 @@ export function createFixtureTransport(name: FixtureName = 'gallery'): Transport
         emit = undefined;
       };
     },
-    send(messages: RendererMessage[]): void {
+    send(messages: RendererMessage[], posted?: ComponentState[]): void {
       sent.push(...messages);
+      states.push(...(posted ?? []));
       for (const message of messages) {
         if (!('action' in message) || message.action.name !== 'gl_close') continue;
         const {surfaceId} = message.action;

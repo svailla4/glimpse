@@ -1,7 +1,8 @@
-// ActionRouter (design 2.7): what the viewer posts to /api/renderer. Host actions (gl_*) are handled here and never
-// reach the model; every other action is queued as one `viewer:` line. Everything in a post is untrusted input: the
-// shape is checked, the surface and the source component must exist, and only then is anything done.
-import {HOST_ACTION_PREFIX, type ActionPayload, type EntityRef} from '@glimpse/catalog';
+// ActionRouter (design 2.7): what the viewer posts to /api/renderer, A2UI messages and Glimpse component states (D27).
+// Host actions (gl_*) are handled here and never reach the model; every other action is queued as one `viewer:` line.
+// Everything in a post is untrusted input: the shape is checked, the surface and the source component must exist,
+// and only then is anything done.
+import {HOST_ACTION_PREFIX, REPORT_OK, type ActionPayload, type EntityRef} from '@glimpse/catalog';
 import {actionLine} from './events.ts';
 import type {Session} from './session.ts';
 
@@ -45,17 +46,32 @@ export class ActionRouter {
     this.log = log;
   }
 
+  /**
+   * Decision D27: one component state that is not an error, I_* (a truthful empty or waiting state) or OK (the
+   * component draws as asked), posted beside the A2UI messages. A problem code here is refused: problems are A2UI
+   * renderer errors. Returns false when it was malformed or names nothing that exists.
+   */
+  state(value: unknown): boolean {
+    if (!isRecord(value)) return false;
+    const {surfaceId, component, id, code} = value;
+    if (!text(surfaceId) || !text(component) || !text(id) || !text(code)) return false;
+    if (code !== REPORT_OK && !/^I_[A-Z0-9_]{1,30}$/.test(code)) return false;
+    const message = typeof value.message === 'string' ? value.message.slice(0, MAX_TEXT) : '';
+    return this.session.viewerReport(surfaceId, component, id, code, message);
+  }
+
   /** Handles one renderer-to-agent message. Returns false when it was malformed or addressed nothing that exists. */
   handle(message: unknown): boolean {
     if (!isRecord(message) || message.version !== '1.0') return false;
     if (isRecord(message.error)) {
-      // Decision D14: a tab reports the state of a component (OK, I_*, W_*, E_*) as an A2UI v1.0 renderer error
-      // whose message starts with `Name#id:`. Those are kept per component; anything else is only logged. A long
-      // message is cut, not refused, so a state is never lost to its length.
+      // Decision D14: a tab reports a problem with a component (W_*, E_*) as an A2UI v1.0 renderer error whose
+      // message starts with `Name#id:`; those are kept per component. A state that is not an error (I_*, OK) is not
+      // an A2UI message (D27, state() below). Anything else is only logged. A long message is cut, not refused, so a
+      // problem is never lost to its length.
       const {code, surfaceId} = message.error;
       const detail = typeof message.error.message === 'string' ? message.error.message.slice(0, MAX_TEXT) : undefined;
       const report = text(code) && text(detail) && text(surfaceId) ? /^([A-Za-z][A-Za-z0-9]{0,39})#([^\s:]{1,120}):(?: ([\s\S]*))?$/.exec(detail) : null;
-      if (report && text(code) && text(surfaceId) && /^[A-Z][A-Z0-9_]{1,31}$/.test(code)) {
+      if (report && text(code) && text(surfaceId) && /^[WE]_[A-Z0-9_]{1,30}$/.test(code)) {
         return this.session.viewerReport(surfaceId, report[1]!, report[2]!, code, report[3] ?? '');
       }
       this.log(`glimpse: viewer error ${text(code) ? code : '?'}${text(surfaceId) ? ` (${surfaceId})` : ''}: ${text(detail) ? detail.replace(/\s+/g, ' ').slice(0, 300) : ''}`);

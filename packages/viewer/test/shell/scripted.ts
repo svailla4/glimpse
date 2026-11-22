@@ -1,13 +1,17 @@
 // packages/viewer/test/shell/scripted.ts - a Transport a test drives by hand: it plays the host.
-import type {A2uiMessage, LinkStatus, RendererMessage, ServerEvent, SessionInfo, SurfaceInfo, Transport} from '@glimpse/catalog';
+import type {A2uiMessage, ComponentState, LinkStatus, RendererMessage, ServerEvent, SessionInfo, SurfaceInfo, Transport} from '@glimpse/catalog';
 import {createFixtureHost} from '@glimpse/catalog/fixtures';
 import {buildSurface} from '@glimpse/catalog/testing';
 
 export const SESSION: SessionInfo = {id: 'test', project: 'demo', repo: {name: 'demo', branch: 'main', head: '4f2a91c'}, version: '0.1.0'};
 
 export interface ScriptedTransport extends Transport {
-  /** Everything the viewer posted, in order. */
+  /** Every A2UI message the viewer posted, in order. */
   sent: RendererMessage[];
+  /** Every component state the viewer posted beside them (I_*, OK: decision D27), in order. */
+  states: ComponentState[];
+  /** Every component report in the order it was posted: a problem (an A2UI error) or a state, as `Name#id`. */
+  reports: Array<{label: string; code: string}>;
   /** How many times connect() was called and how many of those links were closed again. */
   connections: number;
   disconnections: number;
@@ -26,6 +30,8 @@ export function scriptedTransport(): ScriptedTransport {
   const transport: ScriptedTransport = {
     ...createFixtureHost(),
     sent: [],
+    states: [],
+    reports: [],
     connections: 0,
     disconnections: 0,
     connect(event, status) {
@@ -39,8 +45,13 @@ export function scriptedTransport(): ScriptedTransport {
         onStatus = undefined;
       };
     },
-    send(messages) {
+    send(messages, states = []) {
       transport.sent.push(...messages);
+      transport.states.push(...states);
+      for (const message of messages) {
+        if ('error' in message) transport.reports.push({label: message.error.message.split(':')[0] ?? '', code: message.error.code});
+      }
+      for (const state of states) transport.reports.push({label: `${state.component}#${state.id}`, code: state.code});
     },
     emit: event => onEvent?.(event),
     status: status => onStatus?.(status),

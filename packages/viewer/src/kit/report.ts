@@ -8,20 +8,26 @@
 //   OK   none of these: the component draws normally. Withdraws whatever was said before.
 // The state is sent when the cell mounts, whenever it changes, and again (OK included) each time an update
 // (re)defines the component, so the host can forget what it knew at every definition and still hear the truth.
+// W_* and E_* reach the host as A2UI renderer errors; I_* and OK, which are not errors, as Glimpse states (D27).
 // Only component-level states count: whatever renders inside <Subpart> (a borrowed view, one file of a diff, one stop
 // of a tour) never speaks for the component.
 import {REPORT_OK} from '@glimpse/catalog';
 import {createContext, createElement, useContext, useEffect, useRef, useState, type ReactNode} from 'react';
 
-/** One state of one component, as the shell posts it: an A2UI v1.0 renderer `error` message plus the component id. */
+/**
+ * One state of one component. The shell posts a problem (W_*, E_*) as an A2UI v1.0 renderer `error` message and any
+ * other state (I_*, OK) as a Glimpse ComponentState (decision D27).
+ */
 export interface RenderReport {
   /** 'OK', or an I_*, W_* or E_* code. */
   code: string;
-  /** Starts with `Name#id: `. */
+  /** `Name#id: text`, the message of the `error`. */
   message: string;
   surfaceId: string;
-  /** The component the state belongs to. Not part of the wire message (it is in `message`). */
+  /** The catalog name and the id of the component the state belongs to, and the text of the state. */
+  name: string;
   componentId: string;
+  text: string;
 }
 
 /** Where states go. The shell provides one (KitProvider `report` and `watch`); tests provide their own. */
@@ -80,6 +86,7 @@ export class CellReporter {
   private queued = false;
   private alive = true;
   readonly label: string;
+  private readonly name: string;
   private readonly componentId: string;
   readonly surfaceId: string;
   /** Where the reports go; the provider may hand over a new channel object between renders. */
@@ -87,6 +94,7 @@ export class CellReporter {
 
   constructor(name: string, componentId: string, surfaceId: string, channel: ReportChannel) {
     this.label = `${name}#${componentId}`;
+    this.name = name;
     this.componentId = componentId;
     this.surfaceId = surfaceId;
     this.channel = channel;
@@ -138,7 +146,9 @@ export class CellReporter {
     if (!this.force && key === this.sent) return;
     this.force = false;
     this.sent = key;
-    this.channel.report({code: state.code, message: `${this.label}: ${state.message}`, surfaceId: this.surfaceId, componentId: this.componentId});
+    this.channel.report({
+      code: state.code, message: `${this.label}: ${state.message}`, surfaceId: this.surfaceId, name: this.name, componentId: this.componentId, text: state.message,
+    });
   }
 }
 

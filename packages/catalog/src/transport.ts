@@ -26,9 +26,11 @@ export type RendererMessage =
   | {version: '1.0'; action: ActionPayload}
   | {version: '1.0'; error: {code: string; message: string; surfaceId?: string; path?: string}};
 
-// ---- render reports: renderer `error` messages a Glimpse tab posts about one component ----
-// message is `Name#id: text`. A report is the component's CURRENT state, not an event: the tab re-sends it whenever
-// the component is (re)defined by an update, and withdraws it with REPORT_OK once the component draws normally.
+// ---- render reports: the state a Glimpse tab posts about one component ----
+// A report is the component's CURRENT state, not an event: the tab re-sends it whenever the component is (re)defined
+// by an update, and withdraws it with REPORT_OK once the component draws normally. Decision D27: a problem (W_*, E_*)
+// is a rendering error and goes as an A2UI v1.0 renderer `error` message whose message is `Name#id: text`; a state
+// that is not an error (I_*, OK) is not an A2UI message at all and goes in `RendererPost.states`.
 //   I_*  a truthful empty or waiting state (no import cycles, no uncommitted changes, waiting for a selection):
 //        never told to the model as a problem.
 //   W_*  the component could not draw what the spec asked (W_EMPTY: bound or inline data is missing or empty,
@@ -68,7 +70,9 @@ export type ServerEvent =
   | {type: 'bye'; reason: 'shutdown'};
 
 // ---- POST /api/renderer  (content-type application/json, body RendererPost, answers 204) ----
-export interface RendererPost { messages: RendererMessage[] }
+/** A component state that is not an error (I_* or OK, decision D27), posted beside the A2UI messages. */
+export interface ComponentState { surfaceId: string; component: string; id: string; code: string; message: string }
+export interface RendererPost { messages: RendererMessage[]; states?: ComponentState[] }
 
 // ---- data endpoints (GET unless noted; all require `Authorization: Bearer <token>`) ----
 /** Index into TOKEN_CLASSES. The viewer renders <span class="gl-tok-kw"> etc.; class 0 is plain text. */
@@ -147,5 +151,5 @@ export type LinkStatus = 'connecting' | 'live' | 'ended';
 /** Viewer side of the link. HubTransport (SSE + fetch) today; FixtureTransport for tests; an MCP Apps transport later. */
 export interface Transport extends DataClient {
   connect(onEvent: (e: ServerEvent) => void, onStatus: (s: LinkStatus) => void): () => void;
-  send(messages: RendererMessage[]): void;
+  send(messages: RendererMessage[], states?: ComponentState[]): void;
 }
