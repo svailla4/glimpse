@@ -321,3 +321,17 @@ Decisions explained here:
   of 12 parts for one merge decision: hence numbers and ranges read in the session (rule 7), the reader's sixth
   question (check three claims in the repository) and the review's limit of about eight parts.
   Not done: re-measuring after those three changes; a check that a cited line range starts at the symbol it names.
+- **`diagrams-from-the-outside-in`: a system is drawn from its user in, one level deeper per plate (2026-11-22).**
+  The owner's call, after a system diagram of Glimpse itself: twelve boxes of internals with file names in the labels
+  ("i cant read these diagrams, i wish it would start from the user perspective"), then a sequence diagram that began
+  at the tab opening and left out the question, the answer and what a click leads to ("missing some steps"). What
+  read well: a first map of five boxes starting with the person, one plate per box worth opening, labels of two to
+  four words with what a box does in `note=`, and a path told as numbered stages from the person's action to what
+  they get back, every reply drawn. The explain guide (catalog `skill.ts`) says so in three sub-rules of its map and
+  path, SKILL.md's rule 2 says it in one sentence, the routing table sends "a system or architecture diagram" to the
+  explain guide, and the worked example `Draw the system` (`EXAMPLES`, docs.ts) is that page for an imaginary shop.
+  Why: worked examples steer more than rules (`views-are-blueprints`), and none drew a whole system; the module map of
+  `Explain a module` opens on the inside, which is right for a module and wrong for a system. Skill text only: the
+  server instructions have no room and need none. Stage names are notes across every lane, because a sequence
+  `group` block is drawn without a frame (said with a `fixed` line).
+  Not done: measured against the old skill; a framed, labelled `group` block in SequenceDiagram.
