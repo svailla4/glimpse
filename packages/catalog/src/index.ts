@@ -9,6 +9,7 @@ export type {Row as DataRow} from './datasets.ts';
 export * from './sources.ts';
 export * from './catalog.ts';
 export * from './docs.ts';
+export * from './skill.ts';
 export * from './views.ts';
 export * from './gallery.ts';
 export * from './transport.ts';
