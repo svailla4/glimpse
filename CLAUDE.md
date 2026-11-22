@@ -138,8 +138,9 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
     unknown keys and bad entries are reported by the server and by the tab (`W_DROPPED`); inline Layers or ER data
     that is not the shape is now `E_SHAPE`. The server checks the files that diagram and Steps data name, after the
     files of props (`FileCheck.nested`), so under the cap on warning lines a plate whose own file is missing is never
-    crowded out by links inside diagrams; and Steps keys (`cleanItems`). `linkNotes` warns when an id links to nothing on the view, naming the label it may mean or
-    the nearest id. The gallery links its diagrams through node DB, and its files are lines of its one real file.
+    crowded out by links inside diagrams; and Steps keys (`cleanItems`). `linkNotes` warns when an id links to nothing
+    on the view, naming the label it may mean or the nearest id. The gallery links its diagrams through node DB, and
+    its files are lines of its one real file.
   Why: same-id `{type:'node'}` matching already linked Flowchart, ER and Graph by accident. Making that the documented
   hub costs one authored field and one EntityRef field, no new component or prop, 2 instruction characters and no
   grammar. Rejected: per-part id scoping (it breaks today's links and about 20 selection tests); link tags
@@ -148,3 +149,50 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   identity. Budgets: the diagrams chunk limit went from 36 to 43 kB by the D19 rule (measured plus about 15%).
   Not done: a case fix inside nested files (a wrong case is only warned), `fixed` lines for Steps status synonyms,
   links on List, charts and Stats, edge selection, and `[[refs]]` in diagram notes.
+- **D25: what-if inputs and computed values are A2UI calls (2026-11-21).** `add|sub|mul|div(a, b)`, written
+  `div($/a,2)`, are A2UI function calls that the tab recomputes when a `$/path` they read changes; each argument is a
+  number, an absolute `$/path` or another call, in any component argument and in inline rows. There are no operators
+  and no `round`. `Slider(label, value, min?, max?, step?, unit?)` writes the `$/path` its value binds, through the
+  binder's own `setValue`.
+  - Catalog: `calc.ts` defines the four once, with strict schemas for the server and catalog.json (`calcApis`) and
+    permissive ones for the tab (`calcFunctions`: a held value that is not a number gives no value, never an
+    `EXPRESSION_ERROR` that only reaches the log). `calcName` reads a name, another case or an alias for the server's
+    repair (`fixed multiply -> mul`) and for `catalog{names:['div']}`. The messages that say why a value is not
+    computed (`explainValue`) and the readers of calls in props (`callsIn`, `reads`) are in `calls.ts`, apart from
+    `calc.ts`, because the eager script imports `calc.ts` and a module it imports is bundled whole.
+  - Tab: the Slider is in the lazy `charts` chunk, with its note hook in `kit/calcNote.ts` (views never import
+    `@a2ui/*`). It writes while typing only a finite number within min and max, and commits one `gl_set {value}` on
+    Enter, blur, range pointer-up or key-up, 600 ms idle or unmount. A bound value that is not a number is `W_VALUE`,
+    reported and shown under the field; a value the user's number makes uncomputable is a note under the field and
+    never a `viewer: error`.
+  - Server: `gl_set` carries only the number. The path comes from the stored Slider's binding and the number is held
+    to its min and max, so a tab can set only the numbers the model bound; `setInput` refuses a path it cannot write.
+    The number goes into `record.data`, not `/ui` (writing `/ui` drops the selection), so a reload, a patch and a
+    replace keep it. A spec that writes the exact path wins; re-sending an enclosing value whose leaf is unchanged
+    keeps what the user set, with a `fixed $/w/seats stays 80000 (set in the tab)` line. The server recomputes what
+    reads the path and puts it, or why it failed, in one coalesced `viewer: set` line (`events.latest`): per
+    component the values that computed, then one group per distinct problem.
+  - Checks, for what the upstream compiler does silently or reports in its own words (D22): an unknown function is
+    `E_UNKNOWN` with the four names (a name is a function when `calcName` reads it, or it starts with a lower-case
+    letter and no component has that name in any case, or it is a capitalised near miss of a function with no
+    component near it, so `pow` is never repaired to `Row`); a missing or wrong-typed operand is `E_TYPE`, an unknown
+    keyword `E_PROP`; `*` and `+` get the "no operators" hint; a third positional argument is `E_TYPE`; a bare call
+    statement and a named call nothing uses are `warn` lines (a patch of only such a call is the `E_REF` with that
+    text); a call in `$/data` or as an action, a Slider bound to a literal, a call, a relative path or a path under
+    `/ui`, `/ds` or `/meta`, and `min >= max` are reported; `calcNotes` warns about a call that cannot compute from
+    the model's own data.
+  Why: `fn(args)` is A2UI's own convention, so there is no grammar of ours (D22), and A2UI already does reactivity and
+  two-way binding. Outputs stay ordinary props, so any Stat, Stats row or table cell can show one and D24 links can
+  reach them. Rejected: a formula string (a grammar, refused as Mermaid was under D21); a self-contained what-if
+  component with JSON Logic (its outputs reach no other component, and the numbers live in one browser); a tab-side
+  call reporter (eager code, and it would blame the model for the user's input); `sum` and `product` of up to 8
+  arguments and no `sub`; `round`; storing inputs under `/ui`.
+  Budgets: instructions 3,748 (`Components (? optional):` paid for the Slider index entry). The eager script did not
+  fit: the 45 component `example` strings moved from `ComponentMeta` to `COMPONENT_EXAMPLES` in docs.ts, since the tab
+  never reads them (about 1.4 kB gzip); it is 194,149 of 195,000 bytes with the Slider. GRAMMAR rule 9 is shorter
+  than designed, to stay under F043's 1,600 characters.
+  Not done: a call reading `/ds` is not checked at show time; the model resets a number only by writing its leaf
+  path; a second tab sees a set number at its next snapshot; a number set after the session ended changes only the
+  tab; a step of 0 or less is read as no step without a report. A call inside diagram data is not computed: a Layers
+  item or ER entry holding one is left out with a warning, but a Flowchart or sequence label holding one is drawn as
+  the id (or empty) with no report, a D22 gap in `labelOf` and the message reader that predates D25.
