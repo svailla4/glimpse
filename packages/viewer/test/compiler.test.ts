@@ -25,28 +25,9 @@ const UNCOMPILED: Record<string, string> = {
   'components/table/remote.ts:useRemoteRows': 'refs during render',
   'kit/hooks.ts:useCatSlots': 'refs during render',
   'kit/report.ts:useCellReporter': 'refs during render',
-  // A TypeScript cast inside a computed key, `{['--x' as never]: v}`: the vars() helper of components/layout/shared.ts
-  // says the same and compiles.
-  'components/code/CodeBlock.tsx:CodeBlockView': 'cast in a computed key',
-  'components/code/SymbolOutline.tsx:Outline': 'cast in a computed key',
-  'components/content/Callout.tsx:CalloutView': 'cast in a computed key',
-  'components/content/KeyValue.tsx:KeyValueView': 'cast in a computed key',
-  'components/content/List.tsx:ListView': 'cast in a computed key',
-  'components/content/Stats.tsx:Strip': 'cast in a computed key',
-  'components/table/CommitList.tsx:CommitItem': 'cast in a computed key',
-  'components/table/CommitList.tsx:List': 'cast in a computed key',
-  'components/table/DataTable.tsx:Table': 'cast in a computed key',
-  // Syntax the compiler does not read yet, or a rule it holds the code to.
-  'components/code/codekit/VirtualRows.tsx:VirtualRows': 'a getter in an object literal',
-  'components/table/DataTable.tsx:useHiddenColumns': '`n++` on a variable a closure captures',
-  'kit/arrange.tsx:useArrangeStore': '`??=`',
-  'components/layout/Split.tsx:SplitView': 'a conditional inside try',
-  'components/table/JsonView.tsx:Tree': 'a conditional inside try',
-  'components/table/nav.ts:useListNav': '@tanstack/react-virtual, which it marks incompatible',
-  'components/table/FileTree.tsx:TreeBody': 'a value it holds frozen is modified',
-  'components/layout/Grid.tsx:GridView': 'a useMemo whose dependencies it cannot keep',
-  'kit/arrange.tsx:useArrangement': 'a useMemo whose dependencies it cannot keep',
-  'kit/surface.ts:useChildInfo': 'a useCallback whose dependencies it cannot keep',
+  // They call @tanstack/react-virtual, which the compiler marks incompatible.
+  'components/code/codekit/VirtualRows.tsx:VirtualRows': '@tanstack/react-virtual',
+  'components/table/nav.ts:useListNav': '@tanstack/react-virtual',
 };
 
 async function sourceFiles(dir: string): Promise<string[]> {

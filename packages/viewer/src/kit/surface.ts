@@ -15,12 +15,14 @@ export interface ChildInfo {
 export function useChildInfo(ids: readonly string[]): ChildInfo[] {
   const surface = useA2uiSurface();
   if (!surface) throw new Error('Glimpse views must render inside an A2uiSurface');
+  // The contents of `ids` as one string, so a new array with the same ids does not resubscribe. The callback reads the
+  // ids back out of it: a dependency it did not read would be dropped by the React Compiler (decision compiled-viewer).
+  // Ids hold no line break (decision hyphenated-surface-ids).
   const key = ids.join('\n');
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the contents of `ids`
   const subscribe = useCallback(
     (notify: () => void) => {
       const components = surface.componentsModel;
-      const wanted = new Set(ids);
+      const wanted = new Set(key === '' ? [] : key.split('\n'));
       const own = new Map<string, {unsubscribe(): void}>();
       const watch = (id: string) => {
         own.get(id)?.unsubscribe();
