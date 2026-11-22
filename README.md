@@ -299,7 +299,7 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 | Largest preset result (`overview`) | 1,200 chars | 1,095 |
 | Eager viewer JavaScript, gzip | 210 kB (hard limit 215 kB) | 207.9 kB |
 | Largest other lazy chunk, gzip | 120 kB | 62.6 kB |
-| Diagram engine, gzip: ELK worker, React Flow, diagrams chunk | 515 kB, 90 kB, 52 kB | 448.4 kB, 77.7 kB, 46.6 kB |
+| Diagram engine, gzip: ELK worker, React Flow, diagrams chunk | 515 kB, 90 kB, 52 kB | 448.4 kB, 77.7 kB, 46.7 kB |
 
 ## Status and known limitations
 
