@@ -4,6 +4,7 @@
 //   npx vitest run packages/viewer/test/table    one directory or file (path filters are substring matches)
 import react from '@vitejs/plugin-react';
 import {defineConfig} from 'vitest/config';
+import {reactCompiler} from './packages/viewer/vite.config.ts';
 
 export default defineConfig({
   test: {
@@ -27,7 +28,7 @@ export default defineConfig({
         },
       },
       {
-        plugins: [react()],
+        plugins: [react(), reactCompiler()],
         resolve: {dedupe: ['@a2ui/web_core', 'react', 'react-dom', 'zod']},
         test: {
           name: 'viewer',

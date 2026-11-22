@@ -67,13 +67,14 @@ describe('viewer build', () => {
     return [...seen].map(name => chunks.get(name)!);
   }
 
-  it('the eager script keeps headroom under its 200 kB gzip budget', () => {
+  it('the eager script keeps headroom under its 215 kB gzip budget', () => {
     const eager = eagerChunks();
     expect(eager.length).toBeGreaterThan(0);
     const gzip = eager.reduce((sum, chunk) => sum + gzipSync(chunk.code).length, 0);
-    // scripts/budgets.mjs fails the build at 200,000. This fails 5 kB earlier, so the budget is never met by
-    // surprise: move code to a lazy chunk (or out of the bundle) before raising either number.
-    expect(gzip, `eager viewer JS is ${(gzip / 1000).toFixed(1)} kB gzip`).toBeLessThanOrEqual(195_000);
+    // The hard figure is 215,000 (decision compiled-viewer). This fails 5 kB earlier, at the limit scripts/budgets.mjs
+    // holds, so the budget is never met by surprise: move code to a lazy chunk (or out of the bundle) before raising
+    // either number.
+    expect(gzip, `eager viewer JS is ${(gzip / 1000).toFixed(1)} kB gzip`).toBeLessThanOrEqual(210_000);
     // the four component families that load on demand stay out of it
     const eagerModules = eager.flatMap(chunk => Object.keys(chunk.modules));
     for (const family of ['table', 'charts', 'diagrams', 'code']) {

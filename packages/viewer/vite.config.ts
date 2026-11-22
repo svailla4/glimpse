@@ -16,7 +16,7 @@
 // The dev server does not run the first step: there the order comes from src/main.tsx importing styles/tokens.css
 // before anything else.
 //
-// The eager script (budget: 200 kB gzip, design section 10). Two modules the A2UI packages import but this viewer
+// The eager script (budget: 215 kB gzip, design section 10; decision compiled-viewer). Two modules the A2UI packages import but this viewer
 // has no use for are aliased to small shims in src/kit/shims/ (each file says why it is safe):
 // - `zod-to-json-schema`: @a2ui/web_core needs it only to write a catalog out as JSON Schema;
 // - `@a2ui/web_core/v0_9/basic_catalog`: @a2ui/react takes the markdown-renderer registry from it, which drags in lit.
@@ -32,7 +32,8 @@ import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {isAbsolute, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import react from '@vitejs/plugin-react';
+import babel from '@rolldown/plugin-babel';
+import react, {reactCompilerPreset} from '@vitejs/plugin-react';
 import {defineConfig, type Plugin} from 'vite';
 import {ELK_LICENSE_FILE, MODULE_RECORD, type OutputRecord} from '../../scripts/notices.ts';
 
@@ -127,8 +128,15 @@ function elkNotices(): Plugin {
   };
 }
 
+/**
+ * The React Compiler (decision compiled-viewer), on every file under src/ (node_modules are left as published). A
+ * function it cannot compile is left as written, silently: that is the compiler's default and the code still runs.
+ * Exported for vitest.config.ts, so the viewer tests run the code that ships.
+ */
+export const reactCompiler = () => babel({presets: [reactCompilerPreset()]});
+
 export default defineConfig({
-  plugins: [glimpseLayers(), react(), glimpseModuleRecord('main')],
+  plugins: [glimpseLayers(), react(), reactCompiler(), glimpseModuleRecord('main')],
   worker: {plugins: () => [glimpseModuleRecord('worker'), elkNotices()]},
   resolve: {
     // @a2ui/web_core keeps module-level state (signals, registries): exactly one copy may be bundled.
@@ -151,7 +159,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 700,
     rolldownOptions: {
       // react-compiler-runtime (a React Flow 13 dependency) opens with "use no memo", a hint for the React Compiler,
-      // which this build does not run; bundling drops it harmlessly. Every other log goes through.
+      // which does not compile node_modules here anyway; bundling drops it harmlessly. Every other log goes through.
       onLog(level, log, handler) {
         if (log.code === 'MODULE_LEVEL_DIRECTIVE' && /[\\/]react-compiler-runtime[\\/]/.test(log.id ?? log.message)) return;
         handler(level, log);
