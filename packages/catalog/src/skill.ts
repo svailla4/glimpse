@@ -88,8 +88,11 @@ Fit the page to one decision: about eight parts. A choice that changes no code i
 
 1. **Lead** (\`Text\`): what this part is for, in one or two sentences, in terms of what it does for the rest of the system.
 2. **Terms** (\`KeyValue\` of \`{label, value}\`), only when the code has words of its own: each defined in a line.
-3. **The map** (\`Layers\`, or \`Graph('deps.modules path')\` when the dependencies are the point): the parts and how they depend on each other, 5 to 12 boxes: a map of the country, not an atlas. Items carry \`file=\`, and a \`CodeView()\` beside the map shows whatever the reader clicks.
+3. **The map** (\`Layers\`, a \`Flowchart\` for a whole system, or \`Graph('deps.modules path')\` when the dependencies are the point): the parts and how they depend on each other, 5 to 12 boxes: a map of the country, not an atlas. Items carry \`file=\`, and a \`CodeView()\` beside the map shows whatever the reader clicks.
+   - **From the outside in.** For a whole system, the first map is the system as its user meets it: the person is the first box, then the 4 to 6 parts they deal with, and a group for what runs where. Each further plate opens one box of the plate above, one level deeper. Never open on the inside: a reader shown the internals first has nothing to hang them on.
+   - **Short labels.** A box says what it is in two to four plain words. What it does goes in its \`note=\` (shown on hover) and where it lives in \`file=\`, never in the label: a diagram of long labels opens too small to read.
 4. **One path through it** (\`SequenceDiagram\` or \`Flowchart\`): the most common request or flow, end to end, every arrow labelled with what it carries. Give an actor \`node:'ID'\` when it is a box of the map, so clicking one lights the other.
+   - **A story, start to finish.** It begins with what the person does and ends with what they get back, and every request has its reply drawn. When it has stages, name each with a note across every lane (\`{note:'2. You look around', over:['You','Tab']}\`), put what repeats in a \`loop\`, and say where a part is not involved. A missing step is what a reader notices first.
 5. **Rules not to break** (\`Callout\` kind \`warn\`): invariants, written as what must never happen ("nothing outside the session writes a surface"), each with the file that enforces it.
 6. **Where to start reading** (\`Steps\` with \`file=\`, or a short \`CodeTour\`): 3 to 5 stops in reading order, each a few lines with a note on what to notice there.
 
@@ -99,7 +102,7 @@ Only the stops of the reading order, a few lines each. Everything else opens fro
 
 ## Before you show it
 
-Could the reader find where to make their first change from this page alone?`,
+Could the reader find where to make their first change from this page alone? Could someone who has never used the system read the first diagram without hovering?`,
   },
 ];
 
@@ -163,7 +166,7 @@ Then pick the task and read its guide (next to this file) before you write the s
 
 | The user wants to | Read |
 |---|---|
-${GUIDES.map(g => `| ${{design: 'design or plan something before it is built', review: 'review a change: a branch, a pull request, the working tree', explain: 'understand existing code: how a part works, what happens when something is called, getting started on it'}[g.name]} | \`references/${g.name}.md\` |`).join('\n')}
+${GUIDES.map(g => `| ${{design: 'design or plan something before it is built', review: 'review a change: a branch, a pull request, the working tree', explain: 'understand existing code: a system or architecture diagram, how a part works, what happens when something is called, getting started on it'}[g.name]} | \`references/${g.name}.md\` |`).join('\n')}
 | take a quick look: the overview, dependencies, hotspots, history, a file, a diff, two modules side by side | a preset view, or a quick recipe below |
 
 ## What every view does
@@ -171,7 +174,7 @@ ${GUIDES.map(g => `| ${{design: 'design or plan something before it is built', r
 The page is a blueprint handed to the people who will build, approve or maintain the code: they should be able to act on it without asking you.
 
 1. **The first screen is the answer.** Someone who reads only the top knows what this is, why it matters and what is asked of them, within half a minute: a \`Text\` lead of two or three sentences.
-2. **Intent before mechanics.** Say what the code does, or will do, for someone ("a client over its limit is told when to retry") before files, layers or functions.
+2. **Intent before mechanics.** Say what the code does, or will do, for someone ("a client over its limit is told when to retry") before files, layers or functions. Draw the same way: start from the person who uses it, then go one level deeper per figure.
 3. **Plain words.** Name things the way the reader knows them. Define a word of the project before using it (a \`KeyValue\` of terms), and write out codes and abbreviations.
 4. **One figure, one claim.** Each diagram or chart makes one point, and its \`title=\` states it as a sentence ("Every request passes the limiter first"), not a label ("Architecture"). Every arrow says what moves along it (\`'count +1'\`, \`'over the limit'\`). To compare, draw the difference: before and after, or the new parts in a group of their own.
 5. **Code is evidence.** Show code only where a few lines prove or illustrate a point: a contract, a pattern to copy, the line with the bug. Cite real lines (\`'path#L10-24'\`), mark the ones that matter and say in a note why they are there. The rest of the code is one click away (below), not on the page.

@@ -46,8 +46,8 @@ describe('C1: generated/catalog.json is a valid v1.0 catalog document', () => {
 });
 
 describe('C2: every spec Glimpse writes compiles to valid v1.0 messages', () => {
-  it('covers the 16 preset variants, the 44 examples, the gallery and the 6 recipes', () => {
-    expect(entries).toHaveLength(16 + 44 + 1 + 6);
+  it('covers the 16 preset variants, the 44 examples, the gallery and the 7 recipes', () => {
+    expect(entries).toHaveLength(16 + 44 + 1 + 7);
   });
 
   it.each(entries.map(e => [e.label, e] as const))('%s passes STRICT_VALIDATION and agent_to_renderer.json', (_label, entry) => {

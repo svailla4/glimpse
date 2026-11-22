@@ -375,15 +375,15 @@ describe('view docs', () => {
 });
 
 describe('examples', () => {
-  it('has the six recipes, each a complete call; the first four are the worked examples of the skill guides', () => {
-    expect(EXAMPLES.map(e => e.title)).toEqual(['Design a feature', 'Review a change', 'Explain a module', 'Trace a request', 'Find hotspots', 'Compare two modules']);
-    expect(EXAMPLES.map(e => e.guide)).toEqual(['design', 'review', 'explain', 'explain', undefined, undefined]);
+  it('has the seven recipes, each a complete call; the first five are the worked examples of the skill guides', () => {
+    expect(EXAMPLES.map(e => e.title)).toEqual(['Design a feature', 'Review a change', 'Explain a module', 'Trace a request', 'Draw the system', 'Find hotspots', 'Compare two modules']);
+    expect(EXAMPLES.map(e => e.guide)).toEqual(['design', 'review', 'explain', 'explain', 'explain', undefined, undefined]);
     for (const example of EXAMPLES) {
       expect(example.view ?? example.id, example.title).toBeTruthy();
       expect(exampleCall(example)).toMatch(/^show\{(view|id):/);
       if (!example.view) expect(example.spec).toMatch(/^root=Page\(/);
     }
-    expect(examplesDoc().split('\n\n')).toHaveLength(6);
+    expect(examplesDoc().split('\n\n')).toHaveLength(7);
   });
 });
 

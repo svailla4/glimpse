@@ -50,7 +50,7 @@ export interface CorpusEntry { label: string; messages: A2uiMessage[] }
 
 /**
  * Everything Glimpse itself writes in Express, compiled and expanded the way the server publishes it:
- * the 16 preset variants, the 44 component examples, the gallery, and the six recipes (new views and patches).
+ * the 16 preset variants, the 44 component examples, the gallery, and the seven recipes (new views and patches).
  */
 export function corpus(): CorpusEntry[] {
   const entries: CorpusEntry[] = [];

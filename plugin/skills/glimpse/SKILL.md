@@ -17,7 +17,7 @@ Then pick the task and read its guide (next to this file) before you write the s
 |---|---|
 | design or plan something before it is built | `references/design.md` |
 | review a change: a branch, a pull request, the working tree | `references/review.md` |
-| understand existing code: how a part works, what happens when something is called, getting started on it | `references/explain.md` |
+| understand existing code: a system or architecture diagram, how a part works, what happens when something is called, getting started on it | `references/explain.md` |
 | take a quick look: the overview, dependencies, hotspots, history, a file, a diff, two modules side by side | a preset view, or a quick recipe below |
 
 ## What every view does
@@ -25,7 +25,7 @@ Then pick the task and read its guide (next to this file) before you write the s
 The page is a blueprint handed to the people who will build, approve or maintain the code: they should be able to act on it without asking you.
 
 1. **The first screen is the answer.** Someone who reads only the top knows what this is, why it matters and what is asked of them, within half a minute: a `Text` lead of two or three sentences.
-2. **Intent before mechanics.** Say what the code does, or will do, for someone ("a client over its limit is told when to retry") before files, layers or functions.
+2. **Intent before mechanics.** Say what the code does, or will do, for someone ("a client over its limit is told when to retry") before files, layers or functions. Draw the same way: start from the person who uses it, then go one level deeper per figure.
 3. **Plain words.** Name things the way the reader knows them. Define a word of the project before using it (a `KeyValue` of terms), and write out codes and abbreviations.
 4. **One figure, one claim.** Each diagram or chart makes one point, and its `title=` states it as a sentence ("Every request passes the limiter first"), not a label ("Architecture"). Every arrow says what moves along it (`'count +1'`, `'over the limit'`). To compare, draw the difference: before and after, or the new parts in a group of their own.
 5. **Code is evidence.** Show code only where a few lines prove or illustrate a point: a contract, a pattern to copy, the line with the bug. Cite real lines (`'path#L10-24'`), mark the ones that matter and say in a note why they are there. The rest of the code is one click away (below), not on the page.
