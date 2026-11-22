@@ -169,15 +169,10 @@ function useHiddenColumns(scrollRef: RefObject<HTMLDivElement | null>, key: stri
     const update = () => {
       const box = element.getBoundingClientRect();
       const visibleRight = box.left + element.clientWidth;
-      let left = 0;
-      let right = 0;
-      if (element.scrollWidth - element.clientWidth > 1) {
-        for (const head of element.querySelectorAll<HTMLElement>('[role="columnheader"]')) {
-          const cell = head.getBoundingClientRect();
-          if (cell.left < box.left - 1) left++;
-          if (cell.right > visibleRight + 1) right++;
-        }
-      }
+      // Counted without `++`: the React Compiler cannot compile `++` on a variable of a nested function (decision compiled-viewer).
+      const heads = element.scrollWidth - element.clientWidth > 1 ? [...element.querySelectorAll<HTMLElement>('[role="columnheader"]')].map(head => head.getBoundingClientRect()) : [];
+      const left = heads.filter(cell => cell.left < box.left - 1).length;
+      const right = heads.filter(cell => cell.right > visibleRight + 1).length;
       setHidden(prev => (prev.left === left && prev.right === right ? prev : {left, right}));
     };
     update();

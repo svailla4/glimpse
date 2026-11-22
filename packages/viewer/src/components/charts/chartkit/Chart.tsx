@@ -112,14 +112,9 @@ export function useMarkNav(opts: NavOptions): Nav {
   const active = state.active < marks.length ? state.active : -1;
   const picked = useMemo(() => {
     if (!selected) return null;
-    let any = false;
     const matcher = live.current.matcher;
-    const flags = marks.map((mark, index) => {
-      const hit = matcher ? matcher(selected, mark, index) : matches(selected, mark.entity);
-      any ||= hit;
-      return hit;
-    });
-    return any ? flags : null;
+    const flags = marks.map((mark, index) => (matcher ? matcher(selected, mark, index) : matches(selected, mark.entity)));
+    return flags.some(Boolean) ? flags : null;
   }, [marks, selected]);
 
   const tipShown = useRef(false);

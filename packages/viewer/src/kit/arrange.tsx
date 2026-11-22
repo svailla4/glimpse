@@ -11,7 +11,7 @@
 // implement() reads ArrangeContext and applies `order` and the span override to each cell, so the DOM order stays the
 // spec order: only the visual order changes.
 import {
-  createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
+  createContext, useCallback, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore,
   type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject,
 } from 'react';
 import {useMeta} from './hooks.ts';
@@ -129,13 +129,18 @@ function browserStorage(): ArrangeStorage | null {
 }
 
 let shared: ArrangeStore | undefined;
+/**
+ * The app-wide localStorage store, made on first use. A function outside the hook: a hook that writes a module
+ * variable, or uses `??=`, is left uncompiled by the React Compiler (decision compiled-viewer).
+ */
+function sharedStore(): ArrangeStore {
+  shared ??= createArrangeStore(browserStorage());
+  return shared;
+}
 /** Tests provide their own store over a fake storage; without a provider the app-wide localStorage store is used. */
 export const ArrangeStoreContext = createContext<ArrangeStore | null>(null);
 export function useArrangeStore(): ArrangeStore {
-  const provided = useContext(ArrangeStoreContext);
-  if (provided) return provided;
-  shared ??= createArrangeStore(browserStorage());
-  return shared;
+  return useContext(ArrangeStoreContext) ?? sharedStore();
 }
 
 export interface ArrangeOptions {
@@ -458,13 +463,13 @@ export function useArrangement(surfaceId: string, containerId: string, childIds:
   const {container, flow = 'grid'} = options;
   const tracks = Math.min(MAX_SPAN, Math.max(1, Math.round(options.tracks ?? MAX_SPAN)));
   const defaultSpan = Math.min(tracks, Math.max(1, Math.round(options.defaultSpan ?? tracks)));
-  const ids = useMemo(() => arrangedIds(childIds, entry?.order), [childIds, entry]);
+  // No useMemo in this hook: the React Compiler memoizes `ids`, `natural` and the Arrangement it returns. It could not
+  // keep the hand-written memo of the Arrangement, whose methods read values computed inside it, so with them it left
+  // the whole hook uncompiled (decision compiled-viewer).
+  const ids = arrangedIds(childIds, entry?.order);
   const specSpans = options.spans;
   // The spec span of each child, when the container says (`spans` lines up with the children).
-  const natural = useMemo(() => {
-    if (!specSpans || specSpans.length !== childIds.length) return undefined;
-    return new Map(childIds.map((id, i) => [id, Math.min(tracks, Math.max(1, Math.round(specSpans[i] ?? defaultSpan)))]));
-  }, [specSpans, childIds, tracks, defaultSpan]);
+  const natural = specSpans && specSpans.length === childIds.length ? new Map(childIds.map((id, i) => [id, Math.min(tracks, Math.max(1, Math.round(specSpans[i] ?? defaultSpan)))])) : undefined;
   const before = useRef<Map<string, DOMRect> | null>(null);
 
   // First, Last, Invert, Play: move() measured the cells where they were; now that they are laid out again, each one
@@ -484,77 +489,75 @@ export function useArrangement(surfaceId: string, containerId: string, childIds:
     }
   }, [ids]);
 
-  return useMemo<Arrangement>(() => {
-    const position = new Map(ids.map((id, i) => [id, i]));
-    const ordered = ids !== childIds && !sameIds(ids, childIds);
-    const spans = entry?.span ?? {};
-    const write = (order: readonly string[], span: Record<string, number>) => {
-      const keepOrder = !sameIds(order, childIds);
-      // Only what differs from the spec is remembered: a span set back to the spec one is forgotten.
-      const live = Object.fromEntries(Object.entries(span).filter(([id, n]) => position.has(id) && natural?.get(id) !== n));
-      store.update(surfaceKey, containerId, keepOrder || Object.keys(live).length > 0 ? {order: keepOrder ? [...order] : [], span: live} : undefined);
-    };
-    /** Every child's span as it is now: what the person set, else what its cell shows (data-span), else the default. */
-    const shownSpans = (): Map<string, number> => {
+  const position = new Map(ids.map((id, i) => [id, i]));
+  const ordered = ids !== childIds && !sameIds(ids, childIds);
+  const spans = entry?.span ?? {};
+  const write = (order: readonly string[], span: Record<string, number>) => {
+    const keepOrder = !sameIds(order, childIds);
+    // Only what differs from the spec is remembered: a span set back to the spec one is forgotten.
+    const live = Object.fromEntries(Object.entries(span).filter(([id, n]) => position.has(id) && natural?.get(id) !== n));
+    store.update(surfaceKey, containerId, keepOrder || Object.keys(live).length > 0 ? {order: keepOrder ? [...order] : [], span: live} : undefined);
+  };
+  /** Every child's span as it is now: what the person set, else what its cell shows (data-span), else the default. */
+  const shownSpans = (): Map<string, number> => {
+    const cells = cellsOf(container?.current, ids);
+    return new Map(ids.map(id => [id, Math.min(tracks, spans[id] ?? cellSpan(cells.get(id), defaultSpan))]));
+  };
+  return {
+    ids,
+    arranged: entry !== undefined,
+    container,
+    flow,
+    tracks,
+    defaultSpan,
+    indexOf: childId => position.get(childId) ?? -1,
+    get(componentId) {
+      const index = position.get(componentId);
+      if (index === undefined) return undefined;
+      const span = spans[componentId];
+      if (!ordered && span === undefined) return undefined;
+      return {order: ordered ? index : undefined, span: span === undefined ? undefined : Math.min(span, tracks)};
+    },
+    move(childId, toIndex, beside) {
+      const from = position.get(childId);
+      if (from === undefined || !Number.isFinite(toIndex)) return;
+      const to = Math.min(ids.length - 1, Math.max(0, Math.round(toIndex)));
+      if (to === from) return;
+      // On a grid the spans that filled the old rows need not fill the new ones: the rows are refitted (layout-does-the-obvious).
+      let order: readonly string[];
+      let changed: Record<string, number> = {};
+      if (flow === 'grid') {
+        const shown = shownSpans();
+        ({order, span: changed} = relocate(ids, id => shown.get(id) ?? defaultSpan, childId, to, tracks, beside, natural && (id => natural.get(id))));
+      } else {
+        const next = ids.filter(id => id !== childId);
+        next.splice(to, 0, childId);
+        order = next;
+      }
       const cells = cellsOf(container?.current, ids);
-      return new Map(ids.map(id => [id, Math.min(tracks, spans[id] ?? cellSpan(cells.get(id), defaultSpan))]));
-    };
-    return {
-      ids,
-      arranged: entry !== undefined,
-      container,
-      flow,
-      tracks,
-      defaultSpan,
-      indexOf: childId => position.get(childId) ?? -1,
-      get(componentId) {
-        const index = position.get(componentId);
-        if (index === undefined) return undefined;
-        const span = spans[componentId];
-        if (!ordered && span === undefined) return undefined;
-        return {order: ordered ? index : undefined, span: span === undefined ? undefined : Math.min(span, tracks)};
-      },
-      move(childId, toIndex, beside) {
-        const from = position.get(childId);
-        if (from === undefined || !Number.isFinite(toIndex)) return;
-        const to = Math.min(ids.length - 1, Math.max(0, Math.round(toIndex)));
-        if (to === from) return;
-        // On a grid the spans that filled the old rows need not fill the new ones: the rows are refitted (layout-does-the-obvious).
-        let order: readonly string[];
-        let changed: Record<string, number> = {};
-        if (flow === 'grid') {
-          const shown = shownSpans();
-          ({order, span: changed} = relocate(ids, id => shown.get(id) ?? defaultSpan, childId, to, tracks, beside, natural && (id => natural.get(id))));
-        } else {
-          const next = ids.filter(id => id !== childId);
-          next.splice(to, 0, childId);
-          order = next;
-        }
-        const cells = cellsOf(container?.current, ids);
-        before.current = new Map([...cells].map(([id, cell]) => [id, cell.getBoundingClientRect()]));
-        write(order, {...spans, ...changed});
-      },
-      resize(childId, span, from) {
-        if (!position.has(childId) || !Number.isFinite(span)) return undefined;
-        const next = Math.min(tracks, Math.max(1, Math.round(span)));
-        const base = from?.set ?? spans;
-        if (flow !== 'grid') {
-          if (spans[childId] !== next || base !== spans) write(ids, {...base, [childId]: next});
-          return next;
-        }
-        // On a grid the row keeps its width: what one plate gains or gives up, its row-mates give or take (layout-does-the-obvious).
-        const shown = from?.shown ?? shownSpans();
-        const spanOf = (id: string) => shown.get(id) ?? defaultSpan;
-        const changed = rebalance(ids, spanOf, childId, next, tracks);
-        const result = {...base, ...changed};
-        const same = Object.keys(result).length === Object.keys(spans).length && Object.entries(result).every(([id, n]) => spans[id] === n);
-        if (!same) write(ids, result);
-        return Math.min(tracks, changed[childId] ?? spanOf(childId));
-      },
-      snapshot: () => ({set: spans, shown: shownSpans()}),
-      reset: () => store.update(surfaceKey, containerId, undefined),
-    };
-  }, [ids, childIds, entry, store, surfaceKey, containerId, container, flow, tracks, defaultSpan, natural]);
+      before.current = new Map([...cells].map(([id, cell]) => [id, cell.getBoundingClientRect()]));
+      write(order, {...spans, ...changed});
+    },
+    resize(childId, span, from) {
+      if (!position.has(childId) || !Number.isFinite(span)) return undefined;
+      const next = Math.min(tracks, Math.max(1, Math.round(span)));
+      const base = from?.set ?? spans;
+      if (flow !== 'grid') {
+        if (spans[childId] !== next || base !== spans) write(ids, {...base, [childId]: next});
+        return next;
+      }
+      // On a grid the row keeps its width: what one plate gains or gives up, its row-mates give or take (layout-does-the-obvious).
+      const shown = from?.shown ?? shownSpans();
+      const spanOf = (id: string) => shown.get(id) ?? defaultSpan;
+      const changed = rebalance(ids, spanOf, childId, next, tracks);
+      const result = {...base, ...changed};
+      const same = Object.keys(result).length === Object.keys(spans).length && Object.entries(result).every(([id, n]) => spans[id] === n);
+      if (!same) write(ids, result);
+      return Math.min(tracks, changed[childId] ?? spanOf(childId));
+    },
+    snapshot: () => ({set: spans, shown: shownSpans()}),
+    reset: () => store.update(surfaceKey, containerId, undefined),
+  };
 }
 
 const isArrangement = (api: ArrangeApi | null): api is Arrangement => api !== null && typeof (api as Partial<Arrangement>).move === 'function';

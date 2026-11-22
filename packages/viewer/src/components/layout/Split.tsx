@@ -32,6 +32,18 @@ export function parseRatio(ratio: string | number | undefined): number {
   return value < 1 ? clamp(value) : 0.5;
 }
 
+/**
+ * Captures the pointer on the divider. A pointer that is already gone cannot be captured; the window listeners still
+ * end the drag. Outside the component: the React Compiler cannot compile a try block holding `?.` (decision compiled-viewer).
+ */
+function capturePointer(element: HTMLElement, pointerId: number): void {
+  try {
+    element.setPointerCapture?.(pointerId);
+  } catch {
+    // see above
+  }
+}
+
 export const SplitView: GlView<typeof C.Split> = ({props, child}) => {
   const root = useRef<HTMLDivElement>(null);
   const spec = parseRatio(props.ratio);
@@ -50,11 +62,7 @@ export const SplitView: GlView<typeof C.Split> = ({props, child}) => {
     const bounds = box.getBoundingClientRect();
     const bar = divider.getBoundingClientRect();
     const vertical = column || (bar.height <= 12 && bar.width > 12);
-    try {
-      divider.setPointerCapture?.(event.pointerId);
-    } catch {
-      // a pointer that is already gone cannot be captured; the window listeners below still end the drag
-    }
+    capturePointer(divider, event.pointerId);
     setDragging(true);
     const onMove = (move: PointerEvent) => {
       const size = vertical ? bounds.height : bounds.width;

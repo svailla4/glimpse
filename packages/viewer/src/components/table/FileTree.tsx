@@ -1,6 +1,6 @@
 import type * as C from '@glimpse/catalog';
 import type {DirNode, EntityRef} from '@glimpse/catalog';
-import {memo, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type RefObject} from 'react';
+import {memo, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent} from 'react';
 import {
   DataGate, Empty, PathText, PlateAside, REPORT_CODES, Redline, fileEntity, fmtNum, seqVar, useDataset, useFollowedFile, useHostActions, useSelection, type GlView, type GlViewProps,
 } from '../../kit/index.ts';
@@ -205,13 +205,18 @@ export const FileTreeView: GlView<typeof C.FileTree> = ({id, props}) => {
         host.drill(key, to);
       }
     : undefined;
+  const takeRefocus = () => {
+    const waiting = refocus.current;
+    refocus.current = false;
+    return waiting;
+  };
   const tree = useMemo(() => (state.status === 'ready' ? buildTree(state.data) : undefined), [state]);
   return (
     <Shell>
       <DataGate state={state} id={`FileTree#${id}`}>
         {data =>
           tree ? (
-            <TreeBody id={id} props={props} tree={tree} drill={drill} refocus={refocus} drilled={state.ds?.drill !== undefined} />
+            <TreeBody id={id} props={props} tree={tree} drill={drill} takeRefocus={takeRefocus} drilled={state.ds?.drill !== undefined} />
           ) : (
             <Redline code="E_SHAPE" id={`FileTree#${id}`} message={`expected a directory node {name, path, dir, children}, received ${describeType(data)}`} />
           )
@@ -324,13 +329,16 @@ interface BodyProps {
   props: Props;
   tree: Tree;
   drill: ((target: string) => void) | undefined;
-  /** Set by a drill made from this tree: the next tree takes the keyboard focus the drilled row had. */
-  refocus: RefObject<boolean>;
+  /**
+   * Whether a drill made from this tree is waiting for the next tree to take the keyboard focus the drilled row had;
+   * asking clears it. A function, not the ref: a component may not write into what its props hold (decision compiled-viewer).
+   */
+  takeRefocus: () => boolean;
   /** The dataset is drilled: the kit's scope crumb already names the directory, so the tree does not repeat it. */
   drilled: boolean;
 }
 
-function TreeBody({id, props, tree, drill, refocus, drilled}: BodyProps): JSX.Element {
+function TreeBody({id, props, tree, drill, takeRefocus, drilled}: BodyProps): JSX.Element {
   const metric: Metric = props.metric ?? 'loc';
   const heat: Heat = props.heat ?? 'none';
   const initialDepth = props.depth ?? 2;
@@ -366,9 +374,7 @@ function TreeBody({id, props, tree, drill, refocus, drilled}: BodyProps): JSX.El
   const setActive = nav.setActive;
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per tree, which is what a drill replaces
   useEffect(() => {
-    if (!refocus.current) return;
-    refocus.current = false;
-    setActive(0, true);
+    if (takeRefocus()) setActive(0, true);
   }, [tree]);
 
   const setOpen = (node: TreeNode, open: boolean) => setToggled(prev => new Map(prev).set(node.path, open));

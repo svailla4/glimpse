@@ -79,6 +79,11 @@ which `.github/workflows/release.yml` writes (decision `release-every-merge`):
   mutable (the A2UI surface and component models, a closure over outside state) is cached and never read again: read
   it through `useSyncExternalStore` (`kit/subscribe.ts`). A `useMemo` or `useCallback` dependency the callback does
   not read is dropped: make a refetch trigger part of the value. The viewer tests run compiled code.
+  A function the compiler cannot compile is left as written without a word, so write what it reads: no new `useMemo`
+  or `useCallback` (it memoizes; a hand-written one it cannot keep leaves the whole function uncompiled); a `try` with
+  a condition, `?.` or `??` inside goes in a helper outside the component; count with `filter(...).length`, not `++`
+  on a variable a nested function uses; no `||=` or `??=` in a component or hook; never write into what props hold
+  (pass a function that does it); no getter in an object literal. Reading a ref during render also stops it.
 - **A CSS custom property in a `style` object is a plain key: `style={{'--gl-span': span}}`.** `packages/viewer/src/css.d.ts`
   types every `--name` key, so it needs no cast and no helper. Never write `['--x' as never]` or `{...} as CSSProperties`:
   a cast is not checked, and the React Compiler leaves a function with a cast inside an object key uncompiled.
@@ -347,8 +352,18 @@ Decisions explained here:
   Nine components were left uncompiled by a cast inside a style key (`['--kv-cols' as never]`); `css.d.ts` now types
   custom properties, so every cast and the `vars()` helper went (see Rules that are easy to break), and they compile:
   the eager script 204.6 -> 205.4 kB, table 28.8 -> 34.2, code 20.5 -> 22.0 kB.
-  Not done: 30 functions are left uncompiled (184 compile), which the compiler does silently (they run as written):
-  most read a ref during render (the latest-value pattern in `kit/hooks.ts`, `kit/report.ts`, flowkit,
-  `chartkit/Chart.tsx`), some use syntax it does not read yet (`||=`, `??=`, a getter in an object literal), and
-  `table/nav.ts` uses `@tanstack/react-virtual`, which it marks incompatible. `DateCell` is compiled, so its age
-  ("3 d") is kept until its date changes, also across midnight. No lint rule for the Rules of React (Biome has none).
+  Eight more were left uncompiled by code the compiler cannot read, and were rewritten so it can (the patterns are in
+  Rules that are easy to break): Grid and `useArrangement` lost their hand-written `useMemo`s, which it could not keep
+  (it assumes `shareOf` may change the weights it is given; the Arrangement's methods read values made inside the
+  memo); `useChildInfo` reads its ids back out of `key`, the dependency it lists; Split and JsonView moved a `try`
+  holding `?.` or a condition into a helper; `useHiddenColumns` counts with `filter`, not `++`; FileTree's body asks
+  `takeRefocus()` instead of clearing a ref it was given; `useArrangeStore` makes the shared store in a function
+  outside the hook instead of `??=`. Chart's `||=` went too, though a ref still stops that hook. The eager script
+  205.4 -> 206.4 kB, table 34.2 -> 35.7 kB.
+  Not done: 22 functions are left uncompiled (193 compile; counted with the compiler's logger over `src/`), which the
+  compiler does silently (they run as written): 20 read a ref during render (the latest-value pattern in
+  `kit/hooks.ts`, `kit/report.ts`, flowkit, `chartkit/Chart.tsx`, `codekit`, Ask, Button, Slider, TopBar), and
+  `codekit/VirtualRows.tsx` and `table/nav.ts` call `@tanstack/react-virtual`, which it marks incompatible (the
+  getter in VirtualRows was left: rewriting it would not get the function compiled). Nothing in the repository lists
+  the uncompiled functions, so a new one goes unnoticed. `DateCell` is compiled, so its age ("3 d") is kept until its
+  date changes, also across midnight. No lint rule for the Rules of React (Biome has none).
