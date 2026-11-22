@@ -123,9 +123,19 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
 - **D24: links are one hub of diagram node ids; a message is a path (2026-11-21).** An item names the diagram node it
   stands for with `node:'ID'` (or a list; `nodes` is fixed to `node`): Layers and Steps items, ER tables, rows of a
   DataTable that do not come from a source, and sequence actors, whose node is their id unless given. A sequence
-  message may list the nodes it passes through, `via:['CDN','Q']`. Flowchart nodes gain `note` and `file`: the note
-  shows on hover and in the plate margin, and a file makes the node carry a path, so CodeView follows it and Cmd-click
-  opens it. One reader, `readNodes` (catalog `links.ts`, kept apart from `diagrams.ts` so eager Steps stays small).
+  message may list the nodes it passes through, `via:['CDN','Q']` (a list, or `{via}`, after a list message's label or
+  arrow is read as its via, with a `fixed` line; further elements are a `warn` line). Flowchart nodes gain `note` and
+  `file`: the note shows on hover and in the plate margin, and a file makes the node carry a path, so CodeView follows
+  it and Cmd-click opens it. `path` is read as `file` (and a node's `notes` as `note`) with a `fixed` line on every
+  item that takes a file. One reader, `readNodes` (catalog `links.ts`, kept apart from `diagrams.ts` so eager Steps
+  stays small), and `rowNodes` for table rows (`rowlinks.ts`, so it stays out of the eager script).
+  - DataTable rows (owner's rule): a row links only through a field named exactly `node` holding a text id or a list
+    of them; `nodes` is not read and numbers are not ids. What a row's node did not link is said only when the view
+    declares diagram nodes and one of the table's rows names one of them (`linkNotes`), worded `row 2: node null is
+    not a node id, not linked`, never `not drawn` (the row draws). Otherwise nothing is said. Why: a row is data. The
+    review found `{cluster, nodes:12}` tables told `nodes -> node`, pods with `node:null` told their rows were not
+    drawn, and a column of counts read as node ids that cross-linked other parts; each line asked the model to rename
+    correct data.
   - Selection: `EntityRef.nodes` carries the ids and `parseEntity` keeps 1 to 16 of them (anything else is dropped
     whole), so a trace survives a show and a reload. `ENTITY_TYPES` lives in the catalog. A message selects
     `{type:'message', id:'<comp>:<n>', nodes:[from, ...via, to]}`; an ER table always selects a `node`, with its path.

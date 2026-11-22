@@ -8,11 +8,16 @@ import {
 import {looseDistance, nearest, oneLine} from './errors.ts';
 import type {FileCheck} from './expand.ts';
 
-/** What one component's data says: the node ids it declares, the ones it links to, and the files it names. */
+/**
+ * What one component's data says: the node ids it declares, the ones it links to, and the files it names. `unlinked`
+ * holds what a DataTable's rows did not link ('row 2: node null is not a node id, not linked'): said by linkNotes only
+ * where the table links the view's diagrams, since the rows draw either way (decision D24).
+ */
 export interface Authored {
   declares: Array<{id: string; label: string}>;
   links: Array<{at: string; ids: string[]}>;
   files: Array<{at: string; file: FileLoc}>;
+  unlinked?: string[];
 }
 
 const NONE: Authored = {declares: [], links: [], files: []};
@@ -57,7 +62,13 @@ export const AUTHORED: Readonly<Record<string, (value: unknown) => Clean<Authore
     return {links: items.flatMap(withNodes(at)), files: items.flatMap(withFile(at))};
   }),
   Steps: value => mapClean(cleanItems('step', value), ast => ({links: ast.flatMap(withNodes(item => item.at)), files: ast.flatMap(withFile(item => item.at))})),
-  DataTable: value => mapClean(cleanItems('row', value), ast => ({links: ast.flatMap(withNodes(item => item.at))})),
+  // Decision D24: a row always draws, so what its node did not link is no `not drawn` line here; linkNotes says it.
+  DataTable: value => {
+    const cleaned = cleanItems('row', value);
+    return cleaned.ok
+      ? {...cleaned, ast: {...NONE, links: cleaned.ast.flatMap(withNodes(item => item.at)), unlinked: cleaned.dropped}, fixes: [], dropped: [], droppedCount: 0}
+      : cleaned;
+  },
   // Graph data is drawn as it is written; only its node ids matter here.
   Graph: value => ({
     ok: true,
@@ -187,8 +198,9 @@ const MAX_LINK_IDS = 3;
  * the view declares or links to, one `warn` line per component, with the declared node whose label it is or the
  * nearest id. Checked like diagramNotes: the components the call defines and those bound under a path it wrote.
  * Every component on the view counts as a place an id may live, so a page built over two calls is judged whole.
- * Silent where the ids cannot be known: a Graph drawn from a source makes the check say nothing at all, and a
- * DataTable none of whose `node` values resolves is taken to have a `node` column of its own, not links.
+ * Silent where the ids cannot be known: a Graph drawn from a source makes the check say nothing at all. A DataTable is
+ * judged only when the view declares diagram nodes and one of its rows names one of them; it then also says what its
+ * rows did not link. Otherwise its `node` is a column of its own, data and not links, and nothing is said.
  */
 export function linkNotes(
   components: Iterable<WireComponent>, data: Record<string, unknown>, defined: ReadonlySet<string>, written: ReadonlySet<string>,
@@ -201,7 +213,7 @@ export function linkNotes(
     if (label !== undefined && entry.label === undefined) entry.label = label;
     keys.set(id, entry);
   };
-  const linking: Array<{comp: WireComponent; ids: string[]}> = [];
+  const linking: Array<{comp: WireComponent; ids: string[]; unlinked: string[]}> = [];
   for (const comp of components) {
     const read = AUTHORED[comp.component];
     if (!read) continue;
@@ -217,13 +229,21 @@ export function linkNotes(
     for (const {id, label} of cleaned.ast.declares) key(id, comp.id, label);
     const ids = [...new Set(cleaned.ast.links.flatMap(link => link.ids))];
     for (const id of ids) key(id, comp.id);
-    if (ids.length > 0 && (defined.has(comp.id) || (drawn?.paths.some(path => written.has(topSegment(path))) ?? false))) linking.push({comp, ids});
+    if (ids.length > 0 && (defined.has(comp.id) || (drawn?.paths.some(path => written.has(topSegment(path))) ?? false))) {
+      linking.push({comp, ids, unlinked: cleaned.ast.unlinked ?? []});
+    }
   }
   const lines: string[] = [];
-  for (const {comp, ids} of linking) {
+  for (const {comp, ids, unlinked} of linking) {
+    const where = `${comp.component}#${comp.id}`;
     const elsewhere = (id: string) => [...(keys.get(id)?.by ?? [])].some(by => by !== comp.id);
+    // A label is set only by a declaration: a DataTable links when one of its ids is a node another part declares.
+    if (comp.component === 'DataTable') {
+      if (!ids.some(id => elsewhere(id) && keys.get(id)?.label !== undefined)) continue;
+      lines.push(...unlinked.map(line => `${where}: ${line}`));
+    }
     const bad = ids.filter(id => !elsewhere(id));
-    if (bad.length === 0 || (comp.component === 'DataTable' && bad.length === ids.length)) continue;
+    if (bad.length === 0) continue;
     const known = [...keys].filter(([id]) => elsewhere(id));
     const hint = (id: string): string => {
       const labelled = known.find(([other, entry]) => other !== id && entry.label !== undefined && entry.label.toLowerCase() === id.toLowerCase());
@@ -232,7 +252,6 @@ export function linkNotes(
       // As close as a typo, and not merely as short as the id itself ('A' is not a typo of 'B').
       return best !== undefined && looseDistance(id, best) <= Math.min(2, id.length - 1) ? ` (nearest: ${oneLine(best, 40)})` : '';
     };
-    const where = `${comp.component}#${comp.id}`;
     if (bad.length === 1) {
       lines.push(`${where}: node '${oneLine(bad[0]!, 40)}' links to nothing on this view${hint(bad[0]!)}`);
       continue;

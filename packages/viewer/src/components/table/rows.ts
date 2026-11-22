@@ -1,7 +1,7 @@
 // Row logic for the table family: coercion, column resolution, sort, search, grouping and the entity a row stands
 // for. No DOM. Which entity a file location names and how an entity relates to the selection are the kit's rules.
 import {
-  parseFileLoc, parseRef, readNodes,
+  parseFileLoc, parseRef, rowNodes,
   type DataRow, type Dataset, type EntityRef, type Field, type FieldKind,
 } from '@glimpse/catalog';
 import {fileEntity, linkedEntity, linksSelection, matchSelection} from '../../kit/index.ts';
@@ -304,11 +304,12 @@ export function cellEntity(column: Column, row: DataRow, ds: Dataset | undefined
 /**
  * What activating a row selects: the file in its `path` / `file` field, else its first entity cell, else the row
  * itself (identified by its first cell). A row written inline (not from a source) that names diagram nodes in a `node`
- * field (`node:'PG'`, decision D24) carries them, so it lights with node PG; a source's `node` field is only data.
+ * field (`node:'PG'`, decision D24) carries them, so it lights with node PG; a source's `node` field is only data, and
+ * so are `nodes` and numbers (catalog rowNodes: a column of counts or hosts links nothing).
  */
 export function rowEntity(row: DataRow, columns: readonly Column[], index: number, ds: Dataset | undefined): EntityRef {
   const own = ownEntity(row, columns, index, ds);
-  return ds?.$ds ? own : (linkedEntity(own, readNodes(row).ids, {id: own.id, label: own.label ?? own.id}) ?? own);
+  return ds?.$ds ? own : (linkedEntity(own, rowNodes(row).ids, {id: own.id, label: own.label ?? own.id}) ?? own);
 }
 
 function ownEntity(row: DataRow, columns: readonly Column[], index: number, ds: Dataset | undefined): EntityRef {

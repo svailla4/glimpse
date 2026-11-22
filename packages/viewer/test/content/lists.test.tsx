@@ -103,6 +103,12 @@ describe('Steps', () => {
     expect(marked()).toEqual([false, true, false]);
   });
 
+  it('reads a step path as its file, as the server says', async () => {
+    const view = renderExpress(`$/plan=[{title:'Cache',path:'src/cache.ts'}]\nroot=Page('T',[plan])\nplan=Steps($/plan)`);
+    fireEvent.click(view.cell('plan').querySelector('ol > li') as HTMLElement);
+    expect(view.getData('/ui/sel')).toEqual({type: 'file', id: 'src/cache.ts', path: 'src/cache.ts'});
+  });
+
   it('keeps two steps with one title and different nodes apart', async () => {
     const view = renderExpress(`$/plan=[{title:'Cache',node:['CDN','Edge']},{title:'Cache',node:['Redis','PG']}]\nroot=Page('T',[plan])\nplan=Steps($/plan)`);
     const steps = [...view.cell('plan').querySelectorAll('ol > li')] as HTMLElement[];

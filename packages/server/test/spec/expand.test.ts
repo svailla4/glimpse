@@ -163,14 +163,39 @@ describe('expandMessages: diagram data, columns, paths', () => {
     expect(out.byComponent('Layers').data).toEqual(bind('fake.rows'));
   });
 
-  it('Steps items and inline DataTable rows read node like the tab: an alias is fixed, a bad value or Steps key is warn', () => {
+  it('Steps items read node like the tab: an alias is fixed, a bad value or Steps key is warn', () => {
     const out = expand(`root=Page('x',[Steps([{title:'Migrate',nodes:'PG',owner:'Mira'},{title:'Ship',node:{id:'PG'}}]),DataTable([{name:'a',nodes:['PG','Redis']},{name:'b',node:'PG'}])])`);
     expect(out.problems).toEqual([]);
-    expect(out.fixes).toEqual(['Steps#root_children_0: step 1: nodes -> node', 'DataTable#root_children_1: row 1: nodes -> node']);
+    expect(out.fixes).toEqual(['Steps#root_children_0: step 1: nodes -> node']);
     expect(out.warnings).toEqual([
       "Steps#root_children_0: not drawn: step 2: node: expected 'ID' or ['ID', ...], received an object",
       'Steps#root_children_0: not drawn: ignored step key owner',
     ]);
+  });
+
+  it('reads path as file on every D24 item with a fixed line, and a via written in a list message', () => {
+    const out = expand(`root=Page('T',[Flowchart({nodes:{A:{label:'A',path:'README.md',notes:'n'}},edges:[]}),Layers([{name:'x',items:[{label:'b',path:'README.md'}]}]),ERDiagram([{name:'users',path:'README.md',columns:['id']}]),Steps([{title:'c',path:'README.md'}]),SequenceDiagram({steps:[['A','B','x',['Q']],['A','B','y','sync','Q']]})])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual([
+      'Flowchart#root_children_0: node A: notes -> note',
+      'Flowchart#root_children_0: node A: path -> file',
+      "Layers#root_children_1: item 'b': path -> file",
+      'ERDiagram#root_children_2: table users: path -> file',
+      'Steps#root_children_3: step 1: path -> file',
+      'SequenceDiagram#root_children_4: step 1: via read from the list form; write {from, to, label, via}',
+    ]);
+    expect(out.warnings).toEqual(['SequenceDiagram#root_children_4: not drawn: step 2: 1 more element not read (write {from, to, label?, arrow?, via?})']);
+    expect(out.files.map(check => check.where)).toEqual([
+      'Flowchart#root_children_0 node A', "Layers#root_children_1 item 'b'", 'ERDiagram#root_children_2 table users', 'Steps#root_children_3 step 1',
+    ]);
+  });
+
+  // Decision D24 (owner's rule): a row always draws, and its node is data unless the table links the view's diagrams.
+  it('says nothing about DataTable rows as it expands them: a nodes count or a null node is data', () => {
+    const out = expand(`root=Page('x',[DataTable([{cluster:'prod',nodes:12},{cluster:'dev',nodes:3}]),DataTable([{pod:'api',node:'ip-1'},{pod:'w',node:null},{pod:'c',node:''}])])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual([]);
+    expect(out.warnings).toEqual([]);
   });
 
   it('the files inline diagram and Steps data name are checked like file props', () => {
@@ -414,6 +439,27 @@ describe('linkNotes', () => {
     expect(notes([flow, k8s])).toEqual([]);
     const mixed: WireComponent = {id: 'choices', component: 'DataTable', data: [{choice: 'System of record', node: 'PG'}, {choice: 'Cache', node: 'Redis'}]};
     expect(notes([flow, mixed])).toEqual(["DataTable#choices: node 'Redis' links to nothing on this view"]);
+  });
+
+  it('judges DataTable rows only where one names a node a diagram declares; nodes and numbers never link', () => {
+    const counts: WireComponent = {id: 'c', component: 'DataTable', data: [{cluster: 'prod', nodes: 12}, {cluster: 'dev', nodes: 3}]};
+    expect(notes([flow, counts])).toEqual([]);
+    const pods: WireComponent = {id: 'p', component: 'DataTable', data: [{pod: 'api', node: 'ip-1'}, {pod: 'w', node: null}, {pod: 'c', node: ''}]};
+    expect(notes([pods])).toEqual([]);
+    expect(notes([flow, pods])).toEqual([]);
+    // two tables sharing a node column, and no diagram, do not judge each other
+    expect(notes([pods, {...pods, id: 'p2'}])).toEqual([]);
+    const rows: WireComponent = {id: 't', component: 'DataTable', data: [{a: 1, node: 'PG'}, {a: 2, node: 'PGG'}, {a: 3, node: null}, {a: 4, node: 7}, {a: 5, nodes: 'GW'}]};
+    expect(notes([flow, rows])).toEqual([
+      'DataTable#t: row 3: node null is not a node id, not linked',
+      'DataTable#t: row 4: node 7 is not a node id, not linked',
+      "DataTable#t: node 'PGG' links to nothing on this view (nearest: PG)",
+    ]);
+    // bound to a $/path, the same, and diagramNotes says nothing of a row
+    const bound: WireComponent = {id: 't', component: 'DataTable', data: {'@path': '/rows'}};
+    expect(diagramNotes([bound], {rows: [{cluster: 'prod', nodes: 12, node: 'x'}, {node: null}]}, new Set(['t']), new Set())).toEqual({fixes: [], warnings: [], files: []});
+    expect(linkNotes([flow, bound], {rows: rows.data}, new Set(), new Set(['rows']))).toEqual(notes([flow, rows]));
+    expect(linkNotes([bound], {rows: [{cluster: 'prod', nodes: 12, node: 'x'}]}, new Set(['t']), new Set())).toEqual([]);
   });
 
   it('names at most three ids a line, then how many more', () => {

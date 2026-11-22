@@ -47,7 +47,9 @@ function normalize(items: readonly unknown[], componentId: string): Step[] {
   const steps: Step[] = [];
   for (const [i, item] of (items as readonly (StepItem | unknown)[]).entries()) {
     if (isRecord(item)) {
-      const file = typeof item.file === 'string' && item.file.trim() !== '' ? item.file.trim() : undefined;
+      // `path` is read as the file when there is no `file`, as the server says (catalog cleanItems).
+      const written = item.file ?? item.path;
+      const file = typeof written === 'string' && written.trim() !== '' ? written.trim() : undefined;
       const title = cellText(item.title ?? item.name ?? item.label).trim() || file || '';
       if (!title) continue;
       // By place (step 3 is `s:3`, as the server numbers it), not title: two steps may share a title and stand for different nodes.

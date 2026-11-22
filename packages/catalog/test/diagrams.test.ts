@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {
-  MAX_ENTITY_NODES, cleanFlow, cleanItems, cleanLayers, cleanSchema, cleanSequence, readNodes, seqLeaves,
+  MAX_ENTITY_NODES, cleanFlow, cleanItems, cleanLayers, cleanSchema, cleanSequence, readNodes, rowNodes, seqLeaves,
   type Clean, type FlowAst, type LayersAst, type SchemaAst, type SeqAst,
 } from '../src/index.ts';
 
@@ -102,14 +102,16 @@ describe('cleanFlow', () => {
       Q: {label: 'Queue', description: 'jobs', path: 'src/queue.ts'},
       W: {label: 'Worker', detail: 3},
       N: 'Plain',
+      M: {label: 'Mailer', notes: 'smtp'},
     }});
     expect(ast.nodes).toEqual([
       {id: 'P', label: 'Postgres', shape: 'store', note: 'orders', file: 'db/schema.sql#L1-20'},
       {id: 'Q', label: 'Queue', shape: 'box', note: 'jobs', file: 'src/queue.ts'},
       {id: 'W', label: 'Worker', shape: 'box', note: '3'},
       {id: 'N', label: 'Plain', shape: 'box'},
+      {id: 'M', label: 'Mailer', shape: 'box', note: 'smtp'},
     ]);
-    expect(fixes).toEqual(['node Q: description -> note', 'node Q: path -> file', 'node W: detail -> note']);
+    expect(fixes).toEqual(['node Q: description -> note', 'node Q: path -> file', 'node W: detail -> note', 'node M: notes -> note']);
     expect(dropped).toEqual([]);
   });
 
@@ -159,6 +161,25 @@ describe('readNodes', () => {
   it(`keeps the first ${MAX_ENTITY_NODES} ids, or the first max, and says how many were written`, () => {
     expect(readNodes({node: ids(20)})).toEqual({ids: ids(MAX_ENTITY_NODES), problem: `node: 20 ids, the first ${MAX_ENTITY_NODES} kept`});
     expect(readNodes({via: ids(5)}, 'via', 3)).toEqual({ids: ids(3), problem: 'via: 5 ids, the first 3 kept'});
+  });
+});
+
+// Decision D24 (owner's rule): a table row links only through a field named exactly `node` holding text ids.
+describe('rowNodes', () => {
+  it('reads node as one text id or a list of them, and nothing else', () => {
+    expect(rowNodes({node: ' PG '})).toEqual({ids: ['PG']});
+    expect(rowNodes({node: ['PG', 'Redis', 'PG']})).toEqual({ids: ['PG', 'Redis']});
+    expect(rowNodes({nodes: ['PG']})).toEqual({ids: []});
+    expect(rowNodes({cluster: 'prod', nodes: 12})).toEqual({ids: []});
+    expect(rowNodes({})).toEqual({ids: []});
+  });
+
+  it('says what it did not link, never as not drawn: numbers, null, empty text and objects are not ids', () => {
+    expect(rowNodes({node: 12})).toEqual({ids: [], problem: 'node 12 is not a node id, not linked'});
+    expect(rowNodes({node: null})).toEqual({ids: [], problem: 'node null is not a node id, not linked'});
+    expect(rowNodes({node: ''})).toEqual({ids: [], problem: "node '' is not a node id, not linked"});
+    expect(rowNodes({node: ['PG', {id: 'Q'}]})).toEqual({ids: ['PG'], problem: 'node entry 2 {...} is not a node id, not linked'});
+    expect(rowNodes({node: ids(20)})).toEqual({ids: ids(MAX_ENTITY_NODES), problem: `node: 20 ids, the first ${MAX_ENTITY_NODES} linked`});
   });
 });
 
@@ -265,6 +286,35 @@ describe('cleanSequence', () => {
       `step 4: via: 20 ids, the first ${MAX_ENTITY_NODES - 2} kept`,
     ]);
   });
+
+  it('reads a list or {via} after a list message label or arrow as its via, and names what else it cannot read', () => {
+    const {ast, fixes, dropped} = seq([
+      ['A', 'B', 'x', ['Q']],
+      ['A', 'B', 'y', 'async', {via: ['Q', 'R'], colour: 'red'}],
+      ['A', 'B', 'z', null, 'Q'],
+      ['A', 'B', 'w', true],
+      ['A', 'B', 'v', 'sync', 'more', 'still'],
+      ['A', 'B', 'u', 'reply', ['Q'], 'extra'],
+      ['A', 'B', {text: 'hi'}],
+    ]);
+    expect(ast.steps.map(step => step.kind === 'message' && [step.label, step.arrow, step.via])).toEqual([
+      ['x', 'sync', ['Q']], ['y', 'async', ['Q', 'R']], ['z', 'sync', undefined], ['w', 'sync', undefined],
+      ['v', 'sync', undefined], ['u', 'reply', ['Q']], ['', 'sync', undefined],
+    ]);
+    expect(fixes).toEqual([
+      'step 1: via read from the list form; write {from, to, label, via}',
+      'step 2: via read from the list form; write {from, to, label, via}',
+      'step 4: arrow a boolean drawn as sync (arrows: sync reply async)',
+      'step 6: via read from the list form; write {from, to, label, via}',
+    ]);
+    expect(dropped).toEqual([
+      'step 3: 1 more element not read (write {from, to, label?, arrow?, via?})',
+      'step 5: 2 more elements not read (write {from, to, label?, arrow?, via?})',
+      'step 6: 1 more element not read (write {from, to, label?, arrow?, via?})',
+      'step 7: label: expected text, received an object',
+      'ignored message key colour',
+    ]);
+  });
 });
 
 // Decision D24: Layers is read here, by the server and the viewer alike.
@@ -327,6 +377,13 @@ describe('cleanLayers', () => {
       'ignored tier key colour',
       'ignored item key colour',
     ]);
+  });
+
+  it('reads an item path as its file and says so', () => {
+    const {ast, fixes, dropped} = layers([{name: 'Data', items: [{label: 'a', path: 'src/a.ts'}, {label: 'b', file: 'src/b.ts', path: 'src/c.ts'}]}]);
+    expect(ast.bands[0]!.items).toEqual([{label: 'a', file: 'src/a.ts'}, {label: 'b', file: 'src/b.ts'}]);
+    expect(fixes).toEqual(["item 'a': path -> file"]);
+    expect(dropped).toEqual(["item 'b': path not read (file is)"]);
   });
 
   it('returns every tier and item (the view caps what it draws), and refuses only what is not a list', () => {
@@ -394,6 +451,13 @@ describe('cleanSchema', () => {
       "table audit: file: expected 'path#L10-20', received a number",
       "table audit: node: expected 'ID' or ['ID', ...], received an object",
     ]);
+  });
+
+  it('reads a table path as its file and says so', () => {
+    const {ast, fixes, dropped} = schema([{name: 'users', path: 'db/schema.sql#L1-9', columns: ['id']}]);
+    expect(ast.tables[0]!.file).toBe('db/schema.sql#L1-9');
+    expect(fixes).toEqual(['table users: path -> file']);
+    expect(dropped).toEqual([]);
   });
 
   it('draws what it can of malformed tables and relations and names the rest', () => {
@@ -469,12 +533,22 @@ describe('cleanItems', () => {
     });
   });
 
-  it('reads only node in a row: a row is data, so its other keys are not checked', () => {
-    expect(cleanItems('row', [{choice: 'System of record', node: 'PG', file: 3}, {nodes: 'Q'}, {name: 'r'}, {node: {}}])).toEqual({
+  it('reads only node in a row, as rowNodes: a row is data, so its other keys, nodes and numbers are not read', () => {
+    expect(cleanItems('row', [{choice: 'System of record', node: 'PG', file: 3}, {nodes: 'Q'}, {name: 'r'}, {node: {}}, {node: 12}])).toEqual({
       ok: true,
-      ast: [{at: 'row 1', nodes: ['PG']}, {at: 'row 2', nodes: ['Q']}],
-      fixes: ['row 2: nodes -> node'],
-      dropped: ["row 4: node: expected 'ID' or ['ID', ...], received an object"],
+      ast: [{at: 'row 1', nodes: ['PG']}],
+      fixes: [],
+      dropped: ['row 4: node {...} is not a node id, not linked', 'row 5: node 12 is not a node id, not linked'],
+      droppedCount: 2,
+    });
+  });
+
+  it('reads a step path as its file and says so', () => {
+    expect(cleanItems('step', [{title: 'a', path: 'src/a.ts#L2'}, {title: 'b', file: 'src/b.ts', path: 'src/c.ts'}])).toEqual({
+      ok: true,
+      ast: [{at: 'step 1', file: 'src/a.ts#L2'}, {at: 'step 2', file: 'src/b.ts'}],
+      fixes: ['step 1: path -> file'],
+      dropped: ['step 2: path not read (file is)'],
       droppedCount: 1,
     });
   });

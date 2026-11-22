@@ -10,6 +10,7 @@
 // named in `fixes`. Only a value that is not a diagram at all is refused.
 import {MAX_ENTITY_NODES, STEP_KEYS, type ErRelation, type FileLoc} from './datasets.ts';
 import {describeValue, readNodes} from './links.ts';
+import {rowNodes} from './rowlinks.ts';
 
 export interface Cleaned<T> {
   ast: T;
@@ -94,6 +95,14 @@ function fileAt(o: Record<string, unknown>, key: string, where: string, dropped:
   dropped.add(`${where}: ${key}: expected 'path#L10-20', received ${received(raw)}`);
   return undefined;
 }
+/** The file an entry names (decision D24): its `file`, or its `path` read as the file and said in `fixes`. */
+function fileOf(o: Record<string, unknown>, where: string, fixes: Notes, dropped: Notes): FileLoc | undefined {
+  const key = o.file !== undefined ? 'file' : o.path !== undefined ? 'path' : undefined;
+  const file = key !== undefined ? fileAt(o, key, where, dropped) : undefined;
+  if (file !== undefined && key === 'path') fixes.add(`${where}: path -> file`);
+  if (key === 'file' && o.path !== undefined) dropped.add(`${where}: path not read (file is)`);
+  return file;
+}
 /** The label of an entry: its label key, the value itself in a map `{ID: 'label'}`, else the id. */
 const labelOf = (raw: unknown, inList: boolean, id: string): string =>
   isRecord(raw) ? (textOf(pick(raw, LABEL_KEYS)) ?? id) : inList ? id : (textOf(raw) ?? id);
@@ -155,7 +164,7 @@ export const SHAPE_ALIASES: Readonly<Record<string, FlowShape>> = {
   oval: 'circle', ellipse: 'circle', event: 'circle',
 };
 /** A node's note, and the other words for it. */
-const NODE_NOTE_KEYS = ['note', 'detail', 'description'] as const;
+const NODE_NOTE_KEYS = ['note', 'notes', 'detail', 'description'] as const;
 const NODE_KEYS: ReadonlySet<string> = new Set(['id', ...LABEL_KEYS, 'shape', 'type', 'group', 'parent', 'in', ...NODE_NOTE_KEYS, 'file', 'path']);
 const EDGE_FROM = ['from', 'source', 'src'] as const;
 const EDGE_TO = ['to', 'target', 'dst'] as const;
@@ -213,16 +222,13 @@ export function cleanFlow(data: unknown): Clean<FlowAst> {
     }
     const group = textOf(pick(o, ['group', 'parent', 'in']));
     if (group !== undefined) addGroup(group, `node ${clip(id)}`);
-    // Decision D24: a note and a file; `detail` and `description` are read as the note, `path` as the file.
+    // Decision D24: a note and a file; `notes`, `detail` and `description` are read as the note, `path` as the file.
     const where = `node ${clip(id)}`;
     const noteKeys = NODE_NOTE_KEYS.filter(key => o[key] !== undefined);
     const note = noteKeys[0] !== undefined ? textAt(o, noteKeys[0], where, dropped) : undefined;
     if (note !== undefined && noteKeys[0] !== 'note') fixes.add(`${where}: ${noteKeys[0]} -> note`);
     for (const extra of noteKeys.slice(1)) dropped.add(`${where}: ${extra} not read (${noteKeys[0]} is)`);
-    const fileKey = o.file !== undefined ? 'file' : o.path !== undefined ? 'path' : undefined;
-    const file = fileKey !== undefined ? fileAt(o, fileKey, where, dropped) : undefined;
-    if (file !== undefined && fileKey === 'path') fixes.add(`${where}: path -> file`);
-    if (fileKey === 'file' && o.path !== undefined) dropped.add(`${where}: path not read (file is)`);
+    const file = fileOf(o, where, fixes, dropped);
     nodes.set(id, {id, label, shape, ...(group !== undefined ? {group} : {}), ...(note !== undefined ? {note} : {}), ...(file !== undefined ? {file} : {})});
   }
   const declared = nodes.size > 0;
@@ -336,7 +342,8 @@ const SEQ_EXAMPLE = "{steps:[['User','API','POST /login'],['API','User','200','r
  * or a block `{loop: 'label', steps: [...]}` (also alt, opt, par, critical, break) whose `else` lists further branches
  * `[{label, steps}]`; a `group` (rect, box) draws its steps without a frame. Actors appear in the order `actors` lists
  * them, then in order of first mention. An actor written `{label, node}` stands for that diagram node, and a message's
- * `via` names the nodes it passes through (decision D24): one id, or a list.
+ * `via` names the nodes it passes through (decision D24): one id, or a list. A list message read with a list (or
+ * `{via}`) after its label or arrow takes it as its via, and says so.
  */
 export function cleanSequence(data: unknown): Clean<SeqAst> {
   if (typeof data === 'string') {
@@ -403,14 +410,33 @@ export function cleanSequence(data: unknown): Clean<SeqAst> {
     const out: SeqStep[] = [];
     list.forEach((raw, i) => {
       const where = `step ${path}${i + 1}`;
-      // A message as a list.
+      // A message as a list: ['from', 'to', 'label'?, arrow?], and a via written after it as a list or {via} (D24).
       if (Array.isArray(raw)) {
-        const [from, to, label, arrow] = [textOf(raw[0]), textOf(raw[1]), textOf(raw[2]) ?? '', textOf(raw[3])];
+        const [from, to] = [textOf(raw[0]), textOf(raw[1])];
         if (from === undefined || to === undefined) {
           dropped.add(`${where}: expected ['from', 'to', 'label'?, arrow?], received a list of ${raw.length}`);
           return;
         }
-        out.push({kind: 'message', from: actor(from), to: actor(to), label, arrow: arrowOf(arrow, where)});
+        if (raw[2] != null && typeof raw[2] !== 'string' && textOf(raw[2]) === undefined) dropped.add(`${where}: label: expected text, received ${describeValue(raw[2])}`);
+        const isVia = (v: unknown) => Array.isArray(v) || (isRecord(v) && v.via !== undefined);
+        const arrowRaw = isVia(raw[3]) ? undefined : raw[3];
+        let next = isVia(raw[3]) ? 3 : 4;
+        let via: string[] = [];
+        if (isVia(raw[next])) {
+          const written = raw[next] as unknown[] | Record<string, unknown>;
+          if (isRecord(written)) dropped.ignore('message', Object.keys(written).filter(key => key !== 'via'));
+          via = nodesAt(Array.isArray(written) ? {via: written} : written, where, fixes, dropped, 'via', MAX_ENTITY_NODES - 2);
+          fixes.add(`${where}: via read from the list form; write {from, to, label, via}`);
+          next++;
+        }
+        const extra = raw.length - next;
+        if (extra > 0) dropped.add(`${where}: ${extra} more ${extra === 1 ? 'element' : 'elements'} not read (write {from, to, label?, arrow?, via?})`);
+        let arrow = textOf(arrowRaw);
+        if (arrowRaw != null && typeof arrowRaw !== 'string' && arrow === undefined) {
+          fixes.add(`${where}: arrow ${describeValue(arrowRaw)} drawn as sync (arrows: sync reply async)`);
+          arrow = 'sync';
+        }
+        out.push({kind: 'message', from: actor(from), to: actor(to), label: textOf(raw[2]) ?? '', arrow: arrowOf(arrow, where), ...(via.length > 0 ? {via} : {})});
         return;
       }
       if (!isRecord(raw)) {
@@ -501,7 +527,7 @@ export interface LayersBand { name: string; note?: string; items: LayersItem[] }
 export interface LayersAst { bands: LayersBand[] }
 
 const BAND_KEYS: ReadonlySet<string> = new Set(['name', 'label', 'title', 'note', 'items']);
-const ITEM_KEYS: ReadonlySet<string> = new Set(['label', 'name', 'title', 'note', 'file', 'node', 'nodes']);
+const ITEM_KEYS: ReadonlySet<string> = new Set(['label', 'name', 'title', 'note', 'file', 'path', 'node', 'nodes']);
 
 /**
  * The data of Layers, cleaned: tiers `[{name, items, note?}]`, top tier first; a bare string is a tier without items.
@@ -546,7 +572,7 @@ export function cleanLayers(data: unknown): Clean<LayersAst> {
       }
       const where = `item '${clip(label, 30)}'`;
       const itemNote = textAt(entry, 'note', where, dropped);
-      const file = fileAt(entry, 'file', where, dropped);
+      const file = fileOf(entry, where, fixes, dropped);
       const nodes = nodesAt(entry, where, fixes, dropped);
       items.push({label, ...(itemNote !== undefined ? {note: itemNote} : {}), ...(file !== undefined ? {file} : {}), ...(nodes.length > 0 ? {nodes} : {})});
     });
@@ -565,7 +591,7 @@ export interface SchemaAst { tables: SchemaTable[]; relations: SchemaRelation[] 
 
 const CARD_SET: ReadonlySet<string> = new Set(ER_CARDS);
 const SCHEMA_KEYS: ReadonlySet<string> = new Set(['tables', 'relations']);
-const TABLE_KEYS: ReadonlySet<string> = new Set(['name', 'columns', 'file', 'node', 'nodes']);
+const TABLE_KEYS: ReadonlySet<string> = new Set(['name', 'columns', 'file', 'path', 'node', 'nodes']);
 const COLUMN_KEYS: ReadonlySet<string> = new Set(['name', 'type', 'pk', 'fk', 'ref', 'references', 'nullable']);
 const RELATION_KEYS: ReadonlySet<string> = new Set(['from', 'to', 'label', 'card']);
 /** The keys a column names what it points at by. */
@@ -624,7 +650,7 @@ export function cleanSchema(data: unknown): Clean<SchemaAst> {
       const type = textOf(o.type);
       columns.push({name: colName, ...(type !== undefined ? {type} : {}), pk: o.pk === true, fk: o.fk === true || key !== undefined, nullable: o.nullable === true});
     });
-    const file = fileAt(raw, 'file', where, dropped);
+    const file = fileOf(raw, where, fixes, dropped);
     const nodes = nodesAt(raw, where, fixes, dropped);
     const table: SchemaTable = {name, ...(file !== undefined ? {file} : {}), ...(nodes.length > 0 ? {nodes} : {}), columns};
     byName.set(name, table);
@@ -694,7 +720,9 @@ export interface ItemLinks { at: string; file?: FileLoc; nodes?: string[] }
 /**
  * What the items of a Steps list (`step`) or the inline rows of a DataTable (`row`) link to, for the server's checks:
  * one entry per item that names a file or a node, in order. A step's keys are checked (STEP_KEYS) and so is its file;
- * a row is data, so only its `node` is read. Never refused: a value that is not a list links nothing.
+ * a row is data, so only its `node` is read, as rowNodes reads it: a row always draws, and its `dropped` lines say
+ * what was not linked (the server says them only where the table links the view's diagrams, linkNotes). Never
+ * refused: a value that is not a list links nothing.
  */
 export function cleanItems(kind: 'step' | 'row', data: unknown): Clean<ItemLinks[]> {
   const fixes = new Notes();
@@ -704,8 +732,10 @@ export function cleanItems(kind: 'step' | 'row', data: unknown): Clean<ItemLinks
     if (!isRecord(item)) return;
     const at = `${kind} ${i + 1}`;
     if (kind === 'step') dropped.ignore('step', unknownKeys(item, STEP_KEY_SET));
-    const file = kind === 'step' ? fileAt(item, 'file', at, dropped) : undefined;
-    const nodes = nodesAt(item, at, fixes, dropped);
+    const file = kind === 'step' ? fileOf(item, at, fixes, dropped) : undefined;
+    const row = kind === 'row' ? rowNodes(item) : undefined;
+    if (row?.problem !== undefined) dropped.add(`${at}: ${row.problem}`);
+    const nodes = row ? row.ids : nodesAt(item, at, fixes, dropped);
     if (file !== undefined || nodes.length > 0) links.push({at, ...(file !== undefined ? {file} : {}), ...(nodes.length > 0 ? {nodes} : {})});
   });
   return cleaned(links, fixes, dropped);

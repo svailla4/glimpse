@@ -290,8 +290,8 @@ export interface StatItem { label: string; value: number | string; unit?: string
 export type StepStatus = 'todo' | 'doing' | 'done' | 'blocked' | 'skipped';
 /** `node` names the diagram node (or nodes) a step stands for: selecting the step lights them (decision D24). */
 export interface StepItem { title: string; note?: string; status?: StepStatus; file?: FileLoc; node?: string | string[] }
-/** The keys a Steps item is read from; `name` and `label` are other words for `title`, `nodes` for `node`. */
-export const STEP_KEYS: readonly string[] = ['title', 'name', 'label', 'note', 'status', 'file', 'node', 'nodes'];
+/** The keys a Steps item is read from; `name` and `label` are other words for `title`, `path` for `file`, `nodes` for `node`. */
+export const STEP_KEYS: readonly string[] = ['title', 'name', 'label', 'note', 'status', 'file', 'path', 'node', 'nodes'];
 export interface ListItem { title: string; sub?: string; value?: number | string; file?: FileLoc; tone?: Tone }
 /** An object of pairs, or one item per pair: {label, value} like Stats, {key, value} or {k, v}. */
 export type KeyValueData = Record<string, unknown> | Array<{label: string; value: unknown} | {key: string; value: unknown} | {k: string; v: unknown}>;
