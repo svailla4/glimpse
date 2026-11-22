@@ -21,12 +21,13 @@ interface Band { name: string; note?: string; items: Item[]; more: number }
  * naming diagram nodes (`node:'PG'`, decision D24) carries them, and without a file selects the node itself.
  */
 function bandsOf(ast: LayersAst, componentId: string): Band[] {
-  return ast.bands.slice(0, MAX_BANDS).map(band => ({
+  return ast.bands.slice(0, MAX_BANDS).map((band, b) => ({
     name: band.name,
     ...(band.note !== undefined ? {note: band.note} : {}),
-    items: band.items.slice(0, MAX_ITEMS).map(item => {
+    items: band.items.slice(0, MAX_ITEMS).map((item, i) => {
       const own = item.file !== undefined ? fileEntity(item.file, item.label) : undefined;
-      const entity = linkedEntity(own, item.nodes ?? [], {id: `${componentId}:${item.label}`, label: item.label});
+      // By place (tier 1 item 2 is `l:1.2`), not label: two items may share a label and stand for different nodes.
+      const entity = linkedEntity(own, item.nodes ?? [], {id: `${componentId}:${b + 1}.${i + 1}`, label: item.label});
       return {label: item.label, ...(item.note !== undefined ? {note: item.note} : {}), ...(entity ? {entity} : {})};
     }),
     more: Math.max(0, band.items.length - MAX_ITEMS),
@@ -43,6 +44,8 @@ function LayersBody(p: {id: string; data: unknown}) {
   const bands = useMemo(() => (cleaned.ok ? bandsOf(cleaned.ast, id) : []), [cleaned, id]);
   // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
   const dropped = cleaned.ok ? cleaned.dropped : [];
+  // Entries left out, counted: the list folds past 8, and its lines for unknown keys leave nothing out.
+  const notDrawn = cleaned.ok ? cleaned.droppedCount : 0;
   useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
   const [active, setActive] = useState(0);
 
@@ -96,7 +99,7 @@ function LayersBody(p: {id: string; data: unknown}) {
   const items = bands.reduce((sum, band) => sum + band.items.length + band.more, 0);
   const total = cleaned.ast.bands.length;
   const notes = [
-    dropped.length > 0 ? `${fmtNum(dropped.length)} not drawn` : undefined,
+    notDrawn > 0 ? `${fmtNum(notDrawn)} not drawn` : undefined,
     total > MAX_BANDS ? `showing ${MAX_BANDS} of ${fmtNum(total)} tiers` : undefined,
   ].filter(Boolean);
   const ariaLabel = `Layers, ${bands.length} ${bands.length === 1 ? 'tier' : 'tiers'}, ${items} ${items === 1 ? 'item' : 'items'}: ${bands.slice(0, 8).map(band => band.name.slice(0, 40)).join(', ')}`;

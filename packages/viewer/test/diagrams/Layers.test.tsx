@@ -139,11 +139,20 @@ describe('Layers', () => {
     expect(view.errors).toEqual([]);
   });
 
+  it('counts every entry it left out, past the eight the report names', async () => {
+    const view = await ready(BOUND, {data: {'/layers': [{name: 'T', items: [...Array(20).fill(null), 'ok']}]}});
+    expect(view.cell('l').querySelector('[data-gl-note]')!.textContent).toBe('20 not drawn');
+    await waitFor(() => expect(view.stateOf('l')).toBe('W_DROPPED'));
+    expect(view.reports.findLast(report => report.code === 'W_DROPPED')!.message).toMatch(/; and 12 more$/);
+  });
+
   it('reports unknown keys of data a patch wrote (W_DROPPED)', async () => {
     const view = await ready(BOUND, {data: {'/layers': [{name: 'Data', items: [{label: 'pg', colour: 'blue'}]}]}});
     await waitFor(() => expect(view.stateOf('l')).toBe('W_DROPPED'));
     expect(view.reports.findLast(report => report.code === 'W_DROPPED')!.message).toBe('Layers#l: not drawn: ignored item key colour');
     expect(bands(view.cell('l')).map(items)).toEqual([['pg']]);
+    // every item is drawn: the tab says nothing is missing
+    expect(view.cell('l').querySelector('[data-gl-note]')).toBeNull();
     view.setData('/layers', [{name: 'Data', items: [{label: 'pg'}]}]);
     await waitFor(() => expect(view.stateOf('l')).toBe('OK'));
   });
@@ -168,7 +177,7 @@ describe('Layers', () => {
     for (const label of ['Gateway', 'API', 'plain']) expect(item(label).hasAttribute('data-dim')).toBe(true);
 
     fireEvent.click(button('Stores'));
-    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: 'l:Stores', label: 'Stores', nodes: ['PG', 'Redis']});
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: 'l:2.2', label: 'Stores', nodes: ['PG', 'Redis']});
     // Postgres stands for one node the selection names; nothing chains further
     expect(selected()).toEqual(['Postgres', 'Stores']);
 
@@ -183,6 +192,15 @@ describe('Layers', () => {
     view.setData('/ui/sel', {type: 'message', id: 's:1', label: '1. U to G: go', nodes: ['Client', 'GW']});
     expect(selected()).toEqual(['Gateway', 'API']);
     expect(item('Postgres').hasAttribute('data-dim')).toBe(true);
+  });
+
+  it('keeps two items with one label and different nodes apart', async () => {
+    const data = [{name: 'Edge', items: [{label: 'cache', node: ['CDN', 'Edge']}]}, {name: 'Data', items: [{label: 'cache', node: ['Redis', 'PG']}]}];
+    const view = await ready(BOUND, {data: {'/layers': data}});
+    const boxes = [...view.cell('l').querySelectorAll('[data-layer-item]')] as HTMLElement[];
+    fireEvent.click(within(boxes[1]!).getByRole('button'));
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: 'l:2.1', label: 'cache', nodes: ['Redis', 'PG']});
+    expect(boxes.map(box => box.hasAttribute('data-selected'))).toEqual([false, true]);
   });
 
   it('caps a huge tier and keeps a 500-character label on one line', async () => {

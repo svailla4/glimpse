@@ -18,7 +18,7 @@ export interface Authored {
 const NONE: Authored = {declares: [], links: [], files: []};
 
 function mapClean<T>(cleaned: Clean<T>, map: (ast: T) => Partial<Authored>): Clean<Authored> {
-  return cleaned.ok ? {ok: true, ast: {...NONE, ...map(cleaned.ast)}, fixes: cleaned.fixes, dropped: cleaned.dropped} : cleaned;
+  return cleaned.ok ? {...cleaned, ast: {...NONE, ...map(cleaned.ast)}} : cleaned;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -67,6 +67,7 @@ export const AUTHORED: Readonly<Record<string, (value: unknown) => Clean<Authore
     })},
     fixes: [],
     dropped: [],
+    droppedCount: 0,
   }),
 };
 

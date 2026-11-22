@@ -17,6 +17,11 @@ export interface Cleaned<T> {
   fixes: string[];
   /** What was written but is not drawn, one short clause each. */
   dropped: string[];
+  /**
+   * How many entries were left out: `dropped` keeps MAX_NOTES of them and folds the rest into "and N more", and its
+   * lines for unknown keys leave nothing out. What a tab counts as "N not drawn".
+   */
+  droppedCount: number;
 }
 export type Clean<T> = ({ok: true} & Cleaned<T>) | {ok: false; error: string};
 
@@ -54,6 +59,10 @@ class Notes {
       this.ignored.set(what, set);
     }
   }
+  /** The lines added, those folded into "and N more" included; unknown keys are not counted. */
+  get count(): number {
+    return this.lines.length + this.more;
+  }
   list(): string[] {
     const out = [...this.lines];
     for (const [what, keys] of this.ignored) out.push(`ignored ${what} ${keys.size === 1 ? 'key' : 'keys'} ${[...keys].slice(0, 6).join(', ')}${keys.size > 6 ? ', …' : ''}`);
@@ -61,6 +70,10 @@ class Notes {
     return out;
   }
 }
+
+/** A cleaner's result: the ast and what its notes say. */
+const cleaned = <T>(ast: T, fixes: Notes, dropped: Notes): {ok: true} & Cleaned<T> =>
+  ({ok: true, ast, fixes: fixes.list(), dropped: dropped.list(), droppedCount: dropped.count});
 
 const unknownKeys = (o: Record<string, unknown>, known: ReadonlySet<string>) => Object.keys(o).filter(key => !known.has(key));
 /** What a value that is not usable text is, for the messages: as describeValue, and 'an empty string'. */
@@ -271,12 +284,7 @@ export function cleanFlow(data: unknown): Clean<FlowAst> {
   for (const node of nodes.values()) for (let at = node.group; at !== undefined && !held.has(at); at = groups.get(at)?.parent) held.add(at);
   for (const group of groups.values()) if (!held.has(group.id)) dropped.add(`group ${clip(group.id)}: no nodes in it`);
 
-  return {
-    ok: true,
-    ast: {nodes: [...nodes.values()], edges, groups: [...groups.values()].filter(group => held.has(group.id))},
-    fixes: fixes.list(),
-    dropped: dropped.list(),
-  };
+  return cleaned({nodes: [...nodes.values()], edges, groups: [...groups.values()].filter(group => held.has(group.id))}, fixes, dropped);
 }
 
 // ================================================================ SequenceDiagram
@@ -479,7 +487,7 @@ export function cleanSequence(data: unknown): Clean<SeqAst> {
     return out;
   };
   const steps = walk(Array.isArray(rawSteps) ? rawSteps : [], 0, '');
-  return {ok: true, ast: {actors: [...actors.values()], steps}, fixes: fixes.list(), dropped: dropped.list()};
+  return cleaned({actors: [...actors.values()], steps}, fixes, dropped);
 }
 
 /** The messages and notes of a sequence, without its frame steps, in drawing order. */
@@ -544,7 +552,7 @@ export function cleanLayers(data: unknown): Clean<LayersAst> {
     });
     bands.push({name, ...(note !== undefined ? {note} : {}), items});
   });
-  return {ok: true, ast: {bands}, fixes: fixes.list(), dropped: dropped.list()};
+  return cleaned({bands}, fixes, dropped);
 }
 
 // ================================================================ ERDiagram (decision D24: moved here from the viewer)
@@ -675,7 +683,7 @@ export function cleanSchema(data: unknown): Clean<SchemaAst> {
     if (relations.some(rel => joins(rel, from, to) || joins(rel, to, from))) continue;
     relations.push(relation(from, to, undefined, 'n-1'));
   }
-  return {ok: true, ast: {tables, relations}, fixes: fixes.list(), dropped: dropped.list()};
+  return cleaned({tables, relations}, fixes, dropped);
 }
 
 // ================================================================ Steps and table rows (decision D24)
@@ -700,5 +708,5 @@ export function cleanItems(kind: 'step' | 'row', data: unknown): Clean<ItemLinks
     const nodes = nodesAt(item, at, fixes, dropped);
     if (file !== undefined || nodes.length > 0) links.push({at, ...(file !== undefined ? {file} : {}), ...(nodes.length > 0 ? {nodes} : {})});
   });
-  return {ok: true, ast: links, fixes: fixes.list(), dropped: dropped.list()};
+  return cleaned(links, fixes, dropped);
 }

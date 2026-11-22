@@ -4,7 +4,7 @@ import {
   parseFileLoc, parseRef, readNodes,
   type DataRow, type Dataset, type EntityRef, type Field, type FieldKind,
 } from '@glimpse/catalog';
-import {fileEntity, linkedEntity, matchSelection} from '../../kit/index.ts';
+import {fileEntity, linkedEntity, linksSelection, matchSelection} from '../../kit/index.ts';
 
 /** Numbers and numeric strings; everything else (null, '', NaN, objects) is undefined. */
 export function num(value: unknown): number | undefined {
@@ -331,8 +331,14 @@ export type SelectionMark = 'exact' | 'within' | undefined;
 
 export function selectionMark(selected: EntityRef | null, entity: EntityRef): SelectionMark {
   const match = matchSelection(selected, entity);
-  // Two rows of one file ('a.ts#L3', 'a.ts#L9') are different places: a selection with a line marks only its row.
-  if (match === 'exact') return selected?.line == null || entity.line == null || selected.line === entity.line ? 'exact' : undefined;
+  if (!selected || !match) return undefined;
+  if (match === 'exact') {
+    // Two rows of one file ('a.ts#L3', 'a.ts#L9') are different places: a selection with a line marks only its row.
+    // A diagram node's range (decision D24) was already met by matchSelection: a row inside it is that place.
+    if (selected.type === 'node' || entity.type === 'node' || selected.line == null || entity.line == null || selected.line === entity.line) return 'exact';
+    // Another place of the same file may still name the selected diagram nodes.
+    return linksSelection(selected, entity) ? 'within' : undefined;
+  }
   return match === 'within' || match === 'linked' ? 'within' : undefined;
 }
 

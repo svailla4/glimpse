@@ -877,6 +877,18 @@ describe('one selection rule (F085)', () => {
       expect(hubOf(file('src/api.ts'))).toEqual([]);
     });
 
+    // A directory above the selected node's file holds the selection, which is not drawn: naming the node still links.
+    it('links an entity naming the selected node although its place holds the selection', () => {
+      const pool: EntityRef = {type: 'node', id: 'DB', path: 'src/db/pool.ts'};
+      const item: EntityRef = {...dir('src/db'), nodes: ['DB']};
+      expect(matchSelection(pool, item)).toBe('linked');
+      expect(marksSelection(pool, item)).toBe(true);
+      expect(matchSelection(item, pool)).toBe('within');
+      // naming another node, it only holds the selection
+      expect(matchSelection(pool, {...dir('src/db'), nodes: ['PG']})).toBe('contains');
+      expect(matchSelection(pool, dir('src/db'))).toBe('contains');
+    });
+
     it('linkedEntity: an item\'s own entity carries its nodes; without one, one node is that node, several a row', () => {
       const own = file('src/api.ts');
       const item = {id: 'tiers:API', label: 'API'};

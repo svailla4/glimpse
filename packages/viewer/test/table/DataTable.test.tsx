@@ -413,6 +413,20 @@ describe('DataTable: selection, entities, keyboard', () => {
     expect(rowsOf(view).map(row => row.getAttribute('data-selected'))).toEqual([null, 'within', null]);
   });
 
+  // Decision D24: a node with a file is a place; a row inside its lines is that place, and still names the node.
+  it('marks a row inside the lines of a selected node, and a row of the file that names the node', async () => {
+    const view = renderExpress(page("DataTable([{file:'src/a.ts#L3',name:'parse',node:'B'},{file:'src/a.ts#L40',name:'emit',node:'B'},{file:'src/a.ts#L50',name:'other'},{file:'db/schema.sql#L5',name:'users.id'}])"));
+    await ready(view);
+    const marks = () => rowsOf(view).map(row => row.getAttribute('data-selected'));
+    view.setData('/ui/sel', {type: 'node', id: 'B', label: 'B', path: 'src/a.ts', line: 1, endLine: 10});
+    expect(marks()).toEqual(['exact', 'within', null, null]);
+    view.setData('/ui/sel', {type: 'node', id: 'users', label: 'users', path: 'db/schema.sql', line: 1, endLine: 20});
+    expect(marks()).toEqual([null, null, null, 'exact']);
+    // another row of the file naming the same node is linked, not the selected row; a row naming nothing is neither
+    fireEvent.click(cellsOf(rowAt(view, 0))[0]!);
+    expect(marks()).toEqual(['exact', 'within', null, null]);
+  });
+
   it('reads no link from a node field of rows that come from a source', async () => {
     const view = renderExpress(page('DataTable($/t)'), {data: {'/t': {...datasetFixture('repo.packages'), fields: undefined, data: [{name: 'web', node: 'PG'}]}}});
     await ready(view);

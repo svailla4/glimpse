@@ -2,7 +2,7 @@ import {cleanSequence, type SeqAst} from '@glimpse/catalog';
 import {fireEvent, screen, waitFor} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
 import {UI_12, textWidth} from '../../src/components/diagrams/flowkit/index.ts';
-import {MAX_STEPS, planSequence, wrapWidth} from '../../src/components/diagrams/SequenceDiagram.tsx';
+import {MAX_SAID, MAX_STEPS, planSequence, wrapWidth} from '../../src/components/diagrams/SequenceDiagram.tsx';
 import {buildPatch, buildSurface, renderExpress, renderSpec} from '../harness.tsx';
 import {focus, key} from './util.tsx';
 
@@ -84,8 +84,14 @@ describe('SequenceDiagram', () => {
     await waitFor(() => expect(view.stateOf('s')).toBe('W_DROPPED'));
     expect(view.reports.findLast(report => report.code === 'W_DROPPED')!.message).toBe("SequenceDiagram#s: not drawn: step 2: a note needs over: 'A' or over: ['A', 'B']");
     expect(view.cell('s').querySelectorAll('[data-step]')).toHaveLength(1);
+    expect(view.cell('s').textContent).toContain("1 not drawn: step 2: a note needs over: 'A' or over: ['A', 'B']");
     view.setData('/s', [['A', 'B', 'ok'], {note: 'over A', over: 'A'}]);
     await waitFor(() => expect(view.stateOf('s')).toBe('OK'));
+    // an unknown key leaves nothing out: the model hears of it, the reader sees no 'not drawn'
+    view.setData('/s', [['A', 'B', 'ok'], {note: 'over A', over: 'A', colour: 'red'}]);
+    await waitFor(() => expect(view.stateOf('s')).toBe('W_DROPPED'));
+    expect(view.reports.findLast(report => report.code === 'W_DROPPED')!.message).toBe('SequenceDiagram#s: not drawn: ignored note key colour');
+    expect(view.cell('s').textContent).not.toContain('not drawn');
   });
 
   it('shows the empty state without data and follows the binding', async () => {
@@ -432,5 +438,23 @@ describe('SequenceDiagram: selection and traces', () => {
     expect(rows(view, 'data-selected')).toEqual([]);
     expect(rows(view, 'data-dim')).toEqual([]);
     expect(heads(view)).toEqual([]);
+  });
+
+  // The server keeps no label over 1,024 characters: the selection names a long message by its first words.
+  it('selects a long message by a cut label, and restores it from that label', async () => {
+    const long = 'x'.repeat(1100);
+    const view = await ready(`{steps:[['A','B','${long}'],['B','A','ok','reply']]}`);
+    fireEvent.click(view.cell('s').querySelector('[data-step="0"] rect')!);
+    const sel = view.getData('/ui/sel') as {label: string};
+    expect(sel.label).toHaveLength(MAX_SAID);
+    expect(sel.label).toBe(`1. A to B: ${long}`.slice(0, MAX_SAID - 1) + '…');
+    // a reload: the selection comes back from the server with that label
+    view.setData('/ui/sel', null);
+    view.setData('/ui/sel', {...sel});
+    await waitFor(() => expect(rows(view, 'data-active')).toEqual([0]));
+    expect(rows(view, 'data-selected')).toEqual([0]);
+    expect(heads(view)).toEqual(['A', 'B']);
+    // what the row says aloud is still all of it
+    expect(view.cell('s').querySelector('[aria-live]')!.textContent).toBe(`1. A to B: ${long}`);
   });
 });

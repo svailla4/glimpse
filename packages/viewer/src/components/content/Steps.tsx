@@ -45,12 +45,13 @@ interface Step { title: string; note: string; status?: StepStatus; file?: string
  */
 function normalize(items: readonly unknown[], componentId: string): Step[] {
   const steps: Step[] = [];
-  for (const item of items as readonly (StepItem | unknown)[]) {
+  for (const [i, item] of (items as readonly (StepItem | unknown)[]).entries()) {
     if (isRecord(item)) {
       const file = typeof item.file === 'string' && item.file.trim() !== '' ? item.file.trim() : undefined;
       const title = cellText(item.title ?? item.name ?? item.label).trim() || file || '';
       if (!title) continue;
-      const entity = linkedEntity(file ? fileEntity(file) : undefined, readNodes(item).ids, {id: `${componentId}:${title}`, label: title});
+      // By place (step 3 is `s:3`, as the server numbers it), not title: two steps may share a title and stand for different nodes.
+      const entity = linkedEntity(file ? fileEntity(file) : undefined, readNodes(item).ids, {id: `${componentId}:${i + 1}`, label: title});
       steps.push({title, note: cellText(item.note).trim(), status: toStatus(item.status), file, entity});
     } else {
       const title = cellText(item).trim();

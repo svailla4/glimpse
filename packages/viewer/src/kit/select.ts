@@ -73,11 +73,17 @@ export function matchSelection(selected: EntityRef | null | undefined, entity: R
   if (!selected || !entity) return undefined;
   if (selected.type === entity.type && selected.id === entity.id) return 'exact';
   const place = placeMatch(selected, entity);
-  if (place) return place;
+  // Holding the selection is not drawn as selected, so naming the selected node outranks it.
+  if (place && place !== 'contains') return place;
+  return linksSelection(selected, entity) ? 'linked' : place;
+}
+
+/** Decision D24: the entity names the selected diagram nodes (the 'linked' rule of matchSelection, places aside). */
+export function linksSelection(selected: Ref, entity: Ref): boolean {
   const chosen = hubOf(selected);
   const own = hubOf(entity);
-  if (chosen.length === 0 || own.length === 0) return undefined;
-  return (own.length === 1 ? chosen.includes(own[0]!) : chosen.every(id => own.includes(id))) ? 'linked' : undefined;
+  if (chosen.length === 0 || own.length === 0) return false;
+  return own.length === 1 ? chosen.includes(own[0]!) : chosen.every(id => own.includes(id));
 }
 
 function placeMatch(selected: Ref, entity: Ref): SelectionMatch | undefined {

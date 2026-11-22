@@ -81,6 +81,8 @@ function ErBody(p: {id: string; data: unknown; dir?: Dir}) {
   const clean = cleaned.ok ? cleaned.ast : undefined;
   // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
   const dropped = cleaned.ok ? cleaned.dropped : [];
+  // Entries left out, counted: the list folds past 8, and its lines for unknown keys leave nothing out.
+  const notDrawn = cleaned.ok ? cleaned.droppedCount : 0;
   useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   const toggle = useCallback((name: string) => {
@@ -180,7 +182,7 @@ function ErBody(p: {id: string; data: unknown; dir?: Dir}) {
       edges={model.edges}
       dir={dir}
       ariaLabel={ariaLabel}
-      note={dropped.length > 0 ? `${fmtNum(dropped.length)} not drawn` : undefined}
+      note={notDrawn > 0 ? `${fmtNum(notDrawn)} not drawn` : undefined}
       renderNode={drawTable}
       onNodeClick={onNodeClick}
       onDrill={onDrill}

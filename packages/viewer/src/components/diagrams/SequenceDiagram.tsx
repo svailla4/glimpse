@@ -40,6 +40,12 @@ const NOTE_LINE = 14;
 /** Steps drawn; the rest are counted in the last row. A diagram this long is not read as a picture. */
 export const MAX_STEPS = 400;
 export const MAX_ACTORS = 40;
+/**
+ * A message's selection label is what it says, cut to this length: the server keeps no label over 1,024 characters,
+ * and a selection restored without its label would name no row here (ownRow matches the number and the words).
+ */
+export const MAX_SAID = 200;
+const saidLabel = (said: string) => (said.length > MAX_SAID ? `${said.slice(0, MAX_SAID - 1)}…` : said);
 
 interface ActorDraw { id: string; label: string; text: string; x: number; w: number }
 type RowDraw =
@@ -397,7 +403,7 @@ function entitiesOf(id: string, ast: SeqAst, plan: Plan): {rows: Array<EntityRef
     }
     ends.push([step.from, step.to]);
     // A self-message stands for its node twice: [A, A].
-    return {type: 'message', id: `${id}:${row.n}`, label: row.said, nodes: [nodeOf(step.from), ...(step.via ?? []), nodeOf(step.to)]};
+    return {type: 'message', id: `${id}:${row.n}`, label: saidLabel(row.said), nodes: [nodeOf(step.from), ...(step.via ?? []), nodeOf(step.to)]};
   });
   const actors = new Map<string, EntityRef>(plan.actors.map(actor => [actor.id, {type: 'node', id: nodeOf(actor.id), label: actor.label}]));
   return {rows, actors, ends};
@@ -574,13 +580,15 @@ function SequenceData(p: {id: string; data: unknown}) {
   const cleaned = useMemo(() => cleanSequence(p.data), [p.data]);
   // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
   const dropped = cleaned.ok ? cleaned.dropped : [];
+  // Entries left out, counted: the list folds past 8, and its lines for unknown keys leave nothing out.
+  const notDrawn = cleaned.ok ? cleaned.droppedCount : 0;
   useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
   if (!cleaned.ok) return <Redline code="E_SHAPE" id={`SequenceDiagram#${p.id}`} message={cleaned.error} />;
   if (seqLeaves(cleaned.ast.steps).length === 0) return <Empty message="no steps to draw: SequenceDiagram takes {actors?, steps}" />;
   return (
     <>
       <SequenceBody id={p.id} ast={cleaned.ast} />
-      {dropped.length > 0 ? <div className={css.dropped}>{`${fmtNum(dropped.length)} not drawn: ${dropped.join('; ')}`}</div> : null}
+      {notDrawn > 0 ? <div className={css.dropped}>{`${fmtNum(notDrawn)} not drawn: ${dropped.join('; ')}`}</div> : null}
     </>
   );
 }

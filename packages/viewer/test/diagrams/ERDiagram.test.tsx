@@ -195,6 +195,8 @@ describe('ERDiagram', () => {
       "ERDiagram#e: not drawn: table users: node: expected 'ID' or ['ID', ...], received an object; ignored table key colour; ignored column key unique",
     );
     expect(nodeIds(view, 'e')).toEqual(['users']);
+    // the node link is left out; the unknown keys leave nothing out
+    expect(view.cell('e').querySelector('[data-gl-note]')!.textContent).toBe('1 not drawn');
     view.setData('/schema', SCHEMA);
     await waitFor(() => expect(view.stateOf('e')).toBe('OK'));
     expect(view.cell('e').querySelector('[data-gl-note]')).toBeNull();

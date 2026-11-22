@@ -107,6 +107,8 @@ function FlowBody(p: {id: string; data: unknown; dir: Dir | undefined}) {
   const model = useMemo(() => (cleaned.ok ? toDiagram(cleaned.ast) : undefined), [cleaned]);
   // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
   const dropped = cleaned.ok ? cleaned.dropped : [];
+  // Entries left out, counted: the list folds past 8, and its lines for unknown keys leave nothing out.
+  const notDrawn = cleaned.ok ? cleaned.droppedCount : 0;
   useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
   // Decision D24: the selected node's note is in the plate's margin, for touch and click readers (hovering shows it too).
   const {selected} = useSelection(id);
@@ -133,7 +135,7 @@ function FlowBody(p: {id: string; data: unknown; dir: Dir | undefined}) {
       groups={model.groups}
       dir={dir}
       ariaLabel={ariaLabel}
-      note={[picked, dropped.length > 0 ? `${fmtNum(dropped.length)} not drawn` : undefined].filter(Boolean).join(' · ') || undefined}
+      note={[picked, notDrawn > 0 ? `${fmtNum(notDrawn)} not drawn` : undefined].filter(Boolean).join(' · ') || undefined}
       renderNode={drawNode}
       // Shapes hold 12 px text: the stage opens no further out than keeps it at 10 px. (Edge labels grow when zoomed out.)
       minText={12}

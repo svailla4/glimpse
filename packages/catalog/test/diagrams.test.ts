@@ -338,6 +338,22 @@ describe('cleanLayers', () => {
 });
 
 // Decision D24: ERDiagram is read here, by the server and the viewer alike.
+// The tab's "N not drawn": the notes fold past 8 lines and name unknown keys, so their lines are not the count.
+describe('droppedCount', () => {
+  it('counts every entry left out, the folded ones too, and no unknown key', () => {
+    const layers = cleanLayers([{name: 'T', items: Array(20).fill(null)}]);
+    expect(layers.ok && [layers.dropped.length, layers.dropped.at(-1), layers.droppedCount]).toEqual([9, 'and 12 more', 20]);
+    const keys = cleanLayers([{name: 'T', items: [{label: 'pg', colour: 'b'}]}]);
+    expect(keys.ok && [keys.dropped, keys.droppedCount]).toEqual([['ignored item key colour'], 0]);
+    const schema = cleanSchema([{name: 'ok', columns: []}, ...Array.from({length: 30}, () => ({columns: []}))]);
+    expect(schema.ok && [schema.dropped.length, schema.droppedCount]).toEqual([9, 30]);
+    const flow = cleanFlow({nodes: {A: {label: 'A', colour: 'red'}}, edges: [['A'], ['A']]});
+    expect(flow.ok && [flow.dropped.length, flow.droppedCount]).toEqual([3, 2]);
+    const seq = cleanSequence({steps: [['A', 'B', 'go'], {note: 'x'}, {note: 'y', colour: 'r'}]});
+    expect(seq.ok && seq.droppedCount).toBe(2);
+  });
+});
+
 describe('cleanSchema', () => {
   const TABLES = [
     {name: 'users', columns: [{name: 'id', type: 'uuid', pk: true}, 'email']},
@@ -448,6 +464,8 @@ describe('cleanItems', () => {
       ast: [{at: 'step 1', file: 'src/a.ts#L2', nodes: ['PG']}, {at: 'step 3', nodes: ['A', 'B']}],
       fixes: ['step 3: nodes -> node'],
       dropped: ["step 4: file: expected 'path#L10-20', received a number", 'ignored step key link'],
+      // an unknown key leaves nothing out
+      droppedCount: 1,
     });
   });
 
@@ -457,10 +475,11 @@ describe('cleanItems', () => {
       ast: [{at: 'row 1', nodes: ['PG']}, {at: 'row 2', nodes: ['Q']}],
       fixes: ['row 2: nodes -> node'],
       dropped: ["row 4: node: expected 'ID' or ['ID', ...], received an object"],
+      droppedCount: 1,
     });
   });
 
   it('never refuses: a value that is not a list links nothing', () => {
-    for (const value of ['git.log', {title: 'x'}, null, undefined]) expect(cleanItems('step', value)).toEqual({ok: true, ast: [], fixes: [], dropped: []});
+    for (const value of ['git.log', {title: 'x'}, null, undefined]) expect(cleanItems('step', value)).toEqual({ok: true, ast: [], fixes: [], dropped: [], droppedCount: 0});
   });
 });

@@ -14,16 +14,18 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* In a narrow cell the number goes under the range, at the right; narrower still, the field shrinks, never past the cell. */
   .controls {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 6px 10px;
     min-width: 0;
     margin-top: 4px;
   }
   /* Ink, not vermilion: the accent is kept for the selection. */
   .range {
-    flex: 1 1 auto;
+    flex: 1 1 64px;
     min-width: 64px;
     height: var(--gl-control);
     margin: 0;
@@ -31,7 +33,9 @@
     cursor: pointer;
   }
   .field {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -54,8 +58,9 @@
   }
   .input {
     all: unset;
+    flex: 0 1 10ch;
     width: 10ch;
-    min-width: 0;
+    min-width: 3ch;
     color: var(--gl-ink);
     font: 13px/18px var(--gl-font-mono);
     font-variant-numeric: tabular-nums;

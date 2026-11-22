@@ -103,6 +103,14 @@ describe('Steps', () => {
     expect(marked()).toEqual([false, true, false]);
   });
 
+  it('keeps two steps with one title and different nodes apart', async () => {
+    const view = renderExpress(`$/plan=[{title:'Cache',node:['CDN','Edge']},{title:'Cache',node:['Redis','PG']}]\nroot=Page('T',[plan])\nplan=Steps($/plan)`);
+    const steps = [...view.cell('plan').querySelectorAll('ol > li')] as HTMLElement[];
+    fireEvent.click(steps[1]!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: 'plan:2', label: 'Cache', nodes: ['Redis', 'PG']});
+    expect(steps.map(step => step.hasAttribute('data-selected'))).toEqual([false, true]);
+  });
+
   it('covers empty, error, wrong shape and malformed items; plain strings need no status', async () => {
     const view = renderExpress(`$/plan=[]\nroot=Page('T',[a,b])\na=Steps($/plan)\nb=Steps(['Read','Write','Ship'])`);
     expect(state(view.cell('a'))).toBe('empty');
