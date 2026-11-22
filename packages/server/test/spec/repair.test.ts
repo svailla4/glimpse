@@ -64,7 +64,7 @@ describe('repair inside compileSpec', () => {
     expect(first.createSurface.components[1]).toEqual({id: 'root_children_0', component: 'DataTable', data: 'fake.rows', columns: 'path'});
   });
 
-  // Decision D24: Markdown was removed; a spec written from habit or from an older skill still draws, as Text, and the
+  // Decision D26: Markdown was removed; a spec written from habit or from an older skill still draws, as Text, and the
   // model hears what Text does not draw.
   it('draws a removed Markdown as Text and says what Text does not carry over', () => {
     const {messages, fixes} = compile(`root=Page('x',[Markdown('hi'),notes])\nnotes=Markdown($/notes,title='Notes')`);

@@ -173,7 +173,7 @@ describe('component docs', () => {
     expect(componentDoc('DataTable')).toMatch(/A graph source \(deps\.modules, diff\.impact\) gives its nodes as rows; Graph draws the graph\./);
   });
 
-  // F039: title= on Markdown (since D24, Text), Text and Stats was an E_PROP, so the model dropped the heading it was asked for.
+  // F039: title= on Markdown (since D26, Text), Text and Stats was an E_PROP, so the model dropped the heading it was asked for.
   it.each(['Text', 'Chips', 'Stats'])('%s takes the frame props, so title= draws a plate instead of failing', name => {
     expect(hasFrame(COMPONENTS.find(c => c.name === name)!)).toBe(true);
     const arg = name === 'Text' ? "'Body'," : '';

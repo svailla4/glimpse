@@ -1,5 +1,5 @@
 // Text (design 5.3): text in one of five tones, with inline micro-markup only. Line breaks are kept. Long text is set
-// in columns once its box is wide (decision D24): a measure of about 72ch in a full-width plate left half the frame
+// in columns once its box is wide (decision D26): a measure of about 72ch in a full-width plate left half the frame
 // empty, and no measure at all made lines too long to read.
 import type * as C from '@glimpse/catalog';
 import type {GlView} from '../../kit/index.ts';

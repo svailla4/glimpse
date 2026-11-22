@@ -70,7 +70,7 @@ describe('[[path]] file refs in prose', () => {
     expect(fileRefs('[[ a.ts]] [[a.ts ]] [[]] [[a\nb]] [[a[b]] [a.ts] [[ok.ts]]')).toEqual(['ok.ts']);
     expect(fileRefs('`[[in/code.ts]]` then [[out.ts]] and **[[bold.ts]]**')).toEqual(['out.ts', 'bold.ts']);
     expect(fileRefs(`[[${'x'.repeat(401)}]] [[${'y'.repeat(400)}]]`)).toEqual(['y'.repeat(400)]);
-    // Text has inline code spans only (decision D24): a fence is not code, so a ref between fences is a link
+    // Text has inline code spans only (decision D26): a fence is not code, so a ref between fences is a link
     expect(fileRefs('```\n[[a.ts]]\n```')).toEqual(['a.ts']);
   });
 

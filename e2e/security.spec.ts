@@ -325,7 +325,7 @@ test.describe('hostile content', () => {
     expect(dom.frames).toBe(0);
     expect(dom.images).toEqual([]);
     expect(dom.handlers).toBe(0);
-    // Since D24 no component turns agent text into a link (`[ok](https://...)` stays text); a link the page does draw
+    // Since D26 no component turns agent text into a link (`[ok](https://...)` stays text); a link the page does draw
     // is still http(s) only and opens without an opener or a referrer.
     for (const link of dom.links) {
       expect(link.href, 'links are http(s) only').toMatch(/^https?:\/\//);

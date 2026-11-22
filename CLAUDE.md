@@ -119,7 +119,7 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   run after the build passes, not by a separate workflow: a tag pushed with `GITHUB_TOKEN` starts no other run, and a
   broken `main` should get no version. A commit that already has a version tag is left to that tag's run. Runs are
   serialized (`concurrency: release`), so each counts from the tag the last one pushed.
-- **D24: no Markdown component; Text is the one text component (2026-11-21).** The owner's call: Markdown was only
+- **D26: no Markdown component; Text is the one text component (2026-11-21).** The owner's call: Markdown was only
   used for text. `Text` draws inline `code`, *em*, **strong** and `[[path#L10]]` refs and keeps line breaks; headings
   are a `Section`, tables a `DataTable`, code a `CodeBlock`. A spec that still writes `Markdown(...)` is drawn as Text
   with a `fixed` line that says what Text does not draw (`REMOVED_COMPONENTS`, server `spec/errors.ts`).
