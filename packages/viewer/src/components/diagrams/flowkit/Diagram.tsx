@@ -11,12 +11,12 @@
 // way that reads larger at the plate's width.
 import {formatFileLoc} from '@glimpse/catalog';
 import {
-  Background, BackgroundVariant, ControlButton, Controls, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow, useViewport,
+  Background, BackgroundVariant, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow, useViewport,
   type EdgeMouseHandler, type NodeMouseHandler, type OnMoveStart, type OnNodeDrag, type OnNodesChange,
 } from '@xyflow/react';
 import {
   useCallback, useEffect, useMemo, useRef, useState,
-  type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode,
+  type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
 } from 'react';
 import {Drafting, Icon, PlateAside, Redline, entityClipText, matchSelection, useHostActions, useSelection, useSize, useSizeCap, useTooltip} from '../../../kit/index.ts';
 import css from './flowkit.module.css';
@@ -34,6 +34,7 @@ import {useNodePositions, type NodePositions, type Positions} from './positions.
 import {CONTROLS, MIN_HEIGHT, PAD, READABLE_ZOOM, centred, fitZoom, readableZoom, scoreLayout, sizeDiagram, type Sizing, type Viewport} from './sizing.ts';
 import {MONO_11, fitText, textWidth, wrapText} from './text.ts';
 import {useLayouts} from './useLayout.ts';
+import {IN_VIEW_MIN_WIDTH, ZOOM_BAR_ROOM, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, ZoomBar, zoomKey, type ZoomActions} from './ZoomBar.tsx';
 
 export interface DiagramProps<T> {
   /** Component id and name, for actions, storage keys and error text. */
@@ -81,9 +82,6 @@ export interface DiagramProps<T> {
   layerGap?: number;
 }
 
-const MAX_ZOOM = 2.5;
-/** As far out as the zoom controls go, unless everything only fits further out. */
-const MIN_ZOOM = 0.2;
 /** Edge labels longer than this wrap onto a second line. */
 const LABEL_WRAP = 112;
 const LABEL_MAX_WIDTH = 168;
@@ -92,8 +90,6 @@ const NUDGE = 16;
 const PAN_STEP = 48;
 /** Above this many nodes only what is in view is in the DOM (the 150-node cap stays well under 100 ms of main thread). */
 const VISIBLE_ONLY_FROM = 80;
-/** A stage narrower than this says "n/m" instead of "n of m in view" beside the controls. */
-const IN_VIEW_MIN_WIDTH = 520;
 /** Above this many edges a diagram is laid out dense (graph.ts: shared first and last stretches, closer lanes). */
 const DENSE_EDGES = 40;
 /** No edge is hot: nothing is selected. */
@@ -736,7 +732,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
 
   // ---- the view
   const fitAll = fitZoom(bounds, width, height);
-  const minZoom = Math.min(MIN_ZOOM, fitAll);
+  const minZoom = Math.min(ZOOM_MIN, fitAll);
   // null: follow the opening view (and the size of the plate). A pan, a zoom or a control pins the view.
   const pinnedFor = useRef<Laid | null>(null);
   const pin = useCallback(() => {
@@ -800,7 +796,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
   const zoomBy = useCallback((factor: number) => {
     const at = pivot();
     const from = view();
-    const zoom = clamp(from.zoom * factor, Math.min(minZoom, from.zoom), MAX_ZOOM);
+    const zoom = clamp(from.zoom * factor, Math.min(minZoom, from.zoom), ZOOM_MAX);
     const ratio = zoom / from.zoom;
     setView({zoom, x: at.x - (at.x - from.x) * ratio, y: at.y - (at.y - from.y) * ratio});
   }, [pivot, view, minZoom, setView]);
@@ -816,6 +812,8 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
     const from = view();
     setView({zoom: 1, x: at.x - (at.x - from.x) / from.zoom, y: at.y - (at.y - from.y) / from.zoom});
   }, [pivot, view, setView]);
+  // The bar's buttons and the keys + - 0 1 (ZoomBar).
+  const zoomActions: ZoomActions = {onZoomOut: () => zoomBy(1 / ZOOM_STEP), onZoomIn: () => zoomBy(ZOOM_STEP), onFit: fit, onReset: reset};
 
   const reading = useCallback(() => {
     const across = laid.dir === 'LR' || laid.dir === 'RL';
@@ -974,11 +972,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
       else handled = false;
     } else if (event.key === 'o' && active) openNode(active);
     else if (event.key === 'c' && active) void navigator.clipboard?.writeText(entityClipText(active.entity))?.catch(() => {});
-    else if (event.key === '+' || event.key === '=') zoomBy(1.25);
-    else if (event.key === '-' || event.key === '_') zoomBy(0.8);
-    else if (event.key === '0') fit();
-    else if (event.key === '1') reset();
-    else handled = false;
+    else handled = zoomKey(event.key, zoomActions);
     if (handled) {
       event.preventDefault();
       event.stopPropagation();
@@ -1030,7 +1024,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
           onMoveStart={onMoveStart}
           defaultViewport={sizing.view}
           minZoom={minZoom}
-          maxZoom={MAX_ZOOM}
+          maxZoom={ZOOM_MAX}
           translateExtent={extent}
           nodesConnectable={false}
           nodesFocusable={false}
@@ -1055,7 +1049,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} className={css.grid} />
         </ReactFlow>
       </div>
-      <Overview bounds={bounds} boxes={boxes} total={nodes.length} width={width} height={height} spot={spot} onZoomOut={() => zoomBy(0.8)} onZoomIn={() => zoomBy(1.25)} onFit={fit} onReset={reset} />
+      <Overview bounds={bounds} boxes={boxes} total={nodes.length} width={width} height={height} spot={spot} {...zoomActions} />
       <div className={css.live} aria-live="polite">{active ? [active.label, active.detail].filter(Boolean).join(', ') : ''}</div>
     </DiagramContext.Provider>
   );
@@ -1075,8 +1069,6 @@ export type MinimapSpot =
   | {kind: 'corner'; corner: 'bottom-right' | 'top-right' | 'bottom-left' | 'top-left'; w: number; h: number}
   | {kind: 'strip'; w: number; h: number};
 
-/** Room the controls bar keeps on its right for the count, the zoom readout and the four buttons. */
-const BAR_CONTROLS = {wide: 300, narrow: 220};
 const MAP_MARGIN = 8;
 
 /**
@@ -1105,7 +1097,7 @@ export function minimapSpot(bounds: Box, view: Viewport, occupied: readonly Box[
       if (!onScreen.some(b => overlaps(b, keep))) return {kind: 'corner', corner, w, h};
     }
   }
-  const room = width - (width >= IN_VIEW_MIN_WIDTH ? BAR_CONTROLS.wide : BAR_CONTROLS.narrow) - 12;
+  const room = width - (width >= IN_VIEW_MIN_WIDTH ? ZOOM_BAR_ROOM.wide : ZOOM_BAR_ROOM.narrow) - 12;
   if (room < 40) return undefined;
   return {kind: 'strip', w: Math.max(40, Math.min(160, room, Math.round(22 * aspect))), h: 22};
 }
@@ -1116,8 +1108,7 @@ export function minimapSpot(bounds: Box, view: Viewport, occupied: readonly Box[
  */
 function Overview(p: {
   bounds: Box; boxes: ReadonlyMap<string, Box>; total: number; width: number; height: number; spot: MinimapSpot | undefined;
-  onZoomOut: () => void; onZoomIn: () => void; onFit: () => void; onReset: () => void;
-}) {
+} & ZoomActions) {
   const v = useViewport();
   const {bounds, width, height, spot} = p;
   const whole = bounds.x * v.zoom + v.x >= -1 && (bounds.x + bounds.w) * v.zoom + v.x <= width + 1
@@ -1125,7 +1116,6 @@ function Overview(p: {
   let inView = 0;
   // A node counts when the stage shows it whole (or as much of it as fits): one cut off at the edge is not in view.
   if (!whole) for (const box of p.boxes.values()) if (seen(v, box, width, height)) inView++;
-  const stop = (event: ReactMouseEvent) => event.stopPropagation();
   const strip = spot?.kind === 'strip';
   return (
     <>
@@ -1141,26 +1131,16 @@ function Overview(p: {
           nodeClassName={node => (node.type === 'frame' ? css.minimapFrame! : css.minimapNode!)}
         />
       ) : null}
-      <Controls
+      <ZoomBar
         className={css.controls}
-        position="bottom-right"
-        orientation="horizontal"
-        showZoom={false}
-        showFitView={false}
-        showInteractive={false}
-        aria-label="Zoom"
-      >
-        {!whole ? (
-          <span className={css.inView} data-in-view="" title={`${inView} of ${p.total} nodes in view. Drag to pan; Fit to view shows everything`}>
-            {width >= IN_VIEW_MIN_WIDTH ? `${inView} of ${p.total} in view` : `${inView}/${p.total}`}
-          </span>
-        ) : null}
-        <span className={css.zoom} data-zoom="">{Math.round(v.zoom * 100)}%</span>
-        <ControlButton className={css.control} tabIndex={-1} aria-label="Zoom out" title="Zoom out (−)" onClick={p.onZoomOut} onDoubleClick={stop}><Icon name="zoom-out" /></ControlButton>
-        <ControlButton className={css.control} tabIndex={-1} aria-label="Zoom in" title="Zoom in (+)" onClick={p.onZoomIn} onDoubleClick={stop}><Icon name="zoom-in" /></ControlButton>
-        <ControlButton className={css.control} tabIndex={-1} aria-label="Fit to view" title="Fit to view (0)" onClick={p.onFit} onDoubleClick={stop}><Icon name="fit" /></ControlButton>
-        <ControlButton className={css.control} tabIndex={-1} aria-label="Actual size" title="Actual size (1)" onClick={p.onReset} onDoubleClick={stop}><Icon name="reset" /></ControlButton>
-      </Controls>
+        zoom={v.zoom}
+        width={width}
+        inView={whole ? undefined : {count: inView, total: p.total, title: 'nodes in view. Drag to pan'}}
+        onZoomOut={p.onZoomOut}
+        onZoomIn={p.onZoomIn}
+        onFit={p.onFit}
+        onReset={p.onReset}
+      />
     </>
   );
 }

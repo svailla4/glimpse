@@ -378,7 +378,7 @@ describe('SequenceDiagram: zoom', () => {
     fireEvent.wheel(drawing, {deltaY: 10});
     expect(readout()).toBe('80%');
     fireEvent.wheel(drawing, {deltaY: -50, ctrlKey: true});
-    expect(Number.parseInt(readout()!)).toBeGreaterThan(80);
+    expect(Number.parseInt(readout()!, 10)).toBeGreaterThan(80);
     fireEvent.click(screen.getByRole('button', {name: 'Actual size'}));
     expect(readout()).toBe('100%');
     // never further out than 20%

@@ -291,9 +291,8 @@ test.describe('SequenceDiagram zoom', () => {
 
     await cell.getByRole('button', {name: 'Fit to view'}).click();
     await expect(cell.locator('[data-in-view]')).toHaveCount(0);
-    expect(Number.parseInt((await readout.textContent()) ?? '')).toBeLessThan(100);
+    expect(Number.parseInt((await readout.textContent()) ?? '', 10)).toBeLessThan(100);
     expect(await scroll.evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
-    await page.screenshot({path: test.info().outputPath('seq-zoom-fit.png')});
 
     await scroll.focus();
     await page.keyboard.press('1');

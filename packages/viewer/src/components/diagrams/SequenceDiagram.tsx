@@ -5,9 +5,11 @@ import type * as C from '@glimpse/catalog';
 import {cleanSequence, seqLeaves, type EntityRef, type SeqArrow, type SeqAst} from '@glimpse/catalog';
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode} from 'react';
 import {
-  DataGate, Empty, Icon, Redline, fmtNum, marksSelection, useDataset, useReportState, useSelection, useSize, useSizeCap, useTooltip, type GlView,
+  DataGate, Empty, Redline, fmtNum, marksSelection, useDataset, useReportState, useSelection, useSize, useSizeCap, useTooltip, type GlView,
 } from '../../kit/index.ts';
-import {CONTROLS, MONO_11, UI_12, fitText, markPath, roundedPath, textWidth, wrapText, type Face} from './flowkit/index.ts';
+import {
+  CONTROLS, MONO_11, UI_12, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, ZoomBar, fitText, markPath, roundedPath, textWidth, wrapText, zoomKey, type Face, type ZoomActions,
+} from './flowkit/index.ts';
 import css from './SequenceDiagram.module.css';
 
 const PAD = 16;
@@ -31,12 +33,8 @@ const TIGHT = 0.68;
  * 10 px on screen (design rule diagrams-open-readable). After that it scrolls.
  */
 const MIN_SCALE = 0.91;
-/** The reader's zoom (the controls under the drawing, + - 0 1, a pinch) goes this far either way, as in flowkit. */
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 2.5;
-/** A bar narrower than this says "n/m" instead of "n of m in view", as in flowkit. */
-const IN_VIEW_MIN_WIDTH = 520;
-const clampZoom = (k: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, k));
+/** The reader's zoom (the bar under the drawing, + - 0 1, a pinch) goes as far either way as a flowkit diagram's. */
+const clampZoom = (k: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, k));
 /** A message label too long for its gap takes a second line before it is cut. */
 const LABEL_LINES = 2;
 const LABEL_LINE = 15;
@@ -508,9 +506,14 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
     scroll.scrollLeft = a.x * scale - a.at.x;
     scroll.scrollTop = a.y * scale - a.at.y;
   }, [scale]);
-  const zoomBy = (factor: number) => zoomTo(scale * factor);
-  // Fit to view: the whole drawing in the cell's width and the plate's height; actual size: 100%.
-  const fit = () => zoomTo(Math.min(width / plan.width, (cap - CONTROLS) / (plan.height + HEAD_H)));
+  // The bar's buttons and the keys + - 0 1 (ZoomBar). Fit to view: the whole drawing in the cell's width and the
+  // plate's height; actual size: 100%.
+  const zoomActions: ZoomActions = {
+    onZoomOut: () => zoomTo(scale / ZOOM_STEP),
+    onZoomIn: () => zoomTo(scale * ZOOM_STEP),
+    onFit: () => zoomTo(Math.min(width / plan.width, (cap - CONTROLS) / (plan.height + HEAD_H))),
+    onReset: () => zoomTo(1),
+  };
   // A pinch (or Ctrl and the wheel) zooms; the wheel alone scrolls, as in flowkit. Not passive, so the page does not zoom too.
   const pinch = useRef(zoomTo);
   pinch.current = zoomTo;
@@ -539,17 +542,13 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
     else if (event.key === 'End') next = lastRow;
     else if (event.key === 'PageDown') next = Math.min(lastRow, (active ?? -1) + 8);
     else if (event.key === 'PageUp') next = Math.max(0, (active ?? 8) - 8);
-    else if (event.key === '+' || event.key === '=') zoomBy(1.25);
-    else if (event.key === '-' || event.key === '_') zoomBy(0.8);
-    else if (event.key === '0') fit();
-    else if (event.key === '1') zoomTo(1);
     else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       if (scrollRef.current) scrollRef.current.scrollLeft += event.key === 'ArrowRight' ? 80 : -80;
     } else if (event.key === 'Escape' && (active !== undefined || selected)) {
       // The kit's rule (EntityLink): Escape also clears the selection.
       setActive(undefined);
       if (selected) select(null);
-    } else return;
+    } else if (!zoomKey(event.key, zoomActions)) return;
     if (next !== undefined && lastRow >= 0) {
       setActive(next);
       // Decision links-through-node-ids: the selection follows the keyboard onto a message (the trace moves with it); a note leaves it.
@@ -632,18 +631,13 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
       </div>
       {more.left ? <div className={css.more} data-more="left" aria-hidden="true" /> : null}
       {more.right ? <div className={css.more} data-more="right" aria-hidden="true"><span className={css.moreHint}>scroll →</span></div> : null}
-      <div className={css.bar} role="toolbar" aria-label="Zoom">
-        {shown ? (
-          <span className={css.inView} data-in-view="" title={`${inView} of ${plan.rows.length} steps in view. Scroll for the rest; Fit to view shows everything`}>
-            {width >= IN_VIEW_MIN_WIDTH ? `${inView} of ${plan.rows.length} in view` : `${inView}/${plan.rows.length}`}
-          </span>
-        ) : null}
-        <span className={css.zoom} data-zoom="">{Math.round(scale * 100)}%</span>
-        <button type="button" className={css.control} tabIndex={-1} aria-label="Zoom out" title="Zoom out (−)" onClick={() => zoomBy(0.8)}><Icon name="zoom-out" /></button>
-        <button type="button" className={css.control} tabIndex={-1} aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomBy(1.25)}><Icon name="zoom-in" /></button>
-        <button type="button" className={css.control} tabIndex={-1} aria-label="Fit to view" title="Fit to view (0)" onClick={fit}><Icon name="fit" /></button>
-        <button type="button" className={css.control} tabIndex={-1} aria-label="Actual size" title="Actual size (1)" onClick={() => zoomTo(1)}><Icon name="reset" /></button>
-      </div>
+      <ZoomBar
+        className={css.bar}
+        zoom={scale}
+        width={width}
+        inView={shown ? {count: inView, total: plan.rows.length, title: 'steps in view. Scroll for the rest'} : undefined}
+        {...zoomActions}
+      />
       <div className={css.live} aria-live="polite">{activeRow?.said ?? ''}</div>
     </div>
   );

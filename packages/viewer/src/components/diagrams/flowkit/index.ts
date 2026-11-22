@@ -23,3 +23,5 @@ export type {SizeInput, Sizing, Viewport} from './sizing.ts';
 export * from './text.ts';
 export {clearLayoutCache, layoutAll, useLayouts} from './useLayout.ts';
 export type {LayoutState} from './useLayout.ts';
+export {IN_VIEW_MIN_WIDTH, ZOOM_BAR_ROOM, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, ZoomBar, zoomKey} from './ZoomBar.tsx';
+export type {InView, ZoomActions} from './ZoomBar.tsx';
