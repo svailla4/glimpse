@@ -209,8 +209,34 @@ describe('Layers', () => {
     const cell = view.cell('l');
     expect(cell.querySelectorAll('[data-layer-item]')).toHaveLength(MAX_ITEMS);
     expect(cell.querySelector('[data-more]')!.textContent).toBe('+ 141 more');
-    // the full label is the tooltip; CSS cuts the visible text
-    expect(cell.querySelector('[data-layer-item]')!.getAttribute('title')).toBe(long);
+    // CSS cuts the visible text, and the full label is the tooltip while it does (jsdom has no layout: say it is cut)
+    const first = cell.querySelector<HTMLElement>('[data-layer-item]')!;
+    const label = first.querySelector<HTMLElement>('[data-text]')!;
+    Object.defineProperty(label, 'scrollHeight', {configurable: true, value: 80});
+    Object.defineProperty(label, 'clientHeight', {configurable: true, value: 60});
+    fireEvent.pointerOver(label);
+    expect(first.getAttribute('title')).toBe(long);
+    // an item drawn whole repeats nothing under the pointer
+    const whole = cell.querySelectorAll<HTMLElement>('[data-layer-item]')[1]!;
+    fireEvent.pointerOver(whole);
+    expect(whole.hasAttribute('title')).toBe(false);
+    // and a label that fits again loses its tooltip
+    Object.defineProperty(label, 'scrollHeight', {configurable: true, value: 60});
+    fireEvent.pointerOver(label);
+    expect(first.hasAttribute('title')).toBe(false);
+  });
+
+  it('gives every box one width, from the longest text, between 120 and 300 px', async () => {
+    const width = async (data: unknown) => {
+      const view = await ready(BOUND, {data: {'/layers': data}});
+      const value = view.cell('l').querySelector<HTMLElement>('[data-layer]')!.parentElement!.style.getPropertyValue('--gl-layer-box');
+      view.unmount();
+      return value;
+    };
+    expect(await width([{name: 'A', items: ['ui', 'api']}])).toBe('120px');
+    expect(await width([{name: 'A', items: ['ui']}, {name: 'B', items: ['implement: grid cell, title frame and error boundary']}])).toBe('203px');
+    expect(await width([{name: 'A', items: [{label: 'x', note: 'a note of twenty-six chars'}]}])).toBe('198px');
+    expect(await width([{name: 'A', items: ['z'.repeat(500)]}])).toBe('300px');
   });
 
   it('draws at most 40 tiers and says how many there are', async () => {
