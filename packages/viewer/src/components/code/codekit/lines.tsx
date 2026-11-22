@@ -10,7 +10,7 @@ import s from './lines.module.css';
  * or the family default without one. The view is as tall as its lines and scrolls only past that, sized or not.
  */
 export function useCapStyle(extra?: Record<`--${string}`, string | number>): CSSProperties {
-  return {'--gl-cap': `${useSizeCap()}px`, ...extra} as CSSProperties;
+  return {'--gl-cap': `${useSizeCap()}px`, ...extra};
 }
 
 /** Character ranges [from, to) inside one line (word-level diff marks). */

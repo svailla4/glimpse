@@ -78,7 +78,7 @@ export const CodeBlockView: GlView<typeof C.CodeBlock> = ({id, props}) => {
   );
 
   return (
-    <div className={cx(k.code, s.block)} data-well="" data-gl-code="block" style={{['--gl-digits' as never]: String(plain.length).length}}>
+    <div className={cx(k.code, s.block)} data-well="" data-gl-code="block" style={{'--gl-digits': String(plain.length).length}}>
       {headed ? (
         <div className={k.head}>
           {title ? <span className={s.title}>{title}</span> : null}

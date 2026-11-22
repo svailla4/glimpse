@@ -94,7 +94,7 @@ export const KeyValueView: GlView<typeof C.KeyValue> = ({id, props}) => {
         const shown = pairs.slice(0, MAX_PAIRS);
         return (
           <div className={styles.wrap}>
-            <dl className={styles.grid} data-cols={cols} style={{['--kv-cols' as never]: cols}}>
+            <dl className={styles.grid} data-cols={cols} style={{'--kv-cols': cols}}>
               {shown.map((pair, i) => (
                 <div key={`${i}:${pair.key}`} className={styles.pair}>
                   <dt className={styles.key} title={pair.key.length > 14 ? pair.key : undefined}>{pair.key}</dt>

@@ -203,7 +203,7 @@ function Outline({id, path, symbols, dropped, framed, busy}: OutlineProps): Reac
               data-active={index === at ? '' : undefined}
               data-selected={isSelected ? '' : undefined}
               data-exported={symbol.exported ? '' : undefined}
-              style={{['--gl-depth' as never]: symbol.depth}}
+              style={{'--gl-depth': symbol.depth}}
               onClick={event => onRowClick(event, index)}
             >
               <span className={s.kind} title={KIND_NAME[symbol.kind] ?? (symbol.kind || 'symbol')}>{BADGE[symbol.kind] ?? 'SYM'}</span>
