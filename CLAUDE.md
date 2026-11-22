@@ -411,7 +411,18 @@ Decisions explained here:
   capped it. The owner's point: there is no skill per design type, so the guide must not limit what the model brings.
   Rejected: a separate system-design guide (the next kind of design hits the same cap, and same-job guides compete,
   `views-are-blueprints`); a worked system design (a long example becomes the new cap, and is not yet measured).
-  Not done: the race rerun with this guide, scored blind.
+  Measured (2026-11-22, the same brief, three runs each, scored blind by one judge on seven criteria out of 35): with
+  this guide Glimpse scored 30, 28 and 27 (mean 28.3, 122 s) against the artifacts' 33, 32 and 30 (mean 31.7, 341 s);
+  open questions caught up (2 -> 4.0), and numbers that contradict each other, thin risks and a guarantee shown only
+  on its good path still lost points. So the guide then added four rules: walk the guarantee through two requests at
+  once, a retry, a step that fails halfway, a stop between two writes and an expiry; size each load a part adds from
+  the page's own scale; risks are every one a reviewer of such systems raises, with how you would know; and before
+  drawing, recompute every ratio and count on the page and look for a part another part's reason rules out. Glimpse
+  then scored 34, 32 and 29 (mean 31.7, 233 s, 101k tokens) against the same artifact pages re-scored 31, 30 and 27
+  (mean 29.3, 108k tokens). The extra time is the agent writing about 20% more and checking it, not the tool.
+  Not done: a second judge (one judge moved the same artifact pages by up to 5 points between rounds, so a 2.4-point
+  lead is a direction); which of the four rules bought what (a run without the self-check); the time a small feature
+  design takes now.
 - **`ask-options-carry-notes`: an Ask option may say what picking it means (2026-11-22).** `Ask.options` takes
   `['A', {label, note}]`, read by `readOptions` (catalog `options.ts`, apart from `notation.ts` because Ask is in the
   eager chunk) on the server and in the tab. The note is set under its label and is the tile's accessible
