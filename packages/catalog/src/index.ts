@@ -18,6 +18,7 @@ export * from './links.ts';
 export * from './rowlinks.ts';
 export * from './calc.ts';
 export * from './calls.ts';
+export * from './options.ts';
 export * from './notation.ts';
 export * from './normalize.ts';
 export * from './grid.ts';

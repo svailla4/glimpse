@@ -211,7 +211,7 @@ export const COMPONENT_EXAMPLES: Readonly<Record<ComponentName, string>> = {
   CodeTour: "CodeTour([{file:'src/auth/service.ts#L20-58',note:'Entry point.'},{file:'src/auth/cache.ts#L5-30',note:'Token cache.'}])",
   SymbolOutline: 'SymbolOutline()',
   Button: "Button('Approve plan',Event('approve',{plan:1}),'primary')",
-  Ask: "Ask('Which store backs the limiter?',['Redis','In-memory'],'store')",
+  Ask: "Ask('Which store backs the limiter?',['Redis',{label:'In-memory',note:'One instance only; counts reset on restart'}],'store')",
   Slider: "Row([Slider('Seats',$/w/seats,1000,200000,step=1000),Stat(div(mul($/w/seats,0.6),120),'checkout req/s')])",
 };
 
@@ -418,7 +418,7 @@ shape=Flowchart($/shape,title='Every request passes the limiter before a handler
 why=Column([Callout('Counts live in memory: there is one instance today. The store is an interface, so Redis can replace it when we run more.','decision','Counter store'),Callout('A fixed one-minute window rather than a sliding one: simpler to reason about. A burst of 200 across a window edge is accepted.','decision','Window'),Callout('The admin router is mounted before the API router, so it skips the limiter. That is wanted; a test pins it.','risk','Admin routes')],span=5)
 scope=Callout('Limits per user, quotas per plan, and a report of who was limited.','note','Not in this change')
 plan=Steps([{title:'Limiter and counter store',file:'src/api/limiter.ts',note:'Checked by behaviours 1 and 3'},{title:'Mount it in front of the API router',file:'src/api/routes.ts#L12',note:'Checked by behaviour 2'},{title:'Test that admin routes skip it',file:'test/api/admin.test.ts',note:'Behaviour 4'}],title='Work plan')
-ask=Ask('What limit should a key get? The first is what I would build.',['100 a minute','1,000 an hour','Set per key'],'limit')`,
+ask=Ask('What limit should a key get? The first is what I would build.',[{label:'100 a minute',note:'Stops the batch jobs; a burst of 200 across a minute edge passes'},{label:'1,000 an hour',note:'A batch job can still run for minutes before it is stopped'},{label:'Set per key',note:'An admin screen and a column on keys: about a week more'}],'limit')`,
   },
   {
     title: 'Review a change', when: 'The user asks for a review of a branch, a pull request or the working tree.', id: 'review', guide: 'review',

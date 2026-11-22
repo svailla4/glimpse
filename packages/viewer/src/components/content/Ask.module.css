@@ -112,8 +112,23 @@
     border-color: var(--gl-rule);
     color: var(--gl-ink-3);
   }
+  /* The label, and under it the note: what picking the option means or costs, quieter and in the body face. */
+  .optionText {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
   .optionLabel {
     overflow-wrap: anywhere;
+  }
+  .optionNote {
+    color: var(--gl-ink-2);
+    font: 400 12px/18px var(--gl-font-ui);
+    overflow-wrap: anywhere;
+  }
+  .options[data-picked] .option:not([data-chosen]) .optionNote {
+    color: var(--gl-ink-3);
   }
   .none {
     margin: 0;

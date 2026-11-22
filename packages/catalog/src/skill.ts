@@ -10,7 +10,7 @@ export const SKILL_NAME = 'glimpse';
 
 /** When to load the skill, never what it says: a model that reads a summary of the workflow follows the summary. */
 export const SKILL_DESCRIPTION =
-  'Draw live views of a codebase in the local Glimpse browser tab: designing or planning a feature before it is built, reviewing a change or a pull request, explaining existing code or onboarding onto it, and quick looks (overview, dependency map, hotspots, history, a file, a diff). Use whenever the user asks to see, show, visualize, map, design, plan, review, explain or walk through code, or when a picture of the code would answer faster than text.';
+  'Draw live views of a codebase in the local Glimpse browser tab: designing or planning a feature or a system before it is built, reviewing a change or a pull request, explaining existing code or onboarding onto it, and quick looks (overview, dependency map, hotspots, history, a file, a diff). Use whenever the user asks to see, show, visualize, map, design, plan, review, explain or walk through code, or when a picture of the code would answer faster than text.';
 
 /**
  * The fresh reader's questions (SKILL.md, "The reader check"); `<who>`, `<act>` and `<root>` are filled in by the
@@ -26,34 +26,46 @@ export const READER_PROMPT = `You have never seen this project, but you know sof
 6. Only now, open the repository at <root>: pick the three claims the decision rests on most (a number, a line range, what a part does) and check them. Say which are wrong.
 Answer in under 250 words.`;
 
-interface Guide { name: GuideName; title: string; command: string; argument: string; scope?: string; reader: string; act: string; body: string }
+/**
+ * `copy`: what to take from the guide's worked examples, when not "the order and the restraint". The design example is
+ * a small feature, and "the restraint" made a whole-system design as small as it (decision design-depth-follows-the-decision).
+ */
+interface Guide { name: GuideName; title: string; command: string; argument: string; scope?: string; reader: string; act: string; body: string; copy?: string }
 
 /** One guide per task: who reads the page, its parts in order, how much code, and what to check before showing it. */
 export const GUIDES: readonly Guide[] = [
   {
-    name: 'design', title: 'Design a feature', command: 'Design a feature as a Glimpse blueprint to review before it is built',
+    name: 'design', title: 'Design a feature or a system', command: 'Design a feature or a system as a Glimpse blueprint to review before it is built',
     argument: '<what to build>', reader: 'the person who decides whether this gets built, and the crew who will build it', act: 'build it',
+    copy: 'Copy the order, not the words or the size: this is a small feature, and a larger design adds what its size calls for.',
     body: `The reader decides whether this gets built, answers your open questions, and then builds from the page. Draw it before any code is written: a blueprint, not a listing.
+
+## Size the page to the decision
+
+Hold back on code, never on reasoning. A small feature in an existing codebase may be a lead, a diagram, two decisions and a plan. A whole system, or anything a team approves together, carries what its design review asks for: the targets it must meet, the scale it is sized for, every decision with what it costs and what was turned down, and each risk with how bad it is and what limits it. Bring what you know about systems of its kind: the failure a reviewer asks about first (a double booking, a lost message, a charge made twice) is answered on the page, at the step that prevents it.
 
 ## The page, top to bottom
 
-1. **Lead** (\`Text\`): what the feature does for whom and why now, in two or three sentences, then one line on what stays the same.
+1. **Lead** (\`Text\`): what it does for whom and why now, in two or three sentences, then one line on what stays the same.
 2. **What it will do** (\`Steps\`): 3 to 6 behaviours, each one sentence that could turn out to be false ("a comment marked *send* reaches the agent on its next turn"). Split by behaviour, never by file or layer: read aloud, they tell the whole feature, and they are how the work is checked.
+   - **How well**, when there are targets (\`KeyValue\` or \`DataTable\`): latency, freshness, availability, what must never happen, and the scale with how each number was reached. A number you chose says it is an assumption.
 3. **The shape** (\`Flowchart\`, \`SequenceDiagram\` for a conversation between parts, \`Layers\`, or \`ERDiagram\` when stored data changes): one diagram of the mechanism, with the new parts in a group named "New" beside the existing parts they touch. A new node gets \`note=\` (what it does); an existing one gets \`file=\` (where it lives), so a click opens the code it plugs into.
-4. **Decisions** (\`Callout\` kind \`decision\`, beside the diagram): one per choice that shapes what gets built: what you chose, why, and the option you turned down and its reason. A risk is kind \`risk\`.
+   - **A whole system** is drawn from the outside in: the people who use it first, short labels, what each box does in \`note=\`. Then one plate per mechanism worth opening: the main flow as a \`SequenceDiagram\` with every reply, the stored data as an \`ERDiagram\`. Where a flow carries a guarantee, a \`Steps\` beside it says what each stage does and why; the arrows keep short labels.
+4. **Decisions** (\`Callout\` kind \`decision\`, beside the diagram): one per choice that shapes what gets built: what you chose, why, and the option you turned down and its reason. Four or more compare better as one \`DataTable\` of rows \`{decision, why, cost, rejected}\`.
+   - **Risks** (\`Callout\` kind \`risk\`): the title says how bad (High, Medium) and what; the text says what limits it.
 5. **Out of scope** (a \`Callout\` or a \`List\`): what this will not do, so nobody builds it.
 6. **Work plan** (\`Steps\`): ordered by what unblocks what; each step names the files it touches (\`file=\`) and the behaviour from part 2 that checks it.
-7. **Open questions** (\`Ask\`): only the forks that change what gets built, 2 to 5, the option you would build first. A question the code can answer, answer yourself by reading it.
+7. **Open questions** (\`Ask\`): only the forks that change what gets built, 2 to 5, the option you would build first. Each option's \`note\` says what picking it means or costs: \`{label:'Hold the nights 12 h',note:'The guest is sure; the home is off sale meanwhile'}\`. A question the code can answer, answer yourself by reading it.
 
-Leave out any part that has nothing to say: a small feature may be a lead, a diagram, two decisions and a plan.
+Leave out any part that has nothing to say.
 
 ## Code
 
-None, except a contract the parts agree on (an interface, a message shape, a function signature) in a \`CodeBlock\` of a few lines titled as a sketch, or a \`CodeView\` of an existing pattern the new code should copy. A plan longer than the code it describes has already written the code.
+None, except a contract the parts agree on (an interface, a message shape, a function signature, an example record) in a \`CodeBlock\` of a few lines titled as a sketch, or a \`CodeView\` of an existing pattern the new code should copy. A plan longer than the code it describes has already written the code.
 
 ## Before you show it
 
-Could the crew start building from this page without asking you anything? What they would ask is the part still missing.`,
+Could the crew start building from this page without asking you anything? What they would ask is the part still missing. Would a reviewer of systems of this kind find their first question answered?`,
   },
   {
     name: 'review', title: 'Review a change', command: 'Review a branch, a pull request or the working tree as a Glimpse page',
@@ -126,7 +138,7 @@ Then run the reader check in SKILL.md, for ${guide.reader}.
 
 ## Worked example${examples.length > 1 ? 's' : ''}
 
-Paths are examples: use real ones from the repository. Copy the order and the restraint, not the words.
+Paths are examples: use real ones from the repository. ${guide.copy ?? 'Copy the order and the restraint, not the words.'}
 
 ${examples.map(recipe).join('\n')}`;
 }
@@ -166,7 +178,7 @@ Then pick the task and read its guide (next to this file) before you write the s
 
 | The user wants to | Read |
 |---|---|
-${GUIDES.map(g => `| ${{design: 'design or plan something before it is built', review: 'review a change: a branch, a pull request, the working tree', explain: 'understand existing code: a system or architecture diagram, how a part works, what happens when something is called, getting started on it'}[g.name]} | \`references/${g.name}.md\` |`).join('\n')}
+${GUIDES.map(g => `| ${{design: 'design or plan something before it is built: a feature, or a whole system', review: 'review a change: a branch, a pull request, the working tree', explain: 'understand existing code: a system or architecture diagram, how a part works, what happens when something is called, getting started on it'}[g.name]} | \`references/${g.name}.md\` |`).join('\n')}
 | take a quick look: the overview, dependencies, hotspots, history, a file, a diff, two modules side by side | a preset view, or a quick recipe below |
 
 ## What every view does

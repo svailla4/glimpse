@@ -13,6 +13,7 @@ import type {
 } from './datasets.ts';
 import type {FlowData, SeqData} from './diagrams.ts';
 import type {ColumnsValue} from './notation.ts';
+import type {AskOptionsValue} from './options.ts';
 
 // ---- shared prop groups -----------------------------------------------------------------------------------
 /** Every component: columns it spans in the enclosing 12-column grid (Page, Section) or its flex share (Row). */
@@ -493,7 +494,8 @@ export const Ask = component('Ask', {
   doc: 'Decision card: the user picks one option; the pick is queued for the agent.',
 }, {
   prompt: p.text('Question (inline micro-markup).'),
-  options: p.strings('Choices.'),
+  // A value prop, read by readOptions (catalog options.ts), since a static prop may not be a union (decision ask-options-carry-notes).
+  options: p.value<AskOptionsValue>("Choices: ['A','B'], or [{label, note?}] where note says what picking it means or costs."),
   name: opt(p.str("Event name. Default 'answer'.")),
   ...CELL,
 });

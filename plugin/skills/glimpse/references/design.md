@@ -1,32 +1,39 @@
-# Design a feature
+# Design a feature or a system
 
 The reader decides whether this gets built, answers your open questions, and then builds from the page. Draw it before any code is written: a blueprint, not a listing.
 
+## Size the page to the decision
+
+Hold back on code, never on reasoning. A small feature in an existing codebase may be a lead, a diagram, two decisions and a plan. A whole system, or anything a team approves together, carries what its design review asks for: the targets it must meet, the scale it is sized for, every decision with what it costs and what was turned down, and each risk with how bad it is and what limits it. Bring what you know about systems of its kind: the failure a reviewer asks about first (a double booking, a lost message, a charge made twice) is answered on the page, at the step that prevents it.
+
 ## The page, top to bottom
 
-1. **Lead** (`Text`): what the feature does for whom and why now, in two or three sentences, then one line on what stays the same.
+1. **Lead** (`Text`): what it does for whom and why now, in two or three sentences, then one line on what stays the same.
 2. **What it will do** (`Steps`): 3 to 6 behaviours, each one sentence that could turn out to be false ("a comment marked *send* reaches the agent on its next turn"). Split by behaviour, never by file or layer: read aloud, they tell the whole feature, and they are how the work is checked.
+   - **How well**, when there are targets (`KeyValue` or `DataTable`): latency, freshness, availability, what must never happen, and the scale with how each number was reached. A number you chose says it is an assumption.
 3. **The shape** (`Flowchart`, `SequenceDiagram` for a conversation between parts, `Layers`, or `ERDiagram` when stored data changes): one diagram of the mechanism, with the new parts in a group named "New" beside the existing parts they touch. A new node gets `note=` (what it does); an existing one gets `file=` (where it lives), so a click opens the code it plugs into.
-4. **Decisions** (`Callout` kind `decision`, beside the diagram): one per choice that shapes what gets built: what you chose, why, and the option you turned down and its reason. A risk is kind `risk`.
+   - **A whole system** is drawn from the outside in: the people who use it first, short labels, what each box does in `note=`. Then one plate per mechanism worth opening: the main flow as a `SequenceDiagram` with every reply, the stored data as an `ERDiagram`. Where a flow carries a guarantee, a `Steps` beside it says what each stage does and why; the arrows keep short labels.
+4. **Decisions** (`Callout` kind `decision`, beside the diagram): one per choice that shapes what gets built: what you chose, why, and the option you turned down and its reason. Four or more compare better as one `DataTable` of rows `{decision, why, cost, rejected}`.
+   - **Risks** (`Callout` kind `risk`): the title says how bad (High, Medium) and what; the text says what limits it.
 5. **Out of scope** (a `Callout` or a `List`): what this will not do, so nobody builds it.
 6. **Work plan** (`Steps`): ordered by what unblocks what; each step names the files it touches (`file=`) and the behaviour from part 2 that checks it.
-7. **Open questions** (`Ask`): only the forks that change what gets built, 2 to 5, the option you would build first. A question the code can answer, answer yourself by reading it.
+7. **Open questions** (`Ask`): only the forks that change what gets built, 2 to 5, the option you would build first. Each option's `note` says what picking it means or costs: `{label:'Hold the nights 12 h',note:'The guest is sure; the home is off sale meanwhile'}`. A question the code can answer, answer yourself by reading it.
 
-Leave out any part that has nothing to say: a small feature may be a lead, a diagram, two decisions and a plan.
+Leave out any part that has nothing to say.
 
 ## Code
 
-None, except a contract the parts agree on (an interface, a message shape, a function signature) in a `CodeBlock` of a few lines titled as a sketch, or a `CodeView` of an existing pattern the new code should copy. A plan longer than the code it describes has already written the code.
+None, except a contract the parts agree on (an interface, a message shape, a function signature, an example record) in a `CodeBlock` of a few lines titled as a sketch, or a `CodeView` of an existing pattern the new code should copy. A plan longer than the code it describes has already written the code.
 
 ## Before you show it
 
-Could the crew start building from this page without asking you anything? What they would ask is the part still missing.
+Could the crew start building from this page without asking you anything? What they would ask is the part still missing. Would a reviewer of systems of this kind find their first question answered?
 
 Then run the reader check in SKILL.md, for the person who decides whether this gets built, and the crew who will build it.
 
 ## Worked example
 
-Paths are examples: use real ones from the repository. Copy the order and the restraint, not the words.
+Paths are examples: use real ones from the repository. Copy the order, not the words or the size: this is a small feature, and a larger design adds what its size calls for.
 
 ### Design a feature
 
@@ -43,5 +50,5 @@ shape=Flowchart($/shape,title='Every request passes the limiter before a handler
 why=Column([Callout('Counts live in memory: there is one instance today. The store is an interface, so Redis can replace it when we run more.','decision','Counter store'),Callout('A fixed one-minute window rather than a sliding one: simpler to reason about. A burst of 200 across a window edge is accepted.','decision','Window'),Callout('The admin router is mounted before the API router, so it skips the limiter. That is wanted; a test pins it.','risk','Admin routes')],span=5)
 scope=Callout('Limits per user, quotas per plan, and a report of who was limited.','note','Not in this change')
 plan=Steps([{title:'Limiter and counter store',file:'src/api/limiter.ts',note:'Checked by behaviours 1 and 3'},{title:'Mount it in front of the API router',file:'src/api/routes.ts#L12',note:'Checked by behaviour 2'},{title:'Test that admin routes skip it',file:'test/api/admin.test.ts',note:'Behaviour 4'}],title='Work plan')
-ask=Ask('What limit should a key get? The first is what I would build.',['100 a minute','1,000 an hour','Set per key'],'limit')
+ask=Ask('What limit should a key get? The first is what I would build.',[{label:'100 a minute',note:'Stops the batch jobs; a burst of 200 across a minute edge passes'},{label:'1,000 an hour',note:'A batch job can still run for minutes before it is stopped'},{label:'Set per key',note:'An admin screen and a column on keys: about a week more'}],'limit')
 ```

@@ -3,7 +3,7 @@
 // component package writes them. Uses its own stub catalog, so it does not depend on any real component.
 import {A2uiSurface, type ReactCatalogComponent} from '@a2ui/react';
 import {ActionMessageSchema, Catalog, MessageProcessor, type ActionPayload} from '@a2ui/web_core/v1_0';
-import {CATALOG_ID, COMPONENTS, VIEW_BY_NAME, datasetKey, parseRef, type DirNode, type Rows} from '@glimpse/catalog';
+import {CATALOG_ID, COMPONENTS, VIEW_BY_NAME, datasetKey, parseRef, readOptions, type DirNode, type Rows} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {buildSurface} from '@glimpse/catalog/testing';
 import {act, fireEvent, render, screen, waitFor} from '@testing-library/react';
@@ -63,7 +63,7 @@ const CodeView: GlView<typeof C.CodeView> = ({id, props}) => {
 const Button: GlView<typeof C.Button> = ({id, props}) => <button type="button" data-testid={id} onClick={() => void props.action()}>{props.label}</button>;
 const Ask: GlView<typeof C.Ask> = ({id, props}) => {
   const host = useHostActions(id);
-  return <div data-testid={id}>{props.prompt}{props.options.map(o => <button type="button" key={o} onClick={() => host.emit(props.name ?? 'answer', {choice: o})}>{o}</button>)}</div>;
+  return <div data-testid={id}>{props.prompt}{readOptions(props.options).options.map(({label}) => <button type="button" key={label} onClick={() => host.emit(props.name ?? 'answer', {choice: label})}>{label}</button>)}</div>;
 };
 const Boom: GlView<any> = () => { throw new Error('boom'); };
 const generic = (name: string): GlView<any> => ({id, props}) => <div data-testid={id} data-view={name}>{JSON.stringify(props.data ?? props.text ?? props.file ?? null).slice(0, 60)}</div>;

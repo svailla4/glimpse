@@ -393,6 +393,32 @@ Decisions explained here:
   ref during render to remember something across renders (`useRemoteRows`, `useFileLines`, `useCatSlots`,
   `useCellReporter`, flowkit's `Diagram` and `Canvas`), and `codekit/VirtualRows.tsx` and `table/nav.ts` call
   `@tanstack/react-virtual`, which it marks incompatible (the getter in VirtualRows was left: rewriting it would not
-  get the function compiled). The eager script has 2.1 kB left under its 210 kB limit, and `useCatSlots` and
+  get the function compiled). The eager script had 2.1 kB left under its 210 kB limit (1.5 kB since `ask-options-carry-notes`), and `useCatSlots` and
   `useCellReporter` are in it. `DateCell` is compiled, so its age ("3 d") is kept until its
   date changes, also across midnight. No lint rule for the Rules of React (Biome has none).
+- **`design-depth-follows-the-decision`: a design page holds back on code, never on reasoning (2026-11-22).** The
+  design guide (catalog `skill.ts`) is for a feature or a whole system. It sizes the page to the decision: a small
+  feature stays a lead, a diagram, two decisions and a plan; a system the team approves carries its targets and scale,
+  decisions compared in a `DataTable` of `{decision, why, cost, rejected}` from four on, risks with how bad they are
+  and what limits them, the reasoning of a flow that carries a guarantee in `Steps` beside it, and open questions whose
+  options say what they cost. Its worked example stays the small rate limiter, and the line under it says to copy the
+  order, not the size (`Guide.copy`; the other guides keep "the order and the restraint").
+  Why: a timed race (2026-11-22, one run each, so a direction) had two fresh agents propose a home-rental marketplace
+  from the same eight-part brief, one in Glimpse with this skill, one as a claude.ai artifact with no design-content
+  guide at all. Glimpse took 136 s against 368 s, yet the owner judged the artifact's content better: non-functional
+  targets, a decisions table, a search that re-checks the index, risks with mitigations, options with their costs. The
+  model knew all of that; the guide's example of four behaviours and three decision boxes, and "copy the restraint",
+  capped it. The owner's point: there is no skill per design type, so the guide must not limit what the model brings.
+  Rejected: a separate system-design guide (the next kind of design hits the same cap, and same-job guides compete,
+  `views-are-blueprints`); a worked system design (a long example becomes the new cap, and is not yet measured).
+  Not done: the race rerun with this guide, scored blind.
+- **`ask-options-carry-notes`: an Ask option may say what picking it means (2026-11-22).** `Ask.options` takes
+  `['A', {label, note}]`, read by `readOptions` (catalog `options.ts`, apart from `notation.ts` because Ask is in the
+  eager chunk) on the server and in the tab. The note is set under its label and is the tile's accessible
+  description; only the label is sent with the pick. `options` became a `value` prop, since a static prop may not be
+  a union (as DataTable `columns`). Read like every other value (`no-invented-string-formats`): `title`/`description`
+  and their kin are rewritten with a `fixed` line; an entry with no label, an empty one, a repeat and an unread key are
+  `warn` lines, and options the server read are rewritten to what draws; a value that is not a list is `E_SHAPE`;
+  options bound to a `$/path` are reported by the tab as `W_OPTIONS`. A repeated or empty option was dropped silently
+  before. Why: a design's open questions are only as good as what each option costs, and a label cannot hold it (the
+  race above). Cost: the eager script 207.9 -> 208.5 kB, the server instructions unchanged (the signature is the same).

@@ -126,6 +126,23 @@ describe('Ask', () => {
     expect(queued(cell).textContent).toBe('');
     expect(cell.querySelector('[data-chosen]')).toBeNull();
     expect(view.errors).toEqual([]);
+    // the repeat and the empty option reached the tab without passing the server: reported, the rest draws
+    await waitFor(() => expect(view.stateOf('q')).toBe('W_OPTIONS'));
+    expect(view.reports.findLast(report => report.code === 'W_OPTIONS')!.message).toBe(
+      `Ask#q: options: "C" repeats an earlier option; expected 'label' or {label, note?}, received ""`);
+  });
+
+  it('draws a note under its option, as its description; the pick sends the label alone (ask-options-carry-notes)', async () => {
+    const view = renderExpress(`root=Page('T',[q])\nq=Ask('Hold the nights?',[{label:'Hold 24 h',note:'The guest is sure of the nights'},'Do not hold'],'hold')`);
+    const cell = view.cell('q');
+    const options = within(cell).getAllByRole('button');
+    expect(options.map(option => option.textContent)).toEqual(['Hold 24 hThe guest is sure of the nights', 'Do not hold']);
+    expect(within(cell).getByRole('button', {name: 'Hold 24 h', description: 'The guest is sure of the nights'})).toBe(options[0]);
+    expect(within(cell).getByRole('button', {name: 'Do not hold'})).toBe(options[1]);
+    expect(options[1]!.hasAttribute('aria-describedby')).toBe(false);
+    fireEvent.click(options[0]!);
+    await waitFor(() => expect(view.actions[0]).toMatchObject({name: 'hold', context: {choice: 'Hold 24 h'}}));
+    expect(view.stateOf('q')).not.toBe('W_OPTIONS');
   });
 
   it('says so when there is nothing to choose from', async () => {
