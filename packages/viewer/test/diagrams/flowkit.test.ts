@@ -8,7 +8,7 @@ import {LABEL_FLOOR, framesAround, minimapSpot} from '../../src/components/diagr
 import {
   CONTROLS, GROUP_PAD, MIN_HEIGHT, MONO_11, PAD, POSITIONS_KEY, READABLE_ZOOM, UI_12, boundsOf, clipToShapes, configurePositionStorage, cutAt,
   fitText, freeSpot, fromElk, hasCycle, labelPlate, markPath, midpoint, nearestInDirection, outlineInset, partCount, positionsKey, readPositions,
-  readableZoom, roundedPath, routeAround, runsAlongFrame, scoreLayout, signatureOf, simplify, sizeDiagram, textWidth, toElk, wrapText,
+  readableZoom, roundedPath, routeAround, runsAlongFrame, scoreLayout, scrolledView, signatureOf, simplify, sizeDiagram, textWidth, toElk, wrapText,
   writePositions,
   type Box, type Laid, type LayoutSpec, type Point,
 } from '../../src/components/diagrams/flowkit/index.ts';
@@ -593,6 +593,32 @@ describe('dragging, round 2', () => {
     expect(runsAlongFrame([{x: 300, y: 0}, {x: 300, y: 500}], [frame])).toBe(false);
     expect(runsAlongFrame([{x: 100, y: 90}, {x: 160, y: 90}], [frame])).toBe(false);
     expect(runsAlongFrame([{x: 0, y: 40}, {x: 520, y: 40}], [frame])).toBe(false);
+  });
+});
+
+describe('scrolledView: a two-finger scroll pans the drawing, up to its edges', () => {
+  // A drawing of 1000 x 600 (with its paper) on a 400 x 300 canvas at 100%, its top-left corner at the canvas corner.
+  const extent: Box = {x: 0, y: 0, w: 1000, h: 600};
+  const at = {x: 0, y: 0, zoom: 1};
+  it('moves the drawing against the scroll, as a page does', () => {
+    expect(scrolledView(at, 30, 50, extent, 400, 300)).toEqual({x: -30, y: -50, zoom: 1});
+  });
+  it('stops at the edge: the far edge reaches the canvas edge and no further, the near edge does not move in', () => {
+    expect(scrolledView(at, 5000, 5000, extent, 400, 300)).toEqual({x: -600, y: -300, zoom: 1});
+    expect(scrolledView(at, -40, -40, extent, 400, 300)).toEqual(at);
+  });
+  it('counts the zoom: at 50% the same drawing is 500 x 300 and only pans across', () => {
+    const half = {x: 0, y: 0, zoom: 0.5};
+    expect(scrolledView(half, 500, 500, extent, 400, 300)).toEqual({x: -100, y: 0, zoom: 0.5});
+  });
+  it('leaves an axis alone where the drawing fits the canvas', () => {
+    const fitted = {x: 20, y: 10, zoom: 0.3};
+    expect(scrolledView(fitted, 50, 50, extent, 400, 300)).toEqual(fitted);
+  });
+  it('does not pull back a view already past an edge, but lets it scroll back', () => {
+    const past = {x: -700, y: 0, zoom: 1};
+    expect(scrolledView(past, 20, 0, extent, 400, 300)).toEqual(past);
+    expect(scrolledView(past, -20, 0, extent, 400, 300)).toEqual({x: -680, y: 0, zoom: 1});
   });
 });
 

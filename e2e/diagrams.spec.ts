@@ -186,6 +186,42 @@ test.describe('diagram-engine-in-worker/content-sized-plates: diagrams open whol
     await expect(plate.locator('[data-in-view]')).toHaveCount(0);
     await expect(plate.locator('.react-flow__minimap')).toHaveCount(0);
   });
+
+  test('a two-finger scroll pans a diagram that opens in part and keeps the page still; over a fitted one it scrolls the page', async ({page, glimpse}) => {
+    await showSettled(page, glimpse, 'scroll', [
+      "root=Page('Scroll',[part,five])",
+      `part=Graph(${EIGHT},'TB',title='Eight, top to bottom',span=6,size='s')`,
+      `five=${CASES[0]!.call}`,
+    ].join('\n'));
+    // Whether the page was left to scroll: the wheel event reaches the document without preventDefault.
+    await page.evaluate(() => {
+      const w = window as unknown as {pageScrolls: boolean[]};
+      w.pageScrolls = [];
+      document.addEventListener('wheel', event => w.pageScrolls.push(!event.defaultPrevented));
+    });
+    const wheel = async (stage: Locator, dy: number): Promise<boolean[]> => {
+      const at = centre((await geometry(stage)).stage);
+      await page.mouse.move(at.x, at.y);
+      await page.evaluate(() => { (window as unknown as {pageScrolls: boolean[]}).pageScrolls = []; });
+      await page.mouse.wheel(0, dy);
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => resolve(undefined))));
+      return page.evaluate(() => (window as unknown as {pageScrolls: boolean[]}).pageScrolls);
+    };
+
+    const part = await stageOf(page, 'part');
+    const before = (await geometry(part)).nodes;
+    expect(await wheel(part, 120)).toEqual([false]);
+    const after = (await geometry(part)).nodes;
+    const moved = Object.keys(before).map(id => before[id]!.y - after[id]!.y);
+    expect(Math.min(...moved), 'every node moves up with the scroll').toBeGreaterThan(20);
+
+    // Past the gesture gap, a scroll over the fitted diagram is a new gesture, and the page's.
+    await page.waitForTimeout(300);
+    const five = await stageOf(page, 'five');
+    const still = (await geometry(five)).nodes;
+    expect(await wheel(five, 120)).toEqual([true]);
+    expect((await geometry(five)).nodes).toEqual(still);
+  });
 });
 
 // Decision links-through-node-ids: diagrams and lists the model writes link through node ids (node:'PG'), and a selected message lights

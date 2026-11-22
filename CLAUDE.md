@@ -108,6 +108,7 @@ Decisions explained in the code that cites them:
 | `diagrams-open-readable` | D18 | Every diagram opens with on-screen text of at least 10 px | viewer `components/diagrams/flowkit/sizing.ts` |
 | `diagram-engine-in-worker` | D19 | One diagram engine: ELK lays out in a same-origin worker, React Flow draws | viewer `components/diagrams/flowkit/Diagram.tsx` |
 | `content-sized-plates` | D20 | A plate is as tall as its content; `size` is a maximum; plates are not stretched to their row | viewer `kit/sizeCap.ts`, `styles/base.css` |
+| `scroll-pans-what-overflows` | | A two-finger scroll pans a diagram that does not fit and scrolls the page otherwise; a gesture stays with what it first moved | viewer `components/diagrams/flowkit/Diagram.tsx` |
 
 Decisions explained here:
 

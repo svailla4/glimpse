@@ -50,6 +50,20 @@ export function centred(bounds: Box, width: number, canvas: number, zoom: number
   return {zoom, x: (width - bounds.w * zoom) / 2 - bounds.x * zoom, y: (canvas - bounds.h * zoom) / 2 - bounds.y * zoom};
 }
 
+/**
+ * The view after a two-finger scroll of `dx`, `dy` screen px on a canvas of `width` x `canvas`: the drawing moves
+ * against the scroll, as a page does, and never past the edges of `extent` (diagram coordinates). An axis on which
+ * the extent fits the canvas, or is at its edge, does not move; a view already past an edge is not pulled back.
+ */
+export function scrolledView(view: Viewport, dx: number, dy: number, extent: Box, width: number, canvas: number): Viewport {
+  const along = (at: number, d: number, start: number, size: number, room: number): number => {
+    const lo = room - (start + size) * view.zoom;
+    const hi = -start * view.zoom;
+    return lo >= hi ? at : clamp(at - d, Math.min(lo, at), Math.max(hi, at));
+  };
+  return {zoom: view.zoom, x: along(view.x, dx, extent.x, extent.w, width), y: along(view.y, dy, extent.y, extent.h, canvas)};
+}
+
 export interface SizeInput {
   bounds: Box;
   /** Width the plate gives the drawing, px. */
