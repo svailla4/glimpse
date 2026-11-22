@@ -61673,6 +61673,19 @@ var init_actions = __esm({
         this.session = session;
         this.log = log;
       }
+      /**
+       * Decision D27: one component state that is not an error, I_* (a truthful empty or waiting state) or OK (the
+       * component draws as asked), posted beside the A2UI messages. A problem code here is refused: problems are A2UI
+       * renderer errors. Returns false when it was malformed or names nothing that exists.
+       */
+      state(value) {
+        if (!isRecord3(value)) return false;
+        const { surfaceId: surfaceId2, component: component2, id, code } = value;
+        if (!text(surfaceId2) || !text(component2) || !text(id) || !text(code)) return false;
+        if (code !== REPORT_OK && !/^I_[A-Z0-9_]{1,30}$/.test(code)) return false;
+        const message = typeof value.message === "string" ? value.message.slice(0, MAX_TEXT2) : "";
+        return this.session.viewerReport(surfaceId2, component2, id, code, message);
+      }
       /** Handles one renderer-to-agent message. Returns false when it was malformed or addressed nothing that exists. */
       handle(message) {
         if (!isRecord3(message) || message.version !== "1.0") return false;
@@ -61680,7 +61693,7 @@ var init_actions = __esm({
           const { code, surfaceId: surfaceId2 } = message.error;
           const detail = typeof message.error.message === "string" ? message.error.message.slice(0, MAX_TEXT2) : void 0;
           const report2 = text(code) && text(detail) && text(surfaceId2) ? /^([A-Za-z][A-Za-z0-9]{0,39})#([^\s:]{1,120}):(?: ([\s\S]*))?$/.exec(detail) : null;
-          if (report2 && text(code) && text(surfaceId2) && /^[A-Z][A-Z0-9_]{1,31}$/.test(code)) {
+          if (report2 && text(code) && text(surfaceId2) && /^[WE]_[A-Z0-9_]{1,30}$/.test(code)) {
             return this.session.viewerReport(surfaceId2, report2[1], report2[2], code, report2[3] ?? "");
           }
           this.log(`glimpse: viewer error ${text(code) ? code : "?"}${text(surfaceId2) ? ` (${surfaceId2})` : ""}: ${text(detail) ? detail.replace(/\s+/g, " ").slice(0, 300) : ""}`);
@@ -62020,6 +62033,7 @@ async function route(req, res, url3, api) {
     const body3 = await readJson(req);
     if (typeof body3 !== "object" || body3 === null || !Array.isArray(body3.messages)) throw new HttpError(400, "E_ARGS", "expected {messages: [...]}");
     for (const message of body3.messages.slice(0, MAX_MESSAGES)) api.router.handle(message);
+    if (Array.isArray(body3.states)) for (const state of body3.states.slice(0, MAX_MESSAGES)) api.router.state(state);
     res.writeHead(204, { "cache-control": "no-store" });
     res.end();
     return;
