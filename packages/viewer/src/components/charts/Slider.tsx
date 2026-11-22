@@ -16,7 +16,7 @@ import type * as C from '@glimpse/catalog';
 import {inputValue} from '@glimpse/catalog';
 import {useEffect, useId, useRef, useState} from 'react';
 import {useCalcNote} from '../../kit/calcNote.ts';
-import {useHostActions, useReportState, type GlView} from '../../kit/index.ts';
+import {useHostActions, useLatest, useReportState, type GlView} from '../../kit/index.ts';
 import styles from './Slider.module.css';
 
 /** Idle time after the last write before the number is committed. */
@@ -77,9 +77,9 @@ export const SliderView: GlView<typeof C.Slider> = ({id, props}) => {
     host.set(value);
   };
   // The idle timer and the unmount clean-up call the commit of the latest render.
-  const latest = useRef(commit);
-  latest.current = commit;
-  useEffect(() => () => latest.current(), []);
+  const commitRef = useRef(commit);
+  useLatest(commitRef, commit);
+  useEffect(() => () => commitRef.current(), []);
 
   const write = (n: number) => {
     const value = inputValue(n, {min, max});
@@ -87,7 +87,7 @@ export const SliderView: GlView<typeof C.Slider> = ({id, props}) => {
     setValue(value);
     pending.current = value;
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => latest.current(), IDLE_MS);
+    timer.current = setTimeout(() => commitRef.current(), IDLE_MS);
   };
   // Blur or Enter: what was typed is held to min and max, written and committed.
   const settle = () => {

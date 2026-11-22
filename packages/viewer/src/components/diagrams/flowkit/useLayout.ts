@@ -4,6 +4,7 @@
 // surface replaced with the same data) shows it at once. The reveal is a transition: React may yield while it builds
 // the canvases of a page of diagrams that arrive together.
 import {startTransition, useEffect, useMemo, useRef, useState} from 'react';
+import {useLatest} from '../../../kit/index.ts';
 import {layoutElk} from './elk.ts';
 import {fromElk, signatureOf, toElk, type Laid, type LayoutSpec} from './graph.ts';
 
@@ -38,11 +39,11 @@ export function useLayouts(specs: readonly LayoutSpec[] | undefined): LayoutStat
   const hit = key !== undefined ? cache.get(key) : undefined;
   const [done, setDone] = useState<{key: string; state: LayoutState}>();
   // The specs of the current key: a new array with the same signature (a resize, a re-render) asks for nothing new.
-  const latest = useRef(specs);
-  latest.current = specs;
+  const specsRef = useRef(specs);
+  useLatest(specsRef, specs);
 
   useEffect(() => {
-    const asked = latest.current;
+    const asked = specsRef.current;
     if (key === undefined || !asked || cache.has(key)) return;
     let live = true;
     layoutAll(asked).then(

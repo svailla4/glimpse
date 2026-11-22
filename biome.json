@@ -39,7 +39,8 @@
         "useExhaustiveDependencies": {
           "level": "error",
           "options": {
-            "reportUnnecessaryDependencies": false
+            "reportUnnecessaryDependencies": false,
+            "hooks": [{"name": "useStableCallback", "stableResult": true}]
           }
         }
       },

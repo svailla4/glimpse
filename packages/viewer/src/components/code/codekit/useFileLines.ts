@@ -2,7 +2,7 @@
 // about to show; windows arrive on their own and are kept, so scrolling back costs nothing.
 import type {FileSlice, TokenLine} from '@glimpse/catalog';
 import {useCallback, useEffect, useReducer, useRef, useState} from 'react';
-import {toNumber, useHost} from '../../../kit/index.ts';
+import {toNumber, useHost, useLatest} from '../../../kit/index.ts';
 import {coerceLines, maxCols} from './lines.tsx';
 import {errorText} from './useFetched.ts';
 
@@ -64,9 +64,9 @@ export function useFileLines(path: string | undefined, rev: number, around: numb
   const next = useRef<Store | undefined>(undefined);
   const inView = useRef<[number, number]>([0, 0]);
   const revRef = useRef(rev);
-  revRef.current = rev;
+  useLatest(revRef, rev);
   const aroundRef = useRef(around);
-  aroundRef.current = around;
+  useLatest(aroundRef, around);
 
   const request = useCallback(
     (store: Store, index: number) => {

@@ -14,7 +14,7 @@ import {
   createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject,
 } from 'react';
-import {useMeta} from './hooks.ts';
+import {useLatest, useMeta} from './hooks.ts';
 import {ArrangeContext, type ArrangeApi} from './implement.tsx';
 
 export const ARRANGE_STORAGE_KEY = 'glimpse.arrange.v1';
@@ -662,8 +662,8 @@ export function useArrangeHandle(componentId: string): ArrangeHandle | null {
   const arrangement = isArrangement(context) && context.indexOf(componentId) >= 0 ? context : null;
   const [resizing, setResizing] = useState<number | null>(null);
   const [status, setStatus] = useState('');
-  const latest = useRef(arrangement);
-  latest.current = arrangement;
+  const arrangementRef = useRef(arrangement);
+  useLatest(arrangementRef, arrangement);
 
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0 || event.pointerType === 'touch') return;
@@ -672,7 +672,7 @@ export function useArrangeHandle(componentId: string): ArrangeHandle | null {
     const root = document.documentElement;
     let drag: {cells: Map<string, HTMLElement>; marker: HTMLElement; slot: DropSlot | null} | undefined;
     const onMove = (move: PointerEvent) => {
-      const current = latest.current;
+      const current = arrangementRef.current;
       if (!current) return;
       if (!drag) {
         if (Math.hypot(move.clientX - origin.x, move.clientY - origin.y) < DRAG_THRESHOLD) return;
@@ -704,7 +704,7 @@ export function useArrangeHandle(componentId: string): ArrangeHandle | null {
       drag.cells.get(componentId)?.removeAttribute('data-dragging');
       root.style.userSelect = '';
       root.removeAttribute('data-gl-arranging');
-      if (commit && drag.slot) latest.current?.move(componentId, drag.slot.index, drag.slot.beside);
+      if (commit && drag.slot) arrangementRef.current?.move(componentId, drag.slot.index, drag.slot.beside);
     };
     const onUp = () => finish(true);
     const onCancel = () => finish(false);
@@ -724,7 +724,7 @@ export function useArrangeHandle(componentId: string): ArrangeHandle | null {
   }, [componentId]);
 
   const onKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
-    const current = latest.current;
+    const current = arrangementRef.current;
     if (!current || !event.altKey || event.metaKey || event.ctrlKey || event.target !== event.currentTarget) return;
     const index = current.indexOf(componentId);
     if (event.shiftKey) {
@@ -748,7 +748,7 @@ export function useArrangeHandle(componentId: string): ArrangeHandle | null {
   }, [componentId]);
 
   const onEdgeDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    const current = latest.current;
+    const current = arrangementRef.current;
     if (!current || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -756,7 +756,8 @@ export function useArrangeHandle(componentId: string): ArrangeHandle | null {
     const cells = cellsOf(current.container?.current, current.ids);
     const pointer = event.pointerId;
     try {
-      edge.setPointerCapture?.(pointer);
+      // An if, not `?.()`: the React Compiler does not yet read an optional call inside try (decision compiled-viewer).
+      if (edge.setPointerCapture) edge.setPointerCapture(pointer);
     } catch {
       // a pointer that is already gone cannot be captured; the window listeners below still end the drag
     }
@@ -765,7 +766,7 @@ export function useArrangeHandle(componentId: string): ArrangeHandle | null {
     // Every step of the drag starts from the spans the drag started with: going out and back leaves them as they were.
     const from = current.snapshot();
     const onMove = (move: PointerEvent) => {
-      const now = latest.current;
+      const now = arrangementRef.current;
       const span = now ? spanAt(now, cells, componentId, move.clientX) : undefined;
       if (!now || span === undefined) return;
       setResizing(now.resize(componentId, span, from) ?? span);
