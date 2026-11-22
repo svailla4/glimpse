@@ -185,6 +185,31 @@ describe('SequenceDiagram blocks', () => {
     expect(cell.querySelector('[aria-live]')!.textContent).toBe('5. Limiter to Server, reply: deny (alt bucket empty)');
   });
 
+  // Decision group-keeps-its-heading: a group's label is its heading, in the tab where another block names its kind.
+  it('draws a group as a frame whose tab is its heading, and says the heading for the steps inside', async () => {
+    const view = await ready(express({steps: [{group: '1. You ask a question', steps: [['U', 'C', 'show me'], ['C', 'U', 'a page', 'reply']]}, ['U', 'C', 'thanks']]}));
+    const cell = view.cell('s');
+    const frame = cell.querySelector('[data-frame="group"]')!;
+    expect([...frame.querySelectorAll('text')].map(t => t.textContent)).toEqual(['1. You ask a question']);
+    const stage = screen.getByRole('img', {name: /^Sequence diagram/});
+    focus(stage);
+    key(stage, 'ArrowDown');
+    key(stage, 'ArrowDown');
+    expect(cell.querySelector('[aria-live]')!.textContent).toBe('2. C to U, reply: a page (in 1. You ask a question)');
+  });
+
+  it('cuts a long group heading to its frame, and draws no tab for a group without one', () => {
+    const long = 'a heading far longer than the frame round two close lifelines could ever hold on one line';
+    const plan = planSequence(ast({steps: [{group: long, steps: [['A', 'B', 'x']]}, {group: '', steps: [['A', 'B', 'y']]}]}), 300);
+    const [named, bare] = plan.frames;
+    expect(named!.tab.length).toBeLessThan(long.length);
+    expect(named!.tab.endsWith('…')).toBe(true);
+    expect(named!.x + named!.w).toBeLessThanOrEqual(plan.width);
+    expect(textWidth(named!.tab, {size: 11.5}) + 18).toBeLessThanOrEqual(named!.w);
+    expect(bare!.tab).toBe('');
+    expect(named!.label).toBe('');
+  });
+
   it('plans the frame from the first step of the block to the last, the divider between the branches', () => {
     const plan = planSequence(ast(RATE), 700);
     const [frame] = plan.frames;

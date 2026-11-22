@@ -295,8 +295,11 @@ export function cleanFlow(data: unknown): Clean<FlowAst> {
 
 // ================================================================ SequenceDiagram
 export type SeqArrow = 'sync' | 'reply' | 'async';
-/** The blocks drawn as a labelled frame round their steps. */
-export const SEQ_BLOCKS = ['loop', 'alt', 'opt', 'par', 'critical', 'break'] as const;
+/**
+ * The blocks drawn as a labelled frame round their steps. A `group` has no kind of its own: its label is the heading
+ * in its tab (decision group-keeps-its-heading).
+ */
+export const SEQ_BLOCKS = ['loop', 'alt', 'opt', 'par', 'critical', 'break', 'group'] as const;
 export type SeqFrameOp = (typeof SEQ_BLOCKS)[number];
 /**
  * A step as the renderer draws it. A block written as data `{alt: 'label', steps, else}` becomes balanced frame steps:
@@ -327,20 +330,19 @@ export const ARROW_ALIASES: Readonly<Record<string, SeqArrow>> = {
   event: 'async', message: 'async', fire: 'async', emit: 'async', publish: 'async',
 };
 const BLOCK_SET: ReadonlySet<string> = new Set(SEQ_BLOCKS);
-const BLOCK_ALIASES: Readonly<Record<string, SeqFrameOp>> = {while: 'loop', repeat: 'loop', if: 'alt', optional: 'opt', parallel: 'par'};
-/** Blocks that only group or colour (Mermaid's rect and box): their steps are drawn, without a frame. */
-const UNFRAMED: ReadonlySet<string> = new Set(['group', 'rect', 'box']);
+// Mermaid's rect and box only group or colour: they are a group, and keep their label as its heading.
+const BLOCK_ALIASES: Readonly<Record<string, SeqFrameOp>> = {while: 'loop', repeat: 'loop', if: 'alt', optional: 'opt', parallel: 'par', rect: 'group', box: 'group', section: 'group', stage: 'group', phase: 'group'};
 const MESSAGE_KEYS: ReadonlySet<string> = new Set([...EDGE_FROM, ...EDGE_TO, ...LABEL_KEYS, 'arrow', 'kind', 'type', 'via']);
 const ACTOR_KEYS: ReadonlySet<string> = new Set(['id', ...LABEL_KEYS, 'node', 'nodes']);
 const NOTE_KEYS: ReadonlySet<string> = new Set(['note', 'over', 'actor', 'actors', 'on']);
-const BLOCK_KEYS: ReadonlySet<string> = new Set([...SEQ_BLOCKS, ...Object.keys(BLOCK_ALIASES), ...UNFRAMED, 'type', 'block', ...LABEL_KEYS, 'steps', 'else', 'and']);
+const BLOCK_KEYS: ReadonlySet<string> = new Set([...SEQ_BLOCKS, ...Object.keys(BLOCK_ALIASES), 'type', 'block', ...LABEL_KEYS, 'steps', 'else', 'and']);
 const SEQ_EXAMPLE = "{steps:[['User','API','POST /login'],['API','User','200','reply']]}";
 
 /**
  * The data of a SequenceDiagram, cleaned: `{actors?, steps}`, or just the list of steps. A step is a message
  * `['from', 'to', 'label'?, 'sync'|'reply'|'async'?]` or `{from, to, label?, arrow?, via?}`, a note `{note, over: 'A' | ['A', 'B']}`,
  * or a block `{loop: 'label', steps: [...]}` (also alt, opt, par, critical, break) whose `else` lists further branches
- * `[{label, steps}]`; a `group` (rect, box) draws its steps without a frame. Actors appear in the order `actors` lists
+ * `[{label, steps}]`; a `group` (rect, box) is a frame with its label as its heading. Actors appear in the order `actors` lists
  * them, then in order of first mention. An actor written `{label, node}` stands for that diagram node, and a message's
  * `via` names the nodes it passes through (decision links-through-node-ids): one id, or a list. A list message read with a list (or
  * `{via}`) after its label or arrow takes it as its via, and says so.
@@ -392,18 +394,18 @@ export function cleanSequence(data: unknown): Clean<SeqAst> {
     return 'sync';
   };
 
-  /** The block a step object names (undefined op: one that only groups), and the key that named it. */
-  const blockOf = (o: Record<string, unknown>): {op?: SeqFrameOp; label?: string; alias?: string} | undefined => {
+  /** The block a step object names, and the name it was written as when that is not the block's own. */
+  const blockOf = (o: Record<string, unknown>): {op: SeqFrameOp; label?: string; alias?: string} | undefined => {
     for (const key of Object.keys(o)) {
       const lower = key.toLowerCase();
       if (BLOCK_SET.has(lower)) return {op: lower as SeqFrameOp, label: textOf(o[key])};
       if (BLOCK_ALIASES[lower]) return {op: BLOCK_ALIASES[lower], label: textOf(o[key]), alias: key};
-      if (UNFRAMED.has(lower)) return {label: textOf(o[key]), alias: key};
     }
     const named = textOf(o.block ?? (Array.isArray(o.steps) ? o.type : undefined))?.toLowerCase();
     if (named === undefined) return undefined;
-    const op = BLOCK_SET.has(named) ? (named as SeqFrameOp) : BLOCK_ALIASES[named];
-    return {...(op ? {op} : {}), label: textOf(pick(o, LABEL_KEYS)), ...(op !== named ? {alias: named} : {})};
+    // A block type that is no kind of block still holds its steps together: a group, said with a fixed line.
+    const op = BLOCK_SET.has(named) ? (named as SeqFrameOp) : (BLOCK_ALIASES[named] ?? 'group');
+    return {op, label: textOf(pick(o, LABEL_KEYS)), ...(op !== named ? {alias: named} : {})};
   };
 
   const walk = (list: unknown[], depth: number, path: string): SeqStep[] => {
@@ -460,7 +462,7 @@ export function cleanSequence(data: unknown): Clean<SeqAst> {
       const block = blockOf(raw);
       if (block) {
         dropped.ignore('block', unknownKeys(raw, BLOCK_KEYS));
-        if (block.alias !== undefined) fixes.add(`${where}: block '${clip(block.alias, 20)}' ${block.op ? `-> ${block.op}` : 'drawn without a frame'}`);
+        if (block.alias !== undefined) fixes.add(`${where}: block '${clip(block.alias, 20)}' -> ${block.op}`);
         const own = Array.isArray(raw.steps) ? raw.steps : [];
         const elseRaw = raw.else ?? raw.and;
         const branchesRaw: Array<{label?: string; steps: unknown[]}> = [{label: block.label, steps: own}];
@@ -480,11 +482,7 @@ export function cleanSequence(data: unknown): Clean<SeqAst> {
           return;
         }
         if (branches.every(branch => branch.steps.length === 0)) {
-          dropped.add(`${where}: ${block.op ?? 'group'} block with no steps`);
-          return;
-        }
-        if (!block.op) {
-          for (const branch of branches) out.push(...branch.steps);
+          dropped.add(`${where}: ${block.op} block with no steps`);
           return;
         }
         out.push({kind: 'frame', edge: 'open', op: block.op, label: branches[0]!.label});

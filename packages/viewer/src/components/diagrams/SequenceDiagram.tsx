@@ -59,6 +59,8 @@ type RowDraw =
 /** An alt, opt, loop ... block: a labelled frame round its steps, a dashed divider per else. */
 export interface FrameDraw {
   op: string;
+  /** What the tab says: the kind of block, or a group's heading as drawn (decision group-keeps-its-heading). */
+  tab: string;
   /** The condition as drawn (in brackets, cut to the frame) and as written. */
   label: string;
   full: string;
@@ -89,6 +91,7 @@ const FRAME_TAB_H = 18;
 const FRAME_REACH = 60;
 const FRAME_FACE: Face = {size: 10.5, mono: true};
 const FRAME_LABEL: Face = {size: 11};
+const FRAME_HEADING: Face = {size: 11.5};
 
 /** The narrowest width at which `label` fits on LABEL_LINES lines without being cut (a word is never split). */
 export function wrapWidth(label: string, face: Face = UI_12): number {
@@ -256,31 +259,39 @@ function planAt(ast: SeqAst, containerWidth: number, actorMax: number): Plan {
   const close = (bottom: number) => {
     const {frame, lo, hi} = open.pop()!;
     const reach = Math.max(24, FRAME_REACH - frame.depth * 10);
-    const tab = tabWidth(frame.op);
+    // Decision group-keeps-its-heading: a group's label is the heading in its tab; another block's tab says its kind
+    // and its condition stands beside the tab, in brackets.
+    const group = frame.op === 'group';
+    const tab = group ? 0 : tabWidth(frame.op, FRAME_FACE);
     // A frame that holds nothing spans every lifeline.
     let x0 = (lo <= hi ? lo : x(0)) - reach;
     let x1 = (lo <= hi ? hi : x(Math.max(0, last))) + reach;
     // Room for the tab and the condition beside it, then inside the drawing.
-    const head = tab + (frame.full ? Math.min(textWidth(`[${frame.full}]`, FRAME_LABEL), 280) + 16 : 8);
+    const head = group
+      ? (frame.full ? tabWidth(frame.full, FRAME_HEADING, 400) + 8 : 0)
+      : tab + (frame.full ? Math.min(textWidth(`[${frame.full}]`, FRAME_LABEL), 280) + 16 : 8);
     if (x1 - x0 < head) x1 = x0 + head;
     x0 = Math.max(4 + frame.depth * 4, x0);
     x1 = Math.min(width - 4 - frame.depth * 4, x1);
     frame.x = Math.round(x0);
     frame.w = Math.round(x1 - x0);
     frame.h = bottom - frame.y;
-    frame.label = frame.full ? fitText(`[${frame.full}]`, frame.w - tab - 16, FRAME_LABEL) : '';
+    frame.tab = group ? (frame.full ? fitText(frame.full, frame.w - 26, FRAME_HEADING) : '') : frame.op;
+    frame.label = !group && frame.full ? fitText(`[${frame.full}]`, frame.w - tab - 16, FRAME_LABEL) : '';
     for (const divider of frame.dividers) divider.label = divider.full ? fitText(`[${divider.full}]`, frame.w - 16, FRAME_LABEL) : '';
   };
   const where = () => {
     const top = open.at(-1);
-    return top ? ` (${top.frame.op}${top.branch ? ` ${top.branch}` : ''})` : '';
+    if (!top) return '';
+    if (top.frame.op === 'group') return top.branch ? ` (in ${top.branch})` : '';
+    return ` (${top.frame.op}${top.branch ? ` ${top.branch}` : ''})`;
   };
   let y = 8;
   let n = 0;
   steps.forEach((step, index) => {
     if (step.kind === 'frame') {
       if (step.edge === 'open') {
-        const frame: FrameDraw = {op: step.op, label: '', full: step.label, x: 0, y: y + 4, w: 0, h: 0, depth: open.length, dividers: []};
+        const frame: FrameDraw = {op: step.op, tab: '', label: '', full: step.label, x: 0, y: y + 4, w: 0, h: 0, depth: open.length, dividers: []};
         frames.push(frame);
         open.push({frame, lo: Infinity, hi: -Infinity, branch: step.label});
         y += FRAME_HEAD;
@@ -334,16 +345,22 @@ function planAt(ast: SeqAst, containerWidth: number, actorMax: number): Plan {
   return {width, height: y + 16, scale, actors: actorDraws, rows, frames, hidden: ast.steps.length - steps.length};
 }
 
-const tabWidth = (op: string) => Math.ceil(textWidth(op, FRAME_FACE)) + 18;
+/** The width of a tab that says `text`, at most `max`. */
+const tabWidth = (text: string, face: Face, max = Infinity) => Math.min(max, Math.ceil(textWidth(text, face))) + 18;
 
 function frameView(frame: FrameDraw, i: number): ReactNode {
-  const tab = tabWidth(frame.op);
+  const group = frame.op === 'group';
+  const tab = frame.tab ? tabWidth(frame.tab, group ? FRAME_HEADING : FRAME_FACE) : 0;
   const {x, y} = frame;
   return (
     <g key={i} data-frame={frame.op} data-depth={frame.depth}>
       <rect className={css.frameBox} x={x} y={y} width={frame.w} height={frame.h} />
-      <path className={css.frameTab} d={`M${x} ${y}H${x + tab}V${y + FRAME_TAB_H - 6}L${x + tab - 6} ${y + FRAME_TAB_H}H${x}Z`} />
-      <text className={css.frameOp} x={x + 7} y={y + FRAME_TAB_H / 2 + 0.5}>{frame.op}</text>
+      {frame.tab ? (
+        <>
+          <path className={css.frameTab} d={`M${x} ${y}H${x + tab}V${y + FRAME_TAB_H - 6}L${x + tab - 6} ${y + FRAME_TAB_H}H${x}Z`} />
+          <text className={group ? css.frameHeading : css.frameOp} x={x + 7} y={y + FRAME_TAB_H / 2 + 0.5}>{frame.tab}</text>
+        </>
+      ) : null}
       {frame.label ? <text className={css.frameLabel} x={x + tab + 8} y={y + FRAME_TAB_H / 2 + 0.5}>{frame.label}</text> : null}
       {frame.dividers.map((divider, j) => (
         <g key={j} data-divider="">

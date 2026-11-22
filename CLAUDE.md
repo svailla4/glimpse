@@ -110,6 +110,7 @@ Decisions explained in the code that cites them:
 | `content-sized-plates` | D20 | A plate is as tall as its content; `size` is a maximum; plates are not stretched to their row | viewer `kit/sizeCap.ts`, `styles/base.css` |
 | `one-zoom-bar` | — | Every diagram that zooms draws the one zoom bar, with the same buttons, keys and limits; only its zoom arithmetic and the bar's place are its own | viewer `components/diagrams/flowkit/ZoomBar.tsx` |
 | `scroll-pans-what-overflows` | — | A two-finger scroll pans a diagram that does not fit and scrolls the page otherwise; a gesture stays with what it first moved | viewer `components/diagrams/flowkit/Diagram.tsx` |
+| `group-keeps-its-heading` | — | A sequence `group` (and `rect`, `box` or an unknown block type) is a frame with its label as the heading in its tab, so the label the author wrote is drawn | viewer `components/diagrams/SequenceDiagram.tsx`, catalog `diagrams.ts` |
 
 Decisions explained here:
 
