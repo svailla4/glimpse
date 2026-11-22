@@ -3,6 +3,8 @@
   .root {
     position: relative;
     --sq-paper: var(--gl-bg);
+    /* The zoom bar under the drawing: as tall as flowkit's (CONTROLS in flowkit/sizing.ts). */
+    --sq-bar: 32px;
   }
   :global(.gl-frame) .root {
     --sq-paper: var(--gl-surface);
@@ -30,6 +32,11 @@
   }
   .steps {
     display: block;
+  }
+  /* Zoomed out narrower than its cell, the drawing sits in the middle, as a fitted flowkit diagram does. */
+  .head,
+  .steps {
+    margin-inline: auto;
   }
 
   .lifeline {
@@ -210,7 +217,7 @@
   .more {
     position: absolute;
     top: 0;
-    bottom: 0;
+    bottom: var(--sq-bar);
     width: 40px;
     pointer-events: none;
     z-index: 2;
@@ -238,6 +245,12 @@
     text-transform: uppercase;
     color: var(--gl-ink-2);
     white-space: nowrap;
+  }
+
+  /* The zoom bar (flowkit's ZoomBar) under the drawing. */
+  .bar {
+    height: var(--sq-bar);
+    padding-right: 6px;
   }
 
   .live {

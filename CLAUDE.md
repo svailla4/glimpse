@@ -108,6 +108,7 @@ Decisions explained in the code that cites them:
 | `diagrams-open-readable` | D18 | Every diagram opens with on-screen text of at least 10 px | viewer `components/diagrams/flowkit/sizing.ts` |
 | `diagram-engine-in-worker` | D19 | One diagram engine: ELK lays out in a same-origin worker, React Flow draws | viewer `components/diagrams/flowkit/Diagram.tsx` |
 | `content-sized-plates` | D20 | A plate is as tall as its content; `size` is a maximum; plates are not stretched to their row | viewer `kit/sizeCap.ts`, `styles/base.css` |
+| `one-zoom-bar` | — | Every diagram that zooms draws the one zoom bar, with the same buttons, keys and limits; only its zoom arithmetic and the bar's place are its own | viewer `components/diagrams/flowkit/ZoomBar.tsx` |
 
 Decisions explained here:
 
