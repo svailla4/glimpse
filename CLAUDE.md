@@ -78,10 +78,18 @@ which `.github/workflows/release.yml` writes (decision `release-every-merge`):
 - **The viewer is compiled by the React Compiler (`compiled-viewer`).** A value read during render from something
   mutable (the A2UI surface and component models, a closure over outside state) is cached and never read again: read
   it through `useSyncExternalStore` (`kit/subscribe.ts`). A `useMemo` or `useCallback` dependency the callback does
-  not read is dropped: make a refetch trigger part of the value. A ref written during render keeps the whole function
-  uncompiled: keep a latest value with `const xRef = useRef(x); useLatest(xRef, x)`, a stable handler with
-  `useStableCallback` (both `kit/hooks.ts`), and take a ref out of an object before rendering with it. The viewer tests
-  run compiled code, and `test/compiler.test.ts` fails when a function stops compiling.
+  not read is dropped: make a refetch trigger part of the value. The viewer tests run compiled code.
+  A function the compiler cannot compile is left as written without a word, so write what it reads: no new `useMemo`
+  or `useCallback` (it memoizes; a hand-written one it cannot keep leaves the whole function uncompiled); a `try` with
+  a condition, `?.` or `??` inside goes in a helper outside the component; count with `filter(...).length`, not `++`
+  on a variable a nested function uses; no `||=` or `??=` in a component or hook; never write into what props hold
+  (pass a function that does it); no getter in an object literal. Reading or writing a ref during render also stops
+  it: keep a latest value with `const xRef = useRef(x); useLatest(xRef, x)`, a stable handler with
+  `useStableCallback` (both `kit/hooks.ts`), and take a ref out of an object before rendering with it.
+  `test/compiler.test.ts` fails when a function stops compiling.
+- **A CSS custom property in a `style` object is a plain key: `style={{'--gl-span': span}}`.** `packages/viewer/src/css.d.ts`
+  types every `--name` key, so it needs no cast and no helper. Never write `['--x' as never]` or `{...} as CSSProperties`:
+  a cast is not checked, and the React Compiler leaves a function with a cast inside an object key uncompiled.
 - Do not commit `plugin/dist`. Never add a shipped dependency without a licence the build allows (`scripts/notices.ts`).
 
 ## Decision log
@@ -359,20 +367,32 @@ Decisions explained here:
   refetched (they are fields of the request now); `useCalcNote` read a Slider's bound path from the component model
   during render, so a Slider the spec rebound kept its old path (now a `useSyncExternalStore` snapshot through
   `subscribeComponent`, with a test); the test harness read the surface during render and kept the deleted one.
-  The compiler leaves a function it cannot compile as written, silently. `test/compiler.test.ts` holds that list (39
-  functions at first, 25 now) both ways: a new one fails, and so does a listed one that compiles. Thirteen came off
-  it by two patterns. A component whose props or hook result held a ref (`Figure`, `CanvasLayer`, `AskView`) was
-  refused on every line, as the compiler treats an object holding a ref as a ref: the ref is taken out first. The
-  latest-value ref, `x.current = x` during render (TopBar, arrange, flowkit, SequenceDiagram, Button, Slider, Icicle,
-  `useFetched`, `useMarkNav`), is written by `useLatest(ref, value)` in an insertion effect, which runs before every
-  layout effect; flowkit's `useStable` became the kit's `useStableCallback`. The caller makes the ref with `useRef`:
-  a ref returned by a hook of ours is a frozen value to the compiler, so memos reading it would not compile and
-  writes through it would be refused (`useMarkNav` scrolls its box through `keepInView` for the same reason). Biome
-  is told `useStableCallback`'s result is stable (`biome.json`). Cost: the eager script 204.6 -> 206.2 kB, diagrams
-  45.1 -> 46.6 kB, charts 60.3 -> 62.6 kB.
-  Not done: six functions still read or write a ref during render to remember something across renders
-  (`useRemoteRows`, `useFileLines`, `useCatSlots`, `useCellReporter`, flowkit's `Diagram` and `Canvas`); nine use a
-  cast in a computed style key (`{['--x' as never]: v}`, which `vars()` in `components/layout/shared.ts` replaces); the
-  rest use syntax the compiler does not read yet or `@tanstack/react-virtual`, which it marks incompatible.
-  `DateCell` is compiled, so its age ("3 d") is kept until its date changes, also across midnight. No lint rule for
-  the Rules of React (Biome has none).
+  Nine components were left uncompiled by a cast inside a style key (`['--kv-cols' as never]`); `css.d.ts` now types
+  custom properties, so every cast and the `vars()` helper went (see Rules that are easy to break), and they compile:
+  the eager script 204.6 -> 205.4 kB, table 28.8 -> 34.2, code 20.5 -> 22.0 kB.
+  Eight more were left uncompiled by code the compiler cannot read, and were rewritten so it can (the patterns are in
+  Rules that are easy to break): Grid and `useArrangement` lost their hand-written `useMemo`s, which it could not keep
+  (it assumes `shareOf` may change the weights it is given; the Arrangement's methods read values made inside the
+  memo); `useChildInfo` reads its ids back out of `key`, the dependency it lists; Split and JsonView moved a `try`
+  holding `?.` or a condition into a helper; `useHiddenColumns` counts with `filter`, not `++`; FileTree's body asks
+  `takeRefocus()` instead of clearing a ref it was given; `useArrangeStore` makes the shared store in a function
+  outside the hook instead of `??=`. Chart's `||=` went too, though a ref still stops that hook. The eager script
+  205.4 -> 206.4 kB, table 34.2 -> 35.7 kB.
+  Thirteen of those that read a ref came off by two patterns. A component whose props or hook result held a ref
+  (`Figure`, `CanvasLayer`, `AskView`) was refused on every line, as the compiler treats an object holding a ref as a
+  ref: the ref is taken out first. The latest-value ref, `x.current = x` during render (TopBar, arrange, flowkit,
+  SequenceDiagram, Button, Slider, Icicle, `useFetched`, `useMarkNav`), is written by `useLatest(ref, value)` in an
+  insertion effect, which runs before every layout effect; flowkit's `useStable` became the kit's
+  `useStableCallback`. The caller makes the ref with `useRef`: a ref returned by a hook of ours is a frozen value to
+  the compiler, so memos reading it would not compile and writes through it would be refused (`useMarkNav` scrolls
+  its box through `keepInView` for the same reason). Biome is told `useStableCallback`'s result is stable
+  (`biome.json`). The eager script 206.4 -> 207.9 kB, diagrams 45.1 -> 46.6 kB, charts 60.3 -> 62.6 kB.
+  `test/compiler.test.ts` runs the compiler over `src/` and holds the functions it leaves to a list, both ways: a new
+  one fails, and so does a listed one that compiles. 39 at first, 8 now.
+  Not done: those 8 are left uncompiled, which the compiler does silently (they run as written): six read or write a
+  ref during render to remember something across renders (`useRemoteRows`, `useFileLines`, `useCatSlots`,
+  `useCellReporter`, flowkit's `Diagram` and `Canvas`), and `codekit/VirtualRows.tsx` and `table/nav.ts` call
+  `@tanstack/react-virtual`, which it marks incompatible (the getter in VirtualRows was left: rewriting it would not
+  get the function compiled). The eager script has 2.1 kB left under its 210 kB limit, and `useCatSlots` and
+  `useCellReporter` are in it. `DateCell` is compiled, so its age ("3 d") is kept until its
+  date changes, also across midnight. No lint rule for the Rules of React (Biome has none).

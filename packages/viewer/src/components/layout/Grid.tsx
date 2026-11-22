@@ -12,7 +12,7 @@ import {useMemo, useRef} from 'react';
 import {inVisualOrder, useArrangement, type Arrangement} from '../../kit/arrange.tsx';
 import {ArrangeContext, useChildIds, useChildSpans, useReportState, useSurfaceId, type GlView} from '../../kit/index.ts';
 import css from './Grid.module.css';
-import {gapPx, vars} from './shared.ts';
+import {gapPx} from './shared.ts';
 
 const COLUMNS = 12;
 
@@ -57,11 +57,11 @@ export const GridView: GlView<typeof C.Grid> = ({id, props, child}) => {
   const style = useMemo(() => {
     const gap = `${gapPx(props.gap, 20)}px`;
     // 12 columns: the cells read their span the way they do on the page (styles/base.css), narrow widths included.
-    if (twelve) return vars({'--cols': `repeat(${COLUMNS}, minmax(0, 1fr))`, '--gap': gap});
+    if (twelve) return {'--cols': `repeat(${COLUMNS}, minmax(0, 1fr))`, '--gap': gap};
     // What the cells of this grid read (styles/base.css): one track by default.
     const placement: Record<`--${string}`, string | number> = {'--gl-c0': 'span 1'};
     for (let span = 1; span <= MAX_TRACKS; span++) placement[`--gl-c${span}`] = `span ${Math.min(span, tracks)}`;
-    return vars({...placement, '--cols': weights.map(weight => `minmax(0, ${weight}fr)`).join(' '), '--gap': gap});
+    return {...placement, '--cols': weights.map(weight => `minmax(0, ${weight}fr)`).join(' '), '--gap': gap};
   }, [weights, tracks, twelve, props.gap]);
   return (
     <div className={css.grid} ref={element} style={style} data-tracks={tracks} data-columns={twelve ? COLUMNS : undefined}>

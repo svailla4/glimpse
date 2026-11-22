@@ -330,8 +330,8 @@ export function implement<N extends string, P extends PropMap>(
         data-size={props.size ?? undefined}
         data-framed={framed || undefined}
         style={{
-          ['--gl-span' as never]: span,
-          ['--gl-h' as never]: props.size ? SIZE_PX[props.size] : undefined,
+          '--gl-span': span,
+          '--gl-h': props.size ? SIZE_PX[props.size] : undefined,
           order: arranged?.order,
         }}
       >

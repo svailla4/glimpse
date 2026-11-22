@@ -4,7 +4,6 @@
 import type * as C from '@glimpse/catalog';
 import {useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent} from 'react';
 import {ArrangeContext, type GlView} from '../../kit/index.ts';
-import {vars} from './shared.ts';
 import css from './Split.module.css';
 
 const MIN = 0.1;
@@ -92,7 +91,7 @@ export const SplitView: GlView<typeof C.Split> = ({props, child}) => {
       data-dir={column ? 'col' : 'row'}
       data-sized={props.size ? '' : undefined}
       data-dragging={dragging || undefined}
-      style={vars({'--a': `${fraction}fr`, '--b': `${1 - fraction}fr`})}
+      style={{'--a': `${fraction}fr`, '--b': `${1 - fraction}fr`}}
     >
       <ArrangeContext.Provider value={null}>
         <div className={css.pane}>{child(props.start)}</div>

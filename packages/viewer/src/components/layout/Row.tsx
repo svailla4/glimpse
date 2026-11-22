@@ -5,7 +5,7 @@ import {useRef} from 'react';
 import {inVisualOrder, useArrangement} from '../../kit/arrange.tsx';
 import {ArrangeContext, useChildIds, useSurfaceId, type GlView} from '../../kit/index.ts';
 import css from './Row.module.css';
-import {gapPx, vars} from './shared.ts';
+import {gapPx} from './shared.ts';
 
 const ALIGN = {start: 'flex-start', center: 'center', end: 'flex-end', stretch: 'stretch', baseline: 'baseline'} as const;
 
@@ -16,7 +16,7 @@ export const RowView: GlView<typeof C.Row> = ({id, props, child}) => {
   const children = inVisualOrder(arrangement, childIds, Array.isArray(props.children) ? props.children : []);
   const align = (props.align && ALIGN[props.align]) || 'stretch';
   return (
-    <div className={css.row} ref={element} data-wrap={props.wrap === false ? undefined : ''} style={vars({'--gap': `${gapPx(props.gap, 12)}px`, '--align': align})}>
+    <div className={css.row} ref={element} data-wrap={props.wrap === false ? undefined : ''} style={{'--gap': `${gapPx(props.gap, 12)}px`, '--align': align}}>
       <ArrangeContext.Provider value={arrangement}>{children.map(token => child(token))}</ArrangeContext.Provider>
     </div>
   );

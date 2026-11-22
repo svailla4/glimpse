@@ -36,7 +36,7 @@ function Strip(p: {cells: StatCellProps[]}): JSX.Element {
   const reserveFoot = cells.some(hasFoot);
   const place = (i: number) => ({'data-col': i % cols, 'data-row': Math.floor(i / cols), 'data-last-row': Math.floor(i / cols) === rows - 1 ? '' : undefined});
   return (
-    <ul className={styles.strip} ref={box} style={{['--stats-cols' as never]: cols}} data-cols={cols} data-gl-stats="">
+    <ul className={styles.strip} ref={box} style={{'--stats-cols': cols}} data-cols={cols} data-gl-stats="">
       {cells.map((cell, i) => (
         <li key={`${i}:${cell.label ?? ''}`} className={styles.cell} {...place(i)}>
           <StatCell {...cell} reserveFoot={reserveFoot} />
