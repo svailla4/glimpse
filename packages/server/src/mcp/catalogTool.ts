@@ -3,7 +3,7 @@
 import {
   CALC_NAMES, calcDoc, calcName, componentDoc, componentIndex, COMPONENT_BY_NAME, examplesDoc, parseViewRef, SOURCE_BY_NAME, sourceDoc, sourceIndex, VIEW_BY_NAME, VIEW_INDEX, viewDoc,
 } from '@glimpse/catalog';
-import {calleeKind, closeMatch, FUNCTION_LIST, nearest} from '../spec/errors.ts';
+import {calleeKind, closeMatch, FUNCTION_LIST, nearest, removedComponent} from '../spec/errors.ts';
 import {refSignature} from '../spec/expand.ts';
 import type {SourceRegistry} from '../sources/registry.ts';
 import {failed, text, type ToolResult} from './result.ts';
@@ -52,6 +52,9 @@ function lookup(name: string, registry: SourceRegistry | undefined): string | un
   if (name === 'grammar') return GRAMMAR;
   if (name === 'examples') return examplesDoc();
   if (COMPONENT_BY_NAME.has(name)) return componentDoc(name);
+  // Decision D26: a removed component, in any case as show reads it ('markdown'), answers with what now draws it.
+  const removed = removedComponent(name);
+  if (removed) return `"${name}" -> ${removed.to} (removed, decision D26: ${removed.note})\n${componentDoc(removed.to)}`;
   // Decision D25: the four functions, by name or alias, in any case ('div', 'Div', 'multiply').
   if (calcName(name) !== undefined) return calcDoc();
   if (SOURCE_BY_NAME.has(name)) return sourceDoc(name);

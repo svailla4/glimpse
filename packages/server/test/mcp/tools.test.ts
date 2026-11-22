@@ -4,7 +4,7 @@ import {existsSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {calcDoc, serverInstructions, VIEWS} from '@glimpse/catalog';
+import {calcDoc, componentDoc, serverInstructions, VIEWS} from '@glimpse/catalog';
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
 import {catalogTool, GRAMMAR} from '../../src/mcp/catalogTool.ts';
 import {eventsTool} from '../../src/mcp/events.ts';
@@ -582,6 +582,17 @@ describe('catalogTool', () => {
     for (const block of blocks.slice(1)) expect(block).not.toMatch(/\b(?:Row|Grid|Column)\b/);
     // a capitalised near miss still gets its component
     expect(body(await catalogTool({names: ['Tabel']}, undefined))).toMatch(/^"Tabel" -> /);
+  });
+
+  // Decision D26: catalog{names:['Markdown']} answered 'unknown "Markdown". Nearest: Row Section Grid' while show drew
+  // it as Text. It answers, in any case as show reads it, with Text and what Text does not carry over.
+  it('answers a removed Markdown, in any case, with Text and the D26 note, not a near miss', async () => {
+    const note = 'headings, tables and code fences show as written: use Section, DataTable, CodeBlock';
+    for (const name of ['Markdown', 'markdown', 'MARKDOWN']) {
+      const result = await catalogTool({names: [name]}, undefined);
+      expect(result.isError, name).toBeFalsy();
+      expect(body(result), name).toBe(`"${name}" -> Text (removed, decision D26: ${note})\n${componentDoc('Text')}`);
+    }
   });
 
   // The examples the grammar gives, rule by rule, written together as one spec: it compiles as Glimpse accepts it.

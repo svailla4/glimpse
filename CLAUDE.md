@@ -225,7 +225,10 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
 - **D26: no Markdown component; Text is the one text component (2026-11-21).** The owner's call: Markdown was only
   used for text. `Text` draws inline `code`, *em*, **strong** and `[[path#L10]]` refs and keeps line breaks; headings
   are a `Section`, tables a `DataTable`, code a `CodeBlock`. A spec that still writes `Markdown(...)` is drawn as Text
-  with a `fixed` line that says what Text does not draw (`REMOVED_COMPONENTS`, server `spec/errors.ts`).
+  with a `fixed` line that says what Text does not draw (`REMOVED_COMPONENTS`, server `spec/errors.ts`). A removed
+  name is read in any case, as D25 reads a component name (`removedComponent`): `markdown(` is Text with the same
+  line, where main alone, before D25, gave `E_UNKNOWN`. `catalog{names:['Markdown']}` answers with Text's entry and
+  the same note, not with near misses.
   Why: Markdown was a way around the catalog. A table or a code fence in it drew as plain HTML: no checks, dead paths,
   no sorting, no entity ids, so nothing could be selected, patched or (later) commented row by row, and a Markdown
   table hugged its content and left two thirds of its frame empty beside a DataTable that does all of that. Same

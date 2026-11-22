@@ -19,8 +19,8 @@
 //     ELK layout worker          <= 515 kB  assets/elk.worker-<hash>.js, the whole ELK engine (447.8 kB measured)
 //     React Flow chunk           <=  90 kB  assets/xyflow-<hash>.js, once a view imports React Flow (77.6 kB measured)
 //     React Flow stylesheet      <= 2.5 kB  assets/xyflow-<hash>.css (2.2 kB measured)
-//     diagrams chunk             <=  43 kB  assets/diagrams-<hash>.js (38.0 kB measured, 37.7 kB before the D26 merge;
-//                                           the ELK + React Flow views;
+//     diagrams chunk             <=  43 kB  assets/diagrams-<hash>.js (38.0 kB measured, the ELK + React Flow views;
+//                                           the D26 merge changed it by 3 bytes: same modules, renamed imports;
 //                                           25.4 kB at the Install phase, before the wrap/widen pass, the window
 //                                           search, routing for dragged edges and the minimap placement; 31.3 kB
 //                                           when the line was first set at 36 kB; 35.8 kB before D24 links, which
