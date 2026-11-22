@@ -16,7 +16,9 @@ next year:
   session does not undo it by accident.
 - Keep the codebase small and legible: prefer removing code to adding options, and match the style already here.
 - The owner (svailla4) decides product direction, licensing and minor or major versions (patch releases are
-  automatic, see Releasing); ask before changing those. Commit, push or open a pull request only when asked.
+  automatic, see Releasing); ask before changing those. Finish work by committing, pushing the feature branch and
+  opening a pull request without asking (owner, 2026-11-22); force-pushing a feature branch is allowed. Merge only
+  when the owner says so, and never push to `main` directly.
 
 ## Layout
 
