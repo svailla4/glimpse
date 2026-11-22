@@ -18,7 +18,7 @@ export {FULL_ZOOM, LOD_ZOOM, detailAt, legsOf, zoomStep} from './parts.tsx';
 export type {Detail, DiagramEdge, DiagramGroup, DiagramNode, NodeFlags} from './parts.tsx';
 export {POSITIONS_KEY, configurePositionStorage, positionsKey, readPositions, useNodePositions, writePositions} from './positions.ts';
 export type {NodePositions, Positions} from './positions.ts';
-export {CONTROLS, MIN_HEIGHT, PAD, READABLE_ZOOM, centred, cutAt, fitZoom, readableZoom, scoreLayout, sizeDiagram} from './sizing.ts';
+export {CONTROLS, MIN_HEIGHT, PAD, READABLE_ZOOM, centred, cutAt, fitZoom, readableZoom, scoreLayout, scrolledView, sizeDiagram} from './sizing.ts';
 export type {SizeInput, Sizing, Viewport} from './sizing.ts';
 export * from './text.ts';
 export {clearLayoutCache, layoutAll, useLayouts} from './useLayout.ts';

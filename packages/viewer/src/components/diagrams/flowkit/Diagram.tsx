@@ -31,7 +31,7 @@ import {
   type FlowNode, type FrameFlowNode, type NodeFlags, type Plate,
 } from './parts.tsx';
 import {useNodePositions, type NodePositions, type Positions} from './positions.ts';
-import {CONTROLS, MIN_HEIGHT, PAD, READABLE_ZOOM, centred, fitZoom, readableZoom, scoreLayout, sizeDiagram, type Sizing, type Viewport} from './sizing.ts';
+import {CONTROLS, MIN_HEIGHT, PAD, READABLE_ZOOM, centred, fitZoom, readableZoom, scoreLayout, scrolledView, sizeDiagram, type Sizing, type Viewport} from './sizing.ts';
 import {MONO_11, fitText, textWidth, wrapText} from './text.ts';
 import {useLayouts} from './useLayout.ts';
 import {IN_VIEW_MIN_WIDTH, ZOOM_BAR_ROOM, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, ZoomBar, zoomKey, type ZoomActions} from './ZoomBar.tsx';
@@ -88,6 +88,8 @@ const LABEL_MAX_WIDTH = 168;
 const DOUBLE_CLICK_MS = 400;
 const NUDGE = 16;
 const PAN_STEP = 48;
+/** A wheel event this long after the last one starts a new gesture; momentum events come every frame. */
+const GESTURE_GAP = 160;
 /** Above this many nodes only what is in view is in the DOM (the 150-node cap stays well under 100 ms of main thread). */
 const VISIBLE_ONLY_FROM = 80;
 /** Above this many edges a diagram is laid out dense (graph.ts: shared first and last stretches, closer lanes). */
@@ -885,6 +887,40 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
   });
   const hideTip = useStable(() => tooltip.hide());
 
+  // ---- two-finger scroll (decision scroll-pans-what-overflows): it pans the drawing when there is more of it to see,
+  // and scrolls the page when there is not. A gesture belongs to what its first event moved, until it stops (momentum
+  // included), as nested scrollers do on macOS: a pan that reaches the edge does not carry on as a page scroll, nor a
+  // page scroll as a pan. React Flow's panOnScroll would take every scroll, so a page of diagrams would stop scrolling
+  // on each one, fitted or not. A pinch (and Ctrl+wheel) is React Flow's zoom. React's onWheel is passive and cannot
+  // keep the page still, hence the listener.
+  const extentBox = useMemo((): Box => ({x: bounds.x - PAD, y: bounds.y - PAD, w: bounds.w + PAD * 2, h: bounds.h + PAD * 2}), [bounds]);
+  const gesture = useRef<{pans: boolean; until: number} | null>(null);
+  const onWheel = useStable((event: WheelEvent) => {
+    if (event.ctrlKey || event.metaKey) return;
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1;
+    const dx = event.deltaX * unit;
+    const dy = event.deltaY * unit;
+    const from = view();
+    const next = scrolledView(from, dx, dy, extentBox, width, height);
+    let current = gesture.current;
+    if (!current || event.timeStamp > current.until) {
+      current = {pans: Math.abs(dy) >= Math.abs(dx) ? next.y !== from.y : next.x !== from.x, until: 0};
+      gesture.current = current;
+    }
+    current.until = event.timeStamp + GESTURE_GAP;
+    if (!current.pans) return;
+    event.preventDefault();
+    if (next.x === from.x && next.y === from.y) return;
+    hideTip();
+    setView(next);
+  });
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    stage.addEventListener('wheel', onWheel, {passive: false});
+    return () => stage.removeEventListener('wheel', onWheel);
+  }, [onWheel]);
+
   // ---- dragging: React Flow moves the node, the position store keeps it (as the node's centre)
   const onNodesChange = useStable<Parameters<OnNodesChange<FlowNode>>, void>(changes => {
     for (const change of changes) {
@@ -992,7 +1028,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
 
   const many = nodes.length > VISIBLE_ONLY_FROM;
   // The reader can pan the drawing up to its edge, with the paper a fitted drawing keeps; never into the void.
-  const extent: [[number, number], [number, number]] = [[bounds.x - PAD, bounds.y - PAD], [bounds.x + bounds.w + PAD, bounds.y + bounds.h + PAD]];
+  const extent: [[number, number], [number, number]] = [[extentBox.x, extentBox.y], [extentBox.x + extentBox.w, extentBox.y + extentBox.h]];
   return (
     <DiagramContext.Provider value={ctx}>
       <div
@@ -1135,7 +1171,7 @@ function Overview(p: {
         className={css.controls}
         zoom={v.zoom}
         width={width}
-        inView={whole ? undefined : {count: inView, total: p.total, title: 'nodes in view. Drag to pan'}}
+        inView={whole ? undefined : {count: inView, total: p.total, title: 'nodes in view. Drag or scroll to pan'}}
         onZoomOut={p.onZoomOut}
         onZoomIn={p.onZoomIn}
         onFit={p.onFit}
