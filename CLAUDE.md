@@ -75,6 +75,10 @@ which `.github/workflows/release.yml` writes (decision `release-every-merge`):
   prop never gets a grammar of its own. Every string format that exists reads what it can, says what it corrected
   (`fixed`) and says what it could not read (`warn`, or a `W_*` report from the tab); it never falls back silently.
 - **The server and the viewer share pure functions from the catalog**, so they always agree on what a value means.
+- **The viewer is compiled by the React Compiler (`compiled-viewer`).** A value read during render from something
+  mutable (the A2UI surface and component models, a closure over outside state) is cached and never read again: read
+  it through `useSyncExternalStore` (`kit/subscribe.ts`). A `useMemo` or `useCallback` dependency the callback does
+  not read is dropped: make a refetch trigger part of the value. The viewer tests run compiled code.
 - Do not commit `plugin/dist`. Never add a shipped dependency without a licence the build allows (`scripts/notices.ts`).
 
 ## Decision log
@@ -321,3 +325,24 @@ Decisions explained here:
   of 12 parts for one merge decision: hence numbers and ranges read in the session (rule 7), the reader's sixth
   question (check three claims in the repository) and the review's limit of about eight parts.
   Not done: re-measuring after those three changes; a check that a cited line range starts at the symbol it names.
+- **`compiled-viewer`: the React Compiler compiles the whole viewer (2026-11-22).** The owner's call. The viewer build
+  and the viewer tests run `babel-plugin-react-compiler` 1.0 through `@rolldown/plugin-babel` (`reactCompiler()` in
+  `packages/viewer/vite.config.ts`, imported by `vitest.config.ts`), on every file under `src/`; node_modules are left
+  as published. The compiled code imports `react/compiler-runtime`, part of `react`, so no shipped dependency was added.
+  Why: memoization by hand is easy to get wrong and is spread over every view; the compiler memoizes each component and
+  hook by what it reads. Rejected: compiling only the lazy chunks (the eager script still reached 200.0 kB, as layout
+  and content are eager); annotation mode (`'use memo'` per component, little benefit until components are marked);
+  the Rust port `oxc-transform-react` (plugin-react marks it experimental).
+  Cost, measured gzip: the eager script 193.8 -> 204.6 kB, so its limit went from 195 to 210 kB and the hard figure
+  from 200 to 215 kB (the owner's figures); the diagrams chunk 39.2 -> 45.1 kB, line 43 -> 52 kB by the
+  `diagram-engine-in-worker` rule; charts 48.6 -> 60.3, table 24.1 -> 28.8, code 13.9 -> 20.5 kB.
+  What it broke, and the rule it gives (see Rules that are easy to break): `useRows` listed the envelope and the
+  revision as `useMemo` dependencies its callback did not read, so the compiler dropped them and a re-run never
+  refetched (they are fields of the request now); `useCalcNote` read a Slider's bound path from the component model
+  during render, so a Slider the spec rebound kept its old path (now a `useSyncExternalStore` snapshot through
+  `subscribeComponent`, with a test); the test harness read the surface during render and kept the deleted one.
+  Not done: about 39 functions are left uncompiled, which the compiler does silently (they run as written): most read
+  a ref during render (the latest-value pattern in `kit/hooks.ts`, `kit/report.ts`, flowkit, `chartkit/Chart.tsx`),
+  some use syntax it does not read yet (`{[k as T]: ...}`, `||=`, `??=`, a getter in an object literal), and
+  `table/nav.ts` uses `@tanstack/react-virtual`, which it marks incompatible. `DateCell` is compiled, so its age
+  ("3 d") is kept until its date changes, also across midnight. No lint rule for the Rules of React (Biome has none).

@@ -10,6 +10,7 @@ import type {DataInput} from '@glimpse/catalog';
 import type {DataClient, RowsPage} from '@glimpse/catalog';
 import {assignSlots, catVar} from './color.ts';
 import {matchSelection, type SelectionMatch, type SelectionRef} from './select.ts';
+import {subscribeComponent} from './subscribe.ts';
 
 /** Provided once by the shell: <HostContext.Provider value={transport}>. */
 export const HostContext = createContext<DataClient | null>(null);
@@ -130,26 +131,7 @@ export function useSurfaceId(): string {
  */
 export function useChildIds(componentId: string, prop = 'children'): string[] {
   const surface = useSurface();
-  const subscribe = useCallback(
-    (notify: () => void) => {
-      const components = surface.componentsModel;
-      let own = components.get(componentId)?.onUpdated.subscribe(notify);
-      // The component may not exist yet, or may be deleted and created again under the same id.
-      const created = components.onCreated.subscribe(model => {
-        if (model.id !== componentId) return;
-        own?.unsubscribe();
-        own = model.onUpdated.subscribe(notify);
-        notify();
-      });
-      const deleted = components.onDeleted.subscribe(id => { if (id === componentId) notify(); });
-      return () => {
-        own?.unsubscribe();
-        created.unsubscribe();
-        deleted.unsubscribe();
-      };
-    },
-    [surface, componentId],
-  );
+  const subscribe = useCallback((notify: () => void) => subscribeComponent(surface.componentsModel, componentId, notify), [surface, componentId]);
   // The snapshot is a string so it is stable between renders; ids are parsed back out below.
   const snapshot = useSyncExternalStore(subscribe, () => {
     const value: unknown = surface.componentsModel.get(componentId)?.properties[prop];
@@ -251,9 +233,11 @@ export function useRows(ds: Dataset | undefined, query: {offset?: number; limit?
   const key = pageable?.$ds;
   const {offset, limit, sort, q} = query;
   // One object per request: what the state holds is known to answer it, or not, by identity.
-  // `pageable` (the envelope object) and `rev` are refetch triggers, not inputs of the request.
+  // `envelope` (a re-run puts a new one under the same key) and `rev` are refetch triggers, not inputs of the query.
+  // They are fields, not only dependencies: the React Compiler memoizes on what the callback reads and drops a
+  // dependency it does not read (decision compiled-viewer).
   const request = useMemo(
-    () => (key === undefined ? undefined : {host, query: {surfaceId: surface.id, key, offset, limit, sort, q}}),
+    () => (key === undefined ? undefined : {host, envelope: pageable, rev, query: {surfaceId: surface.id, key, offset, limit, sort, q}}),
     [host, surface, key, pageable, offset, limit, sort, q, rev],
   );
   type Request = NonNullable<typeof request>;

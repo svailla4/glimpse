@@ -6,7 +6,8 @@
 import {useA2uiSurface, useSignalValue} from '@a2ui/react';
 import {computed, getValue} from '@a2ui/web_core/v1_0';
 import {callsIn, explainValue, reads, type CalcReason} from '@glimpse/catalog';
-import {useMemo} from 'react';
+import {useCallback, useMemo, useSyncExternalStore} from 'react';
+import {subscribeComponent} from './subscribe.ts';
 
 /** The absolute $/path a component's `value` binds as the spec wrote it, or undefined. */
 function boundPath(raw: unknown): string | undefined {
@@ -24,15 +25,20 @@ function boundPath(raw: unknown): string | undefined {
 export function useCalcNote(componentId: string): Exclude<CalcReason, 'not set' | 'relative'> | undefined {
   const surface = useA2uiSurface();
   if (!surface) throw new Error('Glimpse views must render inside an A2uiSurface');
-  // Read on each render of the caller, so a Slider bound to another path is followed.
-  const path = boundPath(surface.componentsModel.get(componentId)?.properties.value);
+  const components = surface.componentsModel;
+  // A snapshot, not a read during render, so a Slider the spec binds to another path is followed (decision compiled-viewer).
+  const subscribe = useCallback((notify: () => void) => subscribeComponent(components, componentId, notify), [components, componentId]);
+  const path = useSyncExternalStore(subscribe, () => boundPath(components.get(componentId)?.properties.value));
+  // `componentsMap` is the model's own map, the same object for the life of the surface: the compiled code keys this
+  // memo on it, where `entries` would be a new iterator on every render.
+  const all = components.componentsMap;
   const note = useMemo(
     () =>
       computed(() => {
         if (path === undefined) return undefined;
         // getValue inside computed() subscribes to every path a call reads, and only to those.
         const read = (at: string) => getValue(surface.dataModel.getSignal(at));
-        for (const [, model] of surface.componentsModel.entries) {
+        for (const model of all.values()) {
           for (const {call} of callsIn(model.properties)) {
             if (!reads(call, path)) continue;
             const got = explainValue(call, read);
@@ -41,7 +47,7 @@ export function useCalcNote(componentId: string): Exclude<CalcReason, 'not set' 
         }
         return undefined;
       }),
-    [surface, path],
+    [surface, all, path],
   );
   return useSignalValue(note) as Exclude<CalcReason, 'not set' | 'relative'> | undefined;
 }

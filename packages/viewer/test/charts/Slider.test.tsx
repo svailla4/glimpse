@@ -3,7 +3,7 @@
 // 250 / 1,000 / 500; with seats at 80,000 they read 400 / 1,600 / 800.
 import {act, fireEvent, screen} from '@testing-library/react';
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {renderExpress, type RenderedSpec} from '../harness.tsx';
+import {buildPatch, buildSurface, renderExpress, renderSpec, type RenderedSpec} from '../harness.tsx';
 
 const WHAT_IF = [
   `root=Page('Ticketing: on-sale what-if',[inputs,peak])`,
@@ -165,5 +165,28 @@ describe('Slider', () => {
     // The user's own input is not the spec's problem: no report, and A2UI raised no EXPRESSION_ERROR.
     expect(view.reports).toEqual([]);
     expect(view.errors).toEqual([]);
+  });
+
+  it('follows a patch that binds it to another path: the note is about the path it binds now', async () => {
+    // The bound path is read from the mutable component model; compiled code that read it during render kept the first
+    // one (decision compiled-viewer).
+    const base = buildSurface(
+      's',
+      [
+        `root=Page('T',[secs,peak])`,
+        `$/w={seats:50000,secs:120,zero:0}`,
+        `secs=Slider('Sale window',$/w/secs)`,
+        `peak=Stat(div($/w/seats,$/w/zero),'checkout req/s')`,
+      ].join('\n'),
+    );
+    const view = renderSpec(base);
+    await view.settle();
+    const note = screen.getByRole('status');
+    expect(note.textContent).toBe('');
+    const before = field('Sale window');
+    view.send(buildPatch('s', base, `secs=Slider('Sale window',$/w/zero)`));
+    await view.settle();
+    expect(field('Sale window')).toBe(before);
+    expect(note.textContent).toBe('Not computed at this value: division by zero');
   });
 });
