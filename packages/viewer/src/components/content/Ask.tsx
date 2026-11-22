@@ -1,6 +1,8 @@
-// Ask (design 5.3): a decision card. The prompt, one outlined button per option, and after a pick the chosen option
-// stays marked next to "queued for the agent". A pick dispatches `name` (default `answer`) with {choice}.
-// The options are one tab stop: arrows, Home and End move between them, Enter or Space picks.
+// Ask (design 5.3): a decision card. The prompt, set as a question, then one numbered tile per option on a grid that
+// fills the card: side by side when there is room, stacked when there is not. After a pick the chosen tile keeps a
+// tick in place of its number, the others fade, and "queued for the agent" says where the pick went. A pick dispatches
+// `name` (default `answer`) with {choice}. The numbers are drawn by CSS, so an option's text and accessible name are
+// the option alone. The options are one tab stop: either pair of arrows, Home and End move, Enter or Space picks.
 import type * as C from '@glimpse/catalog';
 import {useId, useState} from 'react';
 import {Icon, useHostActions, useLinkStatus, type GlView} from '../../kit/index.ts';
@@ -21,7 +23,7 @@ export const AskView: GlView<typeof C.Ask> = ({id, props}) => {
   // Once the session is over the shell drops whatever a view sends: nothing picked here can reach the agent.
   const ended = useLinkStatus() === 'ended';
   const chosen = choice !== undefined && options.includes(choice) ? choice : undefined;
-  const roving = useRoving<HTMLDivElement>(options.length, 'horizontal');
+  const roving = useRoving<HTMLDivElement>(options.length, 'both');
   const name = typeof props.name === 'string' && EVENT_NAME.test(props.name) ? props.name : 'answer';
   const prompt = textOf(props.prompt);
 
@@ -43,7 +45,11 @@ export const AskView: GlView<typeof C.Ask> = ({id, props}) => {
         </p>
       ) : null}
       {options.length > 0 ? (
-        <div className={styles.options} role="group" aria-label="Options" ref={roving.ref} onKeyDown={roving.onKeyDown}>
+        <div
+          className={styles.options}
+          role="group"
+          data-picked={chosen !== undefined || undefined}
+          aria-label="Options" ref={roving.ref} onKeyDown={roving.onKeyDown}>
           {options.map((option, i) => (
             <button
               key={option}
@@ -56,7 +62,9 @@ export const AskView: GlView<typeof C.Ask> = ({id, props}) => {
               {...roving.item(i)}
               onClick={() => pick(option)}
             >
-              {option === chosen ? <Icon name="check" /> : null}
+              <span className={styles.index} aria-hidden="true">
+                {option === chosen ? <Icon name="check" /> : null}
+              </span>
               <span className={styles.optionLabel}>{option}</span>
             </button>
           ))}

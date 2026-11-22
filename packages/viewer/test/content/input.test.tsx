@@ -100,6 +100,11 @@ describe('Ask', () => {
     options[0]!.focus();
     fireEvent.keyDown(options[0]!, {key: 'ArrowRight'});
     expect(document.activeElement).toBe(options[1]);
+    // the tiles wrap or stack with the cell's width, so either pair of arrows moves
+    fireEvent.keyDown(options[1]!, {key: 'ArrowDown'});
+    expect(document.activeElement).toBe(options[2]);
+    fireEvent.keyDown(options[2]!, {key: 'ArrowUp'});
+    expect(document.activeElement).toBe(options[1]);
     fireEvent.keyDown(options[1]!, {key: 'End'});
     expect(document.activeElement).toBe(options[2]);
     expect(options.map(option => option.tabIndex)).toEqual([-1, -1, 0]);

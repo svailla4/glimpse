@@ -14,7 +14,8 @@ export interface Roving<E extends HTMLElement> {
 
 const PAGE = 10;
 
-export function useRoving<E extends HTMLElement>(count: number, axis: 'vertical' | 'horizontal' = 'vertical'): Roving<E> {
+/** `both` is for items that wrap into rows or stack, as the cell's width decides: either pair of arrows moves. */
+export function useRoving<E extends HTMLElement>(count: number, axis: 'vertical' | 'horizontal' | 'both' = 'vertical'): Roving<E> {
   const ref = useRef<E>(null);
   const [active, setActive] = useState(0);
   const current = Math.min(active, Math.max(0, count - 1));
@@ -30,11 +31,11 @@ export function useRoving<E extends HTMLElement>(count: number, axis: 'vertical'
 
   const onKeyDown = (event: KeyboardEvent): boolean => {
     if (event.altKey || event.metaKey || event.ctrlKey || count === 0) return false;
-    const back = axis === 'vertical' ? 'ArrowUp' : 'ArrowLeft';
-    const forward = axis === 'vertical' ? 'ArrowDown' : 'ArrowRight';
+    const back = event.key === 'ArrowLeft' ? axis !== 'vertical' : event.key === 'ArrowUp' && axis !== 'horizontal';
+    const forward = event.key === 'ArrowRight' ? axis !== 'vertical' : event.key === 'ArrowDown' && axis !== 'horizontal';
     let target: number;
-    if (event.key === forward) target = current + 1;
-    else if (event.key === back) target = current - 1;
+    if (forward) target = current + 1;
+    else if (back) target = current - 1;
     else if (event.key === 'Home') target = 0;
     else if (event.key === 'End') target = count - 1;
     else if (event.key === 'PageDown') target = current + PAGE;
