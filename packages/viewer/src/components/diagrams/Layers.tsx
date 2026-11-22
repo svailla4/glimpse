@@ -2,7 +2,7 @@
 // by the catalog's cleanLayers (decision links-through-node-ids), as on the server; how much of it is drawn is decided here.
 import type * as C from '@glimpse/catalog';
 import {cleanLayers, type EntityRef, type LayerItem, type LayersAst} from '@glimpse/catalog';
-import {useEffect, useMemo, useRef, useState, type KeyboardEvent} from 'react';
+import {useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent} from 'react';
 import {
   DataGate, EntityLink, PlateAside, Redline, fileEntity, fmtNum, linkedEntity, marksSelection, useDataset, useReportState, useSelection, useSizeCap,
   type GlView,
@@ -34,6 +34,38 @@ function bandsOf(ast: LayersAst, componentId: string): Band[] {
   }));
 }
 
+/** The narrowest and widest box, in px. */
+const BOX_MIN = 120;
+const BOX_MAX = 300;
+
+/**
+ * One width for every box of the view, from its longest text: a label fits in about two lines, a note on one. Every
+ * tier lays its boxes out in columns of this width, so the columns line up from tier to tier and the boxes of a row
+ * are as tall as each other. Boxes sized to their own text, up to 240 px, made a ragged pile of one- and two-line
+ * boxes beside empty space. The width is estimated from character counts (the UI font is about 6.4 px a character at
+ * 12 px, mono 6.6 px at 11 px); a label longer than its box takes up to three lines, then is cut and gets a tooltip.
+ */
+export function boxWidth(bands: readonly Band[]): number {
+  let need = 0;
+  for (const band of bands) {
+    for (const item of band.items) need = Math.max(need, item.label.length * 3.4, (item.note?.length ?? 0) * 6.6);
+  }
+  return Math.round(Math.min(BOX_MAX, Math.max(BOX_MIN, need + 26)));
+}
+
+/**
+ * Gives a tier name or an item its full text as a tooltip while CSS cuts it, and none while it shows whole: a tooltip
+ * that repeats the text under the pointer is noise. The plate header does the same (kit/Frame.tsx).
+ */
+function revealCut(event: PointerEvent<HTMLElement>): void {
+  const holder = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-full]') : null;
+  if (!holder || !event.currentTarget.contains(holder)) return;
+  const texts = holder.hasAttribute('data-text') ? [holder] : [...holder.querySelectorAll<HTMLElement>('[data-text]')];
+  const cut = texts.some(text => text.scrollHeight > text.clientHeight + 1 || text.scrollWidth > text.clientWidth + 1);
+  if (cut) holder.title = holder.dataset.full ?? '';
+  else holder.removeAttribute('title');
+}
+
 function LayersBody(p: {id: string; data: unknown}) {
   const {id} = p;
   // As tall as its tiers, up to the plate's maximum height (decision content-sized-plates); past that it scrolls.
@@ -42,6 +74,7 @@ function LayersBody(p: {id: string; data: unknown}) {
   const {selected} = useSelection(id);
   const cleaned = useMemo(() => cleanLayers(p.data), [p.data]);
   const bands = useMemo(() => (cleaned.ok ? bandsOf(cleaned.ast, id) : []), [cleaned, id]);
+  const box = useMemo(() => boxWidth(bands), [bands]);
   // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
   const dropped = cleaned.ok ? cleaned.dropped : [];
   // Entries left out, counted: the list folds past 8, and its lines for unknown keys leave nothing out.
@@ -105,18 +138,20 @@ function LayersBody(p: {id: string; data: unknown}) {
   const ariaLabel = `Layers, ${bands.length} ${bands.length === 1 ? 'tier' : 'tiers'}, ${items} ${items === 1 ? 'item' : 'items'}: ${bands.slice(0, 8).map(band => band.name.slice(0, 40)).join(', ')}`;
 
   return (
-    <div ref={rootRef} className={css.root} style={{maxHeight: cap}} role="group" aria-label={ariaLabel} onKeyDown={onKeyDown}>
+    <div ref={rootRef} className={css.root} style={{maxHeight: cap}} role="group" aria-label={ariaLabel} onKeyDown={onKeyDown} onPointerOver={revealCut}>
       {notes.length > 0 ? <PlateAside><span className={css.marginal} data-gl-note="">{notes.join(' · ')}</span></PlateAside> : null}
+      <div className={css.tiers} style={{'--gl-layer-box': `${box}px`} as CSSProperties}>
       {bands.map((band, b) => (
         <section key={b} className={css.band} data-layer={band.name} data-first={b === 0 || undefined} aria-label={band.name}>
-          <h4 className={css.name} title={band.name}>{band.name}</h4>
+          <h4 className={css.name} data-full={band.name} data-text="">{band.name}</h4>
+          <div className={css.body}>
           <ul className={css.items}>
             {band.items.map((item, i) => {
               const isSelected = isHit(item.entity);
-              const box = (
+              const content = (
                 <span className={css.box}>
-                  <span className={css.label}>{item.label}</span>
-                  {item.note ? <span className={css.sub}>{item.note}</span> : null}
+                  <span className={css.label} data-text="">{item.label}</span>
+                  {item.note ? <span className={css.sub} data-text="">{item.note}</span> : null}
                 </span>
               );
               return (
@@ -127,17 +162,19 @@ function LayersBody(p: {id: string; data: unknown}) {
                   data-entity={item.entity ? '' : undefined}
                   data-selected={isSelected || undefined}
                   data-dim={(anySelected && !isSelected) || undefined}
-                  title={item.note ? `${item.label}: ${item.note}` : item.label}
+                  data-full={item.note ? `${item.label}: ${item.note}` : item.label}
                 >
-                  {item.entity ? <EntityLink entity={item.entity} componentId={id}>{box}</EntityLink> : box}
+                  {item.entity ? <EntityLink entity={item.entity} componentId={id}>{content}</EntityLink> : content}
                 </li>
               );
             })}
             {band.more > 0 ? <li className={css.item} data-more=""><span className={css.box}><span className={css.sub}>+ {fmtNum(band.more)} more</span></span></li> : null}
           </ul>
           {band.note ? <p className={css.note}>{band.note}</p> : null}
+          </div>
         </section>
       ))}
+      </div>
     </div>
   );
 }

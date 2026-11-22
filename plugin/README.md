@@ -8,7 +8,9 @@ Glimpse lets Claude show you a codebase instead of describing it. Ask for an ove
 |---|---|
 | `.claude-plugin/plugin.json` | The plugin manifest. |
 | `.mcp.json` | Starts the Glimpse MCP server: `node dist/server.mjs`, one process per Claude Code session. |
-| `skills/glimpse/SKILL.md` | Tells Claude when and how to use Glimpse. Generated from the catalog by the build; do not edit by hand. |
+| `skills/glimpse/SKILL.md` | Tells Claude when to use Glimpse and what every view does: the answer first, intent before code, plain words, code shown only as evidence and the rest one click away. Generated from the catalog by the build, like everything under `skills/` and `commands/`; do not edit by hand. |
+| `skills/glimpse/references/` | One guide per task, read only for that task: `design.md` (a blueprint to review before building), `review.md` (a verdict, then the evidence) and `explain.md` (a map, one path through it, the rules not to break), each with a worked example. |
+| `commands/` | `/glimpse:design`, `/glimpse:review` and `/glimpse:explain`: each loads the skill with its guide. |
 | `hooks/hooks.json` | A `UserPromptSubmit` hook. It asks the server what you did in the tab since the last prompt (a selection, a button, an answer) and passes that to Claude, so "click, then type" works without an extra tool call. |
 | `dist/server.mjs` | The server, bundled into one file with no dependencies to install. Build output. |
 | `dist/viewer/` | The viewer, a static single-page app served by the server. Build output. |
@@ -26,13 +28,13 @@ claude plugin marketplace add svailla4/glimpse
 claude plugin install glimpse@glimpse
 ```
 
-Then ask, for example, "show me an overview of this repo" or "review my working tree in Glimpse". Update with `claude plugin update glimpse@glimpse`.
+Then ask, for example, "show me an overview of this repo" or "review my working tree in Glimpse", or use a command: `/glimpse:design rate limits per API key`, `/glimpse:review 123` (a pull request), `/glimpse:explain how a login works`. For a design, a review or an explanation, Claude checks the page with a fresh agent that has not seen the conversation before telling you it is ready. Update with `claude plugin update glimpse@glimpse`.
 
 To run your own build from a checkout instead:
 
 ```sh
 npm install          # .npmrc sets ignore-scripts
-npm run build        # writes plugin/dist/server.mjs, plugin/dist/viewer/ and plugin/skills/glimpse/SKILL.md
+npm run build        # writes plugin/dist/server.mjs, plugin/dist/viewer/, the skill and the commands
 cd /path/to/your/project
 claude --plugin-dir /path/to/glimpse/plugin
 ```

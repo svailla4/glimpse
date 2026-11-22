@@ -2,9 +2,9 @@ import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
 import {
-  COMPONENT_EXAMPLES, COMPONENTS, EXAMPLES, INSTRUCTIONS_BUDGET, INSTRUCTIONS_LINE_MAX, INSTRUCTIONS_TARGET, SHAPES, SHARED_PROPS, SKILL_DESCRIPTION, SOURCES, VIEWS, VIEW_INDEX, componentDoc,
+  COMPONENT_EXAMPLES, COMPONENTS, EXAMPLES, INSTRUCTIONS_BUDGET, INSTRUCTIONS_LINE_MAX, INSTRUCTIONS_TARGET, SHAPES, SHARED_PROPS, SOURCES, VIEWS, VIEW_INDEX, componentDoc,
   calcDoc, componentIndex, componentsDrawing, exampleCall, examplesDoc, hasFrame, partsOf, serverInstructions, shapeKinds, shapesOf, signatureOf,
-  skillMarkdown, sourceDoc, sourceGroups, sourceIndex, typedSignatureList, viewDoc, viewGroups, type Prop,
+  sourceDoc, sourceGroups, sourceIndex, typedSignatureList, viewDoc, viewGroups, type Prop,
 } from '../src/index.ts';
 import {buildArtifacts} from '../testing/artifacts.ts';
 import {buildSurface, strictErrors} from '../testing/index.ts';
@@ -374,26 +374,16 @@ describe('view docs', () => {
   });
 });
 
-describe('examples and the plugin skill', () => {
-  it('has the six recipes of the design, each a complete call', () => {
-    expect(EXAMPLES.map(e => e.title)).toEqual(['Explain a module', 'Review a branch', 'Plan a feature', 'Trace a request', 'Find hotspots', 'Compare two modules']);
+describe('examples', () => {
+  it('has the six recipes, each a complete call; the first four are the worked examples of the skill guides', () => {
+    expect(EXAMPLES.map(e => e.title)).toEqual(['Design a feature', 'Review a change', 'Explain a module', 'Trace a request', 'Find hotspots', 'Compare two modules']);
+    expect(EXAMPLES.map(e => e.guide)).toEqual(['design', 'review', 'explain', 'explain', undefined, undefined]);
     for (const example of EXAMPLES) {
       expect(example.view ?? example.id, example.title).toBeTruthy();
       expect(exampleCall(example)).toMatch(/^show\{(view|id):/);
       if (!example.view) expect(example.spec).toMatch(/^root=Page\(/);
     }
     expect(examplesDoc().split('\n\n')).toHaveLength(6);
-  });
-
-  it('skillMarkdown has the front matter the plugin needs, the instructions and every recipe', () => {
-    const skill = skillMarkdown();
-    expect(skill.startsWith(`---\nname: glimpse\ndescription: ${SKILL_DESCRIPTION}\n---\n`)).toBe(true);
-    expect(skill).toContain(serverInstructions());
-    for (const example of EXAMPLES) {
-      expect(skill).toContain(`### ${example.title}`);
-      if (example.spec) expect(skill).toContain(example.spec);
-    }
-    expect(skill).not.toMatch(/\/Users\/|\/home\//);
   });
 });
 

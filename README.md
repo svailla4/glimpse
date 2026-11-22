@@ -39,7 +39,7 @@ claude plugin install glimpse@glimpse
 
 Then start Claude Code in any project and ask for something: "show me an overview of this repo", "what does this branch change?", "walk me through `src/auth/service.ts`". The first view opens a browser tab.
 
-The plugin brings the MCP server, a skill that tells Claude when and how to use Glimpse, and a `UserPromptSubmit` hook that passes along what you clicked in the tab since your last prompt. Nothing is built on your machine: the install comes from the `release` branch, which the release workflow builds from each version tag.
+The plugin brings the MCP server, a skill that tells Claude when to use Glimpse and what a good view of a design, a review or an explanation looks like, the commands `/glimpse:design`, `/glimpse:review` and `/glimpse:explain`, and a `UserPromptSubmit` hook that passes along what you clicked in the tab since your last prompt. Nothing is built on your machine: the install comes from the `release` branch, which the release workflow builds from each version tag.
 
 To update: `claude plugin update glimpse@glimpse` (or turn on auto-update for the marketplace under `/plugin`), then `/reload-plugins` in an open session.
 
@@ -51,7 +51,7 @@ To update: `claude plugin update glimpse@glimpse` (or turn on auto-update for th
 git clone <this repository> glimpse
 cd glimpse
 npm install          # .npmrc sets ignore-scripts: no dependency runs code at install time
-npm run build        # writes plugin/dist/server.mjs, plugin/dist/viewer/ and plugin/skills/glimpse/SKILL.md
+npm run build        # writes plugin/dist/server.mjs, plugin/dist/viewer/, the skill and the commands
 ```
 
 The build also writes the third-party notices, `plugin/dist/THIRD_PARTY_NOTICES.md`, and the licence files that the fonts and the ELK layout engine need next to them (see [Licence](#licence)).
@@ -212,7 +212,7 @@ The catalog prefers accepting a reasonable guess to documenting the one right sp
 | Code (5) | `CodeBlock` `CodeView` `DiffView` `CodeTour` `SymbolOutline` |
 | Input (3) | `Button` `Ask` `Slider` |
 
-Charts are Glimpse's own SVG on `d3-scale`, `d3-shape` and `d3-hierarchy`. `Graph`, `Flowchart` and `ERDiagram` are laid out by [ELK](https://eclipse.dev/elk/) (`elkjs`, layered: group frames sized around their members, orthogonal edges routed across them, ports for table columns) in a Web Worker, and drawn with [React Flow](https://reactflow.dev) (`@xyflow/react`) in the same hairline style; both load only when a page first shows one of these diagrams. `SequenceDiagram` and `Layers` are drawn directly in SVG and HTML; a `SequenceDiagram` draws Mermaid's `alt`, `opt`, `loop`, `par`, `critical` and `break` blocks as labelled frames, with a dashed divider for each `else`, `and` or `option`, and closes a block left open with a `fixed` line. Its arrow keys step through the messages and select each in turn, so a message whose actors stand for Flowchart nodes lights its route there, including the nodes it passes through (`via`). A Flowchart node with a `note` or a `file` is marked with a dot; its note shows on hover and in the plate's margin when it is selected, and its file opens with Cmd-click. A `Slider` writes the number its `$/path` binds, and every value computed from that path with `add`, `sub`, `mul` or `div` follows at once in the tab. A diagram is as tall as it is at the scale that fits the plate's width, up to the plate's maximum: when all of it is readable there (text at 10 px or more on screen) it opens fitted and centred, otherwise at a readable zoom with pan, zoom and a minimap. A two-finger scroll pans a drawing that does not fit and scrolls the page over one that does, or once a pan reaches the drawing's edge; a pinch zooms. Tables and code views are virtualised; syntax highlighting is done by the server (Shiki) and sent as token classes, never as markup.
+Charts are Glimpse's own SVG on `d3-scale`, `d3-shape` and `d3-hierarchy`. `Graph`, `Flowchart` and `ERDiagram` are laid out by [ELK](https://eclipse.dev/elk/) (`elkjs`, layered: group frames sized around their members, orthogonal edges routed across them, ports for table columns) in a Web Worker, and drawn with [React Flow](https://reactflow.dev) (`@xyflow/react`) in the same hairline style; both load only when a page first shows one of these diagrams. `SequenceDiagram` and `Layers` are drawn directly in SVG and HTML; a `SequenceDiagram` draws Mermaid's `alt`, `opt`, `loop`, `par`, `critical` and `break` blocks as labelled frames, with a dashed divider for each `else`, `and` or `option`, and closes a block left open with a `fixed` line. It has the same zoom bar as the other diagrams (zoom out and in, fit to view, actual size, `+` `-` `0` `1`, a pinch, and how many steps are in view while it scrolls), and its actor row stays in place as the steps scroll under it. Its arrow keys step through the messages and select each in turn, so a message whose actors stand for Flowchart nodes lights its route there, including the nodes it passes through (`via`). A Flowchart node with a `note` or a `file` is marked with a dot; its note shows on hover and in the plate's margin when it is selected, and its file opens with Cmd-click. A `Slider` writes the number its `$/path` binds, and every value computed from that path with `add`, `sub`, `mul` or `div` follows at once in the tab. A diagram is as tall as it is at the scale that fits the plate's width, up to the plate's maximum: when all of it is readable there (text at 10 px or more on screen) it opens fitted and centred, otherwise at a readable zoom with pan, zoom and a minimap. A two-finger scroll pans a drawing that does not fit and scrolls the page over one that does, or once a pan reaches the drawing's edge; a pinch zooms. Tables and code views are virtualised; syntax highlighting is done by the server (Shiki) and sent as token classes, never as markup.
 
 ## Data sources
 
@@ -272,7 +272,7 @@ packages/
              generated docs and catalog.json, fixtures. DOM-free.
   viewer/    the React single-page app: the kit that binds views to A2UI, and the component library
   server/    the MCP server, the loopback viewer host, the repository analyzers
-plugin/      the Claude Code plugin: manifest, skill, hook, and dist/ (build output, not committed)
+plugin/      the Claude Code plugin: manifest, skill, commands, hook, and dist/ (build output, not committed)
 e2e/         the end-to-end suite; e2e/README.md lists what it covers and its known failures
 scripts/     build, budgets, demo, generate, check-paths, and the third-party notices (notices.ts, notices/)
 ```

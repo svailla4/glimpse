@@ -222,6 +222,28 @@ test.describe('diagram-engine-in-worker/content-sized-plates: diagrams open whol
     expect(await wheel(five, 120)).toEqual([true]);
     expect((await geometry(five)).nodes).toEqual(still);
   });
+
+  // Boxes sized to their own text, up to 240 px, beside a 140 px name column cut with an ellipsis, drew a ragged pile:
+  // 'HOST (LOOPBACK HTT…', two-line boxes beside empty room, and a third line cut off.
+  test('Layers lines its boxes up in equal columns from tier to tier and shows every tier name whole', async ({page, glimpse}) => {
+    const data = `[{name:'MCP tool',items:['showRequest: arguments to spec texts','showTool: wait, then write the result']},
+{name:'Host (loopback HTTP)',items:['SseHub.publish: one frame to every tab','POST /api/renderer: reports and clicks']},
+{name:'Viewer (the tab)',items:['hub: EventSource and fetch','apply: messages into the MessageProcessor','implement: grid cell, title frame and error boundary around each component']}]`;
+    await showSettled(page, glimpse, 'tiers', `root=Page('Tiers',[l])\nl=Layers(${data},title='Tiers')`);
+    const plate = page.locator('.gl-cell[data-id="l"]');
+    const boxes = await plate.locator('[data-layer-item]').evaluateAll(items => items.map(item => {
+      const box = item.getBoundingClientRect();
+      return {x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.width), h: Math.round(box.height)};
+    }));
+    expect(new Set(boxes.map(box => box.x)).size, JSON.stringify(boxes)).toBe(3);
+    expect(new Set(boxes.map(box => box.w)).size, JSON.stringify(boxes)).toBe(1);
+    // the last tier's three boxes are one row, as tall as its tallest
+    expect(new Set(boxes.slice(4).map(box => `${box.y} ${box.h}`)).size, JSON.stringify(boxes)).toBe(1);
+    const cut = await plate.locator('[data-text]').evaluateAll(texts => texts
+      .filter(text => text.scrollHeight > text.clientHeight + 1 || text.scrollWidth > text.clientWidth + 1)
+      .map(text => text.textContent));
+    expect(cut).toEqual([]);
+  });
 });
 
 // Decision links-through-node-ids: diagrams and lists the model writes link through node ids (node:'PG'), and a selected message lights
@@ -284,5 +306,54 @@ co=SequenceDiagram({actors:{U:{label:'User',node:'Client'},G:{label:'Gateway',no
     expect(file).toMatch(/\.(?:ts|py|go)$/);
     await expect(page.locator('.gl-cell[data-id="diagrams_children_2"]')).toContainText(`Postgres: users and sessions · ${file}`);
     await expect.poll(() => selections(glimpse), {timeout: 3000}).toEqual([`viewer: select node DB Postgres ${file} (gallery)`]);
+  });
+});
+
+// A sequence diagram has the zoom bar the flowkit diagrams have: the readout, how many steps are in view while it
+// scrolls, zoom that keeps the middle of the window where it was, and Fit to view.
+test.describe('SequenceDiagram zoom', () => {
+  test.use({viewport: {width: 1440, height: 900}});
+
+  test('zooms about the middle of its window and fits the whole drawing', async ({page, glimpse}) => {
+    const steps = Array.from({length: 30}, (_, i) => `['A','B','step ${i + 1}']`).join(',');
+    await showSettled(page, glimpse, 'seq-zoom', `root=Page('Zoom',[s])\ns=SequenceDiagram({steps:[${steps}]},title='Long',size='m')`);
+    const cell = page.locator('.gl-cell[data-id="s"]');
+    const scroll = cell.locator('[role="img"]');
+    const readout = cell.locator('[data-zoom]');
+    await expect(readout).toHaveText('100%');
+    await expect(cell.locator('[data-in-view]')).toHaveText(/^\d+ of 30 in view$/);
+    // the plate keeps its maximum height, bar included
+    expect(await scroll.evaluate(el => el.parentElement!.getBoundingClientRect().height)).toBeLessThanOrEqual(281);
+
+    // the step nearest the middle of the window stays there across a zoom
+    await scroll.evaluate(el => { el.scrollTop = 300; });
+    const middle = () => scroll.evaluate(el => {
+      const box = el.getBoundingClientRect();
+      const y = box.top + box.height / 2;
+      let best = -1;
+      let gap = Infinity;
+      for (const step of el.querySelectorAll('[data-step]')) {
+        const r = step.getBoundingClientRect();
+        const d = Math.abs(r.top + r.height / 2 - y);
+        if (d < gap) {
+          gap = d;
+          best = Number(step.getAttribute('data-step'));
+        }
+      }
+      return best;
+    });
+    const before = await middle();
+    await cell.getByRole('button', {name: 'Zoom in'}).click();
+    await expect(readout).toHaveText('125%');
+    expect(Math.abs((await middle()) - before)).toBeLessThanOrEqual(1);
+
+    await cell.getByRole('button', {name: 'Fit to view'}).click();
+    await expect(cell.locator('[data-in-view]')).toHaveCount(0);
+    expect(Number.parseInt((await readout.textContent()) ?? '', 10)).toBeLessThan(100);
+    expect(await scroll.evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+
+    await scroll.focus();
+    await page.keyboard.press('1');
+    await expect(readout).toHaveText('100%');
   });
 });
