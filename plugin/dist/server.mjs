@@ -31314,36 +31314,60 @@ var init_docs = __esm({
     VIEW_INDEX = "overview | tree [path] | deps [path] | hotspots [path] | history [path] | file <path> | symbol <name> | stack | diff [range] | feature | gallery";
     EXAMPLES = [
       {
+        title: "Design a feature",
+        when: "Before something is built: a blueprint the user reviews and the builders work from.",
+        id: "limits",
+        guide: "design",
+        spec: `root=Page('Rate limits per API key',[lead,does,shape,why,scope,plan,ask],'Design, before building')
+lead=Text('**What:** each API key may make 100 requests a minute; past that, the API answers 429 with the seconds to wait. **Why:** the batch jobs of one client slowed every other client last week. **Unchanged:** clients under the limit, and the admin routes.')
+does=Steps([{title:'A key over 100 requests in a minute gets 429 and a Retry-After header'},{title:'A key under the limit sees no added latency'},{title:'The count resets every minute, per key'},{title:'Admin routes are never limited'}],title='What it will do')
+$/shape={groups:{new:'New'},nodes:{Req:'Request',RL:{label:'Limiter',group:'new',note:'Counts requests per key per minute'},C:{label:'Counter store',shape:'store',group:'new'},H:{label:'Route handlers',file:'src/api/routes.ts#L12-40'},E:{label:'429 + Retry-After',shape:'pill',group:'new'}},edges:[['Req','RL','every request'],['RL','C','count +1'],['RL','H','under the limit'],['RL','E','over the limit']]}
+shape=Flowchart($/shape,title='Every request passes the limiter before a handler',span=7)
+why=Column([Callout('Counts live in memory: there is one instance today. The store is an interface, so Redis can replace it when we run more.','decision','Counter store'),Callout('A fixed one-minute window rather than a sliding one: simpler to reason about. A burst of 200 across a window edge is accepted.','decision','Window'),Callout('The admin router is mounted before the API router, so it skips the limiter. That is wanted; a test pins it.','risk','Admin routes')],span=5)
+scope=Callout('Limits per user, quotas per plan, and a report of who was limited.','note','Not in this change')
+plan=Steps([{title:'Limiter and counter store',file:'src/api/limiter.ts',note:'Checked by behaviours 1 and 3'},{title:'Mount it in front of the API router',file:'src/api/routes.ts#L12',note:'Checked by behaviour 2'},{title:'Test that admin routes skip it',file:'test/api/admin.test.ts',note:'Behaviour 4'}],title='Work plan')
+ask=Ask('What limit should a key get? The first is what I would build.',['100 a minute','1,000 an hour','Set per key'],'limit')`
+      },
+      {
+        title: "Review a change",
+        when: "The user asks for a review of a branch, a pull request or the working tree.",
+        id: "review",
+        guide: "review",
+        spec: `root=Page('Review: rate limits per API key',[lead,shape,risk,warn,good,look,why,diff],'main..HEAD')
+lead=Text('**Verdict:** ready after one fix. The limiter counts and resets correctly and is tested, but it also limits the admin routes, which the design ruled out. **What it does:** a key over 100 requests a minute now gets 429 and the seconds to wait.')
+$/shape={groups:{before:'Before',after:'After'},nodes:{R1:{label:'Request',group:'before'},H1:{label:'Handlers',group:'before'},R2:{label:'Request',group:'after'},L:{label:'Limiter (new)',group:'after',file:'src/api/limiter.ts'},H2:{label:'Handlers',group:'after'},E:{label:'429',shape:'pill',group:'after'}},edges:[['R1','H1','every request'],['R2','L','every request'],['L','H2','under the limit'],['L','E','over the limit']]}
+shape=Flowchart($/shape,title='Requests now pass the limiter before any handler')
+risk=Callout('An admin running a bulk export is cut off after 100 requests: the limiter is mounted before the admin router, not after it. **Fix:** mount it after the admin router, and add the test the design asked for.','risk','Must fix: admin routes are limited',file='src/api/routes.ts#L14')
+warn=Callout('A limited client never learns its limit, because the 429 body is empty. **Fix:** return the limit and the seconds to wait as JSON.','warn','Should fix: empty 429 body',file='src/api/limiter.ts#L31')
+good=Callout('The counter store sits behind an interface, so moving to Redis is one new class.','tip','Done well')
+look=Steps([{title:'The limiter',file:'src/api/limiter.ts',note:'The window reset and the Retry-After value'},{title:'Where it is mounted',file:'src/api/routes.ts#L10-20',note:'Its order against the admin router'},{title:'The tests',file:'test/api/limiter.test.ts',note:'They cover the window; no admin case yet'}],title='Where to look, in order')
+why=Callout('A fixed one-minute window rather than a sliding one, for simplicity (the commit message says so).','decision','A choice the change makes')
+diff=Plate('Every line',[DiffView('main..HEAD')],collapsed=true)`
+      },
+      {
         title: "Explain a module",
-        when: "The user asks how a part of the codebase works.",
+        when: "The user asks how a part of the codebase works, or is new to it.",
         id: "auth",
-        spec: `root=Page('How auth works',[intro,deps,churn,tour],'src/auth')
-intro=Text('Login goes through **AuthService**; tokens are cached for 15 minutes. See [[src/auth/service.ts#L20]].')
-deps=Graph('deps.modules src/auth',title='What it depends on',span=7)
-churn=DataTable('git.churn src/auth top=15',title='Most changed files',span=5)
-tour=CodeTour([{file:'src/auth/service.ts#L20-58',title:'Entry point',note:'Validates credentials and issues the token.'},{file:'src/auth/cache.ts#L5-30',note:'Token cache with a TTL.'}],title='Reading order')`
-      },
-      {
-        title: "Review a branch",
-        when: "The user asks what a branch or the working tree changes.",
-        view: "diff main..HEAD",
-        spec: `$/notes='**Risk:** the limiter is not wired into the admin routes. See [[src/api/routes.ts#L12]].'`
-      },
-      {
-        title: "Plan a feature",
-        when: "Before and while building something: the plan, the design and the live diff.",
-        view: "feature",
-        spec: `$/plan=[{title:'Add limiter middleware',status:'doing',file:'src/api/limiter.ts'},{title:'Wire into the router'},{title:'Tests'}]
-$/design={nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond'},H:'Handler',E:{label:'429',shape:'pill'}},edges:[['Req','RL'],['RL','H','no'],['RL','E','yes']]}
-design=Flowchart($/design,title='Design')`
+        guide: "explain",
+        spec: `root=Page('How auth works',[lead,terms,map,code,path,rule,start],'src/auth')
+lead=Text('Auth turns a login into a session token, then checks that token on every later request. The rest of the API trusts the user it puts on the request.')
+terms=KeyValue([{label:'Session token',value:'A signed string the client sends with each request; valid for 15 minutes.'},{label:'Guard',value:'The middleware that checks the token before a route runs.'}],title='Words used here')
+map=Layers([{name:'API',items:[{label:'login route',file:'src/api/routes.ts#L12-30'},{label:'guard',file:'src/auth/guard.ts'}]},{name:'Auth',items:[{label:'AuthService',file:'src/auth/service.ts'},{label:'token cache',file:'src/auth/cache.ts'}]},{name:'Storage',items:[{label:'users table',file:'src/db/users.ts'}]}],title='Only the Auth layer reads the users table',span=7)
+code=CodeView(title='Click a box to read its code',span=5)
+path=SequenceDiagram({steps:[['Client','API','POST /login'],['API','Auth','verify(password)'],['Auth','DB','find user'],['DB','Auth','row','reply'],['Auth','API','token','reply'],['API','Client','200 + token','reply']]},title='A login, end to end')
+rule=Callout('Nothing outside src/auth reads the users table or signs a token: the guard is the only way a request gets a user.','warn','A rule not to break',file='src/auth/guard.ts#L5-25')
+start=Steps([{title:'The login route',file:'src/api/routes.ts#L12-30',note:'How the body becomes a verify call'},{title:'verify',file:'src/auth/service.ts#L20-58',note:'A constant-time compare, then the token'},{title:'The guard',file:'src/auth/guard.ts#L5-25',note:'What every later request goes through'}],title='Where to start reading')`
       },
       {
         title: "Trace a request",
         when: "The user asks what happens when something is called.",
         id: "login",
-        spec: `root=Page('Login request',[seq,tour])
-seq=SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify(password)'],['Auth','DB','find user'],['DB','Auth','row','reply'],['Auth','API','token','reply'],['API','User','200','reply']]},title='Sequence',span=6)
-tour=CodeTour([{file:'src/api/routes.ts#L12-30',title:'Route',note:'Parses the body and calls the service.'},{file:'src/auth/service.ts#L20-58',title:'Service',note:'Constant-time compare, then issues the token.'}],title='In the code',span=6)`
+        guide: "explain",
+        spec: `root=Page('What happens on POST /login',[lead,seq,code,stops])
+lead=Text('A login is checked against the stored hash and answered with a token; nothing else is written. The password never leaves the Auth service.')
+seq=SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify(password)'],['Auth','DB','find user'],['DB','Auth','row','reply'],['Auth','API','token','reply'],['API','User','200 + token','reply']]},title='One database read, then a token',span=7)
+code=CodeView(title='Click a stop to read it',span=5)
+stops=Steps([{title:'Route',file:'src/api/routes.ts#L12-30',note:'Parses the body and calls the service'},{title:'Service',file:'src/auth/service.ts#L20-58',note:'A constant-time compare, then the token'}],title='In the code')`
       },
       {
         title: "Find hotspots",
@@ -31361,6 +31385,13 @@ b=Column([Text('src/api','lead'),Treemap('files.tree src/api',size='m'),DataTabl
 edges=Graph('deps.modules src',title='How they connect')`
       }
     ];
+  }
+});
+
+// packages/catalog/src/skill.ts
+var init_skill = __esm({
+  "packages/catalog/src/skill.ts"() {
+    "use strict";
   }
 });
 
@@ -32322,6 +32353,7 @@ var init_src = __esm({
     init_sources();
     init_catalog3();
     init_docs();
+    init_skill();
     init_views();
     init_gallery();
     init_transport();
@@ -112880,7 +112912,7 @@ function assertResolvesInside(target2, outputRoot, filename) {
   }
 }
 var YAML_LINE_WIDTH, Skill, SkillSet;
-var init_skill = __esm({
+var init_skill2 = __esm({
   "node_modules/@a2ui/agent/src/skill/skill.js"() {
     init_errors9();
     YAML_LINE_WIDTH = 80;
@@ -113036,7 +113068,7 @@ var SkillGenerator;
 var init_generator3 = __esm({
   "node_modules/@a2ui/agent/src/skill/generator.js"() {
     init_errors9();
-    init_skill();
+    init_skill2();
     SkillGenerator = class {
       constructor(fmt) {
         this.fmt = fmt;
@@ -113159,10 +113191,10 @@ ${examples}`;
 });
 
 // node_modules/@a2ui/agent/src/skill/index.js
-var init_skill2 = __esm({
+var init_skill3 = __esm({
   "node_modules/@a2ui/agent/src/skill/index.js"() {
     init_generator3();
-    init_skill();
+    init_skill2();
   }
 });
 
@@ -113252,7 +113284,7 @@ var init_src2 = __esm({
     init_generator2();
     init_processor();
     init_streamed_answer();
-    init_skill2();
+    init_skill3();
   }
 });
 
