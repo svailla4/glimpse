@@ -67,24 +67,19 @@ describe('file anchors and line ranges', () => {
 
 describe('[[path]] file refs in prose', () => {
   it('finds the refs drawn as links: not blank at either end, one line, not inside code', () => {
-    expect(fileRefs('See [[src/a.ts#L10-20]] and [[b.ts]].', false)).toEqual(['src/a.ts#L10-20', 'b.ts']);
-    expect(fileRefs('[[ a.ts]] [[a.ts ]] [[]] [[a\nb]] [[a[b]] [a.ts] [[ok.ts]]', false)).toEqual(['ok.ts']);
-    expect(fileRefs('`[[in/code.ts]]` then [[out.ts]] and **[[bold.ts]]**', false)).toEqual(['out.ts', 'bold.ts']);
-    expect(fileRefs(`[[${'x'.repeat(401)}]] [[${'y'.repeat(400)}]]`, false)).toEqual(['y'.repeat(400)]);
-    // Markdown: inline code of any backtick run and fenced blocks stay literal (a longer run closes a fence, as in
-    // CommonMark); text after a closed fence does not, and a fence never closed runs to the end
-    const md = 'A [[a.ts]] ``[[code.ts]]``\n```ts\n[[fenced.ts]]\n````\n[[after.ts]]\n~~~\n[[tilde.ts]]\n~~~\n[[last.ts]]\n```\n[[open.ts]]';
-    expect(fileRefs(md, true)).toEqual(['a.ts', 'after.ts', 'last.ts']);
-    // the same text read as inline markup has no fences
-    expect(fileRefs('```\n[[a.ts]]\n```', false)).toEqual(['a.ts']);
+    expect(fileRefs('See [[src/a.ts#L10-20]] and [[b.ts]].')).toEqual(['src/a.ts#L10-20', 'b.ts']);
+    expect(fileRefs('[[ a.ts]] [[a.ts ]] [[]] [[a\nb]] [[a[b]] [a.ts] [[ok.ts]]')).toEqual(['ok.ts']);
+    expect(fileRefs('`[[in/code.ts]]` then [[out.ts]] and **[[bold.ts]]**')).toEqual(['out.ts', 'bold.ts']);
+    expect(fileRefs(`[[${'x'.repeat(401)}]] [[${'y'.repeat(400)}]]`)).toEqual(['y'.repeat(400)]);
+    // Text has inline code spans only (decision D26): a fence is not code, so a ref between fences is a link
+    expect(fileRefs('```\n[[a.ts]]\n```')).toEqual(['a.ts']);
   });
 
   it('replaces only the refs the swap names, and leaves the rest of the text as written', () => {
     const swap = (loc: string) => (loc.startsWith('readme') ? loc.replace('readme.md', 'README.md') : undefined);
-    expect(replaceFileRefs('[[readme.md#L2]], `[[readme.md]]` and [[src/a.ts]] [[readme.md]]', false, swap)).toBe('[[README.md#L2]], `[[readme.md]]` and [[src/a.ts]] [[README.md]]');
-    expect(replaceFileRefs('```\n[[readme.md]]\n```\n[[readme.md]]', true, swap)).toBe('```\n[[readme.md]]\n```\n[[README.md]]');
+    expect(replaceFileRefs('[[readme.md#L2]], `[[readme.md]]` and [[src/a.ts]] [[readme.md]]', swap)).toBe('[[README.md#L2]], `[[readme.md]]` and [[src/a.ts]] [[README.md]]');
     const text = 'no refs [[ here ]]';
-    expect(replaceFileRefs(text, false, swap)).toBe(text);
+    expect(replaceFileRefs(text, swap)).toBe(text);
   });
 
   it('FILE_REF is one pattern, not global, so each user builds its own scanner', () => {
@@ -127,7 +122,8 @@ describe('gallery', () => {
 
     expect(props(one('CodeView')).mark).toBe('L1-3');
     expect(readLineMarks(props(one('CodeView')).mark)).toEqual({ranges: [[1, 3]], ignored: []});
-    expect(props(one('Markdown')).title, 'title= on Markdown draws a plate (F039)').toBe('Markdown');
+    const titled = surface.components.filter(c => c.component === 'Text' && props(c).title !== undefined);
+    expect(titled.map(c => props(c).title), 'title= on Text draws a plate (F039)').toEqual(['Text']);
   });
 
   it('has an ER table wide enough to fold and graph nodes with a status', () => {
@@ -155,8 +151,8 @@ describe('gallery', () => {
       expect(by('FileRef').map(c => parseFileLoc(c.file).path)).toEqual([file]);
       expect(by('Callout').filter(c => c.file).map(c => parseFileLoc(c.file).path)).toEqual([file]);
       expect(by('KeyValue')[0]!.data.Entry).toBe(file);
-      for (const text of [...by('Text'), ...by('Markdown')].map(c => String(c.text))) for (const path of paths(text)) expect(path).toBe(file);
-      expect([...by('Text'), ...by('Markdown')].flatMap(c => paths(String(c.text))).length).toBeGreaterThanOrEqual(2);
+      for (const text of by('Text').map(c => String(c.text))) for (const path of paths(text)) expect(path).toBe(file);
+      expect(by('Text').flatMap(c => paths(String(c.text))).length).toBeGreaterThanOrEqual(2);
       const flow = cleanFlow(by('Flowchart')[0]!.data);
       const layers = cleanLayers(by('Layers')[0]!.data);
       const schema = cleanSchema(data.schema);
@@ -206,7 +202,7 @@ describe('gallery', () => {
     expect(table.span).toBeUndefined();
   });
 
-  it('still shows all 45 components, and its diagrams draw whole', () => {
+  it('still shows all 44 components, and its diagrams draw whole', () => {
     expect(new Set(surface.components.map(c => c.component)).size).toBe(COMPONENT_BY_NAME.size);
     const flow = cleanFlow(props(one('Flowchart')).data);
     expect(flow.ok && {nodes: flow.ast.nodes.length, groups: flow.ast.groups.length, fixes: flow.fixes, dropped: flow.dropped}).toEqual({nodes: 6, groups: 1, fixes: [], dropped: []});

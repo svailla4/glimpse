@@ -28,7 +28,7 @@ afterEach(() => {
 
 const spec = (id: string, text: string) => ({id, sources: [text], fresh: false});
 const preset = (name: string, patch?: string) => ({id: name, sources: [VIEW_BY_NAME.get(name)!.build(undefined, {}), ...(patch ? [patch] : [])], fresh: true, view: name});
-const BASE = `$/notes='hi'\nroot=Page('Demo',[notes,table,slow])\nnotes=Markdown($/notes)\ntable=DataTable('fake.rows src top=5',title='Rows')\nslow=DataTable('fake.slow')`;
+const BASE = `$/notes='hi'\nroot=Page('Demo',[notes,table,slow])\nnotes=Text($/notes)\ntable=DataTable('fake.rows src top=5',title='Rows')\nslow=DataTable('fake.slow')`;
 
 const created = (frame: Frame) => {
   const message = frame.messages.find(m => 'createSurface' in m) as Extract<A2uiMessage, {createSurface: unknown}> | undefined;
@@ -129,7 +129,7 @@ describe('show', () => {
       expect(outcome.warnings).toEqual([]);
       await outcome.checks;
       expect(outcome.warnings).toEqual([]);
-      expect(new Set([...t.session.surfaces.get('gallery')!.components.values()].map(c => c.component)).size).toBe(45);
+      expect(new Set([...t.session.surfaces.get('gallery')!.components.values()].map(c => c.component)).size).toBe(44);
     } finally {
       t.session.dispose();
       await repo.cleanup();
@@ -138,8 +138,8 @@ describe('show', () => {
 
   it('reports repairs and unbound paths', async () => {
     const t = start();
-    const outcome = await t.session.show(spec('demo', `root=Page('x',[Markdwn($/nothing),DataTable($/ds/ghost)])`));
-    expect(outcome.fixes).toEqual(['Markdwn -> Markdown']);
+    const outcome = await t.session.show(spec('demo', `root=Page('x',[Tetx($/nothing),DataTable($/ds/ghost)])`));
+    expect(outcome.fixes).toEqual(['Tetx -> Text']);
     expect(outcome.warnings).toEqual(['unbound $/nothing', 'unbound $/ds/ghost']);
   });
 
@@ -154,7 +154,7 @@ describe('show', () => {
 
 describe('all or nothing', () => {
   it.each([
-    ['a compile error', `notes=Markdown($/notes)\nnotes=Callout('x','purple')`],
+    ['a compile error', `notes=Text($/notes)\nnotes=Callout('x','purple')`],
     ['an unknown source', `table=DataTable('git.chrun')`],
     ['a reserved path', `$/notes='x'\n$/ds/fake_slow=1`],
     ['bad notation', `notes=Flowchart('A -> B')`],

@@ -257,9 +257,9 @@
         },
         {
           "id": "content_children_2",
-          "component": "Markdown",
-          "text": "Prose with **bold**, `code`, a list:\n- one\n- two\n\nand a file ref [[README.md#L1]].",
-          "title": "Markdown",
+          "component": "Text",
+          "text": "Text with **bold**, `code` and line breaks:\n- one\n- two\n\nand a file ref [[README.md#L1]].",
+          "title": "Text",
           "span": 6
         },
         {

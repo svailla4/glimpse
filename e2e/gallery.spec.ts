@@ -1,4 +1,4 @@
-// show{view:"gallery"}: all 45 components render, in both themes and at two widths; one screenshot per section is
+// show{view:"gallery"}: all 44 components render, in both themes and at two widths; one screenshot per section is
 // stored under <artifacts>/gallery/<theme>-<width>/ (and attached to the report). There is no pixel gate yet: the
 // design adds a visual diff once the look is approved.
 import {mkdirSync, readFileSync} from 'node:fs';
@@ -11,8 +11,8 @@ const catalog = JSON.parse(readFileSync(join(ROOT, 'packages', 'catalog', 'gener
 const COMPONENTS = Object.keys(catalog.components);
 const SECTIONS = ['layout', 'content', 'data', 'charts', 'diagrams', 'code', 'input'];
 
-test('the catalog has 45 components', () => {
-  expect(COMPONENTS).toHaveLength(45);
+test('the catalog has 44 components', () => {
+  expect(COMPONENTS).toHaveLength(44);
 });
 
 test('gallery: every component renders; a screenshot per section, theme and width', async ({page, glimpse, watched}, testInfo) => {

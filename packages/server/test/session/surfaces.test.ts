@@ -38,7 +38,7 @@ const apply = (store: SurfaceStore, id: string, source: string | string[], optio
 /** A stable serialisation of everything the store holds. */
 const dump = (store: SurfaceStore) => JSON.stringify(store.all().map(r => ({...r, components: [...r.components], bindings: [...r.bindings], drills: [...r.drills]})));
 
-const BASE = `$/notes='hi'\nroot=Page('Demo',[notes,table,side])\nnotes=Markdown($/notes)\ntable=DataTable('fake.rows src',title='Rows')\nside=Column([Text('a'),Stats()])`;
+const BASE = `$/notes='hi'\nroot=Page('Demo',[notes,table,side])\nnotes=Text($/notes)\ntable=DataTable('fake.rows src',title='Rows')\nside=Column([Text('a'),Stats()])`;
 
 describe('draft and commit', () => {
   it('create: a new id becomes a record with title, data, bindings and new dataset keys', () => {
@@ -62,7 +62,7 @@ describe('draft and commit', () => {
   it('patch: data and component updates keep the mode, the delta is what is published', () => {
     const store = new SurfaceStore();
     apply(store, 'demo', BASE);
-    const d = apply(store, 'demo', `$/notes='changed'\nnotes=Markdown($/notes)`, {now: 2000});
+    const d = apply(store, 'demo', `$/notes='changed'\nnotes=Text($/notes)`, {now: 2000});
     expect(d.mode).toBe('patch');
     expect(d.delta.map(m => Object.keys(m).find(k => k !== 'version'))).toEqual(['updateComponents', 'updateDataModel']);
     expect(d.newKeys).toEqual([]);
@@ -92,7 +92,7 @@ describe('draft and commit', () => {
   it('replace: a component that changed type', () => {
     const store = new SurfaceStore();
     apply(store, 'demo', BASE);
-    expect(apply(store, 'demo', `notes=Text('now text')`).mode).toBe('replace');
+    expect(apply(store, 'demo', `notes=Callout('now a callout')`).mode).toBe('replace');
   });
 
   it('replace: root redefined; unreachable components are pruned and the data is kept', () => {

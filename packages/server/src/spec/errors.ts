@@ -290,8 +290,27 @@ export function componentNearest(name: string, n = 3): string[] {
     .sort((x, y) => x.d - y.d || x.index - y.index).slice(0, n).map(x => x.candidate);
 }
 
-/** The single component a misspelt name most plausibly meant (same limits as closeMatch), or undefined. */
+/**
+ * Components that were removed, the one that now draws what they drew, and what the rename does not carry over.
+ * Decision D26: Markdown became Text, so a spec written from habit or from an older skill still draws.
+ */
+export const REMOVED_COMPONENTS: Readonly<Record<string, {to: string; note: string}>> = {
+  Markdown: {to: 'Text', note: 'headings, tables and code fences show as written: use Section, DataTable, CodeBlock'},
+};
+
+/**
+ * The removed component a name stands for, written in any case ('Markdown', 'markdown': a lower-case name of a
+ * component is that component, decision D25), or undefined.
+ */
+export function removedComponent(name: string): {to: string; note: string} | undefined {
+  const key = Object.keys(REMOVED_COMPONENTS).find(removed => removed.toLowerCase() === name.toLowerCase());
+  return key === undefined ? undefined : REMOVED_COMPONENTS[key];
+}
+
+/** The single component a misspelt or removed name most plausibly meant (same limits as closeMatch), or undefined. */
 export function componentMatch(name: string): string | undefined {
+  const removed = removedComponent(name);
+  if (removed) return removed.to;
   const limit = name.length <= 4 ? 1 : 2;
   const ranked = COMPONENT_NAMES.map(candidate => ({candidate, d: componentDistance(name, candidate)})).sort((x, y) => x.d - y.d);
   const [best, second] = ranked;
@@ -313,10 +332,10 @@ export function calcTarget(name: string): CalcName | undefined {
  * of a single component in another case ('text', 'table' -> DataTable, 'tree' -> FileTree), or a longer near miss of
  * one ('tabel'), is that component. Any other lower-case name is a function ('pow', 'round': components are written
  * Capitalised, so pow is not read as Row) or, when it is a word of several components ('chart', 'code'), either. A
- * capitalised name is a component.
+ * capitalised name is a component, and so is a removed one in any case ('markdown' is drawn as Text, decision D26).
  */
 export function calleeKind(name: string): 'function' | 'component' | 'either' {
-  if (COMPONENT_BY_NAME.has(name)) return 'component';
+  if (COMPONENT_BY_NAME.has(name) || removedComponent(name)) return 'component';
   if (calcName(name) !== undefined) return 'function';
   const match = componentMatch(name);
   if (!/^[a-z]/.test(name)) return calcTarget(name) !== undefined && match === undefined ? 'function' : 'component';

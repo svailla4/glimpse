@@ -447,7 +447,7 @@ describe('what a component draws is its state for the host (D3, D14, F032, V060-
         <Subpart><Redline code="E_DIFF" id="DiffView#d" message="logo.png: unreadable" /><Drafting label="reading a.ts" /></Subpart>
       </>
     );
-    const view = renderStub(`root=Page('T',[m,d])\nm=Markdown('x')\nd=DiffView()`, {Markdown: Prose, DiffView: Diff});
+    const view = renderStub(`root=Page('T',[m,d])\nm=Callout('x')\nd=DiffView()`, {Callout: Prose, DiffView: Diff});
     await view.settle();
     expect(view.cell('m').querySelector('[data-gl-state="empty"]')?.textContent).toBe('no code');
     expect(view.reports).toEqual([]);

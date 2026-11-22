@@ -192,10 +192,10 @@ describe('component docs', () => {
     expect(componentDoc('DataTable')).toMatch(/A graph source \(deps\.modules, diff\.impact\) gives its nodes as rows; Graph draws the graph\./);
   });
 
-  // F039: title= on Markdown, Text and Stats was an E_PROP, so the model dropped the heading it was asked for.
-  it.each(['Text', 'Markdown', 'Chips', 'Stats'])('%s takes the frame props, so title= draws a plate instead of failing', name => {
+  // F039: title= on Markdown (since D26, Text), Text and Stats was an E_PROP, so the model dropped the heading it was asked for.
+  it.each(['Text', 'Chips', 'Stats'])('%s takes the frame props, so title= draws a plate instead of failing', name => {
     expect(hasFrame(COMPONENTS.find(c => c.name === name)!)).toBe(true);
-    const arg = name === 'Text' || name === 'Markdown' ? "'Body'," : '';
+    const arg = name === 'Text' ? "'Body'," : '';
     const messages = buildSurface('framed', `root=Page('T',[${name}(${arg}title='What changed and why',note='n',size='m')])`);
     expect(strictErrors(messages)).toEqual([]);
     const first = messages[0]!;

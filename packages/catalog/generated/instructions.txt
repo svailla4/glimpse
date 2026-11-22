@@ -11,10 +11,10 @@ Graphs (deps.modules, deps.files, diff.impact) need Graph().
 INLINE: Stats|KeyValue [{label,value}] Layers [{name,items:['a','b']}] ERDiagram [{name,columns:[{name,type?,pk?,fk?:'users.id'}]}] Flowchart {nodes:{A:{label,shape?,group?}},edges:[['A','B','x'?]],groups?} SequenceDiagram {steps:[['A','B','x','reply'?],{note,over},{loop:'x',steps}]}
 CODE: CodeView('src/a.ts#L10-40') and DiffView('main..HEAD') read from disk; DiffView() is the live working tree; files are 'path#L10-20' everywhere.
 LINKS: a click selects ($/ui/sel, $/ui/file); CodeView() and SymbolOutline() follow it; node:'PG' links an item, row or actor to node PG.
-SHARED, not listed below: span=1..12 on all (12-column grid); title= (numbered plate), note=, size=s|m|l|xl|fill (only a max height) on Text, Markdown, Chips, Stats, KeyValue, Steps, List, Data, Charts, Diagrams, Code (not Sparkline, CodeBlock).
+SHARED, not listed below: span=1..12 on all (12-column grid); title= (numbered plate), note=, size=s|m|l|xl|fill (only a max height) on Text, Chips, Stats, KeyValue, Steps, List, Data, Charts, Diagrams, Code (not Sparkline, CodeBlock).
 Components (? optional):
 Layout: Page|Section(title, children, subtitle?) Plate(title, children, note?) Grid(children, cols?, gap?) Row|Column(children, gap?, align?) Tabs(labels, children) Split(start, end, ratio?)
-Content: Text(text, tone?) Markdown(text) Callout(text, kind?, title?, file?) KeyValue(data, cols?) Chips|Stats(data?) FileRef(file, label?) Steps(data) Stat(value, label?, delta?) List(data, limit?)
+Content: Text(text, tone?) Callout(text, kind?, title?, file?) KeyValue(data, cols?) Chips|Stats(data?) FileRef(file, label?) Steps(data) Stat(value, label?, delta?) List(data, limit?)
 Data: DataTable(data, columns?, sort?) FileTree(data?, metric?, heat?) CommitList(data?) JsonView(data)
 Charts: Sparkline(data) SegmentedBar(data?, label?, value?) BarChart|LineChart(data, x?, y?, series?, mode?) ScatterPlot(data, x?, y?, r?, color?, label?) Histogram(data, value?) Heatmap(data, x?, y?, value?) CalendarHeatmap(data?, date?, value?) Treemap|Icicle(data?, value?, color?)
 Diagrams: Graph(data?, dir?, focus?) Flowchart(data, dir?) SequenceDiagram|Layers|ERDiagram(data)

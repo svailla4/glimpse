@@ -177,17 +177,17 @@ describe('kit contract: implement() + hooks against the final catalog', () => {
   });
 
   it('a throwing view and a missing view are contained per component', async () => {
-    const processor = new MessageProcessor<ReactCatalogComponent>([makeCatalog({Markdown: Boom})]);
+    const processor = new MessageProcessor<ReactCatalogComponent>([makeCatalog({Callout: Boom})]);
     processor.processMessages({version: V, createSurface: {surfaceId: 's', catalogId: CATALOG_ID, components: [
       {id: 'root', component: 'Page', title: 'T', children: ['a', 'b', 'c']},
-      {id: 'a', component: 'Markdown', text: 'x'},
+      {id: 'a', component: 'Callout', text: 'x'},
       {id: 'b', component: 'Icicle', data: {name: '', path: '', dir: true, files: 0, loc: 0, bytes: 0}},
       {id: 'c', component: 'Text', text: 'still here'},
     ]}} as never);
     const spy = console.error; console.error = () => {};
     try {
       render(<A2uiSurface surface={processor.model.getSurface('s')!} />);
-      await waitFor(() => expect(screen.getByTestId('redline-Markdown#a').textContent).toBe('E_RENDER boom'));
+      await waitFor(() => expect(screen.getByTestId('redline-Callout#a').textContent).toBe('E_RENDER boom'));
       expect((await screen.findByTestId('redline-Icicle#b')).textContent).toContain('E_NOT_IMPLEMENTED');
       expect(screen.getByTestId('c').textContent).toBe('"still here"');
     } finally { console.error = spy; }
@@ -419,17 +419,17 @@ describe('borrowView: a view from another chunk, with a fallback', () => {
   ];
 
   it.each(cases)('%s', async (_label, Code, testId) => {
-    const Markdown: GlView<typeof C.Markdown> = ({id, props}) => <div data-testid={id}><Code id={id} props={{code: props.text, lang: 'ts'}} child={() => null} /></div>;
-    const processor = new MessageProcessor<ReactCatalogComponent>([makeCatalog({Markdown})]);
+    const Callout: GlView<typeof C.Callout> = ({id, props}) => <div data-testid={id}><Code id={id} props={{code: props.text, lang: 'ts'}} child={() => null} /></div>;
+    const processor = new MessageProcessor<ReactCatalogComponent>([makeCatalog({Callout})]);
     processor.processMessages({version: V, createSurface: {surfaceId: 's', catalogId: CATALOG_ID, components: [
-      {id: 'root', component: 'Page', title: 'T', children: ['m', 't']}, {id: 'm', component: 'Markdown', text: 'let a'}, {id: 't', component: 'Text', text: 'after'}]}} as never);
+      {id: 'root', component: 'Page', title: 'T', children: ['m', 't']}, {id: 'm', component: 'Callout', text: 'let a'}, {id: 't', component: 'Text', text: 'after'}]}} as never);
     const spy = console.error; console.error = () => {};
     try {
       render(<A2uiSurface surface={processor.model.getSurface('s')!} />);
       const shown = await screen.findByTestId(testId);
       expect(shown.textContent).toBe(testId === 'm-rich' ? 'ts:let a' : 'let a');
       // the borrower itself never shows a redline
-      expect(screen.queryByTestId('redline-Markdown#m')).toBeNull();
+      expect(screen.queryByTestId('redline-Callout#m')).toBeNull();
       expect(screen.getByTestId('t').textContent).toBe('"after"');
     } finally { console.error = spy; }
   });

@@ -127,23 +127,15 @@ export const Split = component('Split', {
   ...CELL,
 });
 
-// ---- content (10) ----------------------------------------------------------------------------------------------
+// ---- content (9) ----------------------------------------------------------------------------------------------
 export const Text = component('Text', {
   family: 'content', chunk: 'content', tier: 'A',
-  doc: 'Short text with inline `code`, *em*, **strong** and [[path#L10]] file refs.',
+  doc: 'Text with inline `code`, *em*, **strong** and [[path#L10]] file refs; line breaks are kept.',
 }, {
   text: p.text('Text with inline micro-markup. No HTML.'),
   tone: opt(p.enum(['body', 'lead', 'dim', 'caption', 'mono'], 'Style.', {
     normal: 'body', default: 'body', muted: 'dim', secondary: 'dim', subtle: 'dim', small: 'caption', code: 'mono', heading: 'lead', title: 'lead',
   })),
-  ...FRAME,
-});
-
-export const Markdown = component('Markdown', {
-  family: 'content', chunk: 'content', tier: 'A',
-  doc: 'Prose in Markdown (GFM tables, fenced code, [[path#L10]] refs). Raw HTML is ignored.',
-}, {
-  text: p.text('Markdown source.'),
   ...FRAME,
 });
 
@@ -526,7 +518,7 @@ export const Slider = component('Slider', {
 
 export const COMPONENTS = [
   Page, Plate, Section, Grid, Row, Column, Tabs, Split,
-  Text, Markdown, Callout, KeyValue, Chips, FileRef, Steps, Stat, Stats, List,
+  Text, Callout, KeyValue, Chips, FileRef, Steps, Stat, Stats, List,
   DataTable, FileTree, CommitList, JsonView,
   Sparkline, SegmentedBar, BarChart, LineChart, ScatterPlot, Histogram, Heatmap, CalendarHeatmap, Treemap, Icicle,
   Graph, Flowchart, SequenceDiagram, Layers, ERDiagram,

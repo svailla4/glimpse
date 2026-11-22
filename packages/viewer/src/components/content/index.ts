@@ -10,7 +10,6 @@ import {ChipsView} from './Chips.tsx';
 import {FileRefView} from './FileRef.tsx';
 import {KeyValueView} from './KeyValue.tsx';
 import {ListView} from './List.tsx';
-import {MarkdownView} from './Markdown.tsx';
 import {SegmentedBarView} from './SegmentedBar.tsx';
 import {SparklineView} from './Sparkline.tsx';
 import {StatView} from './Stat.tsx';
@@ -20,7 +19,6 @@ import {TextView} from './Text.tsx';
 
 export const views: Record<string, GlView<any>> = {
   Text: TextView,
-  Markdown: MarkdownView,
   Callout: CalloutView,
   KeyValue: KeyValueView,
   Chips: ChipsView,

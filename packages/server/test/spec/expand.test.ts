@@ -578,14 +578,14 @@ describe('expandMessages: what is certain to draw wrong', () => {
     const out = expand(`$/n='[[src/bound.ts]]'
 root=Page('x',[a,b,c,d,e])
 a=Text('See [[src/a.ts#L3]] and [[src/a.ts#L3]], not \`[[src/code.ts]]\`, and the dir [[src/auth/]].')
-b=Markdown('**[[src/b.ts#L1-9]]**\\n\`\`\`\\n[[src/fenced.ts]]\\n\`\`\`\\n[[src/after.ts]]')
+b=Text('**[[src/b.ts#L1-9]]**\\nthen [[src/after.ts]]')
 c=Callout('Race in [[src/c.ts]].',file='src/c2.ts')
 d=Ask('Keep [[src/d.ts]]?',['yes','no'])
-e=Markdown($/n)`);
+e=Text($/n)`);
     expect(out.files).toEqual([
       {where: 'Text#a', file: 'src/a.ts#L3'},
-      {where: 'Markdown#b', file: 'src/b.ts#L1-9'},
-      {where: 'Markdown#b', file: 'src/after.ts'},
+      {where: 'Text#b', file: 'src/b.ts#L1-9'},
+      {where: 'Text#b', file: 'src/after.ts'},
       {where: 'Callout#c', file: 'src/c2.ts'},
       {where: 'Callout#c', file: 'src/c.ts'},
       {where: 'Ask#d', file: 'src/d.ts'},
@@ -595,12 +595,12 @@ e=Markdown($/n)`);
 
   // Finding V071 for refs: a ref written in another case is drawn, and checked, under the inventory's name.
   it('writes a [[path]] ref the session found in another case under the inventory name, said once', () => {
-    const spec = `root=Page('x',[Text('Read [[readme.md#L2]], then [[readme.md#L2]] and \`[[readme.md]]\`.'),Markdown('[[Docs/Guide.md]] and [[src/ok.ts]]')])`;
+    const spec = `root=Page('x',[Text('Read [[readme.md#L2]], then [[readme.md#L2]] and \`[[readme.md]]\`.'),Callout('[[Docs/Guide.md]] and [[src/ok.ts]]')])`;
     const {messages} = compileSpec(tools, {surfaceId: 's', sources: [spec], surfaces: []});
     const out = expandMessages(messages, registry, new Map([['readme.md#L2', 'README.md#L2'], ['Docs/Guide.md', 'docs/guide.md']]));
     const components = 'createSurface' in messages[0]! ? messages[0].createSurface.components : [];
     expect(components.find(c => c.component === 'Text')!.text).toBe('Read [[README.md#L2]], then [[README.md#L2]] and `[[readme.md]]`.');
-    expect(components.find(c => c.component === 'Markdown')!.text).toBe('[[docs/guide.md]] and [[src/ok.ts]]');
+    expect(components.find(c => c.component === 'Callout')!.text).toBe('[[docs/guide.md]] and [[src/ok.ts]]');
     expect(out.fixes).toEqual(["path 'readme.md#L2' -> 'README.md#L2'", "path 'Docs/Guide.md' -> 'docs/guide.md'"]);
     expect(out.files.map(entry => entry.file)).toEqual(['README.md#L2', 'docs/guide.md', 'src/ok.ts']);
   });
@@ -788,7 +788,7 @@ describe('checkRef and helpers', () => {
   });
 
   it('unboundPaths reports absolute bindings with no value, never /ds, /meta or /ui', () => {
-    const out = expand(`$/notes=''\n$/plan=[{title:'A'}]\nroot=Page($/meta/repo/name,[Markdown($/notes),Markdown($/missing),Steps($/plan),Text($/plan/0/title),Text($/plan/3/title),CodeView($/ui/file),Stats()])`);
+    const out = expand(`$/notes=''\n$/plan=[{title:'A'}]\nroot=Page($/meta/repo/name,[Text($/notes),Text($/missing),Steps($/plan),Text($/plan/0/title),Text($/plan/3/title),CodeView($/ui/file),Stats()])`);
     expect(unboundPaths(out.components, {notes: '', plan: [{title: 'A'}]})).toEqual(['$/missing', '$/plan/3/title']);
   });
 

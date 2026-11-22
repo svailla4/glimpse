@@ -4,7 +4,7 @@ import {normalizeSpec} from '@glimpse/catalog';
 import {beforeAll, describe, expect, it} from 'vitest';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
 import {
-  calcTarget, classifyCompileError, closeMatch, compilerText, editDistance, flatten, formatProblems, nearest, NOTHING_RENDERED, oneLine, problem, readsAsViewerLine,
+  calcTarget, calleeKind, classifyCompileError, closeMatch, compilerText, componentMatch, editDistance, flatten, formatProblems, nearest, NOTHING_RENDERED, oneLine, problem, readsAsViewerLine,
   SpecError,
 } from '../../src/spec/errors.ts';
 
@@ -27,7 +27,7 @@ const ctx = {surfaceId: 's', exists: false, surfaces: ['overview']};
 
 describe('compiler message patterns', () => {
   it.each([
-    ['E_SYNTAX', `root=Page('x',[Markdown('x')]`, /^Failed to parse expression: Syntax error at line 2:\d+: .*<EOF>/],
+    ['E_SYNTAX', `root=Page('x',[Text('x')]`, /^Failed to parse expression: Syntax error at line 2:\d+: .*<EOF>/],
     ['E_SYNTAX', `root=Page('x',[a-b])`, /^Syntax error at line 2:16: token recognition error/],
     ['E_UNKNOWN', `root=Page('x',[DataTabel('git.churn')])`, /^Function 'DataTabel' is not defined in the catalog\.$/],
     ['E_UNKNOWN', `root=page('x',[])`, /^Component 'page' is not defined in the catalog\.$/],
@@ -73,7 +73,7 @@ describe('problem texts', () => {
   };
 
   it('E_SYNTAX reports the line the author wrote (the header line is not counted)', () => {
-    expect(text(`root=Page('x',[Markdown('x')]`)).toMatch(/^E_SYNTAX line 1 col \d+: .*'<EOF>'/);
+    expect(text(`root=Page('x',[Text('x')]`)).toMatch(/^E_SYNTAX line 1 col \d+: .*'<EOF>'/);
     expect(text(`root=Page('x',[a])\na=Text('ok')\nb=Text('a'`)).toMatch(/^E_SYNTAX line 3 col /);
   });
 
@@ -142,6 +142,15 @@ describe('problem texts', () => {
     // components keep their own repair, also in another case
     expect(classifyCompileError(raw(`root=Page('x',[DataTabel('git.churn')])`), ctx).repair).toEqual({kind: 'component', name: 'DataTabel'});
     expect(classifyCompileError(raw(`root=Page('x',[text('a')])`), ctx).repair).toEqual({kind: 'component', name: 'text'});
+  });
+
+  // Decision D26 with D25: a removed component is a component in any case, never a function.
+  it('a removed Markdown, in either case, is a component to repair to Text', () => {
+    expect(['Markdown', 'markdown', 'MARKDOWN', 'table', 'pow', 'multiply', 'chart'].map(calleeKind)).toEqual(['component', 'component', 'component', 'component', 'function', 'function', 'either']);
+    expect(['Markdown', 'markdown', 'table'].map(componentMatch)).toEqual(['Text', 'Text', 'DataTable']);
+    for (const name of ['Markdown', 'markdown']) {
+      expect(classifyCompileError(raw(`root=Page('x',[${name}('a')])`), ctx).repair, name).toEqual({kind: 'component', name});
+    }
   });
 
   it('calcTarget reads a case, an alias or a near miss, and nothing else', () => {

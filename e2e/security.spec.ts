@@ -301,7 +301,7 @@ test.describe('hostile content', () => {
     await writeFile(join(repoRoot, 'evil.md'), `# ${payload}\n\n[click](javascript:window.__pwned=4) ![pixel](https://tracker.invalid/p.png)\n`);
     await writeFile(join(repoRoot, `x${'"'}onmouseover=alert(1) y.ts`), `export const a = '${payload}';\n// TODO: ${payload}\n`);
     const spec = [
-      "root=Page($/t,[Markdown($/m),Text($/m),Callout($/m,'risk',$/m),CodeBlock($/m,'html'),CodeView('evil.md'),KeyValue({k:$/m}),DataTable('code.todos'),FileTree(),Chips([$/m]),Flowchart($/f),Button($/m,Event('go',{v:$/m}))])",
+      "root=Page($/t,[Text($/m),Callout($/m,'risk',$/m),CodeBlock($/m,'html'),CodeView('evil.md'),KeyValue({k:$/m}),DataTable('code.todos'),FileTree(),Chips([$/m]),Flowchart($/f),Button($/m,Event('go',{v:$/m}))])",
       `$/t=${JSON.stringify(payload)}`,
       `$/m=${JSON.stringify(`${payload} [js](javascript:window.__pwned=5) [data](data:text/html,<script>window.__pwned=6</script>) ![remote](https://tracker.invalid/a.png) <iframe src="https://tracker.invalid"></iframe> [ok](https://example.com/)`)}`,
       `$/f={groups:{G:${JSON.stringify(payload)}},nodes:{A:{label:${JSON.stringify('<img src=x onerror=window.__pwned=7>')},group:'G'},B:'ok'},edges:[['A','B',${JSON.stringify(payload)}]]}`,
@@ -309,7 +309,7 @@ test.describe('hostile content', () => {
     const shown = await glimpse.call('show', {id: 'hostile', spec});
     expect(shown.isError, shown.text).toBe(false);
     await openViewer(page, glimpse);
-    await expect(page.locator('[data-gl="Markdown"]')).toContainText('<script>');
+    await expect(page.locator('[data-gl="Text"]')).toContainText('<script>');
     await expect(page.locator('[data-gl="CodeView"]')).toContainText('tracker.invalid');
     await page.waitForTimeout(800);
 
@@ -325,7 +325,8 @@ test.describe('hostile content', () => {
     expect(dom.frames).toBe(0);
     expect(dom.images).toEqual([]);
     expect(dom.handlers).toBe(0);
-    expect(dom.links.length).toBeGreaterThan(0);
+    // Since D26 no component turns agent text into a link (`[ok](https://...)` stays text); a link the page does draw
+    // is still http(s) only and opens without an opener or a referrer.
     for (const link of dom.links) {
       expect(link.href, 'links are http(s) only').toMatch(/^https?:\/\//);
       expect(link.rel).toContain('noopener');

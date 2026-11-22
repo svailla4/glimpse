@@ -46,8 +46,8 @@ describe('C1: generated/catalog.json is a valid v1.0 catalog document', () => {
 });
 
 describe('C2: every spec Glimpse writes compiles to valid v1.0 messages', () => {
-  it('covers the 16 preset variants, the 45 examples, the gallery and the 6 recipes', () => {
-    expect(entries).toHaveLength(16 + 45 + 1 + 6);
+  it('covers the 16 preset variants, the 44 examples, the gallery and the 6 recipes', () => {
+    expect(entries).toHaveLength(16 + 44 + 1 + 6);
   });
 
   it.each(entries.map(e => [e.label, e] as const))('%s passes STRICT_VALIDATION and agent_to_renderer.json', (_label, entry) => {
@@ -77,7 +77,7 @@ describe('C3: the same corpus through Catalog.fromJson(catalog.json)', () => {
 });
 
 describe('patch flows', () => {
-  const base = buildSurface('feature', `$/plan=[]\n$/notes=''\nroot=Page('Feature',[plan,design,notes])\nplan=Steps($/plan,title='Plan')\ndesign=Markdown('none yet')\nnotes=Markdown($/notes)`);
+  const base = buildSurface('feature', `$/plan=[]\n$/notes=''\nroot=Page('Feature',[plan,design,notes])\nplan=Steps($/plan,title='Plan')\ndesign=Text('none yet')\nnotes=Text($/notes)`);
   const kinds = (messages: A2uiMessage[]) => messages.map(m => Object.keys(m).find(k => k !== 'version'));
 
   it('a data assignment compiles to one updateDataModel', () => {
@@ -178,7 +178,7 @@ describe('negative corpus: invalid messages are rejected', () => {
     ['unknown prop', `root=Page('x',[DataTable('git.churn',colums='path')])`, /colums/],
     ['bad enum', `root=Page('x',[Callout('x','danger')])`, /danger/],
     ['missing required prop', `root=Page('x',[Flowchart()])`, /data/],
-    ['syntax error', `root=Page('x',[Markdown('x')]`, /Syntax error/],
+    ['syntax error', `root=Page('x',[Text('x')]`, /Syntax error/],
     ['span out of range', `root=Page('x',[Text('a',span=13)])`, /span/],
   ])('the compiler rejects %s', (_label, spec, message) => {
     expect(() => compileExpress('bad', spec)).toThrow(message);
