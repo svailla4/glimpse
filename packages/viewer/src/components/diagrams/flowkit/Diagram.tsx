@@ -18,7 +18,7 @@ import {
   useCallback, useEffect, useMemo, useRef, useState,
   type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
 } from 'react';
-import {Drafting, Icon, PlateAside, Redline, entityClipText, matchSelection, useHostActions, useSelection, useSize, useSizeCap, useTooltip} from '../../../kit/index.ts';
+import {Drafting, Icon, PlateAside, Redline, entityClipText, matchSelection, useHostActions, useSelection, useSize, useSizeCap, useStableCallback, useTooltip} from '../../../kit/index.ts';
 import css from './flowkit.module.css';
 import {
   boundsOf, centerOf, freeSpot, isAcross, longestStretchMiddle, nearestInDirection, overlaps, routeAround, runsAlongFrame,
@@ -179,16 +179,6 @@ function refinement<T>(
 const ARROWS: Record<string, readonly [number, number]> = {ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]};
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-
-/**
- * A function that keeps its identity and always calls the latest `fn`: React Flow re-renders every node when a handler
- * it is given changes, and the handlers here close over state that changes on every drag frame.
- */
-function useStable<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
-  const latest = useRef(fn);
-  latest.current = fn;
-  return useCallback((...args: A) => latest.current(...args), []);
-}
 
 /** A label plate: one line, or two when the label is long, each cut to fit. */
 export function labelPlate(label: string): Plate {
@@ -833,7 +823,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
   // ---- pointer: click selects, Cmd/Ctrl-click opens, a second click on a drillable node drills
   const lastClick = useRef<{id: string; at: number} | null>(null);
   const again = (key: string, now: number): boolean => lastClick.current !== null && lastClick.current.id === key && now - lastClick.current.at < DOUBLE_CLICK_MS;
-  const onNodeClick = useStable<Parameters<NodeMouseHandler<FlowNode>>, void>((event, flowNode) => {
+  const onNodeClick = useStableCallback<Parameters<NodeMouseHandler<FlowNode>>, void>((event, flowNode) => {
     const now = performance.now();
     if (flowNode.type === 'frame') {
       const group = groupById.get(flowNode.id);
@@ -869,7 +859,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
     lastClick.current = {id: node.id, at: now};
     select(node.entity);
   });
-  const onNodeHover = useStable<Parameters<NodeMouseHandler<FlowNode>>, void>((event, flowNode) => {
+  const onNodeHover = useStableCallback<Parameters<NodeMouseHandler<FlowNode>>, void>((event, flowNode) => {
     if (flowNode.type === 'frame') {
       const group = groupById.get(flowNode.id);
       if (group && (event.target as Element).closest?.('[data-group-handle]')) {
@@ -880,12 +870,12 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
     const node = byId.get(flowNode.id);
     if (node) tooltip.show(<Tip title={node.label} detail={node.detail} />, event.clientX, event.clientY);
   });
-  const onEdgeHover = useStable<Parameters<EdgeMouseHandler<FlowEdge>>, void>((event, flowEdge) => {
+  const onEdgeHover = useStableCallback<Parameters<EdgeMouseHandler<FlowEdge>>, void>((event, flowEdge) => {
     const edge = edgeByKey.get(flowEdge.id);
     if (!edge) return;
     tooltip.show(<Tip title={`${byId.get(edge.from)?.label ?? edge.from} → ${byId.get(edge.to)?.label ?? edge.to}`} detail={edge.detail ?? edge.label} />, event.clientX, event.clientY);
   });
-  const hideTip = useStable(() => tooltip.hide());
+  const hideTip = useStableCallback(() => tooltip.hide());
 
   // ---- two-finger scroll (decision scroll-pans-what-overflows): it pans the drawing when there is more of it to see,
   // and scrolls the page when there is not. A gesture belongs to what its first event moved, until it stops (momentum
@@ -895,7 +885,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
   // keep the page still, hence the listener.
   const extentBox = useMemo((): Box => ({x: bounds.x - PAD, y: bounds.y - PAD, w: bounds.w + PAD * 2, h: bounds.h + PAD * 2}), [bounds]);
   const gesture = useRef<{pans: boolean; until: number} | null>(null);
-  const onWheel = useStable((event: WheelEvent) => {
+  const onWheel = useStableCallback((event: WheelEvent) => {
     if (event.ctrlKey || event.metaKey) return;
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1;
     const dx = event.deltaX * unit;
@@ -922,17 +912,17 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
   }, [onWheel]);
 
   // ---- dragging: React Flow moves the node, the position store keeps it (as the node's centre)
-  const onNodesChange = useStable<Parameters<OnNodesChange<FlowNode>>, void>(changes => {
+  const onNodesChange = useStableCallback<Parameters<OnNodesChange<FlowNode>>, void>(changes => {
     for (const change of changes) {
       if (change.type !== 'position' || !change.position) continue;
       const box = boxes.get(change.id);
       if (box) store.move(change.id, {x: Math.round(change.position.x + box.w / 2), y: Math.round(change.position.y + box.h / 2)});
     }
   });
-  const onNodeDragStart = useStable<Parameters<OnNodeDrag<FlowNode>>, void>(() => tooltip.hide());
+  const onNodeDragStart = useStableCallback<Parameters<OnNodeDrag<FlowNode>>, void>(() => tooltip.hide());
   // A node dropped on another, or into a group it is not in, moves to the nearest place beside it; so does one whose
   // frame would grow over another group or a node outside it.
-  const onNodeDragStop = useStable<Parameters<OnNodeDrag<FlowNode>>, void>((_event, _node, dragged) => {
+  const onNodeDragStop = useStableCallback<Parameters<OnNodeDrag<FlowNode>>, void>((_event, _node, dragged) => {
     for (const flowNode of dragged) {
       if (flowNode.type !== 'box') continue;
       const size = boxes.get(flowNode.id);

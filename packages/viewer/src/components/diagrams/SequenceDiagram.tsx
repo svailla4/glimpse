@@ -5,7 +5,7 @@ import type * as C from '@glimpse/catalog';
 import {cleanSequence, seqLeaves, type EntityRef, type SeqArrow, type SeqAst} from '@glimpse/catalog';
 import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode} from 'react';
 import {
-  DataGate, Empty, Redline, fmtNum, marksSelection, useDataset, useReportState, useSelection, useSize, useSizeCap, useTooltip, type GlView,
+  DataGate, Empty, Redline, fmtNum, marksSelection, useDataset, useLatest, useReportState, useSelection, useSize, useSizeCap, useTooltip, type GlView,
 } from '../../kit/index.ts';
 import {
   CONTROLS, MONO_11, UI_12, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, ZoomBar, fitText, markPath, roundedPath, textWidth, wrapText, zoomKey, type Face, type ZoomActions,
@@ -515,10 +515,10 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
     onReset: () => zoomTo(1),
   };
   // A pinch (or Ctrl and the wheel) zooms; the wheel alone scrolls, as in flowkit. Not passive, so the page does not zoom too.
-  const pinch = useRef(zoomTo);
-  pinch.current = zoomTo;
+  const pinchRef = useRef(zoomTo);
+  useLatest(pinchRef, zoomTo);
   const zoomRef = useRef(scale);
-  zoomRef.current = scale;
+  useLatest(zoomRef, scale);
   useEffect(() => {
     const scroll = scrollRef.current;
     if (!scroll) return;
@@ -526,7 +526,7 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       const box = scroll.getBoundingClientRect();
-      pinch.current(zoomRef.current * Math.exp(-event.deltaY * 0.01), {x: event.clientX - box.left, y: event.clientY - box.top});
+      pinchRef.current(zoomRef.current * Math.exp(-event.deltaY * 0.01), {x: event.clientX - box.left, y: event.clientY - box.top});
     };
     scroll.addEventListener('wheel', onWheel, {passive: false});
     return () => scroll.removeEventListener('wheel', onWheel);

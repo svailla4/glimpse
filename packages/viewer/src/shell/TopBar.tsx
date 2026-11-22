@@ -5,7 +5,7 @@
 // out, and a `+N` button lists the views that are out of sight.
 import type {LinkStatus, SurfaceInfo} from '@glimpse/catalog';
 import {useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent} from 'react';
-import {Icon, elidePath} from '../kit/index.ts';
+import {Icon, elidePath, useLatest} from '../kit/index.ts';
 import type {Density, Theme} from './prefs.ts';
 import css from './TopBar.module.css';
 
@@ -81,13 +81,13 @@ export function TopBar(p: TopBarProps): JSX.Element {
 
   // The view on screen always has its tab on screen: when it changes, when the tabs change (a new tab can push it out
   // of sight) and when the strip changes width (the window is resized, V044).
-  const focus = useRef(p.focus);
-  focus.current = p.focus;
+  const focusRef = useRef(p.focus);
+  useLatest(focusRef, p.focus);
   const reveal = useCallback(() => {
     const strip = tabs.current;
     if (!strip) return;
     for (const tab of strip.querySelectorAll<HTMLElement>('[role="tab"]')) {
-      if (tab.dataset.surface !== focus.current) continue;
+      if (tab.dataset.surface !== focusRef.current) continue;
       const item = tab.parentElement ?? tab;
       const view = strip.getBoundingClientRect();
       const box = item.getBoundingClientRect();

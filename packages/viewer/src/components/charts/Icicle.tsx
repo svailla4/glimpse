@@ -6,7 +6,7 @@ import type {DirNode} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {partition, type HierarchyNode} from 'd3-hierarchy';
 import {useId, useMemo, useRef, useState, type JSX} from 'react';
-import {Empty, fmtNum, useHostActions, useMeta, type DataState, type GlView} from '../../kit/index.ts';
+import {Empty, fmtNum, useHostActions, useLatest, useMeta, type DataState, type GlView} from '../../kit/index.ts';
 import css from './Icicle.module.css';
 import {
   Crumbs, Figure, METRIC_FORMAT, Note, TreeGate, clip, clipTail, count, createPainter, kit, nodeEntity, nodeMatches, notes, rootLabel, say, spatialStep,
@@ -148,8 +148,8 @@ function Rows(p: {
     },
   });
   // a click on a directory zooms it (and selects it, like any mark); rollups drill on Enter or double-click only
-  const zoomCell = useRef(activate);
-  zoomCell.current = activate;
+  const zoomCellRef = useRef(activate);
+  useLatest(zoomCellRef, activate);
   const drawing = useDrawIn();
   const uid = useId().replace(/[^A-Za-z0-9_-]/g, '');
   const picked = nav.picked;
@@ -167,7 +167,7 @@ function Rows(p: {
         data-rollup={node.rollup ? '' : undefined}
         data-dim={picked && !picked[i] ? '' : undefined}
         onClick={paint ? undefined : event => {
-          if (!event.metaKey && !event.ctrlKey) zoomCell.current(i);
+          if (!event.metaKey && !event.ctrlKey) zoomCellRef.current(i);
         }}
       >
         <rect className={paint ? undefined : css.dir} x={cell.x} y={cell.y} width={cell.w} height={row} style={paint ? {fill: paint.color} : undefined} />

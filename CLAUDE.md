@@ -78,7 +78,10 @@ which `.github/workflows/release.yml` writes (decision `release-every-merge`):
 - **The viewer is compiled by the React Compiler (`compiled-viewer`).** A value read during render from something
   mutable (the A2UI surface and component models, a closure over outside state) is cached and never read again: read
   it through `useSyncExternalStore` (`kit/subscribe.ts`). A `useMemo` or `useCallback` dependency the callback does
-  not read is dropped: make a refetch trigger part of the value. The viewer tests run compiled code.
+  not read is dropped: make a refetch trigger part of the value. A ref written during render keeps the whole function
+  uncompiled: keep a latest value with `const xRef = useRef(x); useLatest(xRef, x)`, a stable handler with
+  `useStableCallback` (both `kit/hooks.ts`), and take a ref out of an object before rendering with it. The viewer tests
+  run compiled code, and `test/compiler.test.ts` fails when a function stops compiling.
 - Do not commit `plugin/dist`. Never add a shipped dependency without a licence the build allows (`scripts/notices.ts`).
 
 ## Decision log
@@ -341,8 +344,20 @@ Decisions explained here:
   refetched (they are fields of the request now); `useCalcNote` read a Slider's bound path from the component model
   during render, so a Slider the spec rebound kept its old path (now a `useSyncExternalStore` snapshot through
   `subscribeComponent`, with a test); the test harness read the surface during render and kept the deleted one.
-  Not done: about 39 functions are left uncompiled, which the compiler does silently (they run as written): most read
-  a ref during render (the latest-value pattern in `kit/hooks.ts`, `kit/report.ts`, flowkit, `chartkit/Chart.tsx`),
-  some use syntax it does not read yet (`{[k as T]: ...}`, `||=`, `??=`, a getter in an object literal), and
-  `table/nav.ts` uses `@tanstack/react-virtual`, which it marks incompatible. `DateCell` is compiled, so its age
-  ("3 d") is kept until its date changes, also across midnight. No lint rule for the Rules of React (Biome has none).
+  The compiler leaves a function it cannot compile as written, silently. `test/compiler.test.ts` holds that list (39
+  functions at first, 25 now) both ways: a new one fails, and so does a listed one that compiles. Thirteen came off
+  it by two patterns. A component whose props or hook result held a ref (`Figure`, `CanvasLayer`, `AskView`) was
+  refused on every line, as the compiler treats an object holding a ref as a ref: the ref is taken out first. The
+  latest-value ref, `x.current = x` during render (TopBar, arrange, flowkit, SequenceDiagram, Button, Slider, Icicle,
+  `useFetched`, `useMarkNav`), is written by `useLatest(ref, value)` in an insertion effect, which runs before every
+  layout effect; flowkit's `useStable` became the kit's `useStableCallback`. The caller makes the ref with `useRef`:
+  a ref returned by a hook of ours is a frozen value to the compiler, so memos reading it would not compile and
+  writes through it would be refused (`useMarkNav` scrolls its box through `keepInView` for the same reason). Biome
+  is told `useStableCallback`'s result is stable (`biome.json`). Cost: the eager script 204.6 -> 206.2 kB, diagrams
+  45.1 -> 46.6 kB, charts 60.3 -> 62.6 kB.
+  Not done: six functions still read or write a ref during render to remember something across renders
+  (`useRemoteRows`, `useFileLines`, `useCatSlots`, `useCellReporter`, flowkit's `Diagram` and `Canvas`); nine use a
+  cast in a computed style key (`{['--x' as never]: v}`, which `vars()` in `components/layout/shared.ts` replaces); the
+  rest use syntax the compiler does not read yet or `@tanstack/react-virtual`, which it marks incompatible.
+  `DateCell` is compiled, so its age ("3 d") is kept until its date changes, also across midnight. No lint rule for
+  the Rules of React (Biome has none).

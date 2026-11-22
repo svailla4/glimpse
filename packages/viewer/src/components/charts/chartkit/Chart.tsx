@@ -6,8 +6,8 @@ import {
   type JSX, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode, type RefObject,
 } from 'react';
 import {
-  DataGate, Empty, PlateAside, REPORT_CODES, Redline, assignSlots, useDataset, useHostActions, usePath, useReportState, useSelection, useSize,
-  useTooltip, type DataState,
+  DataGate, Empty, PlateAside, REPORT_CODES, Redline, assignSlots, useDataset, useHostActions, useLatest, usePath, useReportState, useSelection,
+  useSize, useTooltip, type DataState,
 } from '../../../kit/index.ts';
 import css from './chartkit.module.css';
 import {cleanRows, clipName, clipText, matches, missText, received, say, type FieldMiss, type FieldSet, type Unfit} from './data.ts';
@@ -96,6 +96,17 @@ export function Tip(p: {title: string; rows?: TipRow[]; foot?: string}): JSX.Ele
 }
 
 /**
+ * Scrolls a box that overflows so that the band from `top` to `bottom` (in its content) is in view, with 8 px to
+ * spare. A function of its own, not lines in a handler: the React Compiler counts the box, reached through a hook's
+ * options, as part of them and refuses to change it in place (decision compiled-viewer).
+ */
+function keepInView(box: HTMLElement | null | undefined, top: number, bottom: number): void {
+  if (!box || box.scrollHeight <= box.clientHeight) return;
+  if (top < box.scrollTop) box.scrollTop = Math.max(0, top - 8);
+  else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom + 8 - box.clientHeight;
+}
+
+/**
  * Pointer, keyboard and selection behaviour over a list of marks. Marks are drawn by the chart with `data-i` set to
  * their index; events are delegated from the SVG, so thousands of marks carry no handlers of their own.
  */
@@ -106,21 +117,24 @@ export function useMarkNav(opts: NavOptions): Nav {
   const {selected, select} = useSelection(id);
   const host = useHostActions(id);
   const [state, setState] = useState({active: -1, keyboard: false});
-  const live = useRef(opts);
-  live.current = opts;
+  // Handlers read the options of the latest render; the render itself reads `opts`.
+  const optsRef = useRef(opts);
+  useLatest(optsRef, opts);
 
   const active = state.active < marks.length ? state.active : -1;
+  // The matcher is a dependency: the callers are compiled, so an inline matcher keeps its identity until what it reads
+  // changes (decision compiled-viewer).
+  const {matcher} = opts;
   const picked = useMemo(() => {
     if (!selected) return null;
     let any = false;
-    const matcher = live.current.matcher;
     const flags = marks.map((mark, index) => {
       const hit = matcher ? matcher(selected, mark, index) : matches(selected, mark.entity);
-      any ||= hit;
+      if (hit) any = true;
       return hit;
     });
     return any ? flags : null;
-  }, [marks, selected]);
+  }, [marks, selected, matcher]);
 
   const tipShown = useRef(false);
   const showTip = useCallback((mark: Mark, x: number, y: number) => {
@@ -138,7 +152,7 @@ export function useMarkNav(opts: NavOptions): Nav {
   const indexAt = (event: {target: EventTarget; clientX: number; clientY: number}): number => {
     const element = event.target instanceof Element ? event.target.closest('[data-i]') : null;
     if (element) return Number(element.getAttribute('data-i'));
-    const hit = live.current.hit;
+    const hit = optsRef.current.hit;
     const rect = svg.current?.getBoundingClientRect();
     return hit && rect ? hit(event.clientX - rect.left, event.clientY - rect.top) : -1;
   };
@@ -147,11 +161,7 @@ export function useMarkNav(opts: NavOptions): Nav {
     const mark = marks[index];
     if (!mark) return;
     setState({active: index, keyboard: true});
-    const box = live.current.box?.current;
-    if (box && box.scrollHeight > box.clientHeight) {
-      if (mark.y < box.scrollTop) box.scrollTop = Math.max(0, mark.y - 8);
-      else if (mark.y + mark.h > box.scrollTop + box.clientHeight) box.scrollTop = mark.y + mark.h + 8 - box.clientHeight;
-    }
+    keepInView(optsRef.current.box?.current, mark.y, mark.y + mark.h);
     const rect = svg.current?.getBoundingClientRect();
     if (rect) showTip(mark, rect.left + mark.x + mark.w, rect.top + mark.y + mark.h / 2);
   };
@@ -161,9 +171,9 @@ export function useMarkNav(opts: NavOptions): Nav {
   };
 
   const activate = (index: number) => {
-    if (live.current.activate?.(index)) return;
+    if (optsRef.current.activate?.(index)) return;
     const entity = marks[index]?.entity;
-    if (entity && live.current.selectable !== false) select(entity);
+    if (entity && optsRef.current.selectable !== false) select(entity);
   };
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -174,7 +184,7 @@ export function useMarkNav(opts: NavOptions): Nav {
     if (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || key === 'ArrowDown') {
       if (count === 0) return;
       if (active < 0) focusMark(0);
-      else if (live.current.move) focusMark(live.current.move(active, key));
+      else if (optsRef.current.move) focusMark(optsRef.current.move(active, key));
       else focusMark(Math.min(count - 1, Math.max(0, active + (key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : 1))));
     } else if (key === 'Home') focusMark(0);
     else if (key === 'End') focusMark(count - 1);
@@ -183,13 +193,13 @@ export function useMarkNav(opts: NavOptions): Nav {
     else if (key === 'Escape') {
       select(null);
       clear();
-    } else if (live.current.key?.(event, active)) {
+    } else if (optsRef.current.key?.(event, active)) {
       // handled by the chart
     } else if (active < 0) handled = false;
     else if (key === 'Enter') activate(active);
     else if (key === ' ') {
       const entity = marks[active]?.entity;
-      if (entity && live.current.selectable !== false) select(entity);
+      if (entity && optsRef.current.selectable !== false) select(entity);
     } else if (key === 'o') open(marks[active]?.entity);
     else if (key === 'c') {
       const entity = marks[active]?.entity;
@@ -217,12 +227,12 @@ export function useMarkNav(opts: NavOptions): Nav {
     const entity = marks[index]?.entity;
     if (!entity) return;
     if (event.metaKey || event.ctrlKey) open(entity);
-    else if (live.current.selectable !== false) select(entity);
+    else if (optsRef.current.selectable !== false) select(entity);
   };
 
   const onDoubleClick = (event: MouseEvent) => {
     const index = indexAt(event);
-    if (index >= 0 && index < marks.length) live.current.activate?.(index);
+    if (index >= 0 && index < marks.length) optsRef.current.activate?.(index);
   };
 
   return {
@@ -318,22 +328,25 @@ export interface FigureProps {
  * announces the mark under the keyboard.
  */
 export function Figure(p: FigureProps): JSX.Element {
-  const {nav, width, height} = p;
-  const activeMark = nav.active >= 0 ? nav.marks[nav.active] : undefined;
+  // The refs are taken out of the props and of `nav` first: the React Compiler treats an object holding a ref as a ref,
+  // and would not compile a component that reads it during render (decision compiled-viewer).
+  const {boxRef, nav, width, height} = p;
+  const {svg, handlers, active, keyboard, marks, picked} = nav;
+  const activeMark = active >= 0 ? marks[active] : undefined;
   const rings = useMemo(() => {
-    if (p.rings === false || !nav.picked) return [];
+    if (p.rings === false || !picked) return [];
     const out: Mark[] = [];
-    for (let i = 0; i < nav.picked.length && out.length <= MAX_RINGS; i++) if (nav.picked[i]) out.push(nav.marks[i]!);
+    for (let i = 0; i < picked.length && out.length <= MAX_RINGS; i++) if (picked[i]) out.push(marks[i]!);
     return out.length > MAX_RINGS ? [] : out;
-  }, [p.rings, nav.picked, nav.marks]);
+  }, [p.rings, picked, marks]);
   return (
     <div className={css.figure} data-chart={p.name} data-fill={p.fill || undefined}>
       {p.header}
-      <div className={css.plot} ref={p.boxRef} data-compact={p.compact || undefined} style={p.fill ? undefined : {height}}>
+      <div className={css.plot} ref={boxRef} data-compact={p.compact || undefined} style={p.fill ? undefined : {height}}>
         {width > 0 && height > 0 ? (
           <div className={css.stage} style={{width, height}}>
             <svg
-              ref={nav.svg}
+              ref={svg}
               className={css.svg}
               role="img"
               aria-label={p.label}
@@ -342,19 +355,19 @@ export function Figure(p: FigureProps): JSX.Element {
               height={height}
               viewBox={`0 0 ${width} ${height}`}
               data-draw={p.drawing || undefined}
-              {...nav.handlers}
+              {...handlers}
             >
               {p.children}
               {rings.map((mark, i) => <Ring key={i} mark={mark} kind="sel" pad={1.5} />)}
-              {activeMark && !nav.keyboard && p.hover !== false ? <Ring mark={activeMark} kind="hot" pad={0.5} /> : null}
-              {activeMark && nav.keyboard ? <Ring mark={activeMark} kind="focus" pad={3} /> : null}
+              {activeMark && !keyboard && p.hover !== false ? <Ring mark={activeMark} kind="hot" pad={0.5} /> : null}
+              {activeMark && keyboard ? <Ring mark={activeMark} kind="focus" pad={3} /> : null}
             </svg>
           </div>
         ) : null}
         {p.under && width > 0 && height > 0 ? <div className={css.under}>{p.under}</div> : null}
       </div>
       {p.footer}
-      <span className={css.sr} aria-live="polite">{activeMark && nav.keyboard ? activeMark.say : ''}</span>
+      <span className={css.sr} aria-live="polite">{activeMark && keyboard ? activeMark.say : ''}</span>
     </div>
   );
 }
@@ -516,10 +529,10 @@ export function MissReport(p: {misses: readonly FieldMiss[]; fields: FieldSet; s
  * A canvas inside the SVG, for marks too many to be elements. It sits in the drawing order like any other layer
  * (above the grid, below labels and rings) and takes no pointer events: the chart finds marks by position.
  */
-export function CanvasLayer(p: {canvasRef: RefObject<HTMLCanvasElement | null>; width: number; height: number}): JSX.Element {
+export function CanvasLayer({canvasRef, width, height}: {canvasRef: RefObject<HTMLCanvasElement | null>; width: number; height: number}): JSX.Element {
   return (
-    <foreignObject className={css.canvasLayer} x={0} y={0} width={p.width} height={p.height} data-chart-canvas="">
-      <canvas ref={p.canvasRef} className={css.canvas} />
+    <foreignObject className={css.canvasLayer} x={0} y={0} width={width} height={height} data-chart-canvas="">
+      <canvas ref={canvasRef} className={css.canvas} />
     </foreignObject>
   );
 }

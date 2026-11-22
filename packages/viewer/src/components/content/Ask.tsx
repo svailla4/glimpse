@@ -21,7 +21,8 @@ export const AskView: GlView<typeof C.Ask> = ({id, props}) => {
   // Once the session is over the shell drops whatever a view sends: nothing picked here can reach the agent.
   const ended = useLinkStatus() === 'ended';
   const chosen = choice !== undefined && options.includes(choice) ? choice : undefined;
-  const roving = useRoving<HTMLDivElement>(options.length, 'horizontal');
+  // Taken apart: the React Compiler treats an object holding a ref as a ref (decision compiled-viewer).
+  const {ref: rovingRef, onKeyDown, item} = useRoving<HTMLDivElement>(options.length, 'horizontal');
   const name = typeof props.name === 'string' && EVENT_NAME.test(props.name) ? props.name : 'answer';
   const prompt = textOf(props.prompt);
 
@@ -43,7 +44,7 @@ export const AskView: GlView<typeof C.Ask> = ({id, props}) => {
         </p>
       ) : null}
       {options.length > 0 ? (
-        <div className={styles.options} role="group" aria-label="Options" ref={roving.ref} onKeyDown={roving.onKeyDown}>
+        <div className={styles.options} role="group" aria-label="Options" ref={rovingRef} onKeyDown={onKeyDown}>
           {options.map((option, i) => (
             <button
               key={option}
@@ -53,7 +54,7 @@ export const AskView: GlView<typeof C.Ask> = ({id, props}) => {
               aria-disabled={ended || undefined}
               title={ended ? ENDED_TITLE : undefined}
               data-chosen={option === chosen || undefined}
-              {...roving.item(i)}
+              {...item(i)}
               onClick={() => pick(option)}
             >
               {option === chosen ? <Icon name="check" /> : null}
