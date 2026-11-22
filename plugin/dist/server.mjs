@@ -31370,6 +31370,18 @@ code=CodeView(title='Click a stop to read it',span=5)
 stops=Steps([{title:'Route',file:'src/api/routes.ts#L12-30',note:'Parses the body and calls the service'},{title:'Service',file:'src/auth/service.ts#L20-58',note:'A constant-time compare, then the token'}],title='In the code')`
       },
       {
+        title: "Draw the system",
+        when: "The user asks for a system or architecture diagram, or how the whole thing fits together.",
+        id: "system",
+        guide: "explain",
+        spec: `root=Page('How the shop works',[lead,map,api,code,order],'From the shopper in')
+lead=Text('A shopper uses the web app, and the web app asks the API for everything. Only the API reads or writes the orders database; card numbers go straight to the payment provider.')
+map=Flowchart({nodes:{U:{label:'Shopper',shape:'pill'},Web:{label:'Web app',note:'Pages and the cart, in the browser',file:'src/web/app.tsx'},API:{label:'API',group:'ours',note:'Checks the session, then runs the route',file:'src/api/routes.ts'},DB:{label:'Orders database',shape:'store',group:'ours',file:'src/db/orders.ts'},Pay:{label:'Payment provider',note:'Takes the card; we keep only its receipt'}},edges:[['U','Web','browses, orders'],['Web','API','requests with a session'],['API','DB','reads, writes orders'],['Web','Pay','card number'],['Pay','API','receipt']],groups:{ours:{label:'Our servers'}}},dir='LR',title='Only the API touches the orders database')
+api=Layers([{name:'Routes',items:[{label:'orders',file:'src/api/orders.ts'},{label:'receipts',file:'src/api/receipts.ts'}]},{name:'Checks',items:[{label:'session guard',file:'src/auth/guard.ts'}]},{name:'Storage',items:[{label:'orders table',file:'src/db/orders.ts',node:'DB'}]}],title='Inside the API: every route passes the guard',span=7)
+code=CodeView(title='Click a box to read its code',span=5)
+order=SequenceDiagram({actors:{U:{label:'Shopper',node:'U'},Web:{label:'Web app',node:'Web'},API:{label:'API',node:'API'},DB:{label:'Orders database',node:'DB'}},steps:[{note:'1. The shopper orders',over:['U','DB']},['U','Web','press Order'],['Web','API','POST /orders'],['API','DB','insert order'],['DB','API','order id','reply'],['API','Web','201 + order id','reply'],['Web','U','"Order placed"','reply'],{note:'2. The shopper checks on it',over:['U','DB']},['U','Web','open My orders'],['Web','API','GET /orders'],['API','DB','find orders'],['DB','API','rows','reply'],['API','Web','the list','reply'],['Web','U','their orders','reply']]},title='An order is one write; checking on it is one read')`
+      },
+      {
         title: "Find hotspots",
         when: "The user asks where the risk or the technical debt is.",
         view: "hotspots src since=180d",
