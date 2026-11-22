@@ -47,5 +47,5 @@ B CodeTour(data*~:TourStop[]) +frame
 B SymbolOutline(file~) +frame
 # input
 B Button(label*~, action*:action, tone:default|primary|quiet)
-B Ask(prompt*~, options*:str[], name:str)
+B Ask(prompt*~, options*~:value, name:str)
 B Slider(label*~, value*~:num, min:num, max:num, step:num, unit~)

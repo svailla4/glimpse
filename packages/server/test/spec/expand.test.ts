@@ -223,6 +223,25 @@ describe('expandMessages: diagram data, columns, paths', () => {
     });
   });
 
+  it('Ask options carry a note; a key meant as label or note is fixed, what does not draw is a warn line (ask-options-carry-notes)', () => {
+    const plain = expand(`root=Page('x',[Ask('Which store?',['Redis',{label:'In-memory',note:'One instance only'}],'store')])`);
+    expect(plain.problems).toEqual([]);
+    expect(plain.warnings).toEqual([]);
+    expect(plain.fixes).toEqual([]);
+    expect(plain.byComponent('Ask').options).toEqual(['Redis', {label: 'In-memory', note: 'One instance only'}]);
+    const guessed = expand(`root=Page('x',[Ask('Which?',[{title:'A',description:'why A'},'B','B',{note:'n'},{label:'C',tone:'x'}])])`);
+    expect(guessed.problems).toEqual([]);
+    expect(guessed.fixes).toEqual(['Ask#root_children_0.options option 1: title -> label', 'Ask#root_children_0.options option 1: description -> note']);
+    expect(guessed.warnings).toEqual([
+      'Ask#root_children_0.options option 3: not drawn: "B" repeats an earlier option',
+      "Ask#root_children_0.options option 4: not drawn: no label: expected 'label' or {label, note?}",
+      'Ask#root_children_0.options option 5: ignored key tone of option "C"',
+    ]);
+    // rewritten to what draws, so the tab does not report it again
+    expect(guessed.byComponent('Ask').options).toEqual([{label: 'A', note: 'why A'}, 'B', 'C']);
+    expect(expand(`root=Page('x',[Ask('Which?','A or B')])`).codes).toEqual(['E_SHAPE']);
+  });
+
   it('an unknown column kind is E_ENUM listing the kinds', () => {
     const out = expand(`root=Page('x',[DataTable('fake.rows','path n:bars owner:author=Owned_by')])`);
     expect(out.codes).toEqual(['E_ENUM']);

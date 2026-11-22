@@ -1,6 +1,6 @@
 ---
 name: glimpse
-description: Draw live views of a codebase in the local Glimpse browser tab: designing or planning a feature before it is built, reviewing a change or a pull request, explaining existing code or onboarding onto it, and quick looks (overview, dependency map, hotspots, history, a file, a diff). Use whenever the user asks to see, show, visualize, map, design, plan, review, explain or walk through code, or when a picture of the code would answer faster than text.
+description: Draw live views of a codebase in the local Glimpse browser tab: designing or planning a feature or a system before it is built, reviewing a change or a pull request, explaining existing code or onboarding onto it, and quick looks (overview, dependency map, hotspots, history, a file, a diff). Use whenever the user asks to see, show, visualize, map, design, plan, review, explain or walk through code, or when a picture of the code would answer faster than text.
 ---
 
 # Glimpse
@@ -15,7 +15,7 @@ Then pick the task and read its guide (next to this file) before you write the s
 
 | The user wants to | Read |
 |---|---|
-| design or plan something before it is built | `references/design.md` |
+| design or plan something before it is built: a feature, or a whole system | `references/design.md` |
 | review a change: a branch, a pull request, the working tree | `references/review.md` |
 | understand existing code: a system or architecture diagram, how a part works, what happens when something is called, getting started on it | `references/explain.md` |
 | take a quick look: the overview, dependencies, hotspots, history, a file, a diff, two modules side by side | a preset view, or a quick recipe below |

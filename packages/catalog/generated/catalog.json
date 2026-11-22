@@ -2054,11 +2054,8 @@
           "description": "Question (inline micro-markup)."
         },
         "options": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Choices."
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "Choices: ['A','B'], or [{label, note?}] where note says what picking it means or costs."
         },
         "name": {
           "type": "string",

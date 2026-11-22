@@ -178,11 +178,11 @@ code=CodeView('packages/server/src/mcp/show.ts#L1-40',mark='L1-12',title='Where 
 root=Page('Rate limiter',[plan,schema,ask])
 plan=Steps($/plan,title='Plan',span=5)
 schema=ERDiagram([{name:'buckets',columns:[{name:'key',type:'text',pk:true},{name:'tokens',type:'int'},{name:'client_id',type:'uuid',fk:'clients.id'}]},{name:'clients',columns:[{name:'id',type:'uuid',pk:true},{name:'plan',type:'text'}]}],title='Tables',span=7)
-ask=Ask('Which store backs the limiter?',['Redis','In-memory'],'store')
+ask=Ask('Which store backs the limiter?',['Redis',{label:'In-memory',note:'One instance only; counts reset on restart'}],'store')
 $/plan=[{title:'Add the middleware',status:'done'},{title:'Wire it into the router',status:'doing'},{title:'Tests',status:'todo'}]
 ```
 
-Later, `show` with the same `id` and only `$/plan=[...]` updates the plan in place; nothing else is re-sent or re-drawn. Clicking *Redis* queues `viewer: answer rate-limiter store {"choice":"Redis"}` for the agent.
+Later, `show` with the same `id` and only `$/plan=[...]` updates the plan in place; nothing else is re-sent or re-drawn. Clicking *Redis* queues `viewer: answer rate-limiter store {"choice":"Redis"}` for the agent. An option may be `{label, note}`: the note, set under the label, says what picking it means or costs, and only the label is sent.
 
 **What if** (`id: "what-if"`): numbers you set, and values computed from them in the tab.
 
@@ -297,7 +297,7 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 | Server instructions | 3,750 chars (hard limit 4,000) | 3,723 |
 | `show` + `catalog` definitions | 1,500 chars | 1,147 |
 | Largest preset result (`overview`) | 1,200 chars | 1,095 |
-| Eager viewer JavaScript, gzip | 210 kB (hard limit 215 kB) | 207.9 kB |
+| Eager viewer JavaScript, gzip | 210 kB (hard limit 215 kB) | 208.5 kB |
 | Largest other lazy chunk, gzip | 120 kB | 62.6 kB |
 | Diagram engine, gzip: ELK worker, React Flow, diagrams chunk | 515 kB, 90 kB, 52 kB | 448.4 kB, 77.7 kB, 46.7 kB |
 

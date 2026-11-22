@@ -4,7 +4,7 @@
 // from the in-place rewrite of messages nobody else holds yet.
 import {
   acceptsArg, callReads, callsIn, columnKey, explainValue, isCall, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, normalizeCols, parseFileLoc,
-  parseRef, PATHS, readColumns, replaceFileRefs, shapeKinds, shorthandTokens, SOURCES, tokenKey, type A2uiMessage, type Field, type Prop,
+  parseRef, PATHS, readColumns, readOptions, replaceFileRefs, shapeKinds, shorthandTokens, SOURCES, tokenKey, type A2uiMessage, type Field, type Prop,
   type SourceMeta, type SourceRef, type WireComponent,
 } from '@glimpse/catalog';
 import {ignoredMarksWarning, readLineMarks} from '@glimpse/catalog';
@@ -275,6 +275,25 @@ export function meantField(name: string, fields: readonly Field[]): string | und
     ?? closeMatch(name, keys);
 }
 
+/**
+ * Decision ask-options-carry-notes: Ask's options as written, read by readOptions (catalog options.ts). A key read under
+ * another name is a `fixed` line, an entry that is not drawn or a key that is not read a `warn` line, a value that is
+ * not a list E_SHAPE. Options the server read are rewritten to what draws, so the tab does not report them again;
+ * options bound to a $/path are the tab's to report (W_OPTIONS).
+ */
+function askOptions(comp: WireComponent, out: Expansion, where: (prop: string) => string): void {
+  const value = comp.options;
+  if (value === undefined || isDynamic(value)) return;
+  const read = readOptions(value);
+  for (const {option, from, to} of read.renamed) out.fixes.push(`${where('options')} option ${option}: ${from} -> ${to}`);
+  for (const {option, type, message} of read.problems) {
+    const at = `${where('options')}${option > 0 ? ` option ${option}` : ''}`;
+    if (type === 'shape') out.problems.push(problem('E_SHAPE', `${at}: ${message}`, {component: 'Ask'}));
+    else out.warnings.push(`${at}: ${type === 'dropped' ? 'not drawn: ' : ''}${message}`);
+  }
+  if (read.renamed.length > 0 || read.problems.length > 0) comp.options = read.options.map(option => (option.note ? option : option.label));
+}
+
 /** DataTable's columns: a list or the shorthand string, read by readColumns (catalog notation.ts). */
 const isColumns = (component: string, key: string): boolean => component === 'DataTable' && key === 'columns';
 
@@ -530,6 +549,7 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
       else out.warnings.push(`${at}: ${type === 'dropped' ? 'not drawn: ' : ''}${message}`);
     }
   }
+  if (def.name === 'Ask') askOptions(comp, out, where);
   const fields = boundFields.length === 1 ? boundFields[0] : undefined;
   if (fields && fields.length > 0) repairFields(comp, def.name, def.props as Record<string, Prop>, fields, out);
   nameFiles(comp, def.name, def.props as Record<string, Prop>, out, names);
