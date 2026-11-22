@@ -1,4 +1,4 @@
-# Glimpse 0.1.11 (release build)
+# Glimpse 0.1.12 (release build)
 
 This branch is written by the release workflow and holds the built Claude Code plugin. Do not edit it.
 Source, documentation and issues: https://github.com/svailla4/glimpse

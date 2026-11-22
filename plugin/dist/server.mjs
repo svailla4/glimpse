@@ -31674,12 +31674,11 @@ function cleanSequence(data) {
       const lower = key2.toLowerCase();
       if (BLOCK_SET.has(lower)) return { op: lower, label: textOf2(o12[key2]) };
       if (BLOCK_ALIASES[lower]) return { op: BLOCK_ALIASES[lower], label: textOf2(o12[key2]), alias: key2 };
-      if (UNFRAMED.has(lower)) return { label: textOf2(o12[key2]), alias: key2 };
     }
     const named2 = textOf2(o12.block ?? (Array.isArray(o12.steps) ? o12.type : void 0))?.toLowerCase();
     if (named2 === void 0) return void 0;
-    const op = BLOCK_SET.has(named2) ? named2 : BLOCK_ALIASES[named2];
-    return { ...op ? { op } : {}, label: textOf2(pick2(o12, LABEL_KEYS)), ...op !== named2 ? { alias: named2 } : {} };
+    const op = BLOCK_SET.has(named2) ? named2 : BLOCK_ALIASES[named2] ?? "group";
+    return { op, label: textOf2(pick2(o12, LABEL_KEYS)), ...op !== named2 ? { alias: named2 } : {} };
   };
   const walk = (list, depth, path2) => {
     const out = [];
@@ -31732,7 +31731,7 @@ function cleanSequence(data) {
       const block = blockOf(raw3);
       if (block) {
         dropped.ignore("block", unknownKeys(raw3, BLOCK_KEYS));
-        if (block.alias !== void 0) fixes.add(`${where}: block '${clip(block.alias, 20)}' ${block.op ? `-> ${block.op}` : "drawn without a frame"}`);
+        if (block.alias !== void 0) fixes.add(`${where}: block '${clip(block.alias, 20)}' -> ${block.op}`);
         const own6 = Array.isArray(raw3.steps) ? raw3.steps : [];
         const elseRaw = raw3.else ?? raw3.and;
         const branchesRaw = [{ label: block.label, steps: own6 }];
@@ -31751,11 +31750,7 @@ function cleanSequence(data) {
           return;
         }
         if (branches.every((branch) => branch.steps.length === 0)) {
-          dropped.add(`${where}: ${block.op ?? "group"} block with no steps`);
-          return;
-        }
-        if (!block.op) {
-          for (const branch of branches) out.push(...branch.steps);
+          dropped.add(`${where}: ${block.op} block with no steps`);
           return;
         }
         out.push({ kind: "frame", edge: "open", op: block.op, label: branches[0].label });
@@ -31955,7 +31950,7 @@ function cleanItems(kind, data) {
   });
   return cleaned(links, fixes, dropped);
 }
-var LABEL_KEYS, MAX_NOTES, MAX_DEPTH, isRecord, textOf2, pick2, clip, Notes, cleaned, unknownKeys, received2, labelOf, idList, FLOW_SHAPES, SHAPE_SET, SHAPE_ALIASES, NODE_NOTE_KEYS, NODE_KEYS, EDGE_FROM, EDGE_TO, EDGE_KEYS, GROUP_KEYS, FLOW_EXAMPLE, SEQ_BLOCKS, SEQ_ARROW_SET, ARROW_ALIASES, BLOCK_SET, BLOCK_ALIASES, UNFRAMED, MESSAGE_KEYS, ACTOR_KEYS, NOTE_KEYS, BLOCK_KEYS, SEQ_EXAMPLE, BAND_KEYS, ITEM_KEYS, ER_CARDS, CARD_SET, SCHEMA_KEYS, TABLE_KEYS, COLUMN_KEYS, RELATION_KEYS, POINTER_KEYS, STEP_KEY_SET;
+var LABEL_KEYS, MAX_NOTES, MAX_DEPTH, isRecord, textOf2, pick2, clip, Notes, cleaned, unknownKeys, received2, labelOf, idList, FLOW_SHAPES, SHAPE_SET, SHAPE_ALIASES, NODE_NOTE_KEYS, NODE_KEYS, EDGE_FROM, EDGE_TO, EDGE_KEYS, GROUP_KEYS, FLOW_EXAMPLE, SEQ_BLOCKS, SEQ_ARROW_SET, ARROW_ALIASES, BLOCK_SET, BLOCK_ALIASES, MESSAGE_KEYS, ACTOR_KEYS, NOTE_KEYS, BLOCK_KEYS, SEQ_EXAMPLE, BAND_KEYS, ITEM_KEYS, ER_CARDS, CARD_SET, SCHEMA_KEYS, TABLE_KEYS, COLUMN_KEYS, RELATION_KEYS, POINTER_KEYS, STEP_KEY_SET;
 var init_diagrams = __esm({
   "packages/catalog/src/diagrams.ts"() {
     "use strict";
@@ -32043,7 +32038,7 @@ var init_diagrams = __esm({
     EDGE_KEYS = /* @__PURE__ */ new Set([...EDGE_FROM, ...EDGE_TO, ...LABEL_KEYS, "dashed", "kind", "style"]);
     GROUP_KEYS = /* @__PURE__ */ new Set(["id", ...LABEL_KEYS, "parent", "group", "in"]);
     FLOW_EXAMPLE = "{nodes:{A:'Request',B:{label:'Over limit?',shape:'diamond'}},edges:[['A','B'],['B','C','no']]}";
-    SEQ_BLOCKS = ["loop", "alt", "opt", "par", "critical", "break"];
+    SEQ_BLOCKS = ["loop", "alt", "opt", "par", "critical", "break", "group"];
     SEQ_ARROW_SET = /* @__PURE__ */ new Set(["sync", "reply", "async"]);
     ARROW_ALIASES = {
       call: "sync",
@@ -32062,12 +32057,11 @@ var init_diagrams = __esm({
       publish: "async"
     };
     BLOCK_SET = new Set(SEQ_BLOCKS);
-    BLOCK_ALIASES = { while: "loop", repeat: "loop", if: "alt", optional: "opt", parallel: "par" };
-    UNFRAMED = /* @__PURE__ */ new Set(["group", "rect", "box"]);
+    BLOCK_ALIASES = { while: "loop", repeat: "loop", if: "alt", optional: "opt", parallel: "par", rect: "group", box: "group", section: "group", stage: "group", phase: "group" };
     MESSAGE_KEYS = /* @__PURE__ */ new Set([...EDGE_FROM, ...EDGE_TO, ...LABEL_KEYS, "arrow", "kind", "type", "via"]);
     ACTOR_KEYS = /* @__PURE__ */ new Set(["id", ...LABEL_KEYS, "node", "nodes"]);
     NOTE_KEYS = /* @__PURE__ */ new Set(["note", "over", "actor", "actors", "on"]);
-    BLOCK_KEYS = /* @__PURE__ */ new Set([...SEQ_BLOCKS, ...Object.keys(BLOCK_ALIASES), ...UNFRAMED, "type", "block", ...LABEL_KEYS, "steps", "else", "and"]);
+    BLOCK_KEYS = /* @__PURE__ */ new Set([...SEQ_BLOCKS, ...Object.keys(BLOCK_ALIASES), "type", "block", ...LABEL_KEYS, "steps", "else", "and"]);
     SEQ_EXAMPLE = "{steps:[['User','API','POST /login'],['API','User','200','reply']]}";
     BAND_KEYS = /* @__PURE__ */ new Set(["name", "label", "title", "note", "items"]);
     ITEM_KEYS = /* @__PURE__ */ new Set(["label", "name", "title", "note", "file", "path", "node", "nodes"]);
