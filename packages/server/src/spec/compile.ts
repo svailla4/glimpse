@@ -1,10 +1,10 @@
 // Express -> A2UI v1.0 messages (design 2.2 steps 2 and 3). Stateless: every call compiles against a throw-away twin
 // MessageProcessor seeded from the stored snapshot, so a failed call cannot leave compiler state behind.
 // This file and errors.ts are the only server code that touches @a2ui/agent.
-import {CATALOG_ID, COMPONENT_BY_NAME, createApiCatalog, normalizeSpec, PROTOCOL_VERSION, type A2uiMessage, type WireComponent} from '@glimpse/catalog';
+import {CALC_NAMES, CATALOG_ID, COMPONENT_BY_NAME, createApiCatalog, normalizeSpec, PROTOCOL_VERSION, type A2uiMessage, type WireComponent} from '@glimpse/catalog';
 import {classifyCompileError, compilerText, componentNearest, oneLine, problem, SpecError, type Problem} from './errors.ts';
 import {pathProblem, restoreBuiltins, scanSpec, stringValue, tokenize, valueProblem, type SpecToken} from './guard.ts';
-import {repair, rewrite} from './repair.ts';
+import {callArguments, repair, rewrite} from './repair.ts';
 
 const MAX_REPAIR_PASSES = 6;
 /** Parts one patch may have appended to root. */
@@ -147,6 +147,10 @@ export function unclosedString(source: string): {line: number; col: number; swal
 
 const isOpen = (token: SpecToken) => token.kind === 'punct' && '([{'.includes(token.text);
 const isClose = (token: SpecToken) => token.kind === 'punct' && ')]}'.includes(token.text);
+const CALCS: ReadonlySet<string> = new Set(CALC_NAMES);
+/** One of the four functions called at token `i` (`div(`); the callers ask it at the start of a statement or a value. */
+const bareCalc = (tokens: readonly SpecToken[], i: number): boolean =>
+  tokens[i]!.kind === 'ident' && CALCS.has(tokens[i]!.text) && tokens[i + 1]?.text === '(';
 
 /**
  * Text at statement level that is not an assignment (`name=...`, `$/path=...`). The Express grammar accepts bare
@@ -167,6 +171,8 @@ export function strayText(text: string): string[] {
   while (i < tokens.length) {
     const token = tokens[i]!;
     if (token.text === ';') { i++; continue; }
+    // A call of its own is said by calcText, which knows what it is.
+    if (bareCalc(tokens, i)) { i = skipGroup(i + 1); continue; }
     if ((token.kind === 'ident' || token.kind === 'path') && tokens[i + 1]?.text === '=' && tokens[i + 2]?.text !== '=') {
       const value = tokens[i + 2];
       if (!value) break;
@@ -181,6 +187,59 @@ export function strayText(text: string): string[] {
     i = end;
   }
   return stray.slice(0, 3).map(span => `line ${span.line}: ignored text that is not a statement: ${JSON.stringify(oneLine(text.slice(span.start, span.end), 60))}`);
+}
+
+// ---------------------------------------------------------------- calls (decision D25)
+/** The index of the first token of each statement of a text (a statement ends at `;` or a line end outside brackets). */
+function statementStarts(tokens: readonly SpecToken[]): number[] {
+  const starts: number[] = [];
+  let depth = 0;
+  let fresh = true;
+  tokens.forEach((token, i) => {
+    if (depth === 0 && fresh && token.text !== ';') { starts.push(i); fresh = false; }
+    if (isOpen(token)) depth++;
+    else if (isClose(token)) depth = Math.max(0, depth - 1);
+    if (depth === 0 && (token.text === ';' || tokens[i + 1]?.line !== token.line)) fresh = true;
+  });
+  return starts;
+}
+
+/**
+ * What the compiler does with calls in silence, said (decision D25): a third argument is dropped (`div($/a,2,3)`
+ * computes $/a/2), a call written as a statement of its own computes nothing, and a named call (`rps=div(...)`) is
+ * copied into the arguments that use its name, so sent alone it changes nothing. The first is refused; the others
+ * are `warn` lines. `source` is the text as written, for line numbers.
+ */
+export function calcText(text: string, source: string): {problem?: Problem; warnings: string[]} {
+  const {tokens} = tokenize(text);
+  const calls = new Map<number, {name: string; line: number; count: number}>();
+  for (const arg of callArguments(tokens)) {
+    if (!CALCS.has(arg.callee)) continue;
+    const call = calls.get(arg.call) ?? {name: arg.callee, line: arg.calleeToken.line, count: 0};
+    call.count = Math.max(call.count, arg.index + 1);
+    calls.set(arg.call, call);
+  }
+  const extra = [...calls.values()].find(call => call.count > 2);
+  if (extra) {
+    return {
+      problem: problem('E_TYPE', `line ${originalLine(source, extra.line)}: ${extra.name} takes 2 arguments (a, b); this call passes ${extra.count}. Nest calls for more: add(add($/a,$/b),$/c).`),
+      warnings: [],
+    };
+  }
+  const warnings: string[] = [];
+  for (const i of statementStarts(tokens)) {
+    const token = tokens[i]!;
+    const line = originalLine(source, token.line);
+    if (bareCalc(tokens, i)) {
+      warnings.push(`line ${line}: ${token.text}(...) on its own computes nothing and was left out; use it as an argument, e.g. Stat(${token.text}(...),'label').`);
+      continue;
+    }
+    const value = tokens[i + 2];
+    if (token.kind !== 'ident' || tokens[i + 1]?.text !== '=' || !value || !bareCalc(tokens, i + 2)) continue;
+    const used = tokens.some((other, j) => j !== i && other.kind === 'ident' && other.text === token.text);
+    if (!used) warnings.push(`line ${line}: ${token.text}=${value.text}(...) is copied into the arguments that use ${token.text}, so on its own it changes nothing; resend the parts that use ${token.text}.`);
+  }
+  return {warnings: warnings.slice(0, 3)};
 }
 
 // ---------------------------------------------------------------- parts appended to root
@@ -328,10 +387,17 @@ export function compileSpec(tools: Toolchain, request: CompileRequest): CompileR
       }
     }
     if (!failure) {
-      checkTargets(messages, request.surfaceId, request.seed === undefined);
-      checkValues(messages);
-      const warnings = texts.flatMap((text, step) => [...strayText(text), ...swallowedCalls(text, request.sources[step]!)]);
-      return {messages, fixes, warnings, texts, steps};
+      const calcs = texts.map((text, step) => calcText(text, request.sources[step]!));
+      const refused = calcs.find(calc => calc.problem)?.problem;
+      if (refused) throw new SpecError([refused]);
+      // A call written as a statement compiles to callRendererFunction, which asks the tab to run it once for nothing:
+      // left out, and said by calcText.
+      const kept = messages.flatMap((message, i) => ('callRendererFunction' in message ? [] : [{message, step: steps[i]!}]));
+      const compiled = kept.map(entry => entry.message);
+      checkTargets(compiled, request.surfaceId, request.seed === undefined);
+      checkValues(compiled);
+      const warnings = texts.flatMap((text, step) => [...strayText(text), ...swallowedCalls(text, request.sources[step]!), ...calcs[step]!.warnings]);
+      return {messages: compiled, fixes, warnings, texts, steps: kept.map(entry => entry.step)};
     }
     const {step, error, root} = failure;
     if (error instanceof SpecError) throw error;
@@ -354,6 +420,9 @@ export function compileSpec(tools: Toolchain, request: CompileRequest): CompileR
       const call = bareCall(texts[step]!, name);
       found = problem('E_REF', `${call ? `line ${lineOf(call.line)}: ` : ''}${name}(...) is not assigned to a name. Write part=${name}(...) and list part in a parent's children, e.g. root=Page('Title',[...,part]).`, {component: name});
     }
+    // Decision D25: a patch of nothing but a call (`rps=div(...)`, `div(...)`) compiles to nothing; say why.
+    const calc = found.code === 'E_REF' && found.message.startsWith('the spec defines nothing') ? calcText(texts[step]!, request.sources[step]!).warnings[0] : undefined;
+    if (calc) found = problem('E_REF', `the spec defines nothing to render: ${calc}`);
     const hint = pass < MAX_REPAIR_PASSES + adoptions ? found.repair : undefined;
     const fail = (): never => {
       // Finding V041: a renamed component whose arguments then fail was the wrong guess: say what was written. When

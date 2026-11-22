@@ -1,7 +1,38 @@
 // EventQueue and the `viewer:` line format (design 2.7): fixed prefix, escaped and capped values, delivery once.
 import {describe, expect, it} from 'vitest';
-import {actionLine, EventQueue, MAX_EVENTS, reportLine, reportText, selectLine} from '../../src/session/events.ts';
+import {actionLine, EventQueue, MAX_EVENTS, reportLine, reportText, selectLine, setLine, type Computed} from '../../src/session/events.ts';
 import {MAX_REPORT_LINES} from '../../src/session/reports.ts';
+
+describe('setLine (decision D25)', () => {
+  const at = (where: string, entries: Array<[string, number | string]>): Computed[] =>
+    entries.map(([place, got]) => (typeof got === 'number' ? {where, at: place, value: got} : {where, at: place, problem: got}));
+
+  it('lists what the server computed, one group per component, numbers to six significant digits', () => {
+    expect(setLine('/w/seats', 80000, 'what-if', at('Stats#peak', [['data/0/value', 400], ['data/1/value', 1600], ['data/2/value', 800]])))
+      .toBe('viewer: set $/w/seats 80000 (what-if) -> Stats#peak data/0/value=400 data/1/value=1600 data/2/value=800');
+    expect(setLine('/w/conv', 0.5, 'what-if', [...at('Stat#rps', [['value', 1000 / 3]]), ...at('Stats#peak', [['data/0/value', 2e21 / 3]])]))
+      .toBe('viewer: set $/w/conv 0.5 (what-if) -> Stat#rps value=333.333; Stats#peak data/0/value=666667000000000000000');
+    expect(setLine('/w/seats', 3, 'w', [])).toBe('viewer: set $/w/seats 3 (w)');
+  });
+
+  it('lists values that fail the same way together, after the ones that compute, each further reason after a ;', () => {
+    const zero = 'div: b = $/w/secs is 0 (division by zero)';
+    expect(setLine('/w/secs', 0, 'what-if', at('Stats#peak', [['data/0/value', zero], ['data/1/value', zero], ['data/2/value', zero]])))
+      .toBe(`viewer: set $/w/secs 0 (what-if) -> Stats#peak data/0/value data/1/value data/2/value: ${zero}`);
+    expect(setLine('/w/a', 1, 'w', at('Stats#k', [['data/0/value', 'mul: the result is too large'], ['data/1/value', 2], ['data/2/value', zero]])))
+      .toBe(`viewer: set $/w/a 1 (w) -> Stats#k data/1/value=2 data/0/value: mul: the result is too large; data/2/value: ${zero}`);
+  });
+
+  it('names at most eight components, cuts a long line and escapes what could break it', () => {
+    const many = Array.from({length: 10}, (_, i) => ({where: `Stat#s${i}`, at: 'value', value: i}));
+    expect(setLine('/w/n', 1, 'w', many)).toBe(`viewer: set $/w/n 1 (w) -> ${many.slice(0, 8).map(entry => `Stat#s${entry.value} value=${entry.value}`).join('; ')}; and 2 more`);
+    const long = setLine('/w/n', 1, 'w', [{where: 'Stat#x', at: 'value', problem: `mul: a = $/w/t is "${'x'.repeat(400)}", not a number`}]);
+    expect(long.length).toBeLessThan(330);
+    expect(long.endsWith('…')).toBe(true);
+    expect(setLine('/w/n', 1, 'w', [{where: 'Stat#x', at: 'value', problem: 'a\u2028b\u202Ec'}])).toBe('viewer: set $/w/n 1 (w) -> Stat#x value: a\\u2028b\\u202ec');
+    expect(setLine('/w/a b', 1, 'w\nx', [])).toBe('viewer: set $"/w/a b" 1 (w_x)');
+  });
+});
 
 describe('line format', () => {
   it('matches the documented examples', () => {
@@ -81,13 +112,27 @@ describe('EventQueue', () => {
 
   it('keeps one selection: a newer one replaces it, null withdraws it', () => {
     const queue = new EventQueue();
-    queue.select('viewer: select file a.ts (s)');
+    queue.latest('select', 'viewer: select file a.ts (s)');
     queue.push('viewer: press s go');
-    queue.select('viewer: select file b.ts (s)');
+    queue.latest('select', 'viewer: select file b.ts (s)');
     expect(queue.drain()).toEqual(['viewer: press s go', 'viewer: select file b.ts (s)']);
-    queue.select('viewer: select file c.ts (s)');
-    queue.select(null);
+    queue.latest('select', 'viewer: select file c.ts (s)');
+    queue.latest('select', null);
     expect(queue.drain()).toEqual([]);
+  });
+
+  // Decision D25: the last number set at a path replaces an undelivered earlier one; other keys are left alone.
+  it('keeps the latest line per key, and nothing else', () => {
+    const queue = new EventQueue();
+    queue.latest('set\nw\n/w/seats', 'viewer: set $/w/seats 60000 (w)');
+    queue.latest('set\nw\n/w/secs', 'viewer: set $/w/secs 60 (w)');
+    queue.latest('select', 'viewer: select file a.ts (w)');
+    queue.push('viewer: press w go');
+    queue.latest('set\nw\n/w/seats', 'viewer: set $/w/seats 80000 (w)');
+    queue.latest('set\nother\n/w/seats', 'viewer: set $/w/seats 1 (other)');
+    expect(queue.drain()).toEqual([
+      'viewer: set $/w/secs 60 (w)', 'viewer: select file a.ts (w)', 'viewer: press w go', 'viewer: set $/w/seats 80000 (w)', 'viewer: set $/w/seats 1 (other)',
+    ]);
   });
 
   // Decision D14: a report is the component's current state, kept in a store of its own.

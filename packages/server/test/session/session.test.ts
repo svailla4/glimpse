@@ -451,6 +451,29 @@ describe('host actions', () => {
     expect(ui).toEqual({sel: ref, file: 'db/schema.sql#L10-30'});
   });
 
+  // Decision D25: a number set in the tab survives the same spec shown again, which says so; writing the path resets it.
+  it('gl_set: the same spec shown again keeps the number with a fixed line; a write to its path resets it', async () => {
+    const what = `root=Page('What if',[seats,rps])\n$/w={seats:50000,secs:120}\nseats=Slider('Seats',$/w/seats,1000,200000)\nrps=Stat(div($/w/seats,$/w/secs),'req/s')`;
+    const {t, router} = await withRouter(what);
+    expect(router.handle(action('gl_set', {value: 80000}, 'seats'))).toBe(true);
+    const again = await t.session.show(spec('demo', what));
+    expect(again.mode).toBe('replace');
+    expect(again.fixes).toEqual(['$/w/seats stays 80000 (set in the tab); write $/w/seats=... itself to change it']);
+    expect(t.session.surfaces.get('demo')!.data.w).toEqual({seats: 80000, secs: 120});
+    // shown again once more: still kept, still said
+    expect((await t.session.show(spec('demo', what))).fixes).toEqual(['$/w/seats stays 80000 (set in the tab); write $/w/seats=... itself to change it']);
+    const reset = await t.session.show(spec('demo', `$/w/seats=50000`));
+    expect(reset.fixes).toEqual([]);
+    expect(t.session.surfaces.get('demo')!.data.w).toEqual({seats: 50000, secs: 120});
+    expect((await t.session.show(spec('demo', what))).fixes).toEqual([]);
+  });
+
+  // Decision D25: a call checked against the data after the call: what gives no number is a warning.
+  it('a call that gives no number at show time is a warning; one reading a path not set is the unbound line', async () => {
+    const {outcome} = await withRouter(`root=Page('x',[a,b])\n$/w={secs:0}\na=Stat(div(100,$/w/secs),'rps')\nb=Stat(mul($/w/none,2),'n')`);
+    expect(outcome.warnings).toEqual(['Stat#a: value: div: b = $/w/secs is 0 (division by zero)', 'unbound $/w/none']);
+  });
+
   it('other actions are queued as press, answer or event lines by the kind of their source', async () => {
     const {t, router} = await withRouter(`root=Page('x',[go,ask,note])\ngo=Button('Go',Event('approve',{plan:1}))\nask=Ask('Which?',['Redis','Memory'],'store')\nnote=Text('n')`);
     router.handle(action('approve', {plan: 1}, 'go'));

@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {lstat, readFile} from 'node:fs/promises';
 import {basename, join} from 'node:path';
 import {
-  COMPONENT_BY_NAME, formatFileLoc, formatRef, parseFileLoc, PROTOCOL_VERSION, SOURCE_BY_NAME,
+  callsIn, COMPONENT_BY_NAME, explainValue, formatFileLoc, formatRef, inputValue, parseFileLoc, PROTOCOL_VERSION, reads, SOURCE_BY_NAME,
   type A2uiMessage, type Dataset, type EntityRef, type GraphData, type Prop, type RowsPage, type SessionInfo, type SourceRef, type SurfaceInfo,
   type SurfaceMeta, type WireComponent,
 } from '@glimpse/catalog';
@@ -16,15 +16,18 @@ import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
 import {canonicalTarget, isCaseVariant} from '../sources/targets.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../spec/compile.ts';
 import {editDistance, nearest, oneLine, problem, SpecError, type Problem} from '../spec/errors.ts';
-import {diagramNotes, linkNotes} from '../spec/authored.ts';
-import {boundKeys, checkRef, componentsOf, expandMessages, MAX_CHECKS, unboundPaths, type Expansion, type PathNames} from '../spec/expand.ts';
+import {diagramNotes, isBinding, linkNotes, SERVER_PATH} from '../spec/authored.ts';
+import {
+  boundKeys, calcNotes, checkRef, componentsOf, expandMessages, lookup, MAX_CHECKS, unboundPaths, type Expansion, type PathNames,
+} from '../spec/expand.ts';
+import {pathProblem} from '../spec/guard.ts';
 import {DatasetStore, envelopeOf, pageRows, pendingEnvelope, readsRefs, rowsOf, type Drill, type Outcome, type PageQuery} from './datasets.ts';
 import {ownEnv} from './env.ts';
-import {EventQueue, selectLine} from './events.ts';
+import {EventQueue, selectLine, setLine, type Computed} from './events.ts';
 import {treeStamp} from './freshness.ts';
 import {isSafeRange, repoRelative, resolveInside} from './paths.ts';
 import {createRunGit, type GitRunner} from './rungit.ts';
-import {inPlaceMessages, snapshotOf, SurfaceStore, type CommitMode, type Draft, type SurfaceRecord} from './surfaces.ts';
+import {inPlaceMessages, setPath, snapshotOf, SurfaceStore, type CommitMode, type Draft, type SurfaceRecord} from './surfaces.ts';
 
 /** What the composition root (src/main.ts) injects: the real factories, or fakes in tests. */
 export interface ServerDeps {
@@ -220,6 +223,26 @@ export function missingFileHint(path: string, candidates: readonly string[]): st
   const close = (candidate: string) => editDistance(path.toLowerCase(), candidate.toLowerCase()) <= Math.max(3, Math.floor(path.length / 4));
   const near = nearest(path, candidates, 2).filter(close);
   return near.length > 0 ? ` Nearest: ${near.join(' ')}` : '';
+}
+
+/**
+ * Decision D25: what the calls reading `path` compute now, component by component in the view's order: a value or
+ * why there is none. Read from the model's data with the datasets the surface holds.
+ */
+export function computedFrom(record: SurfaceRecord, path: string): Computed[] {
+  const model = {...record.data, ds: record.ds};
+  const read = (at: string) => lookup(model, at);
+  const out: Computed[] = [];
+  for (const comp of record.components.values()) {
+    for (const {at, call} of callsIn(comp)) {
+      if (!reads(call, path)) continue;
+      const got = explainValue(call, read);
+      const where = `${comp.component}#${comp.id}`;
+      if ('problem' in got) out.push({where, at, problem: got.problem});
+      else if (typeof got.value === 'number') out.push({where, at, value: got.value});
+    }
+  }
+  return out;
 }
 
 /** Whether the root holds a .git entry (a directory, or the file of a linked worktree). */
@@ -609,10 +632,13 @@ export class Session {
     // Decision D24: the files bound diagram and Steps data name are checked with the call's own (checkNamed).
     for (const entry of diagrams.files) if (expansion.files.length < MAX_CHECKS) expansion.files.push(entry);
     const links = linkNotes(components, draft.record.data, defined, compiledData);
+    const calcs = calcNotes(components, draft.record.data, defined, compiledData);
+    // Decision D25: a number the user set that this call's own, unchanged seed would have undone.
+    const kept = draft.kept.map(({path, value}) => `$${path} stays ${value} (set in the tab); write $${path}=... itself to change it`);
     return {
       draft,
-      fixes: [...compiled.fixes, ...expansion.fixes, ...diagrams.fixes],
-      warnings: [...compiled.warnings, ...expansion.warnings, ...diagrams.warnings, ...links, ...unbound.map(path => `unbound ${path}`)],
+      fixes: [...compiled.fixes, ...expansion.fixes, ...diagrams.fixes, ...kept],
+      warnings: [...compiled.warnings, ...expansion.warnings, ...diagrams.warnings, ...links, ...calcs, ...unbound.map(path => `unbound ${path}`)],
       expansion,
       compiledData,
     };
@@ -1076,7 +1102,7 @@ export class Session {
   // ---------------------------------------------------------------- host actions (design 2.7)
   /** gl_select: queued for the model, and kept on the surface so a reload or a second tab opens on it. */
   select(surfaceId: string, ref: EntityRef | null): void {
-    this.events.select(ref ? selectLine(ref, surfaceId) : null);
+    this.events.latest('select', ref ? selectLine(ref, surfaceId) : null);
     const record = this.surfaces.get(surfaceId);
     if (!record) return;
     record.sel = ref;
@@ -1084,6 +1110,30 @@ export class Session {
     if (ref?.path && ref.type !== 'dir') {
       record.file = formatFileLoc({path: ref.path, ...(ref.line !== undefined ? {line: ref.line} : {}), ...(ref.endLine !== undefined ? {endLine: ref.endLine} : {})});
     }
+  }
+
+  /**
+   * gl_set (decision D25): the number a Slider set. The tab names no path: it is the one the stored Slider binds, a
+   * path of the model's own, and the number is held to the Slider's own min and max. It goes into the data, so a
+   * reload, a second tab and a patch keep it, with the value the spec had there, so the same seed sent again does not
+   * undo it (surfaces.ts keepTyped). Nothing is published: the tab that set it already computed what reads it. The
+   * model hears one `viewer: set` line per path, the latest, with what the server computed from it. Returns false for
+   * anything that is not a finite number from a Slider bound to such a path.
+   */
+  setInput(record: SurfaceRecord, comp: WireComponent, raw: unknown): boolean {
+    if (comp.component !== 'Slider' || !isBinding(comp.value)) return false;
+    const path = comp.value['@path'];
+    if (!path.startsWith('/') || SERVER_PATH.test(path) || pathProblem(path)) return false;
+    const value = inputValue(raw, {min: comp.min, max: comp.max});
+    if (value === undefined) return false;
+    const seed = record.typed?.has(path) ? record.typed.get(path)!.seed : structuredClone(lookup(record.data, path));
+    setPath(record.data, path, value);
+    // setPath writes nothing where it cannot go (an index out of range under an array): then nothing was set.
+    if (lookup(record.data, path) !== value) return false;
+    record.typed ??= new Map();
+    record.typed.set(path, {value, seed});
+    this.events.latest(`set\n${record.id}\n${path}`, setLine(path, value, record.id, computedFrom(record, path)));
+    return true;
   }
 
   /**

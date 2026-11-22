@@ -5,7 +5,7 @@ import {beforeAll, describe, expect, it} from 'vitest';
 import {createRegistry} from '../../src/sources/registry.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
 import {diagramNotes, linkNotes} from '../../src/spec/authored.ts';
-import {boundKeys, checkRef, expandMessages, refSignature, splitRatio, unboundPaths} from '../../src/spec/expand.ts';
+import {boundKeys, calcNotes, checkRef, expandMessages, refSignature, splitRatio, unboundPaths} from '../../src/spec/expand.ts';
 import {fakeSources} from '../session/fakes.ts';
 
 let tools: Toolchain;
@@ -243,6 +243,72 @@ describe('expandMessages: diagram data, columns, paths', () => {
   it('a reserved path segment in a compiled message is E_PATH (decision D10)', () => {
     const out = expandMessages([{version: '1.0', updateDataModel: {surfaceId: 's', path: '/a/__proto__/b', value: 1}}], registry);
     expect(out.problems.map(p => `${p.code} ${p.message}`)).toEqual(['E_PATH "__proto__" cannot be used as a data path segment: __proto__, constructor and prototype are reserved. Rename it.']);
+  });
+});
+
+// Decision D25: what a Slider binds, a call where it computes nothing, and calls checked against the data.
+describe('expandMessages: Slider and calls', () => {
+  it('a Slider value that is not a binding to a path of the model\'s own is refused with what to write', () => {
+    expect(expand(`root=Page('x',[s])\ns=Slider('Seats',50000)`).lines)
+      .toEqual([`E_TYPE Slider#s.value: 50000 is not a $/path. A Slider edits data: write $/w={seats:50000} and Slider('Seats',$/w/seats).`]);
+    expect(expand(`root=Page('x',[s])\ns=Slider('Seats',div($/a,2))`).lines)
+      .toEqual([`E_TYPE Slider#s.value: a call is not a $/path. A Slider edits data: write $/w={seats:50000} and Slider('Seats',$/w/seats).`]);
+    expect(expand(`root=Page('x',[s])\ns=Slider('Seats',$w/seats)`).lines).toEqual(['E_TYPE Slider#s.value: bind an absolute $/path, e.g. $/w/seats.']);
+    expect(expand(`root=Page('x',[s])\ns=Slider('Seats',$/ui/seats)`).lines)
+      .toEqual(['E_PATH Slider#s.value: $/ui/seats belongs to the viewer (/ds and /meta to the server); bind a path of your own, e.g. $/w/seats.']);
+    for (const path of ['/ds/x', '/meta/rev']) {
+      expect(expand(`root=Page('x',[s])\ns=Slider('Seats',$${path})`).lines)
+        .toEqual([`E_PATH Slider#s.value: $${path} belongs to the server (/ui to the viewer); bind a path of your own, e.g. $/w/seats.`]);
+    }
+  });
+
+  it('a Slider whose min is not below its max is drawn without a range, and says so', () => {
+    const out = expand(`$/w={seats:5}\nroot=Page('x',[s,t])\ns=Slider('Seats',$/w/seats,10,5)\nt=Slider('Same',$/w/seats,3,3)`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual(['Slider#s: min 10 is not below max 5, so no range is drawn', 'Slider#t: min 3 is not below max 3, so no range is drawn']);
+    expect(expand(`$/w={seats:5}\nroot=Page('x',[s])\ns=Slider('Seats',$/w/seats,1,10,step=1,unit='s')`).warnings).toEqual([]);
+  });
+
+  it('a call as an action is refused: it computes a number', () => {
+    expect(expand(`root=Page('x',[b])\nb=Button('Go',div(1,2))`).lines).toEqual([`E_TYPE Button#b.action: div(...) computes a number; an action is Event('name',{...}).`]);
+  });
+
+  it('a call in the data model is not computed: said once, for a new view and for a patch', () => {
+    expect(expand(`$/k=[{label:'x',value:mul($/a,2)},{label:'y',value:add(1,2)}]\n$/n={v:div(1,2)}\nroot=Page('x',[Stats($/k)])`).warnings)
+      .toEqual([`$/k/0/value: a call in data is not computed; write it in a component argument, e.g. Stats([{label:'x',value:mul($/a,2)}]). (and 2 more)`]);
+    const patch: A2uiMessage[] = [{version: '1.0', updateDataModel: {surfaceId: 's', path: '/w/rows', value: [{n: {'@call': 'mul', args: {a: {'@path': '/w/a'}, b: 2}}}]}}];
+    expect(expandMessages(patch, registry).warnings).toEqual([`$/w/rows/0/n: a call in data is not computed; write it in a component argument, e.g. Stats([{label:'x',value:mul($/a,2)}]).`]);
+    // a binding in data is data, and a call in a component argument is what it should be
+    expect(expand(`$/k={a:1}\nroot=Page('x',[Stats([{label:'x',value:mul($/k/a,2)}])])`).warnings).toEqual([]);
+  });
+
+  it('calcNotes computes the calls against the data after the call, and says why one has no number', () => {
+    const stat: WireComponent = {id: 'rps', component: 'Stat', value: {'@call': 'div', args: {a: {'@path': '/w/seats'}, b: {'@path': '/w/secs'}}}};
+    const peak: WireComponent = {id: 'peak', component: 'Stats', data: [
+      {label: 'a', value: {'@call': 'mul', args: {a: {'@path': '/w/seats'}, b: 2}}},
+      {label: 'b', value: {'@call': 'mul', args: {a: {'@call': 'mul', args: {a: {'@path': '/w/big'}, b: 1e300}}, b: 1e300}}},
+      {label: 'c', value: {'@call': 'add', args: {a: {'@path': '/w/none'}, b: 1}}},
+    ]};
+    const slider: WireComponent = {id: 's', component: 'Slider', label: 'Seats', value: {'@path': '/w/seats'}};
+    const comps = [stat, peak, slider];
+    const ids = new Set(comps.map(comp => comp.id));
+    const data = {w: {seats: '50k', secs: 0, big: 1}};
+    expect(calcNotes(comps, data, ids, new Set())).toEqual([
+      'Stat#rps: value: div: a = $/w/seats is "50k", not a number',
+      'Stats#peak: data/0/value: mul: a = $/w/seats is "50k", not a number',
+      'Stats#peak: data/1/value: mul: the result is too large',
+      'Slider#s: $/w/seats is "50k", not a number',
+    ]);
+    // division by zero; an operand not set is the unbound line's, not said twice
+    expect(calcNotes([stat], {w: {seats: 100, secs: 0}}, ids, new Set())).toEqual(['Stat#rps: value: div: b = $/w/secs is 0 (division by zero)']);
+    expect(calcNotes([stat], {w: {seats: 100}}, ids, new Set())).toEqual([]);
+    expect(unboundPaths([stat], {w: {seats: 100}})).toEqual(['$/w/secs']);
+    // scope: a component the call defines, or one reading a top segment it wrote; neither is said again
+    expect(calcNotes([stat], {w: {seats: 1, secs: 0}}, new Set(), new Set(['w']))).toHaveLength(1);
+    expect(calcNotes([slider], data, new Set(), new Set(['w']))).toEqual(['Slider#s: $/w/seats is "50k", not a number']);
+    expect(calcNotes(comps, data, new Set(), new Set(['other']))).toEqual([]);
+    // a value that computes is no line at all
+    expect(calcNotes([stat, slider], {w: {seats: 50000, secs: 120}}, ids, new Set())).toEqual([]);
   });
 });
 

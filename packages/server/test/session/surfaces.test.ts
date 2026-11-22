@@ -1,7 +1,7 @@
 // SurfaceStore: drafts are detached, commit modes follow design 2.2 step 5, and at most twelve surfaces are kept.
 import {VIEW_BY_NAME, type A2uiMessage, type SourceRef, type SurfaceMeta} from '@glimpse/catalog';
 import {beforeAll, describe, expect, it} from 'vitest';
-import {dataModelOf, MAX_SURFACES, setPath, snapshotOf, SurfaceStore, titleOf} from '../../src/session/surfaces.ts';
+import {dataModelOf, inPlaceMessages, MAX_SURFACES, setPath, snapshotOf, SurfaceStore, titleOf} from '../../src/session/surfaces.ts';
 import {createRegistry} from '../../src/sources/registry.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
 import {expandMessages} from '../../src/spec/expand.ts';
@@ -286,6 +286,84 @@ describe('patches below a slot (decision D4)', () => {
     const sent = (d.delta[0] as Extract<A2uiMessage, {updateDataModel: unknown}>).updateDataModel.value;
     expect(sent).toEqual(d.record.data.plan);
     expect(sent).not.toBe(d.record.data.plan);
+  });
+});
+
+// Decision D25: a number the user set with a Slider lives in the data, with the seed it replaced.
+describe('numbers set in the tab', () => {
+  const WHAT_IF = `root=Page('What if',[s,peak])\n$/w={seats:50000,secs:120}\ns=Slider('Seats',$/w/seats,1000,200000)\npeak=Stat(div($/w/seats,$/w/secs),'rps')`;
+  /** What Session.setInput does to the record for gl_set {value} from Slider s. */
+  const typeIn = (store: SurfaceStore, value: number) => {
+    const record = store.get('w')!;
+    record.typed ??= new Map();
+    const typed = record.typed;
+    typed.set('/w/seats', {value, seed: typed.get('/w/seats')?.seed ?? structuredClone((record.data.w as {seats: unknown}).seats)});
+    setPath(record.data, '/w/seats', value);
+  };
+  const setup = () => {
+    const store = new SurfaceStore();
+    apply(store, 'w', WHAT_IF);
+    typeIn(store, 80000);
+    return store;
+  };
+  const dataMessages = (messages: A2uiMessage[]) => messages.flatMap(m => ('updateDataModel' in m ? [[m.updateDataModel.path, m.updateDataModel.value]] : []));
+
+  it('the same seed sent again keeps the number, says so, and a patch publishes the slot as the store holds it', () => {
+    const store = setup();
+    const d = draft(store, 'w', `$/w={seats:50000,secs:120}`);
+    expect(d.mode).toBe('patch');
+    expect(d.kept).toEqual([{path: '/w/seats', value: 80000}]);
+    expect(d.record.data.w).toEqual({seats: 80000, secs: 120});
+    expect(d.record.typed).toEqual(new Map([['/w/seats', {value: 80000, seed: 50000}]]));
+    expect(dataMessages(d.delta)).toEqual([['/w', {seats: 80000, secs: 120}]]);
+    // a patch of another key of the slot keeps it without a word, and publishes the whole slot
+    const other = draft(store, 'w', `$/w/secs=60`);
+    expect(other.kept).toEqual([]);
+    expect(dataMessages(other.delta)).toEqual([['/w', {seats: 80000, secs: 60}]]);
+    expect(other.record.typed?.get('/w/seats')).toEqual({value: 80000, seed: 50000});
+  });
+
+  it('a re-show of the whole spec is replaced in place, keeps the number and sends no /w', () => {
+    const store = setup();
+    const d = draft(store, 'w', WHAT_IF);
+    expect(d.mode).toBe('replace');
+    expect(d.inPlace).toBeDefined();
+    expect(d.kept).toEqual([{path: '/w/seats', value: 80000}]);
+    expect(d.record.data.w).toEqual({seats: 80000, secs: 120});
+    const frame = inPlaceMessages(d.inPlace!.previous, d.record, META, d.inPlace!.changed);
+    expect(dataMessages(frame).map(([path]) => path)).toEqual(['/meta']);
+    // a reload or a second tab gets it too
+    store.commit(d);
+    const snapshot = snapshotOf(store.get('w')!, META);
+    expect('createSurface' in snapshot && snapshot.createSurface.dataModel?.w).toEqual({seats: 80000, secs: 120});
+  });
+
+  it('a write to the path itself wins, and the number is forgotten', () => {
+    const store = setup();
+    const d = draft(store, 'w', `$/w/seats=50000`);
+    expect(d.kept).toEqual([]);
+    expect(d.record.data.w).toEqual({seats: 50000, secs: 120});
+    expect(d.record.typed).toBeUndefined();
+  });
+
+  it('a new seed wins over the number', () => {
+    const store = setup();
+    const d = draft(store, 'w', `$/w={seats:60000,secs:120}`);
+    expect(d.kept).toEqual([]);
+    expect(d.record.data.w).toEqual({seats: 60000, secs: 120});
+    expect(d.record.typed).toBeUndefined();
+    expect(dataMessages(d.delta)).toEqual([['/w', {seats: 60000, secs: 120}]]);
+  });
+
+  it('is forgotten when no Slider binds the path, and a preset starts from nothing', () => {
+    const store = setup();
+    const removed = draft(store, 'w', `root=Page('What if',[peak])`);
+    expect(removed.record.typed).toBeUndefined();
+    expect(removed.record.data.w).toEqual({seats: 80000, secs: 120});
+    const fresh = draft(store, 'w', WHAT_IF, {fresh: true});
+    expect(fresh.record.typed).toBeUndefined();
+    expect(fresh.kept).toEqual([]);
+    expect(fresh.record.data.w).toEqual({seats: 50000, secs: 120});
   });
 });
 

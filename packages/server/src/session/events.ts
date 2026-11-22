@@ -52,9 +52,45 @@ export function actionLine(verb: 'press' | 'answer' | 'event', surfaceId: string
   return `${PREFIX} ${verb} ${name(surfaceId)} ${name(action)}${json ? ' ' + json : ''}`;
 }
 
+/** What a number set in the tab gave one call (decision D25): its value, or why it has none. */
+export interface Computed {
+  /** `Name#id`, e.g. `Stats#peak`. */
+  where: string;
+  /** Where the call is in the component's props, e.g. `data/0/value`. */
+  at: string;
+  value?: number;
+  problem?: string;
+}
+
+/** Components a `set` line names before the rest fold into "and N more". */
+const MAX_SET_PARTS = 8;
+
+/**
+ * Decision D25: `viewer: set $/w/seats 80000 (what-if) -> Stats#peak data/0/value=400 data/1/value=1600`. The values
+ * the server recomputed from the number the user set, one group per component (at most MAX_SET_PARTS); values that
+ * have none are listed with why, those that fail the same way together: `data/0/value data/1/value: div: b = $/w/secs
+ * is 0 (division by zero)`, each further reason after a `;`. A problem the user's own number causes is said here only,
+ * never as a `viewer: error`: it is not the model's spec that is wrong.
+ */
+export function setLine(path: string, value: number, surfaceId: string, computed: readonly Computed[]): string {
+  const groups = new Map<string, Computed[]>();
+  for (const entry of computed) groups.set(entry.where, [...(groups.get(entry.where) ?? []), entry]);
+  const parts = [...groups].slice(0, MAX_SET_PARTS).map(([where, entries]) => {
+    const words = [where, ...entries.filter(entry => entry.problem === undefined && entry.value !== undefined).map(entry => `${entry.at}=${Number(entry.value!.toPrecision(6))}`)];
+    const failing = new Map<string, string[]>();
+    for (const entry of entries) if (entry.problem !== undefined) failing.set(entry.problem, [...(failing.get(entry.problem) ?? []), entry.at]);
+    const reasons = [...failing].map(([problem, ats]) => `${ats.join(' ')}: ${problem}`);
+    return reasons.length > 0 ? `${words.join(' ')} ${reasons.join('; ')}` : words.join(' ');
+  });
+  if (groups.size > MAX_SET_PARTS) parts.push(`and ${groups.size - MAX_SET_PARTS} more`);
+  const items = parts.join('; ');
+  return `${PREFIX} set $${token(path)} ${String(value)} (${name(surfaceId)})${items ? ` -> ${escapeSeparators(escapeInvisible(clip(items), true))}` : ''}`;
+}
+
 export {reportLine, reportText} from './reports.ts';
 
-interface Entry { line: string; selection: boolean }
+/** A queued line; one with a key replaces the undelivered line of the same key (the latest selection, set, ...). */
+interface Entry { line: string; key?: string }
 
 export class EventQueue {
   private entries: Entry[] = [];
@@ -67,13 +103,16 @@ export class EventQueue {
 
   /** Queues an action for the agent. Beyond MAX_EVENTS the oldest entry is dropped. */
   push(line: string): void {
-    this.add({line, selection: false});
+    this.add({line});
   }
 
-  /** The current selection replaces an undelivered earlier one; null withdraws it. */
-  select(line: string | null): void {
-    this.entries = this.entries.filter(entry => !entry.selection);
-    if (line !== null) this.add({line, selection: true});
+  /**
+   * The latest line of its kind replaces an undelivered earlier one with the same key; null withdraws it. Keys:
+   * 'select' (the current selection), `set\n<surface>\n<path>` (the last number set at a path, decision D25).
+   */
+  latest(key: string, line: string | null): void {
+    this.entries = this.entries.filter(entry => entry.key !== key);
+    if (line !== null) this.add({line, key});
   }
 
   private add(entry: Entry): void {

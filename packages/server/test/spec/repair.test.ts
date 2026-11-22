@@ -175,6 +175,31 @@ describe('the presets and the gallery need none of it', () => {
   });
 });
 
+describe('function names (decision D25)', () => {
+  it('renames a function written another way wherever it is called, and says so', () => {
+    expect(repair('root=Page("x",[Stat(multiply($/a,2)),Stat(multiply(1,2))])', {kind: 'call', name: 'multiply'}))
+      .toEqual({text: 'root=Page("x",[Stat(mul($/a,2)),Stat(mul(1,2))])', note: 'multiply -> mul'});
+    expect(repair('Stat(Div(1,2),"Div(")', {kind: 'call', name: 'Div'})).toEqual({text: 'Stat(div(1,2),"Div(")', note: 'Div -> div'});
+  });
+
+  it('leaves a name that stands for none of the four', () => {
+    expect(repair('Stat(pow(2,3))', {kind: 'call', name: 'pow'})).toBeUndefined();
+    expect(repair('Stat(mod(2,3))', {kind: 'call', name: 'mod'})).toBeUndefined();
+  });
+
+  it('compiles multiply, Div, sum and mult as the function they mean, with a fixed line; pow and mod stay errors', () => {
+    for (const [written, meant] of [['multiply', 'mul'], ['Div', 'div'], ['sum', 'add'], ['mult', 'mul']] as const) {
+      const {fixes, messages} = compile(`root=Page('x',[Stat(${written}(6,3),'n')])`);
+      expect(fixes, written).toEqual([`${written} -> ${meant}`]);
+      const first = messages[0]!;
+      if (!('createSurface' in first)) throw new Error('expected createSurface');
+      expect(first.createSurface.components[1]!.value).toEqual({'@call': meant, args: {a: 6, b: 3}});
+    }
+    expect(() => compile(`root=Page('x',[Stat(pow(2,3))])`)).toThrow(/^E_UNKNOWN "pow" is not a function\. Functions: add sub mul div, each \(a, b\)\.$/);
+    expect(() => compile(`root=Page('x',[Stat(mod(2,3))])`)).toThrow(/^E_UNKNOWN "mod" is not a function\./);
+  });
+});
+
 describe('errors that point at the mistake', () => {
   // Finding V041: Tabel was read as Tabs, and the error then blamed Tabs for a missing children prop.
   it('a misspelt component is matched by its words, and a guess that does not fit says what was written', () => {

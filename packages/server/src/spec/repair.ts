@@ -4,7 +4,7 @@
 // (Grid cols=4); an unexpected end of input closes the open brackets. Everything else stays an error. A repair
 // edits the normalized Express text and is reported to the model as `fixed A -> B`, so it learns the right spelling.
 import {COMPONENT_BY_NAME, enumValue, type Prop} from '@glimpse/catalog';
-import {closeMatch, componentMatch, type RepairHint} from './errors.ts';
+import {calcTarget, closeMatch, componentMatch, type RepairHint} from './errors.ts';
 import {stringValue, tokenize, type SpecToken} from './guard.ts';
 
 export interface Repair {
@@ -32,13 +32,25 @@ function renameComponent(src: string, name: string): Repair | undefined {
   return edits.length > 0 ? {text: replaceAt(src, edits), note: `${name} -> ${target}`} : undefined;
 }
 
-/** One argument written directly inside a call: `value` is its first token. */
-interface Argument { callee: string; index: number; keyword: string | undefined; value: SpecToken; keywordToken: SpecToken | undefined }
+/** Decision D25: a function written another way ('multiply', 'Div', 'mult') takes the name it means: `multiply -> mul`. */
+function renameCall(src: string, name: string): Repair | undefined {
+  const target = calcTarget(name);
+  if (!target || target === name) return undefined;
+  const {tokens} = tokenize(src);
+  const edits = tokens.filter((t, i) => t.kind === 'ident' && t.text === name && tokens[i + 1]?.text === '(').map(t => ({start: t.start, end: t.end, text: target}));
+  return edits.length > 0 ? {text: replaceAt(src, edits), note: `${name} -> ${target}`} : undefined;
+}
+
+/**
+ * One argument written directly inside a call: `value` is its first token, `call` the index of the call's opening
+ * bracket among the tokens (the same for every argument of one call), `calleeToken` the token of its name.
+ */
+export interface Argument { callee: string; call: number; calleeToken: SpecToken; index: number; keyword: string | undefined; value: SpecToken; keywordToken: SpecToken | undefined }
 
 /** Every argument of every call in the text, positional index and keyword included. Nested brackets are skipped over. */
-function callArguments(tokens: SpecToken[]): Argument[] {
+export function callArguments(tokens: SpecToken[]): Argument[] {
   const out: Argument[] = [];
-  interface Frame { callee: string | undefined; index: number; keyword: SpecToken | undefined; fresh: boolean }
+  interface Frame { callee: SpecToken | undefined; call: number; index: number; keyword: SpecToken | undefined; fresh: boolean }
   const stack: Frame[] = [];
   tokens.forEach((token, i) => {
     const top = stack.at(-1);
@@ -46,12 +58,12 @@ function callArguments(tokens: SpecToken[]): Argument[] {
       // `name = value` (but not `==`) is a keyword argument; anything else is the positional value itself.
       if (token.kind === 'ident' && tokens[i + 1]?.text === '=' && tokens[i + 2]?.text !== '=') { top.keyword = token; return; }
       if (token.text === '=' && top.keyword && tokens[i - 1] === top.keyword) return;
-      out.push({callee: top.callee, index: top.index, keyword: top.keyword?.text, value: token, keywordToken: top.keyword});
+      out.push({callee: top.callee.text, call: top.call, calleeToken: top.callee, index: top.index, keyword: top.keyword?.text, value: token, keywordToken: top.keyword});
       top.fresh = false;
     }
     if (isOpen(token)) {
       const prev = tokens[i - 1];
-      stack.push({callee: token.text === '(' && prev?.kind === 'ident' ? prev.text : undefined, index: 0, keyword: undefined, fresh: true});
+      stack.push({callee: token.text === '(' && prev?.kind === 'ident' ? prev : undefined, call: i, index: 0, keyword: undefined, fresh: true});
     } else if (isClose(token)) {
       stack.pop();
     } else if (token.text === ',' && top) {
@@ -244,6 +256,7 @@ export function rewrite(src: string): Rewrite {
 /** The repaired text for a problem, or undefined when the problem is not one Glimpse repairs here. */
 export function repair(text: string, hint: RepairHint): Repair | undefined {
   if (hint.kind === 'component') return renameComponent(text, hint.name);
+  if (hint.kind === 'call') return renameCall(text, hint.name);
   if (hint.kind === 'prop') return renameProp(text, hint.component, hint.name);
   if (hint.kind === 'enum') return replaceEnum(text, hint.component, hint.prop, hint.value);
   if (hint.kind === 'quote') return quoteNumber(text, hint.component, hint.prop);

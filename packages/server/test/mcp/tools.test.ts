@@ -4,9 +4,9 @@ import {existsSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {serverInstructions, VIEWS} from '@glimpse/catalog';
+import {calcDoc, serverInstructions, VIEWS} from '@glimpse/catalog';
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
-import {catalogTool} from '../../src/mcp/catalogTool.ts';
+import {catalogTool, GRAMMAR} from '../../src/mcp/catalogTool.ts';
 import {eventsTool} from '../../src/mcp/events.ts';
 import {pendingContextTool} from '../../src/mcp/pendingContext.ts';
 import {cell, graphText, queryTool} from '../../src/mcp/query.ts';
@@ -16,6 +16,7 @@ import {showRequest, showTool} from '../../src/mcp/show.ts';
 import {VERSION} from '../../src/mcp/version.ts';
 import {EventQueue} from '../../src/session/events.ts';
 import {codeShare, firstCodeLine, type ShowOutcome} from '../../src/session/session.ts';
+import {compileSpec, loadToolchain} from '../../src/spec/compile.ts';
 import {problem, SpecError} from '../../src/spec/errors.ts';
 import {fakeDeps, fixedSource, tempRoot, testSession, type TestSession} from '../session/fakes.ts';
 
@@ -534,6 +535,30 @@ describe('catalogTool', () => {
     expect(none.isError).toBe(true);
     expect(body(none)).toContain('Views: overview');
     expect(body(await catalogTool({names: 'DataTable' as never}, undefined))).toMatch(/^Views: /);
+  });
+
+  // Decision D25: the four functions are answered by name or alias, in any case, and named in the index.
+  it('answers the functions by name, alias or case with calcDoc, and the index says it does', async () => {
+    for (const name of ['div', 'multiply', 'Div', 'sum']) expect(body(await catalogTool({names: [name]}, undefined)), name).toBe(calcDoc());
+    expect(body(await catalogTool({names: ['mult']}, undefined))).toBe(`"mult" -> mul\n${calcDoc()}`);
+    expect(body(await catalogTool({}, undefined)).split('\n').at(-1)).toBe('catalog{names:[...]} for details: a component, a function ("div"), a source, "view:<name>", "grammar" or "examples".');
+  });
+
+  // The examples the grammar gives, rule by rule, written together as one spec: it compiles as Glimpse accepts it.
+  it('the examples of the grammar rules compile', async () => {
+    const examples = [
+      "root=Page('T',[intro,table])", "Grid([a,b],_,'m')", "[intro, Text('x')]", "'doesn't'", "$/plan=[{title:'A',status:'done'}]",
+      "$/plan/0/status='doing'", 'Steps($/plan)', "'git.churn src top=20'", 'Stat(div($/w/seats,60))', "Slider('Seats',$/w/seats)", 'mul($/a,2)',
+    ];
+    for (const example of examples) expect(GRAMMAR, example).toContain(example);
+    const spec = [
+      "root=Page('T',[intro,table,grid,steps,rps,seats,k]) # a comment", "intro=Column([Text('doesn't'), Text('x')])", "table=DataTable('git.churn src top=20')",
+      "a=Text('a'); b=Text('b')", "grid=Grid([a,b],_,'m')", "$/plan=[{title:'A',status:'done'}]", "$/plan/0/status='doing'", 'steps=Steps($/plan)',
+      '$/w={seats:50000}', '$/a=2', 'rps=Stat(div($/w/seats,60))', "seats=Slider('Seats',$/w/seats)", "k=Stats([{label:'x',value:mul($/a,2)}])",
+    ].join('\n');
+    const compiled = compileSpec(await loadToolchain(), {surfaceId: 'g', sources: [spec], surfaces: []});
+    expect(compiled.fixes).toEqual([]);
+    expect(compiled.warnings).toEqual([]);
   });
 
   it('documents sources that only the registry knows', async () => {

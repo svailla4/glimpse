@@ -85,6 +85,9 @@ export class ActionRouter {
         session.select(record.id, ref);
         return true;
       }
+      case 'gl_set':
+        // Decision D25: only the number; the path is the one the stored Slider binds, never one the tab names.
+        return session.setInput(record, source, context.value);
       case 'gl_open':
         if (!text(context.file) || context.file === '') return false;
         void session.openFile(context.file).then(refused => {
