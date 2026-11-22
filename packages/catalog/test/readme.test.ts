@@ -25,10 +25,10 @@ const fenced = (text: string) => [...text.matchAll(/```\n([\s\S]*?)\n```/g)].map
 describe('README: the example specs', () => {
   const specs = fenced(section(readme, 'Writing a custom spec'));
 
-  it('has three examples, each with the id it was run under', () => {
-    expect(specs).toHaveLength(3);
+  it('has four examples, each with the id it was run under', () => {
+    expect(specs).toHaveLength(4);
     const ids = [...section(readme, 'Writing a custom spec').matchAll(/\(`id: "([^"]+)"`\)/g)].map(m => m[1]!);
-    expect(ids).toHaveLength(3);
+    expect(ids).toHaveLength(4);
     // hyphens are part of what the README shows working
     for (const id of ids) expect(id).toMatch(/^[A-Za-z0-9_][A-Za-z0-9_-]{0,47}$/);
     expect(ids.some(id => id.includes('-'))).toBe(true);
@@ -55,9 +55,10 @@ describe('README: the example specs', () => {
     for (const ref of refs.values()) if (ref.target && /^[\w./-]+$/.test(ref.target) && ref.target.includes('/')) expect(existsSync(repoFile(ref.target)), formatRef(ref)).toBe(true);
   });
 
-  it('between them the examples use a source ref, a slot, a diagram notation, a code view and an input', () => {
+  // Decision what-if-as-a2ui-calls: the fourth example is a what-if, a Slider and the calls that read the number it sets.
+  it('between them the examples use a source ref, a slot, a diagram, a code view, inputs and computed values', () => {
     const all = specs.join('\n');
-    for (const needle of ["Graph('deps.modules", "DataTable('git.churn", 'SequenceDiagram(', 'CodeView(', 'Steps($/plan', '$/plan=[', 'ERDiagram(', 'Ask(']) expect(all, needle).toContain(needle);
+    for (const needle of ["Graph('deps.modules", "DataTable('git.churn", 'SequenceDiagram(', 'CodeView(', 'Steps($/plan', '$/plan=[', 'ERDiagram(', 'Ask(', 'Slider(', 'div(mul(']) expect(all, needle).toContain(needle);
   });
 });
 

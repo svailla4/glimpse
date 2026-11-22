@@ -395,6 +395,63 @@ describe('DataTable: selection, entities, keyboard', () => {
     expect(view.getData('/ui/sel') ?? null).toBeNull();
   });
 
+  // Decision links-through-node-ids: an inline row naming a diagram node stands for it; a source's `node` field is only data.
+  it('links an inline row with a node to that node, marks it without selecting it, and keeps the column', async () => {
+    const view = renderExpress(page("DataTable([{choice:'System of record',node:'PG'},{choice:'Cache',node:['Redis','PG']},{choice:'Queue'}])"));
+    await ready(view);
+    expect(headers(view).map(h => h.textContent)).toEqual(['choice', 'node']);
+    expect(cellsOf(rowAt(view, 0))[1]!.textContent).toBe('PG');
+    fireEvent.click(cellsOf(rowAt(view, 0))[0]!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: 'rows:System of record', label: 'System of record', nodes: ['PG']});
+    // Cache stands for Redis and PG: linked to a selection naming PG, so marked, but it is not the selected row
+    expect(rowsOf(view).map(row => row.getAttribute('data-selected'))).toEqual(['exact', 'within', null]);
+    expect(rowsOf(view).map(row => row.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
+    fireEvent.click(cellsOf(rowAt(view, 2))[0]!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: 'rows:Queue', label: 'Queue'});
+    // a Flowchart node selected elsewhere
+    view.setData('/ui/sel', {type: 'node', id: 'Redis', label: 'Redis'});
+    expect(rowsOf(view).map(row => row.getAttribute('data-selected'))).toEqual([null, 'within', null]);
+  });
+
+  // Decision links-through-node-ids: a node with a file is a place; a row inside its lines is that place, and still names the node.
+  it('marks a row inside the lines of a selected node, and a row of the file that names the node', async () => {
+    const view = renderExpress(page("DataTable([{file:'src/a.ts#L3',name:'parse',node:'B'},{file:'src/a.ts#L40',name:'emit',node:'B'},{file:'src/a.ts#L50',name:'other'},{file:'db/schema.sql#L5',name:'users.id'}])"));
+    await ready(view);
+    const marks = () => rowsOf(view).map(row => row.getAttribute('data-selected'));
+    view.setData('/ui/sel', {type: 'node', id: 'B', label: 'B', path: 'src/a.ts', line: 1, endLine: 10});
+    expect(marks()).toEqual(['exact', 'within', null, null]);
+    view.setData('/ui/sel', {type: 'node', id: 'users', label: 'users', path: 'db/schema.sql', line: 1, endLine: 20});
+    expect(marks()).toEqual([null, null, null, 'exact']);
+    // another row of the file naming the same node is linked, not the selected row; a row naming nothing is neither
+    fireEvent.click(cellsOf(rowAt(view, 0))[0]!);
+    expect(marks()).toEqual(['exact', 'within', null, null]);
+  });
+
+  // Decision links-through-node-ids (owner's rule): only a field named exactly node, holding text ids, links a row.
+  it('reads no link from a nodes field or a number in node: a column of counts or hosts is data', async () => {
+    const view = renderExpress(page("DataTable([{cluster:'prod',nodes:12},{cluster:'dev',node:7},{cluster:'qa',nodes:['PG']}])"));
+    await ready(view);
+    fireEvent.click(cellsOf(rowAt(view, 0))[0]!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: 'rows:prod', label: 'prod'});
+    fireEvent.click(cellsOf(rowAt(view, 1))[0]!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: 'rows:dev', label: 'dev'});
+    view.setData('/ui/sel', {type: 'node', id: '12', label: '12'});
+    expect(rowsOf(view).map(row => row.getAttribute('data-selected'))).toEqual([null, null, null]);
+    view.setData('/ui/sel', {type: 'node', id: 'PG', label: 'PG'});
+    expect(rowsOf(view).map(row => row.getAttribute('data-selected'))).toEqual([null, null, null]);
+  });
+
+  it('reads no link from a node field of rows that come from a source', async () => {
+    const view = renderExpress(page('DataTable($/t)'), {data: {'/t': {...datasetFixture('repo.packages'), fields: undefined, data: [{name: 'web', node: 'PG'}]}}});
+    await ready(view);
+    expect(headers(view).map(h => h.textContent)).toContain('node');
+    expect(cellsOf(rowAt(view, 0))[0]!.textContent).toBe('web');
+    fireEvent.click(cellsOf(rowAt(view, 0))[0]!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'row', id: `${datasetFixture('repo.packages').$ds}:web`, label: 'web'});
+    view.setData('/ui/sel', {type: 'node', id: 'PG', label: 'Postgres'});
+    expect(rowAt(view, 0).getAttribute('data-selected')).toBeNull();
+  });
+
   it('lets an entity cell select its own entity', async () => {
     const view = renderExpress(page("DataTable('git.churn')"), {datasets: 'ready'});
     await ready(view);

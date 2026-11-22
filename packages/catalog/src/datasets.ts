@@ -79,7 +79,14 @@ export type Rows = Row[];
 export interface DeltaCell { add: number; del: number }
 
 // ---------------------------------------------------------------- entities and selection
-export type EntityType = 'file' | 'dir' | 'module' | 'package' | 'symbol' | 'author' | 'commit' | 'node' | 'row';
+/**
+ * What a selection can be. The server keeps only these in /ui/sel. `message` is one drawn message of one
+ * SequenceDiagram (decision links-through-node-ids).
+ */
+export const ENTITY_TYPES = ['file', 'dir', 'module', 'package', 'symbol', 'author', 'commit', 'node', 'row', 'message'] as const;
+export type EntityType = (typeof ENTITY_TYPES)[number];
+/** Most diagram node ids one item names, or one entity stands for (decision links-through-node-ids); the server holds /ui/sel to the same. */
+export const MAX_ENTITY_NODES = 16;
 /** Value of /ui/sel. One per surface. */
 export interface EntityRef {
   type: EntityType;
@@ -89,6 +96,11 @@ export interface EntityRef {
   line?: number;
   endLine?: number;
   label?: string;
+  /**
+   * Diagram node ids this entity stands for besides itself (decision links-through-node-ids): an item's node:'PG'; a message's sender,
+   * via and receiver nodes, in order. At most MAX_ENTITY_NODES.
+   */
+  nodes?: string[];
 }
 
 /** "path", "path#L10" or "path#L10-40". Repo-relative, forward slashes. */
@@ -258,19 +270,23 @@ export type Format = 'num' | 'compact' | 'bytes' | 'pct' | 'duration';
 export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info';
 export interface StatItem { label: string; value: number | string; unit?: string; delta?: number; spark?: number[]; format?: Format; tone?: Tone }
 export type StepStatus = 'todo' | 'doing' | 'done' | 'blocked' | 'skipped';
-export interface StepItem { title: string; note?: string; status?: StepStatus; file?: FileLoc }
+/** `node` names the diagram node (or nodes) a step stands for: selecting the step lights them (decision links-through-node-ids). */
+export interface StepItem { title: string; note?: string; status?: StepStatus; file?: FileLoc; node?: string | string[] }
+/** The keys a Steps item is read from; `name` and `label` are other words for `title`, `path` for `file`, `nodes` for `node`. */
+export const STEP_KEYS: readonly string[] = ['title', 'name', 'label', 'note', 'status', 'file', 'path', 'node', 'nodes'];
 export interface ListItem { title: string; sub?: string; value?: number | string; file?: FileLoc; tone?: Tone }
 /** An object of pairs, or one item per pair: {label, value} like Stats, {key, value} or {k, v}. */
 export type KeyValueData = Record<string, unknown> | Array<{label: string; value: unknown} | {key: string; value: unknown} | {k: string; v: unknown}>;
 export type ChipItem = string | {label: string; tone?: Tone; slotKey?: string};
-/** `name` is canonical; Layers also reads the layer's name from `label` or `title`. */
-export interface LayerItem { name: string; note?: string; items: Array<string | {label: string; file?: FileLoc; note?: string}> }
+/** `name` is canonical; Layers also reads the layer's name from `label` or `title`. An item's `node` is as StepItem's. */
+export interface LayerItem { name: string; note?: string; items: Array<string | {label: string; file?: FileLoc; note?: string; node?: string | string[]}> }
 /**
  * `fk` is true, or names the column it points at ('users.id', or just 'users'); `ref` is a synonym for the string
  * form. The string form also draws the relation, so `relations` can be left out.
  */
 export interface ErColumn { name: string; type?: string; pk?: boolean; fk?: boolean | string; ref?: string; nullable?: boolean }
-export interface ErTable { name: string; file?: FileLoc; columns: ErColumn[] }
+/** `node` names the diagram node (or nodes) the table stands for, as StepItem's (decision links-through-node-ids). */
+export interface ErTable { name: string; file?: FileLoc; node?: string | string[]; columns: ErColumn[] }
 /** `from` and `to` are 'table.column' (or a bare table name). */
 export interface ErRelation { from: string; to: string; label?: string; card?: '1-1' | '1-n' | 'n-1' | 'n-n' }
 /** ERDiagram also accepts the bare table list (ErTable[]); relations then come from the columns' `fk`. */

@@ -5,7 +5,7 @@
 // the tests of the others: keep the eager / lazy split below in step with the LAZY set there.
 import type {ReactCatalogComponent} from '@a2ui/react';
 import {Catalog} from '@a2ui/web_core/v1_0';
-import {CATALOG_ID, COMPONENT_BY_NAME, COMPONENTS, PROTOCOL_VERSION, type Chunk} from '@glimpse/catalog';
+import {CATALOG_ID, COMPONENT_BY_NAME, COMPONENTS, PROTOCOL_VERSION, calcFunctions, type Chunk} from '@glimpse/catalog';
 import * as content from './components/content/index.ts';
 import * as layout from './components/layout/index.ts';
 import {implement, loadChunk, type ChunkLoaders, type KitSlots, type ViewModule} from './kit/implement.tsx';
@@ -19,8 +19,9 @@ const LAZY: Partial<Record<Chunk, () => Promise<ViewModule>>> = {
 };
 const LOADERS = {layout, content, ...LAZY} as ChunkLoaders;
 
+/** The components, and the four functions add|sub|mul|div with the tab's permissive schemas (decision what-if-as-a2ui-calls). */
 export function createGlimpseCatalog(slots: KitSlots): Catalog<ReactCatalogComponent> {
-  return new Catalog<ReactCatalogComponent>(CATALOG_ID, PROTOCOL_VERSION, COMPONENTS.map(def => implement(def as never, LOADERS, slots)), []);
+  return new Catalog<ReactCatalogComponent>(CATALOG_ID, PROTOCOL_VERSION, COMPONENTS.map(def => implement(def as never, LOADERS, slots)), calcFunctions());
 }
 
 const requested = new Set<Chunk>();

@@ -4,6 +4,7 @@
 // Selection, the keyboard's node and the zoom-dependent level of detail come from DiagramContext, so a change to
 // them never rebuilds React Flow's node list.
 import type {EntityRef} from '@glimpse/catalog';
+import type {SelectionRef} from '../../../kit/index.ts';
 import {
   EdgeLabelRenderer, Handle, Position, useViewportStore,
   type Edge, type EdgeProps, type Node, type NodeProps,
@@ -23,9 +24,9 @@ export interface DiagramNode<T = unknown> {
   /**
    * What the node stands for when a selection made elsewhere is matched against it, when that is not `entity`: a
    * module node selects its main file but stands for its whole directory. Of the nodes that hold the selection only
-   * the innermost lights up.
+   * the innermost lights up. Its `nodes` link it to the diagram nodes it stands for (decision links-through-node-ids).
    */
-  match?: Pick<EntityRef, 'type' | 'id' | 'path'>;
+  match?: SelectionRef;
   /** Name, for the tooltip and for assistive technology. */
   label: string;
   /** One more line for the tooltip and for assistive technology. */
@@ -101,6 +102,8 @@ export interface DiagramContextValue {
   selected: ReadonlySet<string>;
   /** Everything at full strength while something is selected (the selection and its neighbours); null: nothing selected. */
   lit: ReadonlySet<string> | null;
+  /** The keys of the edges drawn highlighted (decision links-through-node-ids: round a selected node, or the legs of a selected path). */
+  hot: ReadonlySet<string>;
   active: string | undefined;
   focus: string | undefined;
   plates: ReadonlyMap<string, Plate>;
@@ -109,6 +112,22 @@ export interface DiagramContextValue {
   drillGroups: boolean;
 }
 export const DiagramContext = createContext<DiagramContextValue | null>(null);
+
+/**
+ * Decision links-through-node-ids: a selection that is not itself a node and names two or more nodes in order (a message: its sender's
+ * node, the nodes it passes, its receiver's node) is a path. Its legs are the consecutive pairs, both ways, keyed
+ * JSON.stringify([from, to]); a diagram heats only the edges between lit nodes that are legs. Empty for anything else.
+ * (Here rather than in kit/select.ts: only the node-link diagrams use it, and the kit is in the eager script.)
+ */
+export function legsOf(selected: EntityRef | null | undefined): ReadonlySet<string> {
+  const legs = new Set<string>();
+  const ids = selected && selected.type !== 'node' ? (selected.nodes ?? []) : [];
+  for (let i = 1; i < ids.length; i++) {
+    legs.add(JSON.stringify([ids[i - 1], ids[i]]));
+    legs.add(JSON.stringify([ids[i], ids[i - 1]]));
+  }
+  return legs;
+}
 const useDiagram = (): DiagramContextValue => {
   const value = useContext(DiagramContext);
   if (!value) throw new Error('a diagram part outside its diagram');
@@ -256,7 +275,7 @@ export const ElkEdgeView = memo(function ElkEdgeView(p: EdgeProps<FlowEdge>) {
   const data = p.data;
   if (!data) return null;
   const {edge, points, labelAt: labelCentre} = data;
-  const hot = ctx.selected.has(edge.from) || ctx.selected.has(edge.to);
+  const hot = ctx.hot.has(edge.key);
   const dim = ctx.lit !== null && !hot;
   const width = hot ? Math.max(1.5, edge.width ?? 1) : (edge.width ?? 1);
   const d = roundedPath(points);

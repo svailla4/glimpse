@@ -9,7 +9,7 @@ import {
 import type {DataInput} from '@glimpse/catalog';
 import type {DataClient, RowsPage} from '@glimpse/catalog';
 import {assignSlots, catVar} from './color.ts';
-import {matchSelection, type SelectionMatch} from './select.ts';
+import {matchSelection, type SelectionMatch, type SelectionRef} from './select.ts';
 
 /** Provided once by the shell: <HostContext.Provider value={transport}>. */
 export const HostContext = createContext<DataClient | null>(null);
@@ -302,9 +302,10 @@ export function useSelection(componentId: string) {
    * How an entity relates to the selection (design 5.1), one rule for every component: 'exact' for the selected
    * entity itself (same type and id, or the same file or directory under another type, such as a table row whose
    * path is the selected file), 'within' for a file or directory inside a selected directory, 'contains' for a
-   * directory that holds the selection; undefined when it is not selected. See matchSelection (select.ts).
+   * directory that holds the selection, 'linked' for an entity that names the same diagram nodes (decision links-through-node-ids);
+   * undefined when it is not selected. See matchSelection (select.ts).
    */
-  const match = useCallback((ref: Pick<EntityRef, 'type' | 'id' | 'path'>): SelectionMatch | undefined => matchSelection(selected, ref), [selected]);
+  const match = useCallback((ref: SelectionRef): SelectionMatch | undefined => matchSelection(selected, ref), [selected]);
   return {selected, select, isSelected, match};
 }
 
@@ -357,6 +358,8 @@ export function useHostActions(componentId: string) {
       refresh: () => send('gl_refresh', {}),
       /** Queue an agent event (Ask). */
       emit: (name: string, context: Record<string, unknown>) => send(name, context),
+      /** Keep the number a Slider set; the server takes the path from the Slider's own binding (decision what-if-as-a2ui-calls). */
+      set: (value: number) => send('gl_set', {value}),
     };
   }, [surface, componentId]);
 }

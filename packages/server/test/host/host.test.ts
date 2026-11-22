@@ -176,6 +176,37 @@ describe('POST /api/renderer', () => {
     expect(fx.t.session.events.drain()).toEqual(['viewer: select file a.ts (demo)', 'viewer: press demo approve {"plan":1}']);
   });
 
+  // Review S4: a message that threw (gl_set on $/w/toString cloned a native function) failed the post and dropped the rest.
+  it('a message that throws is logged and skipped; the rest of the batch is handled and the post answers 204', async () => {
+    const fx = await start();
+    await show(fx, 'demo', `root=Page('Demo',[go,s])\n$/w={seats:5}\ngo=Button('Go',Event('approve',{plan:1}))\ns=Slider('S',$/w/toString,0,10)`);
+    const select = fx.t.session.select.bind(fx.t.session);
+    fx.t.session.select = (...args: Parameters<typeof select>) => { if (args[1]?.id === 'boom') throw new Error('boom'); return select(...args); };
+    const response = await post(fx, [action('gl_select', {ref: {type: 'file', id: 'boom', path: 'boom'}}), action('gl_set', {value: 3}, 's'), action('approve', {plan: 1}, 'go')]);
+    expect(response.status).toBe(204);
+    expect(fx.logged).toContain('glimpse: a renderer message failed: boom');
+    // an inherited property is not the model's data: gl_set writes the path as its own number, and nothing throws
+    expect(fx.t.session.surfaces.get('demo')!.data.w).toEqual({seats: 5, toString: 3});
+    expect(fx.t.session.events.drain()).toEqual(['viewer: set $/w/toString 3 (demo)', 'viewer: press demo approve {"plan":1}']);
+  });
+
+  // Review S4 with decision only-problems-are-errors: a component state that throws is skipped the same way.
+  it('a state that throws is logged and skipped; the other states are kept and the post answers 204', async () => {
+    const fx = await start();
+    await show(fx, 'demo', `root=Page('Demo',[go])\ngo=Button('Go',Event('approve',{plan:1}))`);
+    const kept: string[] = [];
+    fx.t.session.viewerReport = (_surface, _name, id, code) => {
+      if (id === 'boom') throw new Error('boom');
+      kept.push(`${id} ${code}`);
+      return true;
+    };
+    const state = (id: string, code: string) => ({surfaceId: 'demo', component: 'Button', id, code});
+    const response = await raw(fx.port, '/api/renderer', {body: JSON.stringify({messages: [], states: [state('boom', 'OK'), state('go', 'OK')]})});
+    expect(response.status).toBe(204);
+    expect(fx.logged).toContain('glimpse: a renderer state failed: boom');
+    expect(kept).toEqual(['go OK']);
+  });
+
   it('gl_close from the shell removes the surface and broadcasts the deletion', async () => {
     const fx = await start();
     await show(fx, 'demo', `root=Page('Demo',[])`);

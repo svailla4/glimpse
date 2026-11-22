@@ -4,7 +4,8 @@ import {datasetKey, GALLERY_SPEC, parseRef, SOURCE_BY_NAME, VIEWS, type A2uiMess
 import {beforeAll, describe, expect, it} from 'vitest';
 import {createRegistry} from '../../src/sources/registry.ts';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
-import {boundKeys, checkRef, diagramNotes, expandMessages, refSignature, splitRatio, unboundPaths} from '../../src/spec/expand.ts';
+import {diagramNotes, linkNotes} from '../../src/spec/authored.ts';
+import {boundKeys, calcNotes, checkRef, expandMessages, refSignature, splitRatio, unboundPaths} from '../../src/spec/expand.ts';
 import {fakeSources} from '../session/fakes.ts';
 
 let tools: Toolchain;
@@ -126,15 +127,100 @@ describe('expandMessages: diagram data, columns, paths', () => {
     expect(diagramNotes([flow], data, new Set([flow.id]), new Set())).toEqual({
       fixes: [`Flowchart#${flow.id}: node B added for edge A -> B (not in nodes)`],
       warnings: [`Flowchart#${flow.id}: not drawn: edge A -> G: G is a group; edges join nodes`, `Flowchart#${flow.id}: not drawn: group G: no nodes in it`],
+      files: [],
     });
     // a later patch writes $/flow/... and names no component: still checked
     expect(diagramNotes([flow], data, new Set(), new Set(['flow'])).warnings).toHaveLength(2);
     // neither defined nor written: said already, not again
-    expect(diagramNotes([flow], data, new Set(), new Set(['other']))).toEqual({fixes: [], warnings: []});
+    expect(diagramNotes([flow], data, new Set(), new Set(['other']))).toEqual({fixes: [], warnings: [], files: []});
     // not a diagram at all
     expect(diagramNotes([flow], {flow: 'A --> B'}, new Set([flow.id]), new Set()).warnings).toEqual([
       `Flowchart#${flow.id}: E_SHAPE $/flow: Flowchart takes data, not Mermaid text: {nodes, edges, groups?}, e.g. {nodes:{A:'Request',B:{label:'Over limit?',shape:'diamond'}},edges:[['A','B'],['B','C','no']]}`,
     ]);
+  });
+
+  // Decision links-through-node-ids: Layers, ERDiagram, Steps and DataTable rows are read by the catalog cleaners the tab draws with.
+  it('inline Layers and ERDiagram data say what they leave out, and what is not the shape at all is E_SHAPE', () => {
+    const out = expand(`root=Page('x',[Layers([{name:'Data',colour:'red',items:[{label:'Postgres',size:3,node:'PG'},true]}]),ERDiagram([{name:'users',columns:[{name:'id',unique:true}]},{name:'users',columns:[]}]),Flowchart({nodes:{PG:'Postgres'},edges:[]})])`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([
+      "Layers#root_children_0: not drawn: tier 1 item 2: expected 'label' or {label}, received a boolean",
+      'Layers#root_children_0: not drawn: ignored tier key colour',
+      'Layers#root_children_0: not drawn: ignored item key size',
+      'ERDiagram#root_children_1: not drawn: table users: repeated',
+      'ERDiagram#root_children_1: not drawn: ignored column key unique',
+    ]);
+    const bad = expand(`root=Page('x',[Layers({name:'Data'}),ERDiagram(true)])`);
+    expect(bad.lines).toEqual([
+      'E_SHAPE Layers#root_children_0.data: expected tiers [{name, items}], received an object',
+      'E_SHAPE ERDiagram#root_children_1.data: expected tables [{name, columns}] or {tables, relations}, received a boolean',
+    ]);
+  });
+
+  it('text in a Layers data prop is a source ref, never refused as Mermaid', () => {
+    const out = expand(`root=Page('x',[Layers('fake.rows')])`);
+    expect(out.problems).toEqual([]);
+    expect(out.byComponent('Layers').data).toEqual(bind('fake.rows'));
+  });
+
+  it('Steps items read node like the tab: an alias is fixed, a bad value or Steps key is warn', () => {
+    const out = expand(`root=Page('x',[Steps([{title:'Migrate',nodes:'PG',owner:'Mira'},{title:'Ship',node:{id:'PG'}}]),DataTable([{name:'a',nodes:['PG','Redis']},{name:'b',node:'PG'}])])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual(['Steps#root_children_0: step 1: nodes -> node']);
+    expect(out.warnings).toEqual([
+      "Steps#root_children_0: not drawn: step 2: node: expected 'ID' or ['ID', ...], received an object",
+      'Steps#root_children_0: not drawn: ignored step key owner',
+    ]);
+  });
+
+  it('reads path as file on every links-through-node-ids item with a fixed line, and a via written in a list message', () => {
+    const out = expand(`root=Page('T',[Flowchart({nodes:{A:{label:'A',path:'README.md',notes:'n'}},edges:[]}),Layers([{name:'x',items:[{label:'b',path:'README.md'}]}]),ERDiagram([{name:'users',path:'README.md',columns:['id']}]),Steps([{title:'c',path:'README.md'}]),SequenceDiagram({steps:[['A','B','x',['Q']],['A','B','y','sync','Q']]})])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual([
+      'Flowchart#root_children_0: node A: notes -> note',
+      'Flowchart#root_children_0: node A: path -> file',
+      "Layers#root_children_1: item 'b': path -> file",
+      'ERDiagram#root_children_2: table users: path -> file',
+      'Steps#root_children_3: step 1: path -> file',
+      'SequenceDiagram#root_children_4: step 1: via read from the list form; write {from, to, label, via}',
+    ]);
+    expect(out.warnings).toEqual(['SequenceDiagram#root_children_4: not drawn: step 2: 1 more element not read (write {from, to, label?, arrow?, via?})']);
+    expect(out.files.map(check => check.where)).toEqual([
+      'Flowchart#root_children_0 node A', "Layers#root_children_1 item 'b'", 'ERDiagram#root_children_2 table users', 'Steps#root_children_3 step 1',
+    ]);
+  });
+
+  // Decision links-through-node-ids (owner's rule): a row always draws, and its node is data unless the table links the view's diagrams.
+  it('says nothing about DataTable rows as it expands them: a nodes count or a null node is data', () => {
+    const out = expand(`root=Page('x',[DataTable([{cluster:'prod',nodes:12},{cluster:'dev',nodes:3}]),DataTable([{pod:'api',node:'ip-1'},{pod:'w',node:null},{pod:'c',node:''}])])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual([]);
+    expect(out.warnings).toEqual([]);
+  });
+
+  it('the files inline diagram and Steps data name are checked like file props', () => {
+    const out = expand(`root=Page('x',[Flowchart({nodes:{PG:{label:'Postgres',file:'db/schema.sql#L1-20'}},edges:[]}),Layers([{name:'Data',items:[{label:'Postgres',file:'db/schema.sql'}]}]),ERDiagram([{name:'users',file:'db/users.sql',columns:['id']}]),Steps([{title:'Migrate',file:'db/migrate.sql#L3'}])])`);
+    expect(out.problems).toEqual([]);
+    expect(out.files).toEqual([
+      {where: 'Flowchart#root_children_0 node PG', file: 'db/schema.sql#L1-20', nested: true},
+      {where: "Layers#root_children_1 item 'Postgres'", file: 'db/schema.sql', nested: true},
+      {where: 'ERDiagram#root_children_2 table users', file: 'db/users.sql', nested: true},
+      {where: 'Steps#root_children_3 step 1', file: 'db/migrate.sql#L3', nested: true},
+    ]);
+  });
+
+  it('diagramNotes reads bound Layers, ERDiagram and Steps data too, and returns the files they name', () => {
+    const comps: WireComponent[] = [
+      {id: 'tiers', component: 'Layers', data: {'@path': '/tiers'}},
+      {id: 'er', component: 'ERDiagram', data: {'@path': '/er'}},
+      {id: 'plan', component: 'Steps', data: {'@path': '/plan'}},
+    ];
+    const data = {tiers: [{name: 'Data', items: [{label: 'PG', file: 'db/a.sql', colour: 'red'}]}], er: 'not a schema', plan: [{title: 'A', file: 'db/b.sql#L2'}]};
+    expect(diagramNotes(comps, data, new Set(['tiers', 'er', 'plan']), new Set())).toEqual({
+      fixes: [],
+      warnings: ['Layers#tiers: not drawn: ignored item key colour', 'ERDiagram#er: E_SHAPE $/er: expected tables [{name, columns}] or {tables, relations}, received a string'],
+      files: [{where: "Layers#tiers item 'PG'", file: 'db/a.sql', nested: true}, {where: 'Steps#plan step 1', file: 'db/b.sql#L2', nested: true}],
+    });
   });
 
   it('an unknown column kind is E_ENUM listing the kinds', () => {
@@ -185,7 +271,236 @@ describe('expandMessages: diagram data, columns, paths', () => {
   });
 });
 
+// Decision what-if-as-a2ui-calls: what a Slider binds, a call where it computes nothing, and calls checked against the data.
+describe('expandMessages: Slider and calls', () => {
+  it('a Slider value that is not a binding to a path of the model\'s own is refused with what to write', () => {
+    expect(expand(`root=Page('x',[s])\ns=Slider('Seats',50000)`).lines)
+      .toEqual([`E_TYPE Slider#s.value: 50000 is not a $/path. A Slider edits data: write $/w={seats:50000} and Slider('Seats',$/w/seats).`]);
+    expect(expand(`root=Page('x',[s])\ns=Slider('Seats',div($/a,2))`).lines)
+      .toEqual([`E_TYPE Slider#s.value: a call is not a $/path. A Slider edits data: write $/w={seats:50000} and Slider('Seats',$/w/seats).`]);
+    expect(expand(`root=Page('x',[s])\ns=Slider('Seats',$w/seats)`).lines).toEqual(['E_TYPE Slider#s.value: bind an absolute $/path, e.g. $/w/seats.']);
+    expect(expand(`root=Page('x',[s])\ns=Slider('Seats',$/ui/seats)`).lines)
+      .toEqual(['E_PATH Slider#s.value: $/ui/seats belongs to the viewer (/ds and /meta to the server); bind a path of your own, e.g. $/w/seats.']);
+    for (const path of ['/ds/x', '/meta/rev']) {
+      expect(expand(`root=Page('x',[s])\ns=Slider('Seats',$${path})`).lines)
+        .toEqual([`E_PATH Slider#s.value: $${path} belongs to the server (/ui to the viewer); bind a path of your own, e.g. $/w/seats.`]);
+    }
+  });
+
+  it('a Slider whose min is not below its max is drawn without a range, and says so', () => {
+    const out = expand(`$/w={seats:5}\nroot=Page('x',[s,t])\ns=Slider('Seats',$/w/seats,10,5)\nt=Slider('Same',$/w/seats,3,3)`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual(['Slider#s: min 10 is not below max 5, so no range is drawn', 'Slider#t: min 3 is not below max 3, so no range is drawn']);
+    expect(expand(`$/w={seats:5}\nroot=Page('x',[s])\ns=Slider('Seats',$/w/seats,1,10,step=1,unit='s')`).warnings).toEqual([]);
+  });
+
+  it('a call as an action is refused: it computes a number', () => {
+    expect(expand(`root=Page('x',[b])\nb=Button('Go',div(1,2))`).lines).toEqual([`E_TYPE Button#b.action: div(...) computes a number; an action is Event('name',{...}).`]);
+  });
+
+  it('a call in the data model is not computed: said once, for a new view and for a patch', () => {
+    expect(expand(`$/k=[{label:'x',value:mul($/a,2)},{label:'y',value:add(1,2)}]\n$/n={v:div(1,2)}\nroot=Page('x',[Stats($/k)])`).warnings)
+      .toEqual([`$/k/0/value: a call in data is not computed; write it in a component argument, e.g. Stats([{label:'x',value:mul($/a,2)}]). (and 2 more)`]);
+    const patch: A2uiMessage[] = [{version: '1.0', updateDataModel: {surfaceId: 's', path: '/w/rows', value: [{n: {'@call': 'mul', args: {a: {'@path': '/w/a'}, b: 2}}}]}}];
+    expect(expandMessages(patch, registry).warnings).toEqual([`$/w/rows/0/n: a call in data is not computed; write it in a component argument, e.g. Stats([{label:'x',value:mul($/a,2)}]).`]);
+    // a binding in data is data, and a call in a component argument is what it should be
+    expect(expand(`$/k={a:1}\nroot=Page('x',[Stats([{label:'x',value:mul($/k/a,2)}])])`).warnings).toEqual([]);
+  });
+
+  it('calcNotes computes the calls against the data after the call, and says why one has no number', () => {
+    const stat: WireComponent = {id: 'rps', component: 'Stat', value: {'@call': 'div', args: {a: {'@path': '/w/seats'}, b: {'@path': '/w/secs'}}}};
+    const peak: WireComponent = {id: 'peak', component: 'Stats', data: [
+      {label: 'a', value: {'@call': 'mul', args: {a: {'@path': '/w/seats'}, b: 2}}},
+      {label: 'b', value: {'@call': 'mul', args: {a: {'@call': 'mul', args: {a: {'@path': '/w/big'}, b: 1e300}}, b: 1e300}}},
+      {label: 'c', value: {'@call': 'add', args: {a: {'@path': '/w/none'}, b: 1}}},
+    ]};
+    const slider: WireComponent = {id: 's', component: 'Slider', label: 'Seats', value: {'@path': '/w/seats'}};
+    const comps = [stat, peak, slider];
+    const ids = new Set(comps.map(comp => comp.id));
+    const data = {w: {seats: '50k', secs: 0, big: 1}};
+    expect(calcNotes(comps, data, ids, new Set())).toEqual([
+      'Stat#rps: value: div: a = $/w/seats is "50k", not a number',
+      'Stats#peak: data/0/value: mul: a = $/w/seats is "50k", not a number',
+      'Stats#peak: data/1/value: mul: the result is too large',
+      'Slider#s: $/w/seats is "50k", not a number',
+    ]);
+    // division by zero; an operand not set is the unbound line's, not said twice
+    expect(calcNotes([stat], {w: {seats: 100, secs: 0}}, ids, new Set())).toEqual(['Stat#rps: value: div: b = $/w/secs is 0 (division by zero)']);
+    expect(calcNotes([stat], {w: {seats: 100}}, ids, new Set())).toEqual([]);
+    expect(unboundPaths([stat], {w: {seats: 100}})).toEqual(['$/w/secs']);
+    // scope: a component the call defines, or one reading a top segment it wrote; neither is said again
+    expect(calcNotes([stat], {w: {seats: 1, secs: 0}}, new Set(), new Set(['w']))).toHaveLength(1);
+    expect(calcNotes([slider], data, new Set(), new Set(['w']))).toEqual(['Slider#s: $/w/seats is "50k", not a number']);
+    expect(calcNotes(comps, data, new Set(), new Set(['other']))).toEqual([]);
+    // a value that computes is no line at all
+    expect(calcNotes([stat, slider], {w: {seats: 50000, secs: 120}}, ids, new Set())).toEqual([]);
+  });
+
+  // Review S5: a seed outside the Slider's own limits was accepted without a word.
+  it('calcNotes says when a Slider seed lies outside its own min and max', () => {
+    const slider = (min?: number, max?: number): WireComponent =>
+      ({id: 'x', component: 'Slider', label: 'Seats', value: {'@path': '/w/seats'}, ...(min !== undefined ? {min} : {}), ...(max !== undefined ? {max} : {})});
+    const notes = (comp: WireComponent, seats: number) => calcNotes([comp], {w: {seats}}, new Set(['x']), new Set());
+    expect(notes(slider(0, 100), 50000)).toEqual(['Slider#x: $/w/seats is 50000, outside 0..100']);
+    expect(notes(slider(10, 100), 5)).toEqual(['Slider#x: $/w/seats is 5, outside 10..100']);
+    expect(notes(slider(10), 5)).toEqual(['Slider#x: $/w/seats is 5, below min 10']);
+    expect(notes(slider(undefined, 100), 500)).toEqual(['Slider#x: $/w/seats is 500, above max 100']);
+    for (const seats of [0, 50, 100]) expect(notes(slider(0, 100), seats)).toEqual([]);
+    // min >= max has its own line (no range is drawn), not this one
+    expect(notes(slider(10, 5), 50)).toEqual([]);
+  });
+
+  // Review S6: a relative $path inside a call was 'not set', which no unbound line names, so nothing was said.
+  it('calcNotes says a relative $path inside a call is relative', () => {
+    const rel: WireComponent = {id: 'r', component: 'Stat', value: {'@call': 'div', args: {a: {'@path': 'w/seats'}, b: 2}}};
+    expect(calcNotes([rel], {w: {seats: 50000}}, new Set(['r']), new Set())).toEqual(['Stat#r: value: div: a = $w/seats is relative; write an absolute $/path']);
+    expect(unboundPaths([rel], {w: {seats: 50000}})).toEqual([]);
+  });
+
+  it('inline diagram data is checked as the tab draws it: a call is its number, not an object "not drawn"', () => {
+    const out = expand(`root=Page('x',[f,s,l,e])
+f=Flowchart({nodes:{A:{label:div(4,2),note:mul(2,2)},B:'b'},edges:[['A','B',mul(2,3)]]})
+s=SequenceDiagram({steps:[['A','B',add(1,2)],{from:'B',to:'A',label:sub(5,1)},{note:add(1,1),over:'A'}]})
+l=Layers([{name:'T',items:[div(1,2),{label:add(1,1),colour:'red'}]}])
+e=ERDiagram([{name:'t',columns:[{name:'c',type:add(1,1)}]}])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual([]);
+    // what is wrong beside a call is still said
+    expect(out.warnings).toEqual(['Layers#l: not drawn: ignored item key colour']);
+    // a call with no number is calcNotes' to explain, once
+    const zero = expand(`root=Page('x',[l])\nl=Layers([{name:'T',items:[div(1,0)]}])`);
+    expect(zero.warnings).toEqual([]);
+    expect(calcNotes(zero.components, {}, new Set(['l']), new Set())).toEqual(['Layers#l: data/0/items/0: div: b is 0 (division by zero)']);
+  });
+
+  it('inline diagram data with $/paths inside is checked by diagramNotes, against the data model', () => {
+    const out = expand(`$/w={x:'bx',y:'by'}\nroot=Page('x',[l])\nl=Layers([{name:'T',items:[$/w/x,{label:$/w/y,file:$/w/f}]},{name:'U',items:$/w/list}])`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([]);
+    expect(out.files).toEqual([]);
+    const layers = out.byComponent('Layers');
+    const ids = new Set(['l']);
+    expect(diagramNotes([layers], {w: {x: 'bx', y: 'by', f: 'db/a.sql', list: ['c']}}, ids, new Set())).toEqual({
+      fixes: [], warnings: [], files: [{where: "Layers#l item 'by'", file: 'db/a.sql', nested: true}],
+    });
+    expect(diagramNotes([layers], {w: {x: 'bx', y: {}, list: 'c'}}, ids, new Set()).warnings).toEqual([
+      'Layers#l: not drawn: tier 1 item 2: no label',
+      'Layers#l: not drawn: tier 2: items: expected a list, received a string',
+    ]);
+    // in scope through a path it reads, out of scope otherwise; a path not set is also an unbound line, as the tab draws it
+    expect(diagramNotes([layers], {w: {x: 'bx', y: {}}}, new Set(), new Set(['w'])).warnings).toEqual(['Layers#l: not drawn: tier 1 item 2: no label']);
+    expect(diagramNotes([layers], {w: {x: 'bx', y: {}}}, new Set(), new Set(['other'])).warnings).toEqual([]);
+    expect(diagramNotes([layers], {w: {y: 'by'}}, ids, new Set()).warnings).toEqual(["Layers#l: not drawn: tier 1 item 1: expected 'label' or {label}, received nothing"]);
+    expect(unboundPaths([layers], {w: {y: 'by'}})).toEqual(['$/w/x', '$/w/f', '$/w/list']);
+    // a path the server cannot read here leaves it to the tab
+    const ui: WireComponent = {id: 'l', component: 'Layers', data: [{name: 'T', items: [{'@path': '/ui/file'}]}]};
+    expect(diagramNotes([ui], {}, ids, new Set())).toEqual({fixes: [], warnings: [], files: []});
+    // a shape the data model makes wrong is said as the bound form says it
+    const flow: WireComponent = {id: 'f', component: 'Flowchart', data: {'@call': 'div', args: {a: 1, b: 2}}};
+    expect(diagramNotes([flow], {}, new Set(['f']), new Set()).warnings).toEqual([]);
+    const er: WireComponent = {id: 'e', component: 'ERDiagram', data: {tables: {'@path': '/w/t'}}};
+    expect(diagramNotes([er], {w: {t: 'users'}}, new Set(['e']), new Set()).warnings).toEqual(['ERDiagram#e: E_SHAPE data: expected tables to be an array, received a string']);
+  });
+});
+
 // Findings F032 and F090: an `ok` whose view shows a redline. What the spec alone gives away is said at once.
+// Decision links-through-node-ids: an id an item links to that nothing else on the view declares or links is named, with a hint.
+describe('linkNotes', () => {
+  const flow: WireComponent = {id: 'arch', component: 'Flowchart', data: {nodes: {PG: 'Postgres', GW: 'Gateway', Inv: 'Inventory', Q: 'Queue'}, edges: []}};
+  const tiers = (...nodes: unknown[]): WireComponent => ({id: 'tiers', component: 'Layers', data: [{name: 'Data', items: nodes.map((node, i) => ({label: `item ${i}`, node}))}]});
+  const all = (comps: WireComponent[]) => new Set(comps.map(comp => comp.id));
+  const notes = (comps: WireComponent[], data: Record<string, unknown> = {}) => linkNotes(comps, data, all(comps), new Set());
+
+  it('names a typo with the nearest id, and an id that is a label with the node it labels', () => {
+    expect(notes([flow, tiers('PGG', 'PG')])).toEqual(["Layers#tiers: node 'PGG' links to nothing on this view (nearest: PG)"]);
+    const seq: WireComponent = {id: 'checkout', component: 'SequenceDiagram', data: {actors: {U: 'User', G: {label: 'Gateway', node: 'Gateway'}, I: {label: 'Inventory', node: 'Inv2'}}, steps: [['U', 'G', 'hi'], {from: 'G', to: 'I', label: 'hold', via: ['Q']}]}};
+    expect(notes([flow, seq])).toEqual(["SequenceDiagram#checkout: nodes 'Gateway' (the label of node 'GW'), 'Inv2' (nearest: Inv) link to nothing on this view"]);
+  });
+
+  // Review S3: the nearest-id hint compared every pair of ids in full; two 20,000-character ids took 7 s.
+  it('keeps the hint cheap for long ids: only near lengths are compared, and none past 64 characters', () => {
+    const long = (c: string) => c.repeat(20000);
+    const big: WireComponent = {id: 'big', component: 'Flowchart', data: {nodes: {[long('A')]: 'a', [long('B')]: 'b'}, edges: []}};
+    const started = performance.now();
+    expect(notes([big, tiers(long('C'))])).toEqual([`Layers#tiers: node '${'C'.repeat(39)}…' links to nothing on this view`]);
+    expect(performance.now() - started).toBeLessThan(200);
+    // a typo of a long id is still hinted up to 64 characters
+    const id = 'x'.repeat(60);
+    const named: WireComponent = {id: 'named', component: 'Flowchart', data: {nodes: {[id]: 'a'}, edges: []}};
+    expect(notes([named, tiers(`${id}yy`)])).toEqual([`Layers#tiers: node '${'x'.repeat(39)}…' links to nothing on this view (nearest: ${'x'.repeat(39)}…)`]);
+  });
+
+  it('is silent when another part declares or links the id, and never hints a one-letter id', () => {
+    expect(notes([flow, tiers('PG', 'GW')])).toEqual([]);
+    // two lists linking the same id link each other
+    const plan: WireComponent = {id: 'plan', component: 'Steps', data: [{title: 'Cache', node: 'Redis'}]};
+    expect(notes([tiers('Redis'), plan])).toEqual([]);
+    // ER tables and the actors of a sequence (by their own id) declare nodes too
+    const er: WireComponent = {id: 'er', component: 'ERDiagram', data: [{name: 'orders', columns: ['id']}]};
+    const seq: WireComponent = {id: 's', component: 'SequenceDiagram', data: {steps: [['U', 'G', 'hi']]}};
+    expect(notes([er, seq, tiers('orders', 'U')])).toEqual([]);
+    expect(notes([flow, tiers('A')])).toEqual(["Layers#tiers: node 'A' links to nothing on this view"]);
+  });
+
+  it('judges only what the call defines or writes, against everything on the view', () => {
+    const bound: WireComponent = {id: 'tiers', component: 'Layers', data: {'@path': '/tiers'}};
+    const data = {tiers: [{name: 'Data', items: [{label: 'x', node: 'PGG'}]}]};
+    expect(linkNotes([flow, bound], data, new Set(['arch']), new Set())).toEqual([]);
+    expect(linkNotes([flow, bound], data, new Set(), new Set(['tiers']))).toEqual(["Layers#tiers: node 'PGG' links to nothing on this view (nearest: PG)"]);
+    // a part defined by an earlier call still declares what it declares
+    expect(linkNotes([flow, tiers('PG')], {}, new Set(['tiers']), new Set())).toEqual([]);
+  });
+
+  it('reads inline data as the tab draws it: calls computed, $/paths resolved (decision what-if-as-a2ui-calls)', () => {
+    const items = (label: unknown) => ({id: 'tiers', component: 'Layers', data: [{name: 'Data', items: [{label, node: 'PGG'}]}]}) as WireComponent;
+    const warning = "Layers#tiers: node 'PGG' links to nothing on this view (nearest: PG)";
+    expect(notes([flow, items({'@call': 'add', args: {a: 1, b: 1}})])).toEqual([warning]);
+    expect(notes([flow, items({'@path': '/w/name'})], {w: {name: 'Postgres'}})).toEqual([warning]);
+    // in scope through a path its inline data reads
+    expect(linkNotes([flow, items({'@path': '/w/name'})], {w: {name: 'Postgres'}}, new Set(), new Set(['w']))).toEqual([warning]);
+  });
+
+  it('says nothing beside a Graph drawn from a source; an inline Graph declares its nodes', () => {
+    const source: WireComponent = {id: 'g', component: 'Graph', data: {'@path': '/ds/deps_modules'}};
+    expect(notes([source, tiers('anything')])).toEqual([]);
+    const inline: WireComponent = {id: 'g', component: 'Graph', data: {nodes: [{id: 'api', label: 'API'}, {id: 'auth'}], edges: []}};
+    expect(notes([inline, tiers('api', 'auth')])).toEqual([]);
+    expect(notes([inline, tiers('API')])).toEqual(["Layers#tiers: node 'API' links to nothing on this view (the label of node 'api')"]);
+  });
+
+  it('takes a DataTable none of whose node values resolves for a node column of its own', () => {
+    const k8s: WireComponent = {id: 'pods', component: 'DataTable', data: [{pod: 'web-1', node: 'ip-10-0-1-5'}, {pod: 'web-2', node: 'ip-10-0-1-6'}]};
+    expect(notes([flow, k8s])).toEqual([]);
+    const mixed: WireComponent = {id: 'choices', component: 'DataTable', data: [{choice: 'System of record', node: 'PG'}, {choice: 'Cache', node: 'Redis'}]};
+    expect(notes([flow, mixed])).toEqual(["DataTable#choices: node 'Redis' links to nothing on this view"]);
+  });
+
+  it('judges DataTable rows only where one names a node a diagram declares; nodes and numbers never link', () => {
+    const counts: WireComponent = {id: 'c', component: 'DataTable', data: [{cluster: 'prod', nodes: 12}, {cluster: 'dev', nodes: 3}]};
+    expect(notes([flow, counts])).toEqual([]);
+    const pods: WireComponent = {id: 'p', component: 'DataTable', data: [{pod: 'api', node: 'ip-1'}, {pod: 'w', node: null}, {pod: 'c', node: ''}]};
+    expect(notes([pods])).toEqual([]);
+    expect(notes([flow, pods])).toEqual([]);
+    // two tables sharing a node column, and no diagram, do not judge each other
+    expect(notes([pods, {...pods, id: 'p2'}])).toEqual([]);
+    const rows: WireComponent = {id: 't', component: 'DataTable', data: [{a: 1, node: 'PG'}, {a: 2, node: 'PGG'}, {a: 3, node: null}, {a: 4, node: 7}, {a: 5, nodes: 'GW'}]};
+    expect(notes([flow, rows])).toEqual([
+      'DataTable#t: row 3: node null is not a node id, not linked',
+      'DataTable#t: row 4: node 7 is not a node id, not linked',
+      "DataTable#t: node 'PGG' links to nothing on this view (nearest: PG)",
+    ]);
+    // bound to a $/path, the same, and diagramNotes says nothing of a row
+    const bound: WireComponent = {id: 't', component: 'DataTable', data: {'@path': '/rows'}};
+    expect(diagramNotes([bound], {rows: [{cluster: 'prod', nodes: 12, node: 'x'}, {node: null}]}, new Set(['t']), new Set())).toEqual({fixes: [], warnings: [], files: []});
+    expect(linkNotes([flow, bound], {rows: rows.data}, new Set(), new Set(['rows']))).toEqual(notes([flow, rows]));
+    expect(linkNotes([bound], {rows: [{cluster: 'prod', nodes: 12, node: 'x'}]}, new Set(['t']), new Set())).toEqual([]);
+  });
+
+  it('names at most three ids a line, then how many more', () => {
+    expect(notes([flow, tiers('PG', 'zz1', 'zz2', 'zz3', 'zz4', 'zz5')])).toEqual(["Layers#tiers: nodes 'zz1', 'zz2', 'zz3', and 2 more link to nothing on this view"]);
+  });
+});
+
 describe('expandMessages: what is certain to draw wrong', () => {
   // Finding V009: the warning names the component that draws the kind the source returns.
   it('warns when a source returns a kind of data the component cannot draw, and says what draws it', () => {

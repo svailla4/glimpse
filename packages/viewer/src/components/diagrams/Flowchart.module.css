@@ -20,6 +20,14 @@
     stroke: var(--gl-accent);
     stroke-width: 1.5;
   }
+  /* A node with a note or a file (decision links-through-node-ids): a dot in its corner says there is more on hover or selection. */
+  .noted {
+    fill: var(--gl-ink-3);
+    pointer-events: none;
+  }
+  .body[data-selected] .noted {
+    fill: var(--gl-accent);
+  }
   .text {
     font: 500 12px var(--gl-font-ui);
     fill: var(--gl-ink);

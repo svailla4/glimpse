@@ -117,12 +117,23 @@ describe('show', () => {
     expect(t.session.surfaces.get('feature')!.data).toEqual({plan: [], notes: ''});
   });
 
-  it('the gallery compiles, expands and binds no dataset at all', async () => {
-    const t = start();
-    const outcome = await t.session.show({id: 'gallery', sources: [GALLERY_SPEC], fresh: true, view: 'gallery'});
-    expect(outcome.datasets).toEqual([]);
-    expect(outcome.warnings).toEqual([]);
-    expect(new Set([...t.session.surfaces.get('gallery')!.components.values()].map(c => c.component)).size).toBe(43);
+  // Decision links-through-node-ids: the files its diagrams and Steps name are checked too, so they are lines of the one real file.
+  it('the gallery compiles, expands, binds no dataset at all and warns of nothing in a repository with a README.md', async () => {
+    const repo = await tempRoot();
+    const t = testSession(repo.root);
+    try {
+      await writeFile(join(repo.root, 'README.md'), Array.from({length: 40}, (_, i) => `line ${i + 1}`).join('\n'));
+      const outcome = await t.session.show({id: 'gallery', sources: [GALLERY_SPEC], fresh: true, view: 'gallery'});
+      expect(outcome.datasets).toEqual([]);
+      expect(outcome.fixes).toEqual([]);
+      expect(outcome.warnings).toEqual([]);
+      await outcome.checks;
+      expect(outcome.warnings).toEqual([]);
+      expect(new Set([...t.session.surfaces.get('gallery')!.components.values()].map(c => c.component)).size).toBe(44);
+    } finally {
+      t.session.dispose();
+      await repo.cleanup();
+    }
   });
 
   it('reports repairs and unbound paths', async () => {
@@ -299,6 +310,68 @@ describe('working tree', () => {
   });
 });
 
+// Decision links-through-node-ids: the files diagram and Steps data name are checked like file props, inline or bound to a $/path.
+describe('files named inside data', () => {
+  beforeAll(async () => {
+    await mkdir(join(dir.root, 'db'), {recursive: true});
+    await writeFile(join(dir.root, 'db', 'schema.sql'), 'create table users ();\n');
+  });
+
+  it('a missing file of an inline Flowchart node, Layers item, ER table or Steps item is a warning', async () => {
+    const t = start();
+    const outcome = await t.session.show(spec('nested', `root=Page('Nested',[flow,tiers,er,plan])
+flow=Flowchart({nodes:{PG:{label:'Postgres',file:'db/schma.sql'},C:{label:'Cache',file:'db/schema.sql#L1'}},edges:[['PG','C']]})
+tiers=Layers([{name:'Data',items:[{label:'Postgres',file:'db/gone.sql'},{label:'Cache',file:'db/schema.sql'}]}])
+er=ERDiagram([{name:'orders',file:'db/',columns:['id']}])
+plan=Steps([{title:'Migrate',file:'db/missing.sql#L3'},{title:'Ship'}])`));
+    expect(outcome.warnings).toEqual([]);
+    await outcome.checks;
+    expect(outcome.warnings).toEqual([
+      'Flowchart#flow node PG: file "db/schma.sql" does not exist.',
+      'Layers#tiers item \'Postgres\': file "db/gone.sql" does not exist.',
+      'ERDiagram#er table orders: "db/" is a directory, not a file.',
+      'Steps#plan step 1: file "db/missing.sql" does not exist.',
+    ]);
+  });
+
+  // Under the cap on warning lines, a plate whose own file is missing is never crowded out by links inside diagrams
+  // that name it too (the gallery of a file that does not exist names it in seven places).
+  it('the files of props are reported before the files named inside data, wherever they come on the page', async () => {
+    const t = start();
+    const outcome = await t.session.show(spec('order', `root=Page('Order',[tiers,code])
+tiers=Layers([{name:'Data',items:[{label:'A',file:'db/a.sql'},{label:'B',file:'db/b.sql'},{label:'C',file:'db/c.sql'},{label:'D',file:'db/d.sql'},{label:'E',file:'db/e.sql'},{label:'F',file:'db/f.sql'}]}])
+code=CodeView('db/gone.sql')`));
+    await outcome.checks;
+    expect(outcome.warnings).toHaveLength(6);
+    expect(outcome.warnings[0]).toBe('CodeView#code: file "db/gone.sql" does not exist.');
+    expect(outcome.warnings.slice(1).every(line => line.startsWith("Layers#tiers item '"))).toBe(true);
+  });
+
+  it('so is one in data bound to a $/path, checked against the data model after the call', async () => {
+    const t = start();
+    const outcome = await t.session.show(spec('bound', `$/flow={nodes:{PG:{label:'Postgres',path:'db/schma.sql'}},edges:[]}
+$/tiers=[{name:'Data',items:[{label:'Postgres',file:'db/gone.sql'}]}]
+$/er=[{name:'orders',file:'db/orders.sql',columns:['id']},{name:'users',file:'db/schema.sql#L1',columns:['id']}]
+root=Page('Bound',[Flowchart($/flow),Layers($/tiers),ERDiagram($/er)])`));
+    expect(outcome.fixes).toEqual(['Flowchart#root_children_0: node PG: path -> file']);
+    await outcome.checks;
+    expect(outcome.warnings).toEqual([
+      'Flowchart#root_children_0 node PG: file "db/schma.sql" does not exist.',
+      'Layers#root_children_1 item \'Postgres\': file "db/gone.sql" does not exist.',
+      'ERDiagram#root_children_2 table orders: file "db/orders.sql" does not exist.',
+    ]);
+  });
+
+  it('a node id that links to nothing on the view is a warning; one another part declares is not', async () => {
+    const t = start();
+    const outcome = await t.session.show(spec('links', `root=Page('Links',[flow,tiers,seq])
+flow=Flowchart({nodes:{PG:'Postgres',GW:'Gateway'},edges:[['GW','PG']]})
+tiers=Layers([{name:'Data',items:[{label:'Postgres',node:'PGG'},{label:'Edge',node:'GW'}]}])
+seq=SequenceDiagram({actors:{U:'User',G:{label:'Gateway',node:'GW'}},steps:[['U','G','hi']]})`));
+    expect(outcome.warnings).toEqual(["Layers#tiers: node 'PGG' links to nothing on this view (nearest: PG)"]);
+  });
+});
+
 describe('colour slots', () => {
   it('assigns slots 1 to 8 per kind, heaviest first, and publishes them once', async () => {
     const langs = Array.from({length: 10}, (_, i) => ({lang: `L${i}`, loc: i === 3 ? 9999 : 100 - i}));
@@ -346,6 +419,76 @@ describe('host actions', () => {
     router.handle(action('gl_select', {ref: {type: 'module', id: 'auth'}}));
     router.handle(action('gl_select', {ref: null}));
     expect(t.session.events.drain()).toEqual([]);
+  });
+
+  // Decision links-through-node-ids: a selection names the diagram nodes it stands for; the server keeps them, so a trace survives.
+  it('gl_select keeps the message type and valid node ids, and drops any other nodes whole', async () => {
+    const {t, router} = await withRouter();
+    const message = {type: 'message', id: 'checkout:1', label: '1. User to Gateway: POST /checkout', nodes: ['Client', 'CDN', 'Q', 'GW', 'GW']};
+    expect(router.handle(action('gl_select', {ref: message}, 'table'))).toBe(true);
+    expect(t.session.surfaces.get('demo')!.sel).toEqual(message);
+    expect(t.session.events.drain()).toEqual(['viewer: select message checkout:1 "1. User to Gateway: POST /checkout" (demo)']);
+    const sixteen = Array.from({length: 16}, (_, i) => `N${i}`);
+    expect(router.handle(action('gl_select', {ref: {type: 'row', id: 'r', nodes: sixteen}}, 'table'))).toBe(true);
+    expect(t.session.surfaces.get('demo')!.sel).toEqual({type: 'row', id: 'r', nodes: sixteen});
+    const bad: unknown[] = ['PG', [], [...sixteen, 'N16'], ['PG', 7], ['PG', ''], ['x'.repeat(201)], {0: 'PG'}, null];
+    for (const nodes of bad) {
+      expect(router.handle(action('gl_select', {ref: {type: 'node', id: 'PG', nodes}}, 'table'))).toBe(true);
+      expect(t.session.surfaces.get('demo')!.sel).toEqual({type: 'node', id: 'PG'});
+    }
+    expect(router.handle(action('gl_select', {ref: {type: 'node', id: 'PG', nodes: ['x'.repeat(200)]}}, 'table'))).toBe(true);
+    expect(t.session.surfaces.get('demo')!.sel?.nodes).toEqual(['x'.repeat(200)]);
+  });
+
+  it('the node ids of a selection survive a patch and a replace', async () => {
+    const {t, router} = await withRouter();
+    const ref = {type: 'node', id: 'orders', label: 'orders', path: 'db/schema.sql', line: 10, endLine: 30, nodes: ['PG']};
+    router.handle(action('gl_select', {ref}, 'table'));
+    await t.session.show(spec('demo', `$/notes='patched'`));
+    expect(t.session.surfaces.get('demo')!.sel).toEqual(ref);
+    await t.session.show(spec('demo', `root=Page('Demo',[table,notes])`));
+    const ui = (created(t.session.replay().find(frame => frame.surfaceId === 'demo') as Frame).dataModel as {ui: unknown}).ui;
+    expect(ui).toEqual({sel: ref, file: 'db/schema.sql#L10-30'});
+  });
+
+  // Decision what-if-as-a2ui-calls: a number set in the tab survives the same spec shown again, which says so; writing the path resets it.
+  it('gl_set: the same spec shown again keeps the number with a fixed line; a write to its path resets it', async () => {
+    const what = `root=Page('What if',[seats,rps])\n$/w={seats:50000,secs:120}\nseats=Slider('Seats',$/w/seats,1000,200000)\nrps=Stat(div($/w/seats,$/w/secs),'req/s')`;
+    const {t, router} = await withRouter(what);
+    expect(router.handle(action('gl_set', {value: 80000}, 'seats'))).toBe(true);
+    const again = await t.session.show(spec('demo', what));
+    expect(again.mode).toBe('replace');
+    expect(again.fixes).toEqual(['$/w/seats stays 80000 (set in the tab); write $/w/seats=... itself to change it']);
+    expect(t.session.surfaces.get('demo')!.data.w).toEqual({seats: 80000, secs: 120});
+    // shown again once more: still kept, still said
+    expect((await t.session.show(spec('demo', what))).fixes).toEqual(['$/w/seats stays 80000 (set in the tab); write $/w/seats=... itself to change it']);
+    const reset = await t.session.show(spec('demo', `$/w/seats=50000`));
+    expect(reset.fixes).toEqual([]);
+    expect(t.session.surfaces.get('demo')!.data.w).toEqual({seats: 50000, secs: 120});
+    expect((await t.session.show(spec('demo', what))).fixes).toEqual([]);
+  });
+
+  // Review S2: the kept number was not held to a Slider whose max the re-show narrowed.
+  it('gl_set: a kept number is held to the min and max of the Slider shown again, and the fixed line says so', async () => {
+    const what = (max: number) => `root=Page('What if',[seats,rps])\n$/w={seats:50000,secs:120}\nseats=Slider('Seats',$/w/seats,1000,${max})\nrps=Stat(div($/w/seats,$/w/secs),'req/s')`;
+    const {t, router} = await withRouter(what(200000));
+    expect(router.handle(action('gl_set', {value: 80000}, 'seats'))).toBe(true);
+    const narrowed = await t.session.show(spec('demo', what(60000)));
+    expect(narrowed.fixes).toEqual([`$/w/seats stays 60000 (set in the tab to 80000, held to the Slider's range); write $/w/seats=... itself to change it`]);
+    expect(t.session.surfaces.get('demo')!.data.w).toEqual({seats: 60000, secs: 120});
+    expect(t.session.surfaces.get('demo')!.typed?.get('/w/seats')).toEqual({value: 60000, seed: 50000});
+    // a patch that narrows only the Slider holds the number in the data too, and republishes it
+    const {t: t2, router: router2} = await withRouter(what(200000));
+    router2.handle(action('gl_set', {value: 80000}, 'seats'));
+    const patched = await t2.session.show(spec('demo', `seats=Slider('Seats',$/w/seats,1000,70000)`));
+    expect(patched.fixes).toEqual([`$/w/seats stays 70000 (set in the tab to 80000, held to the Slider's range); write $/w/seats=... itself to change it`]);
+    expect(t2.session.surfaces.get('demo')!.data.w).toEqual({seats: 70000, secs: 120});
+  });
+
+  // Decision what-if-as-a2ui-calls: a call checked against the data after the call: what gives no number is a warning.
+  it('a call that gives no number at show time is a warning; one reading a path not set is the unbound line', async () => {
+    const {outcome} = await withRouter(`root=Page('x',[a,b])\n$/w={secs:0}\na=Stat(div(100,$/w/secs),'rps')\nb=Stat(mul($/w/none,2),'n')`);
+    expect(outcome.warnings).toEqual(['Stat#a: value: div: b = $/w/secs is 0 (division by zero)', 'unbound $/w/none']);
   });
 
   it('other actions are queued as press, answer or event lines by the kind of their source', async () => {

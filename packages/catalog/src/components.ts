@@ -4,7 +4,8 @@
 // schemas are strict; no unions in static props; required props come first.
 // Accepting a reasonable guess beats documenting the one right spelling: enum props list the other words authors
 // write as `aliases` (the spec pipeline rewrites them and says so), and data shapes say which key spellings a
-// component reads (datasets.ts). The shapes and one example each are in docs.ts (SHAPES).
+// component reads (datasets.ts). The shapes (SHAPES) and one example call per component (COMPONENT_EXAMPLES) are in
+// docs.ts: the tab bundles this file eagerly and never reads them (decision what-if-as-a2ui-calls).
 import {component, minor, opt, p} from './props.ts';
 import type {
   ChipItem, CodeNote, CommitRow, DirNode, ErData, GraphData, KeyValueData, LayerItem, ListItem, Rows, StatItem,
@@ -46,7 +47,6 @@ const TREE_COLOR_ALIASES = {language: 'lang', commits: 'churn', heat: 'churn'} a
 export const Page = component('Page', {
   family: 'layout', chunk: 'layout', tier: 'A', allowedParents: ['Surface'],
   doc: 'View root: masthead (title, subtitle, repo provenance) over a 12-column grid.',
-  example: "root=Page('Auth flow',[Text('Login goes through **AuthService**.')])",
 }, {
   title: p.text('View title.'),
   children: p.children('Plates and other content, top to bottom.'),
@@ -57,7 +57,6 @@ export const Page = component('Page', {
 export const Plate = component('Plate', {
   family: 'layout', chunk: 'layout', tier: 'A',
   doc: 'Numbered hairline frame around several children.',
-  example: "Plate('Languages',[SegmentedBar(),DataTable('files.langs')],span=5)",
 }, {
   title: p.text('Plate title.'),
   children: p.children('Body, stacked vertically.'),
@@ -69,7 +68,6 @@ export const Plate = component('Plate', {
 export const Section = component('Section', {
   family: 'layout', chunk: 'layout', tier: 'A',
   doc: 'Heading with a rule; children sit on a nested 12-column grid.',
-  example: "Section('History',[CalendarHeatmap(),CommitList()])",
 }, {
   title: p.text('Section heading.'),
   children: p.children('Section content.'),
@@ -80,7 +78,6 @@ export const Section = component('Section', {
 export const Grid = component('Grid', {
   family: 'layout', chunk: 'layout', tier: 'A',
   doc: "Columns: equal, a ratio like '2:1', or the children's span= on 12 columns. Wraps on narrow screens.",
-  example: "Grid([FileTree(),CodeView()],'1:2')",
 }, {
   children: p.children('Cells, left to right.'),
   cols: opt(p.str("Column count '3' or ratio '2:1'. Default: one column per child (max 4).")),
@@ -91,7 +88,6 @@ export const Grid = component('Grid', {
 export const Row = component('Row', {
   family: 'layout', chunk: 'layout', tier: 'A',
   doc: 'Horizontal flex row; children share the width.',
-  example: "Row([Stat(42,'files'),Stat('3.1k','loc')])",
 }, {
   children: p.children('Items.'),
   gap: GAP,
@@ -103,7 +99,6 @@ export const Row = component('Row', {
 export const Column = component('Column', {
   family: 'layout', chunk: 'layout', tier: 'A',
   doc: 'Vertical stack.',
-  example: "Column([KeyValue($/info),SymbolOutline()])",
 }, {
   children: p.children('Items.'),
   gap: GAP,
@@ -114,7 +109,6 @@ export const Column = component('Column', {
 export const Tabs = component('Tabs', {
   family: 'layout', chunk: 'layout', tier: 'A',
   doc: 'Tab strip; one child per label, mounted on first activation.',
-  example: "Tabs(['Map','Table'],[Treemap(),DataTable('files.list')])",
 }, {
   labels: p.strings('Tab labels, one per child.'),
   children: p.children('One child per tab.'),
@@ -124,7 +118,6 @@ export const Tabs = component('Tabs', {
 export const Split = component('Split', {
   family: 'layout', chunk: 'layout', tier: 'C',
   doc: 'Two resizable panes.',
-  example: "Split(FileTree(),CodeView(),'1:2',size='fill')",
 }, {
   start: p.child('Left/top pane.'),
   end: p.child('Right/bottom pane.'),
@@ -138,7 +131,6 @@ export const Split = component('Split', {
 export const Text = component('Text', {
   family: 'content', chunk: 'content', tier: 'A',
   doc: 'Text with inline `code`, *em*, **strong** and [[path#L10]] file refs; line breaks are kept.',
-  example: "Text('Entry point is [[src/main.ts#L12]].','lead')",
 }, {
   text: p.text('Text with inline micro-markup. No HTML.'),
   tone: opt(p.enum(['body', 'lead', 'dim', 'caption', 'mono'], 'Style.', {
@@ -150,7 +142,6 @@ export const Text = component('Text', {
 export const Callout = component('Callout', {
   family: 'content', chunk: 'content', tier: 'A',
   doc: 'Marginal note with a coloured rule and tag.',
-  example: "Callout('Reads the balance before taking the row lock.','risk',file='src/ledger/post.ts#L42')",
 }, {
   text: p.text('Body (inline micro-markup).'),
   kind: opt(p.enum(['note', 'tip', 'warn', 'risk', 'decision', 'question'], 'Tag and colour. Default note.', {
@@ -165,7 +156,6 @@ export const Callout = component('Callout', {
 export const KeyValue = component('KeyValue', {
   family: 'content', chunk: 'content', tier: 'A',
   doc: 'Definition grid; paths, numbers, lists and booleans format themselves.',
-  example: "KeyValue({Language:'TypeScript',Entry:'src/main.ts',Tests:true})",
 }, {
   data: p.data<KeyValueData>('KeyValueData', 'Object {Label:value}, or [{label,value}] ([{key,value}] and [{k,v}] work too).'),
   cols: opt(p.int('Columns 1-3. Default 1.', 1, 3)),
@@ -175,7 +165,6 @@ export const KeyValue = component('KeyValue', {
 export const Chips = component('Chips', {
   family: 'content', chunk: 'content', tier: 'A',
   doc: 'Row of mono chips with a colour dot.',
-  example: "Chips(['React','Vite','PostgreSQL'])",
 }, {
   data: opt(p.data<ChipItem[]>('ChipItem[]', 'Strings or [{label,tone?}].', 'repo.stack')),
   ...FRAME,
@@ -184,7 +173,6 @@ export const Chips = component('Chips', {
 export const FileRef = component('FileRef', {
   family: 'content', chunk: 'content', tier: 'A',
   doc: 'Clickable path:line; click selects, Cmd-click opens the editor.',
-  example: "FileRef('src/auth/service.ts#L20-58')",
 }, {
   file: p.text("'path' or 'path#L10-20'."),
   label: opt(p.text('Text shown instead of the path.')),
@@ -194,9 +182,8 @@ export const FileRef = component('FileRef', {
 export const Steps = component('Steps', {
   family: 'content', chunk: 'content', tier: 'A',
   doc: 'Numbered plan or walkthrough with status marks and a progress rule.',
-  example: "Steps([{title:'Add the middleware',status:'done'},{title:'Wire the router',status:'doing'},{title:'Tests'}],title='Plan')",
 }, {
-  data: p.data<StepItem[]>('StepItem[]', '[{title,note?,status?,file?}]; status todo|doing|done|blocked|skipped.'),
+  data: p.data<StepItem[]>('StepItem[]', 'StepItem below.'),
   current: minor(opt(p.number('Number of the active step, counting from 1 as drawn. Usually omitted: give that step status doing.'))),
   ...FRAME,
 });
@@ -204,14 +191,13 @@ export const Steps = component('Steps', {
 export const Stat = component('Stat', {
   family: 'content', chunk: 'content', tier: 'A',
   doc: 'Hero numeral with label, delta and sparkline.',
-  example: "Stat(1284,'files',delta=38)",
 }, {
-  value: p.data<number | string>('number|string', 'Number or short string.'),
+  value: p.data<number | string>('number|string', 'Number, short string or a call, e.g. div($/w/seats,60).'),
   label: opt(p.text('Caption.')),
   delta: opt(p.number('Signed change.')),
   unit: minor(opt(p.text('Unit after the value.'))),
   spark: minor(opt(p.data<number[]>('number[]', 'Numbers for a sparkline.'))),
-  format: minor(opt(p.enum(['num', 'compact', 'bytes', 'pct', 'duration'], 'Number format. Default compact.', {
+  format: minor(opt(p.enum(['num', 'compact', 'bytes', 'pct', 'duration'], 'Number format. Default: in full below 10,000, else compact.', {
     number: 'num', int: 'num', integer: 'num', full: 'num', short: 'compact', size: 'bytes', percent: 'pct', percentage: 'pct', time: 'duration', ms: 'duration',
   }))),
   ...CELL,
@@ -220,7 +206,6 @@ export const Stat = component('Stat', {
 export const Stats = component('Stats', {
   family: 'content', chunk: 'content', tier: 'A',
   doc: 'KPI strip: hairline-separated Stat cells.',
-  example: "Stats([{label:'Files',value:412},{label:'Tests',value:1866,delta:12}])",
 }, {
   data: opt(p.data<StatItem[]>('StatItem[]', '[{label,value,unit?,delta?,spark?,format?,tone?}] ([{key,value}] works too), or an object {Label:value}.', 'repo.kpis')),
   ...FRAME,
@@ -234,7 +219,6 @@ export const Stats = component('Stats', {
 export const List = component('List', {
   family: 'content', chunk: 'content', tier: 'B',
   doc: 'Ranked dense rows: title, dim subtitle, trailing value with a bar.',
-  example: "List('deps.external top=8',title='External packages')",
 }, {
   data: p.data<ListItem[]>('ListItem[]', '[{title,sub?,value?,file?}] or any rows dataset.'),
   limit: opt(p.int('Rows shown. Default 10.', 1, 200)),
@@ -245,11 +229,10 @@ export const List = component('List', {
 export const DataTable = component('DataTable', {
   family: 'data', chunk: 'table', tier: 'A',
   doc: 'Virtualized sortable table; columns come from the dataset unless given.',
-  example: "DataTable('git.hotspots top=25',['path',{key:'commits',kind:'bar'},'owner'],sort='-score',title='Hotspots')",
 }, {
-  data: p.data<Rows>('Rows', 'Source ref, $/path or inline rows. A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph.'),
+  data: p.data<Rows>('Rows', "Source ref, $/path or inline rows (node:'ID' links a row). A graph source (deps.modules, diff.impact) gives its nodes as rows; Graph draws the graph."),
   // Two forms (the list, and the presets' shorthand string), so a DynamicValue (p.value), read by readColumns (notation.ts).
-  columns: opt(p.value<ColumnsValue>("[{key, kind?, label?} | 'key'] (or field/name, title). Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
+  columns: opt(p.value<ColumnsValue>("[{key, kind?, label?} | 'key']. Kinds: text num bytes pct duration path symbol module author commit lang date bar heat spark chip delta code bool.")),
   sort: opt(p.str("'field' or '-field'.")),
   search: minor(opt(p.flag('Show the search box. Default: when more than 20 rows.'))),
   group: minor(opt(p.str('Group rows by this field.'))),
@@ -259,7 +242,6 @@ export const DataTable = component('DataTable', {
 export const FileTree = component('FileTree', {
   family: 'data', chunk: 'table', tier: 'A',
   doc: 'Directory tree with size bars, heat strip and extension badges.',
-  example: "FileTree(heat='churn',size='fill')",
 }, {
   data: opt(p.data<DirNode>('DirNode', 'Tree dataset.', 'files.tree')),
   metric: opt(p.enum(['loc', 'bytes', 'files', 'commits', 'changes', 'none'], 'Bar metric. Default loc.', {...TREE_VALUE_ALIASES, diff: 'changes', delta: 'changes'})),
@@ -271,7 +253,6 @@ export const FileTree = component('FileTree', {
 export const CommitList = component('CommitList', {
   family: 'data', chunk: 'table', tier: 'B',
   doc: 'Git log rows: sha, subject, author, relative date, +/- bars.',
-  example: "CommitList('git.log src/auth',title='Recent commits')",
 }, {
   data: opt(p.data<CommitRow[]>('CommitRow[]', 'Commit rows.', 'git.log')),
   ...FRAME,
@@ -280,7 +261,6 @@ export const CommitList = component('CommitList', {
 export const JsonView = component('JsonView', {
   family: 'data', chunk: 'table', tier: 'C',
   doc: 'Collapsible JSON/config tree.',
-  example: "JsonView($/config,2)",
 }, {
   data: p.data<unknown>('unknown', 'Any JSON value.'),
   depth: minor(opt(p.int('Levels expanded initially. Default 1.', 0, 12))),
@@ -291,7 +271,6 @@ export const JsonView = component('JsonView', {
 export const Sparkline = component('Sparkline', {
   family: 'chart', chunk: 'content', tier: 'A',
   doc: 'Inline trend line with an end dot.',
-  example: 'Sparkline([3,5,4,9,12])',
 }, {
   data: p.data<number[]>('number[]', 'Numbers.'),
   kind: minor(opt(p.enum(['line', 'bar', 'area'], 'Default line.', {bars: 'bar', column: 'bar'}))),
@@ -301,7 +280,6 @@ export const Sparkline = component('Sparkline', {
 export const SegmentedBar = component('SegmentedBar', {
   family: 'chart', chunk: 'content', tier: 'A',
   doc: 'Part-to-whole in one bar with a legend (use instead of a pie).',
-  example: "SegmentedBar(title='Languages')",
 }, {
   data: opt(p.data<Rows>('Rows', 'Rows.', 'files.langs')),
   label: opt(p.str('Segment field.')),
@@ -312,7 +290,6 @@ export const SegmentedBar = component('SegmentedBar', {
 export const BarChart = component('BarChart', {
   family: 'chart', chunk: 'charts', tier: 'A',
   doc: 'Bars by category; horizontal when there are many or long labels.',
-  example: "BarChart('git.authors top=8','author','commits',title='Who changes it')",
 }, {
   data: p.data<Rows>('Rows', 'Rows.'),
   x: opt(p.str('Category field.')),
@@ -327,7 +304,6 @@ export const BarChart = component('BarChart', {
 export const LineChart = component('LineChart', {
   family: 'chart', chunk: 'charts', tier: 'A',
   doc: 'Lines or stacked areas over time or an ordered x, labelled at the line ends.',
-  example: "LineChart('git.timeline',mode='stacked',title='Activity')",
 }, {
   data: p.data<Rows>('Rows', 'Rows.'),
   x: opt(p.str('X field (date or number).')),
@@ -341,7 +317,6 @@ export const LineChart = component('LineChart', {
 export const ScatterPlot = component('ScatterPlot', {
   family: 'chart', chunk: 'charts', tier: 'B',
   doc: 'Points for two measures; optional radius, colour and outlier labels.',
-  example: "ScatterPlot('git.hotspots','commits','complexity',r='sloc',label='path',quadrants=true)",
 }, {
   data: p.data<Rows>('Rows', 'Rows.'),
   x: opt(p.str('X field.')),
@@ -357,7 +332,6 @@ export const ScatterPlot = component('ScatterPlot', {
 export const Histogram = component('Histogram', {
   family: 'chart', chunk: 'charts', tier: 'B',
   doc: 'Distribution of one numeric field with median and p90 marks.',
-  example: "Histogram('files.list','loc',title='File sizes')",
 }, {
   data: p.data<Rows | number[]>('Rows|number[]', 'Rows or numbers.'),
   value: opt(p.str('Numeric field.')),
@@ -369,7 +343,6 @@ export const Histogram = component('Histogram', {
 export const Heatmap = component('Heatmap', {
   family: 'chart', chunk: 'charts', tier: 'B',
   doc: 'Matrix of cells on a sequential or diverging ramp (also a dependency matrix).',
-  example: "Heatmap('deps.matrix','to','from','weight',title='Who imports whom')",
 }, {
   data: p.data<Rows>('Rows', 'Rows.'),
   x: opt(p.str('Column field.')),
@@ -382,7 +355,6 @@ export const Heatmap = component('Heatmap', {
 export const CalendarHeatmap = component('CalendarHeatmap', {
   family: 'chart', chunk: 'charts', tier: 'B',
   doc: 'Daily activity as week columns of day cells.',
-  example: "CalendarHeatmap(title='Commits per day')",
 }, {
   data: opt(p.data<Rows>('Rows', 'Rows.', 'git.activity')),
   date: opt(p.str('Date field.')),
@@ -393,7 +365,6 @@ export const CalendarHeatmap = component('CalendarHeatmap', {
 export const Treemap = component('Treemap', {
   family: 'chart', chunk: 'charts', tier: 'A',
   doc: 'Zoomable nested rectangles sized by a metric.',
-  example: "Treemap(color='churn',title='Where the code is')",
 }, {
   data: opt(p.data<DirNode>('DirNode', 'Tree dataset.', 'files.tree')),
   value: opt(p.enum(['loc', 'bytes', 'files', 'commits'], 'Size metric. Default loc.', TREE_VALUE_ALIASES)),
@@ -405,7 +376,6 @@ export const Treemap = component('Treemap', {
 export const Icicle = component('Icicle', {
   family: 'chart', chunk: 'charts', tier: 'C',
   doc: 'Hierarchy as stacked rows; click zooms a subtree.',
-  example: "Icicle(title='Tree by size')",
 }, {
   data: opt(p.data<DirNode>('DirNode', 'Tree dataset.', 'files.tree')),
   value: opt(p.enum(['loc', 'bytes', 'files', 'commits'], 'Size metric. Default loc.', TREE_VALUE_ALIASES)),
@@ -417,7 +387,6 @@ export const Icicle = component('Icicle', {
 export const Graph = component('Graph', {
   family: 'diagram', chunk: 'diagrams', tier: 'A',
   doc: 'Node-link diagram on a dot grid: clusters, cycle marks, pan/zoom, focus on a node.',
-  example: "Graph('deps.modules src/auth',title='How auth depends on the rest')",
 }, {
   data: opt(p.data<GraphData>('GraphData', '{nodes:[{id,label}],edges:[{from,to}],groups?}.', 'deps.modules')),
   dir: opt(p.enum(['LR', 'TB'], 'Flow direction. Default: whichever reads larger at the plate width, LR on a tie.', DIR_ALIASES)),
@@ -429,37 +398,33 @@ export const Graph = component('Graph', {
 export const Flowchart = component('Flowchart', {
   family: 'diagram', chunk: 'diagrams', tier: 'B',
   doc: 'Boxes and arrows written as data: flows, state machines, grouped parts.',
-  example: "Flowchart({nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond'}},edges:[['Req','RL'],['RL','H','no']]})",
 }, {
-  data: p.data<FlowData>('FlowData', 'Nodes, edges and groups (FlowData below).'),
-  dir: opt(p.enum(['TB', 'LR'], 'Flow direction. Default: whichever reads larger in its plate.', DIR_ALIASES)),
+  data: p.data<FlowData>('FlowData', 'FlowData below.'),
+  dir: opt(p.enum(['TB', 'LR'], 'Default: whichever reads larger.', DIR_ALIASES)),
   ...FRAME,
 });
 
 export const SequenceDiagram = component('SequenceDiagram', {
   family: 'diagram', chunk: 'diagrams', tier: 'B',
   doc: 'Lifelines and numbered messages written as data, with notes and loop/alt frames.',
-  example: "SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify'],['Auth','API','token','reply'],['API','User','200','reply']]})",
 }, {
-  data: p.data<SeqData>('SeqData', 'Actors and steps: messages, notes, blocks (SeqData below).'),
+  data: p.data<SeqData>('SeqData', 'SeqData below. Actor node: its id unless given; via: nodes passed.'),
   ...FRAME,
 });
 
 export const Layers = component('Layers', {
   family: 'diagram', chunk: 'diagrams', tier: 'B',
   doc: 'Architecture tiers: horizontal bands of boxes, top tier first.',
-  example: "Layers([{name:'API',items:['routes','middleware']},{name:'Domain',items:['ledger','payouts']}])",
 }, {
-  data: p.data<LayerItem[]>('LayerItem[]', "[{name,items:['label'|{label,file?,note?}],note?}], top tier first."),
+  data: p.data<LayerItem[]>('LayerItem[]', 'LayerItem below, top tier first.'),
   ...FRAME,
 });
 
 export const ERDiagram = component('ERDiagram', {
   family: 'diagram', chunk: 'diagrams', tier: 'C',
   doc: 'Tables with column rows and key marks, joined by relation edges.',
-  example: "ERDiagram([{name:'users',columns:[{name:'id',type:'uuid',pk:true},{name:'email'}]},{name:'orders',columns:[{name:'id',pk:true},{name:'user_id',fk:'users.id'}]}],title='Data model')",
 }, {
-  data: p.data<ErData>('ErData', "Tables [{name,columns:[{name,type?,pk?,fk?}]}], or {tables,relations}. fk:'users.id' draws the relation."),
+  data: p.data<ErData>('ErData', "ErData below. fk:'users.id' draws the relation."),
   dir: minor(opt(p.enum(['LR', 'TB'], 'Default: whichever reads larger.', DIR_ALIASES))),
   ...FRAME,
 });
@@ -468,7 +433,6 @@ export const ERDiagram = component('ERDiagram', {
 export const CodeBlock = component('CodeBlock', {
   family: 'code', chunk: 'code', tier: 'A',
   doc: 'Highlighted snippet you write yourself (short; for files on disk use CodeView).',
-  example: "CodeBlock('const x = await limiter.take(ip)','ts')",
 }, {
   code: p.text('Source text.'),
   lang: opt(p.str('Language id (ts, py, go, rust, sql, json, sh ...).')),
@@ -480,7 +444,6 @@ export const CodeBlock = component('CodeBlock', {
 export const CodeView = component('CodeView', {
   family: 'code', chunk: 'code', tier: 'A',
   doc: 'A file read from disk: gutter, highlights, notes. Follows the selection when file is omitted.',
-  example: "CodeView('src/auth/service.ts#L20-58',mark='31-36')",
 }, {
   file: opt(p.text("'path' or 'path#L10-40'. Omit to follow the selected file.")),
   mark: opt(p.str("Lines of the file to highlight: '12-18,30' (or 'L12-18').")),
@@ -491,7 +454,6 @@ export const CodeView = component('CodeView', {
 export const DiffView = component('DiffView', {
   family: 'code', chunk: 'code', tier: 'A',
   doc: 'Git diff read by the server: file list, hunks, word-level marks. Live for the working tree.',
-  example: "DiffView('main..HEAD',title='This branch')",
 }, {
   range: opt(p.text("'wt' (working tree vs HEAD, default), 'staged', or a git range 'main..HEAD'.")),
   file: opt(p.text('Limit to one path.')),
@@ -502,7 +464,6 @@ export const DiffView = component('DiffView', {
 export const CodeTour = component('CodeTour', {
   family: 'code', chunk: 'code', tier: 'B',
   doc: 'Walkthrough: numbered notes on the left, the referenced code on the right.',
-  example: "CodeTour([{file:'src/auth/service.ts#L20-58',note:'Entry point.'},{file:'src/auth/cache.ts#L5-30',note:'Token cache.'}])",
 }, {
   data: p.data<TourStop[]>('TourStop[]', "[{file:'path#L1-20',title?,note}] in reading order."),
   ...FRAME,
@@ -511,17 +472,15 @@ export const CodeTour = component('CodeTour', {
 export const SymbolOutline = component('SymbolOutline', {
   family: 'code', chunk: 'code', tier: 'B',
   doc: 'Symbols of a file with kind badges and line numbers. Follows the selection when file is omitted.',
-  example: 'SymbolOutline()',
 }, {
   file: opt(p.text('Path. Omit to follow the selected file.')),
   ...FRAME,
 });
 
-// ---- input (2) ----------------------------------------------------------------------------------------------------
+// ---- input (3) ----------------------------------------------------------------------------------------------------
 export const Button = component('Button', {
   family: 'input', chunk: 'content', tier: 'B',
   doc: 'Queues an event for the agent (delivered with its next Glimpse result or prompt).',
-  example: "Button('Approve plan',Event('approve',{plan:1}),'primary')",
 }, {
   label: p.text('Button text.'),
   action: p.action("Event('name',{context}), or a plain 'name' (read as Event('name'))."),
@@ -532,11 +491,28 @@ export const Button = component('Button', {
 export const Ask = component('Ask', {
   family: 'input', chunk: 'content', tier: 'B',
   doc: 'Decision card: the user picks one option; the pick is queued for the agent.',
-  example: "Ask('Which store backs the limiter?',['Redis','In-memory'],'store')",
 }, {
   prompt: p.text('Question (inline micro-markup).'),
   options: p.strings('Choices.'),
   name: opt(p.str("Event name. Default 'answer'.")),
+  ...CELL,
+});
+
+/**
+ * Decision what-if-as-a2ui-calls: writes the number at the $/path its value binds, and every call reading that path recomputes in the
+ * tab. In the charts chunk: an input, kept lazy for the eager budget. min, max and step are static, so the server and
+ * the tab hold a number to the same limits.
+ */
+export const Slider = component('Slider', {
+  family: 'input', chunk: 'charts', tier: 'B',
+  doc: 'A number the user sets: a field, and a range when min and max are given. Calls reading it update.',
+}, {
+  label: p.text('Caption.'),
+  value: p.number('The $/path it writes; seed it: $/w={seats:50000}. Compute from it in any value, inline rows too: add|sub|mul|div(a, b) of numbers, $/paths or calls.'),
+  min: minor(opt(p.num('Lowest value. With max, a range is drawn too.'))),
+  max: minor(opt(p.num('Highest value.'))),
+  step: minor(opt(p.num('Step. Default: a hundredth of max-min, else any.'))),
+  unit: minor(opt(p.text('Unit after the field.'))),
   ...CELL,
 });
 
@@ -547,7 +523,7 @@ export const COMPONENTS = [
   Sparkline, SegmentedBar, BarChart, LineChart, ScatterPlot, Histogram, Heatmap, CalendarHeatmap, Treemap, Icicle,
   Graph, Flowchart, SequenceDiagram, Layers, ERDiagram,
   CodeBlock, CodeView, DiffView, CodeTour, SymbolOutline,
-  Button, Ask,
+  Button, Ask, Slider,
 ] as const;
 
 export type AnyComponentDef = (typeof COMPONENTS)[number];

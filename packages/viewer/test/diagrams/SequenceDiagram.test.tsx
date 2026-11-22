@@ -1,8 +1,8 @@
 import {cleanSequence, type SeqAst} from '@glimpse/catalog';
-import {screen, waitFor} from '@testing-library/react';
+import {fireEvent, screen, waitFor} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
 import {UI_12, textWidth} from '../../src/components/diagrams/flowkit/index.ts';
-import {MAX_STEPS, planSequence, wrapWidth} from '../../src/components/diagrams/SequenceDiagram.tsx';
+import {MAX_SAID, MAX_STEPS, planSequence, wrapWidth} from '../../src/components/diagrams/SequenceDiagram.tsx';
 import {buildPatch, buildSurface, renderExpress, renderSpec} from '../harness.tsx';
 import {focus, key} from './util.tsx';
 
@@ -84,8 +84,14 @@ describe('SequenceDiagram', () => {
     await waitFor(() => expect(view.stateOf('s')).toBe('W_DROPPED'));
     expect(view.reports.findLast(report => report.code === 'W_DROPPED')!.message).toBe("SequenceDiagram#s: not drawn: step 2: a note needs over: 'A' or over: ['A', 'B']");
     expect(view.cell('s').querySelectorAll('[data-step]')).toHaveLength(1);
+    expect(view.cell('s').textContent).toContain("1 not drawn: step 2: a note needs over: 'A' or over: ['A', 'B']");
     view.setData('/s', [['A', 'B', 'ok'], {note: 'over A', over: 'A'}]);
     await waitFor(() => expect(view.stateOf('s')).toBe('OK'));
+    // an unknown key leaves nothing out: the model hears of it, the reader sees no 'not drawn'
+    view.setData('/s', [['A', 'B', 'ok'], {note: 'over A', over: 'A', colour: 'red'}]);
+    await waitFor(() => expect(view.stateOf('s')).toBe('W_DROPPED'));
+    expect(view.reports.findLast(report => report.code === 'W_DROPPED')!.message).toBe('SequenceDiagram#s: not drawn: ignored note key colour');
+    expect(view.cell('s').textContent).not.toContain('not drawn');
   });
 
   it('shows the empty state without data and follows the binding', async () => {
@@ -342,5 +348,113 @@ describe('SequenceDiagram: content-sized', () => {
     // no fixed height of its own: as tall as its steps up to that
     expect(scroll.style.height).toBe('');
     expect(view.errors).toEqual([]);
+  });
+});
+
+// Decision links-through-node-ids: a message is selectable; it stands for the nodes it passes, so the diagrams it crosses light its path.
+describe('SequenceDiagram: selection and traces', () => {
+  const TRACE = "{actors:{U:'User',G:{label:'Gateway',node:'GW'},I:'Inv'},steps:[['U','G','checkout'],{from:'G',to:'I',label:'hold',via:['Q']},{note:'idempotent',over:'I'},['I','G','ok','reply'],['U','I','direct'],['U','G','retry']]}";
+  type View = Awaited<ReturnType<typeof ready>>;
+  const rows = (view: View, flag: string) => [...view.cell('s').querySelectorAll(`[data-step][${flag}]`)].map(step => Number(step.getAttribute('data-step')));
+  const heads = (view: View) => [...view.cell('s').querySelectorAll('[data-actor][data-selected]')].map(actor => actor.getAttribute('data-actor'));
+  const step = (view: View, i: number) => view.cell('s').querySelector(`[data-step="${i}"] rect`)!;
+
+  it('selects a clicked message as the path it takes, and marks only its own row', async () => {
+    const view = await ready(TRACE);
+    fireEvent.click(step(view, 1));
+    expect(view.getData('/ui/sel')).toEqual({type: 'message', id: 's:2', label: '2. Gateway to Inv: hold', nodes: ['GW', 'Q', 'I']});
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_select', sourceComponentId: 's', context: {ref: {type: 'message', id: 's:2'}}});
+    expect(rows(view, 'data-active')).toEqual([1]);
+    expect(rows(view, 'data-selected')).toEqual([1]);
+    expect(heads(view)).toEqual(['G', 'I']);
+    expect(rows(view, 'data-dim')).toEqual([]);
+    // messages 1 and 5 take the same path; within its own diagram a selected message marks only its row
+    fireEvent.click(step(view, 0));
+    expect(view.getData('/ui/sel')).toMatchObject({id: 's:1', nodes: ['U', 'GW']});
+    expect(rows(view, 'data-selected')).toEqual([0]);
+    // a note moves the keyboard's row, not the selection; empty space changes nothing
+    fireEvent.click(step(view, 2));
+    expect(rows(view, 'data-active')).toEqual([2]);
+    expect(view.getData('/ui/sel')).toMatchObject({id: 's:1'});
+    fireEvent.click(view.cell('s').querySelectorAll('svg')[1]!);
+    expect(view.getData('/ui/sel')).toMatchObject({id: 's:1'});
+  });
+
+  it('selects as the keyboard steps onto a message, keeps it on a note, and clears it with Escape', async () => {
+    const view = await ready(TRACE);
+    const stage = screen.getByRole('img', {name: /^Sequence diagram/});
+    focus(stage);
+    key(stage, 'ArrowDown');
+    expect(view.getData('/ui/sel')).toMatchObject({type: 'message', id: 's:1', nodes: ['U', 'GW']});
+    key(stage, 'ArrowDown');
+    expect(view.getData('/ui/sel')).toMatchObject({id: 's:2', nodes: ['GW', 'Q', 'I']});
+    key(stage, 'ArrowDown');
+    expect(rows(view, 'data-active')).toEqual([2]);
+    expect(view.getData('/ui/sel')).toMatchObject({id: 's:2'});
+    expect(rows(view, 'data-selected')).toEqual([1]);
+    key(stage, 'ArrowDown');
+    expect(view.getData('/ui/sel')).toEqual({type: 'message', id: 's:3', label: '3. Inv to Gateway, reply: ok', nodes: ['I', 'GW']});
+    expect(view.actions.filter(action => action.name === 'gl_select')).toHaveLength(3);
+    key(stage, 'Escape');
+    expect(view.getData('/ui/sel') ?? null).toBeNull();
+    expect(rows(view, 'data-active')).toEqual([]);
+    expect(rows(view, 'data-selected')).toEqual([]);
+  });
+
+  it('marks the messages and actors that touch a node selected elsewhere, and dims the rest', async () => {
+    const view = await ready(TRACE);
+    view.setData('/ui/sel', {type: 'node', id: 'GW', label: 'Gateway'});
+    expect(rows(view, 'data-selected')).toEqual([0, 1, 3, 5]);
+    expect(rows(view, 'data-dim')).toEqual([2, 4]);
+    expect(heads(view)).toEqual(['G']);
+    // a message of another diagram lights the messages that pass every node it names
+    view.setData('/ui/sel', {type: 'message', id: 'other:1', label: '1. Web to Gateway: go', nodes: ['U', 'GW']});
+    expect(rows(view, 'data-selected')).toEqual([0, 5]);
+    expect(heads(view)).toEqual(['U', 'G']);
+    expect(rows(view, 'data-active')).toEqual([]);
+    view.setData('/ui/sel', null);
+    expect(rows(view, 'data-selected')).toEqual([]);
+    expect(rows(view, 'data-dim')).toEqual([]);
+  });
+
+  it('selects an actor\'s node from its head', async () => {
+    const view = await ready(TRACE);
+    fireEvent.click(view.cell('s').querySelector('[data-actor="G"] rect')!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'node', id: 'GW', label: 'Gateway'});
+    fireEvent.click(view.cell('s').querySelector('[data-actor="U"] rect')!);
+    expect(view.getData('/ui/sel')).toEqual({type: 'node', id: 'U', label: 'User'});
+    expect(heads(view)).toEqual(['U']);
+  });
+
+  it('moves to a restored selection, and marks no row for one a patch left stale', async () => {
+    const view = await ready(TRACE);
+    view.setData('/ui/sel', {type: 'message', id: 's:4', label: '4. User to Inv: direct', nodes: ['U', 'I']});
+    await waitFor(() => expect(rows(view, 'data-active')).toEqual([4]));
+    expect(rows(view, 'data-selected')).toEqual([4]);
+    expect(heads(view)).toEqual(['U', 'I']);
+    expect(view.cell('s').querySelector('[aria-live]')!.textContent).toBe('4. User to Inv: direct');
+    // the messages were renumbered by a patch: number 4 now says something else
+    view.setData('/ui/sel', {type: 'message', id: 's:4', label: '4. User to Inv: gone', nodes: ['U', 'I']});
+    expect(rows(view, 'data-selected')).toEqual([]);
+    expect(rows(view, 'data-dim')).toEqual([]);
+    expect(heads(view)).toEqual([]);
+  });
+
+  // The server keeps no label over 1,024 characters: the selection names a long message by its first words.
+  it('selects a long message by a cut label, and restores it from that label', async () => {
+    const long = 'x'.repeat(1100);
+    const view = await ready(`{steps:[['A','B','${long}'],['B','A','ok','reply']]}`);
+    fireEvent.click(view.cell('s').querySelector('[data-step="0"] rect')!);
+    const sel = view.getData('/ui/sel') as {label: string};
+    expect(sel.label).toHaveLength(MAX_SAID);
+    expect(sel.label).toBe(`1. A to B: ${long}`.slice(0, MAX_SAID - 1) + '…');
+    // a reload: the selection comes back from the server with that label
+    view.setData('/ui/sel', null);
+    view.setData('/ui/sel', {...sel});
+    await waitFor(() => expect(rows(view, 'data-active')).toEqual([0]));
+    expect(rows(view, 'data-selected')).toEqual([0]);
+    expect(heads(view)).toEqual(['A', 'B']);
+    // what the row says aloud is still all of it
+    expect(view.cell('s').querySelector('[aria-live]')!.textContent).toBe(`1. A to B: ${long}`);
   });
 });

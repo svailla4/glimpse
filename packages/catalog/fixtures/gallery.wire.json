@@ -106,7 +106,9 @@
           "children": [
             "input_children_0",
             "input_children_1",
-            "input_children_2"
+            "input_children_2",
+            "input_children_3",
+            "input_children_4"
           ]
         },
         {
@@ -563,7 +565,7 @@
                 "ui",
                 {
                   "label": "api",
-                  "file": "src/api/routes.ts"
+                  "file": "README.md"
                 }
               ]
             },
@@ -577,7 +579,10 @@
             {
               "label": "Storage",
               "items": [
-                "postgres",
+                {
+                  "label": "postgres",
+                  "node": "DB"
+                },
                 "redis"
               ]
             }
@@ -609,7 +614,9 @@
               },
               "DB": {
                 "label": "Postgres",
-                "shape": "store"
+                "shape": "store",
+                "note": "users and sessions",
+                "file": "README.md"
               },
               "C": {
                 "label": "cache",
@@ -649,6 +656,15 @@
           "id": "diagrams_children_3",
           "component": "SequenceDiagram",
           "data": {
+            "actors": {
+              "User": "User",
+              "API": "API",
+              "Auth": {
+                "label": "Auth",
+                "node": "H"
+              },
+              "DB": "DB"
+            },
             "steps": [
               [
                 "User",
@@ -819,6 +835,39 @@
             "In-memory"
           ],
           "name": "store",
+          "span": 6
+        },
+        {
+          "id": "input_children_3",
+          "component": "Slider",
+          "label": "Seats on sale",
+          "value": {
+            "@path": "/g/seats"
+          },
+          "min": 1000,
+          "max": 200000,
+          "step": 1000,
+          "span": 6
+        },
+        {
+          "id": "input_children_4",
+          "component": "Stat",
+          "value": {
+            "@call": "div",
+            "args": {
+              "a": {
+                "@call": "mul",
+                "args": {
+                  "a": {
+                    "@path": "/g/seats"
+                  },
+                  "b": 0.6
+                }
+              },
+              "b": 120
+            }
+          },
+          "label": "checkout req/s",
           "span": 6
         }
       ],
@@ -1440,12 +1489,12 @@
               "title": "Add limiter middleware",
               "note": "Sliding window per IP.",
               "status": "done",
-              "file": "src/api/limiter.go#L1-40"
+              "file": "README.md#L1-4"
             },
             {
               "title": "Wire into router",
               "status": "doing",
-              "file": "src/api/routes.ts#L12"
+              "file": "README.md#L2"
             },
             {
               "title": "Tests",
@@ -1460,7 +1509,7 @@
           "schema": [
             {
               "name": "users",
-              "file": "src/auth/schema.sql#L1",
+              "file": "README.md#L1",
               "columns": [
                 {
                   "name": "id",
@@ -1479,6 +1528,7 @@
             },
             {
               "name": "sessions",
+              "node": "DB",
               "columns": [
                 {
                   "name": "id",
@@ -1582,7 +1632,8 @@
             "workspaces": [
               "packages/*"
             ]
-          }
+          },
+          "seats": 50000
         },
         "ds": {},
         "ui": {

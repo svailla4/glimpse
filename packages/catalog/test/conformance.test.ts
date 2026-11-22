@@ -25,7 +25,7 @@ describe('C1: generated/catalog.json is a valid v1.0 catalog document', () => {
     expect(catalogJson).toEqual(JSON.parse(JSON.stringify(buildCatalogJson())));
   });
 
-  it('declares every component with a description, no functions and the permanent id', () => {
+  it('declares every component with a description, the four functions and the permanent id', () => {
     expect(catalogJson.catalogId).toBe(CATALOG_ID);
     expect(catalogJson.$id).toBe(CATALOG_ID);
     expect(catalogJson.protocolVersion).toBe('1.0');
@@ -36,15 +36,18 @@ describe('C1: generated/catalog.json is a valid v1.0 catalog document', () => {
       expect(entry.properties.component).toEqual({const: def.name});
       expect('unevaluatedProperties' in entry, `${def.name}: unevaluatedProperties removed`).toBe(false);
     }
-    expect(catalogJson.$defs.anyFunction).toEqual({not: {}});
+    // decision what-if-as-a2ui-calls: add|sub|mul|div(a, b), strict here (a literal argument must be a number)
+    expect(Object.keys(catalogJson.functions)).toEqual(['add', 'sub', 'mul', 'div']);
+    expect(catalogJson.$defs.anyFunction.oneOf.map((f: {$ref: string}) => f.$ref)).toEqual(['add', 'sub', 'mul', 'div'].map(name => `#/functions/${name}`));
+    for (const name of ['add', 'sub', 'mul', 'div']) expect(catalogJson.functions[name].properties.args.required, name).toEqual(['a', 'b']);
     expect(catalogJson.$defs.anyComponent.oneOf).toHaveLength(COMPONENTS.length);
     expect(catalogJson.components.Page.allowedParents).toEqual(['Surface']);
   });
 });
 
 describe('C2: every spec Glimpse writes compiles to valid v1.0 messages', () => {
-  it('covers the 16 preset variants, the 43 examples, the gallery and the 6 recipes', () => {
-    expect(entries).toHaveLength(16 + 43 + 1 + 6);
+  it('covers the 16 preset variants, the 44 examples, the gallery and the 6 recipes', () => {
+    expect(entries).toHaveLength(16 + 44 + 1 + 6);
   });
 
   it.each(entries.map(e => [e.label, e] as const))('%s passes STRICT_VALIDATION and agent_to_renderer.json', (_label, entry) => {
@@ -55,10 +58,10 @@ describe('C2: every spec Glimpse writes compiles to valid v1.0 messages', () => 
     }
   });
 
-  it('the gallery uses every component type and 68 components', () => {
+  it('the gallery uses every component type and 70 components', () => {
     const gallery = entries.find(e => e.label === 'gallery')!.messages[0]!;
     if (!('createSurface' in gallery)) throw new Error('gallery is not a createSurface');
-    expect(gallery.createSurface.components).toHaveLength(68);
+    expect(gallery.createSurface.components).toHaveLength(70);
     expect(new Set(gallery.createSurface.components.map(c => c.component))).toEqual(new Set(COMPONENTS.map(c => c.name)));
   });
 });

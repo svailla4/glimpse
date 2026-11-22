@@ -2,7 +2,7 @@
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
-import {COMPONENTS, EXAMPLES, GALLERY_SPEC, VIEW_BY_NAME, parseViewRef, type A2uiMessage} from '../src/index.ts';
+import {COMPONENT_EXAMPLES, COMPONENTS, EXAMPLES, GALLERY_SPEC, VIEW_BY_NAME, parseViewRef, type A2uiMessage} from '../src/index.ts';
 import {buildPatch, buildSurface} from '../testing/index.ts';
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
@@ -58,7 +58,7 @@ export function corpus(): CorpusEntry[] {
     const {view, source} = presetSource(call);
     entries.push({label: `view ${call}`, messages: buildSurface(view, source)});
   }
-  for (const def of COMPONENTS) entries.push({label: `example ${def.name}`, messages: buildSurface('example', exampleSpec(def.example))});
+  for (const def of COMPONENTS) entries.push({label: `example ${def.name}`, messages: buildSurface('example', exampleSpec(COMPONENT_EXAMPLES[def.name]))});
   entries.push({label: 'gallery', messages: buildSurface('gallery', GALLERY_SPEC, {datasets: 'ready'})});
   for (const example of EXAMPLES) {
     if (!example.view) {

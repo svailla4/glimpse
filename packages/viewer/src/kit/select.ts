@@ -25,10 +25,14 @@ export function fileEntity(loc: FileLoc, label?: string): EntityRef {
  *             symbol of the selected file
  * 'contains'  the entity holds the selection: a directory or module above the selected file, the file of the
  *             selected symbol
+ * 'linked'    the entity and the selection name the same diagram nodes (decision links-through-node-ids, hubOf): a Layers item with
+ *             node:'PG' when Flowchart node PG is selected, the boxes a selected message passes through
  */
-export type SelectionMatch = 'exact' | 'within' | 'contains';
+export type SelectionMatch = 'exact' | 'within' | 'contains' | 'linked';
 
-type Ref = Pick<EntityRef, 'type' | 'id' | 'path'>;
+/** What an entity is matched by: its identity, its place and the diagram nodes it stands for. */
+export type SelectionRef = Pick<EntityRef, 'type' | 'id' | 'path' | 'line' | 'endLine' | 'nodes'>;
+type Ref = SelectionRef;
 
 /** Commits and authors are not places: their `path`, if any, says nothing about containment. */
 const PLACELESS: ReadonlySet<string> = new Set(['commit', 'author']);
@@ -42,27 +46,53 @@ function placeOf(ref: Ref): string | undefined {
 }
 const under = (path: string, dir: string) => dir === '' ? path !== '' : path.startsWith(`${dir}/`);
 
+/** Decision links-through-node-ids: the diagram node ids a ref stands for. A node is itself; `nodes` adds the ones it names. */
+export const hubOf = (ref: Ref): string[] => [...new Set([...(ref.type === 'node' ? [ref.id] : []), ...(ref.nodes ?? [])])];
+/** Two line ranges meet, or one side has none. */
+const meet = (a: Ref, b: Ref) => a.line == null || b.line == null || (a.line <= (b.endLine ?? b.line) && b.line <= (a.endLine ?? a.line));
+
 /**
- * How `entity` relates to the selection; undefined when it is not selected at all. Components draw 'exact' and
- * 'within' as selected (design 5.1: "same type and id, a file inside a selected directory, a row whose path equals
- * the selection"); trees and module graphs may also mark 'contains', the directory or module the selection is in.
- */
-/**
- * Whether a mark is drawn as selected (design 5.1): it is the selection ('exact') or lies inside it ('within').
- * The yes/no form of matchSelection, for components that do not draw 'contains'.
+ * Whether a mark is drawn as selected (design 5.1): it is the selection ('exact'), lies inside it ('within') or
+ * names the same diagram nodes ('linked', decision links-through-node-ids). The yes/no form of matchSelection, for components that do
+ * not draw 'contains'.
  */
 export function marksSelection(selected: EntityRef | null | undefined, entity: Ref | null | undefined): boolean {
   const match = matchSelection(selected, entity);
-  return match === 'exact' || match === 'within';
+  return match === 'exact' || match === 'within' || match === 'linked';
 }
 
+/**
+ * How `entity` relates to the selection; undefined when it is not selected at all. Components draw 'exact', 'within'
+ * and 'linked' as selected (design 5.1: "same type and id, a file inside a selected directory, a row whose path equals
+ * the selection"); trees and module graphs may also mark 'contains', the directory or module the selection is in.
+ *
+ * Links (decision links-through-node-ids) go one hop and never chain: an entity standing for one node is linked when the selection names
+ * that node; one standing for several, when it stands for every node the selection names.
+ */
 export function matchSelection(selected: EntityRef | null | undefined, entity: Ref | null | undefined): SelectionMatch | undefined {
   if (!selected || !entity) return undefined;
   if (selected.type === entity.type && selected.id === entity.id) return 'exact';
+  const place = placeMatch(selected, entity);
+  // Holding the selection is not drawn as selected, so naming the selected node outranks it.
+  if (place && place !== 'contains') return place;
+  return linksSelection(selected, entity) ? 'linked' : place;
+}
+
+/** Decision links-through-node-ids: the entity names the selected diagram nodes (the 'linked' rule of matchSelection, places aside). */
+export function linksSelection(selected: Ref, entity: Ref): boolean {
+  const chosen = hubOf(selected);
+  const own = hubOf(entity);
+  if (chosen.length === 0 || own.length === 0) return false;
+  return own.length === 1 ? chosen.includes(own[0]!) : chosen.every(id => own.includes(id));
+}
+
+function placeMatch(selected: Ref, entity: Ref): SelectionMatch | undefined {
   const chosen = placeOf(selected);
   const own = placeOf(entity);
   if (chosen === undefined || own === undefined) return undefined;
   if (chosen === own) {
+    // Decision links-through-node-ids: two diagram nodes of one file (the tables of schema.sql) are one place only where their lines meet.
+    if ((selected.type === 'node' || entity.type === 'node') && !meet(selected, entity)) return undefined;
     const narrowChosen = selected.type === 'symbol';
     const narrowOwn = entity.type === 'symbol';
     if (narrowChosen && narrowOwn) return undefined;
@@ -71,4 +101,15 @@ export function matchSelection(selected: EntityRef | null | undefined, entity: R
   if (!cannotHold(selected) && under(own, chosen)) return 'within';
   if (!cannotHold(entity) && under(chosen, own)) return 'contains';
   return undefined;
+}
+
+/**
+ * Decision links-through-node-ids: what an item naming diagram nodes (`node:'PG'`) selects. Its own entity (a file) carries them; without
+ * one, one node is that node, and several are a row standing for them.
+ */
+export function linkedEntity(own: EntityRef | undefined, ids: readonly string[], row: {id: string; label: string}): EntityRef | undefined {
+  if (ids.length === 0) return own;
+  if (own) return {...own, nodes: [...ids]};
+  if (ids.length === 1) return {type: 'node', id: ids[0]!, label: row.label};
+  return {type: 'row', id: row.id, label: row.label, nodes: [...ids]};
 }

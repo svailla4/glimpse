@@ -1,16 +1,21 @@
 // Expansion (design 2.2 step 4): compiled messages are rewritten in place so that every data prop naming a source
 // becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, diagram data, DataTable
-// columns and reserved data paths. Pure apart from the in-place rewrite of messages nobody else holds yet.
+// columns, reserved data paths, and what a Slider binds and where a call computes nothing (decision what-if-as-a2ui-calls). Pure apart
+// from the in-place rewrite of messages nobody else holds yet.
 import {
-  acceptsArg, cleanFlow, cleanSequence, columnKey, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, normalizeCols, parseFileLoc,
+  acceptsArg, callReads, callsIn, columnKey, explainValue, isCall, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, normalizeCols, parseFileLoc,
   parseRef, PATHS, readColumns, replaceFileRefs, shapeKinds, shorthandTokens, SOURCES, tokenKey, type A2uiMessage, type Field, type Prop,
   type SourceMeta, type SourceRef, type WireComponent,
 } from '@glimpse/catalog';
 import {ignoredMarksWarning, readLineMarks} from '@glimpse/catalog';
 import {AS_ROWS, NODE_FIELDS, readsAsRows} from '../session/datasets.ts';
 import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
+import {asDrawn, AUTHORED, inlinePaths, isBinding, lookup, SERVER_PATH, TEXT_DIAGRAMS} from './authored.ts';
 import {closeMatch, nearest, oneLine, problem, type Problem} from './errors.ts';
 import {pathProblem} from './guard.ts';
+
+// The data model helpers live with the authored-data checks (authored.ts); the session and the store read them here.
+export {lookup} from './authored.ts';
 
 export interface Expansion {
   /** Source refs the call names, by dataset key, in order of first use. */
@@ -19,7 +24,7 @@ export interface Expansion {
   /** What is certain to draw wrong although the spec is valid, as `Name#id: text` (a `warn` line each). */
   warnings: string[];
   /** Literal files named by components (CodeView, FileRef, a CodeTour stop, a [[path]] ref ...): the session checks they exist. */
-  files: Array<{where: string; file: string}>;
+  files: FileCheck[];
   /** Literal DiffView ranges other than the working tree: the session checks the revisions exist. */
   ranges: Array<{where: string; range: string}>;
   /** Field names a component asks of a dataset, checked against the dataset's fields once it has settled. */
@@ -32,6 +37,13 @@ export interface Expansion {
    */
   paths: string[];
 }
+
+/**
+ * A file to check, and the part that names it. `nested` marks one named inside a component's data (a Flowchart node's
+ * or a Layers item's file, decision links-through-node-ids): the session checks those after the rest, so a plate whose own file is
+ * missing is reported before the links inside a diagram, under the cap on warning lines.
+ */
+export interface FileCheck { where: string; file: string; nested?: true }
 
 /** The inventory's names of paths a spec wrote in another case ('readme.md' -> 'README.md'), keyed by the text written. */
 export type PathNames = ReadonlyMap<string, string>;
@@ -127,8 +139,8 @@ export function checkRef(text: string, registry: SourceRegistry, where = ''): {r
 }
 
 const allowsString = (prop: Prop): boolean => (prop.shape ?? '').split('|').some(part => part === 'string' || part === 'unknown');
-const isBinding = (value: unknown): value is {'@path': string} =>
-  typeof value === 'object' && value !== null && typeof (value as {'@path'?: unknown})['@path'] === 'string';
+/** A value the tab resolves itself: a binding or a function call. */
+const isDynamic = (value: unknown): boolean => isBinding(value) || (typeof value === 'object' && value !== null && '@call' in value);
 
 export function componentsOf(message: A2uiMessage): WireComponent[] {
   if ('createSurface' in message) return message.createSurface.components;
@@ -136,7 +148,8 @@ export function componentsOf(message: A2uiMessage): WireComponent[] {
   return [];
 }
 
-const MAX_CHECKS = 64;
+/** Most files, ranges and field lists one call has checked. */
+export const MAX_CHECKS = 64;
 
 /** Sources whose positional target is a path (a range, for diff.*, is never a case variant of a file). */
 const PATH_TARGET = new Set(['path', 'path|range']);
@@ -422,6 +435,41 @@ function checkMark(comp: WireComponent, name: string, out: Expansion): void {
   if (read.ignored.length > 0) out.warnings.push(`${name}#${comp.id}: ${ignoredMarksWarning(read.ignored)}`);
 }
 
+/** A value for a message: JSON, at most 40 characters (as explainValue writes the values it names). */
+const shown = (value: unknown): string => {
+  const text = typeof value === 'number' ? String(value) : (JSON.stringify(value) ?? String(value));
+  return text.length > 40 ? text.slice(0, 39) + '…' : text;
+};
+
+/**
+ * Decision what-if-as-a2ui-calls: a Slider edits the data at the $/path its value binds, so that value is a binding to a path of the
+ * model's own. A literal or a call is refused with the two statements to write instead; a relative path, and one
+ * under /ui (the viewer's) or /ds and /meta (the server's), likewise. min not below max draws no range: a `warn`.
+ */
+function checkSlider(comp: WireComponent, out: Expansion): void {
+  const at = `Slider#${comp.id}.value`;
+  const value = comp.value;
+  if (!isBinding(value)) {
+    const what = isCall(value) ? 'a call' : shown(value);
+    const seed = typeof value === 'number' && Number.isFinite(value) ? value : 50000;
+    out.problems.push(problem('E_TYPE', `${at}: ${what} is not a $/path. A Slider edits data: write $/w={seats:${seed}} and Slider('Seats',$/w/seats).`, {component: 'Slider'}));
+    return;
+  }
+  const path = value['@path'];
+  if (!path.startsWith('/')) {
+    out.problems.push(problem('E_TYPE', `${at}: bind an absolute $/path, e.g. $/w/seats.`, {component: 'Slider'}));
+    return;
+  }
+  if (SERVER_PATH.test(path)) {
+    const owner = /^\/ui(?:\/|$)/.test(path) ? 'the viewer (/ds and /meta to the server)' : 'the server (/ui to the viewer)';
+    out.problems.push(problem('E_PATH', `${at}: $${oneLine(path, 60)} belongs to ${owner}; bind a path of your own, e.g. $/w/seats.`, {component: 'Slider'}));
+    return;
+  }
+  if (typeof comp.min === 'number' && typeof comp.max === 'number' && !(comp.min < comp.max)) {
+    out.warnings.push(`Slider#${comp.id}: min ${comp.min} is not below max ${comp.max}, so no range is drawn`);
+  }
+}
+
 function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Expansion, names: PathNames | undefined): void {
   const def = COMPONENT_BY_NAME.get(comp.component);
   if (!def) return;
@@ -432,8 +480,8 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
     if (prop.kind !== 'data') continue;
     const value = comp[key];
     // Text where a diagram takes data (the Mermaid these components once read): say what they take now.
-    if (typeof value === 'string' && DIAGRAMS[def.name]) {
-      const cleaned = DIAGRAMS[def.name]!(value);
+    if (typeof value === 'string' && TEXT_DIAGRAMS.has(def.name)) {
+      const cleaned = AUTHORED[def.name]!(value);
       if (!cleaned.ok) out.problems.push(problem('E_SHAPE', `${where(key)}: ${cleaned.error}`, {component: def.name}));
       continue;
     }
@@ -490,60 +538,41 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
   if ('mark' in def.props) checkMark(comp, def.name, out);
   if (def.name === 'Split' && typeof comp.ratio === 'string') splitRatioChecked(comp, out);
   if (def.name === 'Grid') gridCols(comp, out);
-  // Inline diagram data: what is not a diagram at all is refused, the rest draws and says what it corrected or left out.
-  // Data bound to a $/path is checked against the data model after the call (diagramNotes).
-  const clean = DIAGRAMS[def.name];
-  if (clean && comp.data !== undefined && typeof comp.data !== 'string' && !isBinding(comp.data)) {
-    const cleaned = clean(comp.data);
+  if (def.name === 'Slider') checkSlider(comp, out);
+  // Decision what-if-as-a2ui-calls: a call in an action is run by the tab as an action and computes a number nobody sees.
+  for (const [key, prop] of Object.entries(def.props) as Array<[string, Prop]>) {
+    const call = prop.kind === 'action' ? (comp[key] as {functionCall?: unknown} | undefined)?.functionCall : undefined;
+    if (isCall(call)) out.problems.push(problem('E_TYPE', `${where(key)}: ${oneLine(call['@call'], 40)}(...) computes a number; an action is Event('name',{...}).`, {component: def.name}));
+  }
+  // Inline authored data (decision links-through-node-ids, authored.ts): what is not the shape at all is refused, the rest draws and says
+  // what it corrected or left out, and the files it names are checked like file props. It is read as the tab reads it,
+  // each call computed (decision what-if-as-a2ui-calls, asDrawn). Data bound to a $/path, or with $/paths inside it, is checked against
+  // the data model after the call (diagramNotes).
+  const authored = AUTHORED[def.name];
+  if (authored && comp.data !== undefined && typeof comp.data !== 'string' && !isDynamic(comp.data) && inlinePaths(comp.data).length === 0) {
+    const cleaned = authored(asDrawn(comp.data)?.value);
     if (!cleaned.ok) out.problems.push(problem('E_SHAPE', `${where('data')}: ${cleaned.error}`, {component: def.name}));
     else {
       out.fixes.push(...cleaned.fixes.map(fix => `${def.name}#${comp.id}: ${fix}`));
       out.warnings.push(...cleaned.dropped.map(drop => `${def.name}#${comp.id}: not drawn: ${drop}`));
+      for (const {at, file} of cleaned.ast.files) if (out.files.length < MAX_CHECKS) out.files.push({where: `${def.name}#${comp.id} ${at}`, file, nested: true});
     }
   }
-}
-
-/** The components whose data is diagram data, and how it is cleaned (catalog/src/diagrams.ts). */
-const DIAGRAMS: Readonly<Record<string, (data: unknown) => ReturnType<typeof cleanFlow> | ReturnType<typeof cleanSequence>>> = {
-  Flowchart: cleanFlow,
-  SequenceDiagram: cleanSequence,
-};
-const SERVER_PATH = /^\/(?:ds|meta|ui)(?:\/|$)/;
-
-/**
- * What the diagrams bound to a $/path draw from the data model after a call, as `fixed` and `warn` lines: those the
- * call defines, and those whose path the call wrote (`$/arch/nodes/G/group='api'` changes a diagram the call does not
- * name). Inline diagram data was checked by expandComponent. `written` holds the top segments of the paths written.
- */
-export function diagramNotes(
-  components: Iterable<WireComponent>, data: Record<string, unknown>, defined: ReadonlySet<string>, written: ReadonlySet<string>,
-): {fixes: string[]; warnings: string[]} {
-  const notes = {fixes: [] as string[], warnings: [] as string[]};
-  for (const comp of components) {
-    const clean = DIAGRAMS[comp.component];
-    if (!clean || !isBinding(comp.data)) continue;
-    const path = comp.data['@path'];
-    if (!path.startsWith('/') || SERVER_PATH.test(path)) continue;
-    if (!defined.has(comp.id) && !written.has(path.split('/').filter(Boolean)[0] ?? '')) continue;
-    const value = lookup(data, path);
-    // Nothing there is reported as an unbound path.
-    if (value === undefined) continue;
-    const where = `${comp.component}#${comp.id}`;
-    const cleaned = clean(value);
-    if (!cleaned.ok) {
-      notes.warnings.push(`${where}: E_SHAPE $${path}: ${cleaned.error}`);
-      continue;
-    }
-    notes.fixes.push(...cleaned.fixes.map(fix => `${where}: ${fix}`));
-    notes.warnings.push(...cleaned.dropped.map(drop => `${where}: not drawn: ${drop}`));
-  }
-  return notes;
 }
 
 const RESERVED = [PATHS.ds, PATHS.meta];
 const reservedPath = (path: string): string | undefined => RESERVED.find(root => path === root || path.startsWith(root + '/'));
 
-function checkPaths(message: A2uiMessage, out: Expansion): void {
+const pointerOf = (key: string) => key.replace(/~/g, '~0').replace(/\//g, '~1');
+
+/** Where the outermost calls in a data value are, as JSON pointers under `base`. */
+function callsInData(value: unknown, base: string, into: string[]): void {
+  if (isCall(value)) { into.push(base); return; }
+  if (isBinding(value) || typeof value !== 'object' || value === null) return;
+  for (const [key, item] of Object.entries(value)) callsInData(item, `${base}/${pointerOf(key)}`, into);
+}
+
+function checkPaths(message: A2uiMessage, out: Expansion, calls: string[]): void {
   const refuse = (path: string) =>
     out.problems.push(problem('E_PATH', `$${path} cannot be assigned: /ds and /meta are written by the server. Name a source in a data argument instead.`));
   if ('updateDataModel' in message) {
@@ -552,8 +581,12 @@ function checkPaths(message: A2uiMessage, out: Expansion): void {
     if (unsafe) out.problems.push(unsafe);
     else if (path === '/' || path === '') out.problems.push(problem('E_PATH', '$/ cannot be assigned as a whole: assign $/name=value.'));
     else if (reservedPath(path)) refuse(path);
+    else callsInData(message.updateDataModel.value, path.replace(/\/+$/, ''), calls);
   } else if ('createSurface' in message) {
-    for (const key of Object.keys(message.createSurface.dataModel ?? {})) if (reservedPath(`/${key}`)) refuse(`/${key}`);
+    for (const [key, value] of Object.entries(message.createSurface.dataModel ?? {})) {
+      if (reservedPath(`/${key}`)) refuse(`/${key}`);
+      else callsInData(value, `/${pointerOf(key)}`, calls);
+    }
   }
 }
 
@@ -563,20 +596,67 @@ function checkPaths(message: A2uiMessage, out: Expansion): void {
  */
 export function expandMessages(messages: A2uiMessage[], registry: SourceRegistry, names?: PathNames): Expansion {
   const out: Expansion = {refs: new Map(), problems: [], warnings: [], files: [], ranges: [], fields: [], fixes: [], paths: []};
+  const calls: string[] = [];
   for (const message of messages) {
-    checkPaths(message, out);
+    checkPaths(message, out, calls);
     for (const comp of componentsOf(message)) expandComponent(comp, registry, out, names);
+  }
+  // Decision what-if-as-a2ui-calls: A2UI computes calls in component arguments only; one in the data model stays a raw object there.
+  if (calls.length > 0) {
+    const more = calls.length > 1 ? ` (and ${calls.length - 1} more)` : '';
+    out.warnings.push(`$${oneLine(calls[0]!, 80)}: a call in data is not computed; write it in a component argument, e.g. Stats([{label:'x',value:mul($/a,2)}]).${more}`);
   }
   return out;
 }
 
-function lookup(data: unknown, path: string): unknown {
-  let node = data;
-  for (const segment of path.split('/').filter(Boolean)) {
-    if (typeof node !== 'object' || node === null) return undefined;
-    node = (node as Record<string, unknown>)[segment.replace(/~1/g, '/').replace(/~0/g, '~')];
+const topOf = (path: string) => (path.split('/').filter(Boolean)[0] ?? '').replace(/~1/g, '/').replace(/~0/g, '~');
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** Review S5: how a Slider's number lies outside its own limits ('outside 0..100', 'below min 10'), or undefined. */
+function outsideRange(value: number, min: unknown, max: unknown): string | undefined {
+  const low = finite(min) ? min : undefined;
+  const high = finite(max) ? max : undefined;
+  if (low !== undefined && high !== undefined) return low < high && (value < low || value > high) ? `outside ${low}..${high}` : undefined;
+  if (low !== undefined && value < low) return `below min ${low}`;
+  if (high !== undefined && value > high) return `above max ${high}`;
+  return undefined;
+}
+
+/**
+ * Decision what-if-as-a2ui-calls: the calls of the components a call defines, and of those reading a path whose top segment it wrote,
+ * computed against the data after the call. One that gives no number (division by zero, an operand that is not a
+ * number, a result too large) is a `warn` line: `Stat#rps: value: div: b = $/w/secs is 0 (division by zero)`. An
+ * operand not set is left to the unbound line; a relative one is said (review S6). A Slider whose path holds
+ * something other than a number, or a number outside its own min..max (review S5), is said too.
+ */
+export function calcNotes(
+  components: Iterable<WireComponent>, data: Record<string, unknown>, defined: ReadonlySet<string>, written: ReadonlySet<string>,
+): string[] {
+  const read = (path: string) => lookup(data, path);
+  const lines: string[] = [];
+  for (const comp of components) {
+    const where = `${comp.component}#${comp.id}`;
+    const calls = callsIn(comp);
+    const bound = comp.component === 'Slider' && isBinding(comp.value) ? comp.value['@path'] : undefined;
+    const slider = bound !== undefined && bound.startsWith('/') && !SERVER_PATH.test(bound) ? bound : undefined;
+    const inScope = defined.has(comp.id) || (slider !== undefined && written.has(topOf(slider)))
+      || calls.some(({call}) => [...callReads(call)].some(path => written.has(topOf(path))));
+    if (!inScope) continue;
+    if (slider !== undefined) {
+      const value = read(slider);
+      if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) lines.push(`${where}: $${oneLine(slider, 80)} is ${shown(value)}, not a number`);
+      else if (typeof value === 'number') {
+        const range = outsideRange(value, comp.min, comp.max);
+        if (range) lines.push(`${where}: $${oneLine(slider, 80)} is ${value}, ${range}`);
+      }
+    }
+    for (const {at, call} of calls) {
+      const got = explainValue(call, read);
+      if ('problem' in got && got.reason !== 'not set') lines.push(`${where}: ${at}: ${got.problem}`);
+    }
   }
-  return node;
+  return lines;
 }
 
 function collectBindings(value: unknown, into: Set<string>): void {
@@ -593,7 +673,7 @@ export function unboundPaths(components: Iterable<WireComponent>, data: Record<s
   const paths = new Set<string>();
   for (const comp of components) for (const [key, value] of Object.entries(comp)) if (key !== 'id' && key !== 'component') collectBindings(value, paths);
   return [...paths]
-    .filter(path => path.startsWith('/') && !/^\/(ds|meta|ui)(\/|$)/.test(path) && lookup(data, path) === undefined)
+    .filter(path => path.startsWith('/') && !SERVER_PATH.test(path) && lookup(data, path) === undefined)
     .map(path => `$${path}`);
 }
 

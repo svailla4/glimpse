@@ -12,9 +12,14 @@
     overflow: auto;
     outline: none;
   }
-  .scroll:focus-visible {
-    outline: 2px solid var(--gl-accent);
-    outline-offset: -2px;
+  /* The focus ring is drawn over the whole diagram, above the sticky actor row, which would cover its top edge. */
+  .root:has(.scroll:focus-visible)::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border: 2px solid var(--gl-accent);
+    pointer-events: none;
   }
   .head {
     display: block;
@@ -114,6 +119,35 @@
   }
   .step[data-active] .number {
     fill: var(--gl-ink);
+  }
+  /*
+   * Decision links-through-node-ids: a message that is the selection, or names the selected node, is drawn in the selection's accent like
+   * a selected box in the other diagrams; while any is, the other rows dim as unconnected nodes do (flowkit).
+   */
+  .step[data-kind='message'],
+  .actorHead {
+    cursor: pointer;
+  }
+  .step {
+    transition: opacity var(--gl-t-state) var(--gl-ease);
+  }
+  .step[data-dim] {
+    opacity: 0.35;
+  }
+  .step[data-selected] .line {
+    stroke: var(--gl-accent);
+    stroke-width: 1.5;
+  }
+  .step[data-selected] .headSolid {
+    fill: var(--gl-accent);
+    stroke: var(--gl-accent);
+  }
+  .step[data-selected] .headOpen {
+    stroke: var(--gl-accent);
+  }
+  .actorHead[data-selected] .actor {
+    stroke: var(--gl-accent);
+    stroke-width: 1.5;
   }
 
   .note {
@@ -221,7 +255,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .line {
+    .line,
+    .step {
       transition: none;
     }
   }

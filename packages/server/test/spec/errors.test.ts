@@ -3,7 +3,10 @@
 import {normalizeSpec} from '@glimpse/catalog';
 import {beforeAll, describe, expect, it} from 'vitest';
 import {compileSpec, loadToolchain, type Toolchain} from '../../src/spec/compile.ts';
-import {classifyCompileError, closeMatch, compilerText, editDistance, flatten, formatProblems, nearest, NOTHING_RENDERED, oneLine, problem, readsAsViewerLine, SpecError} from '../../src/spec/errors.ts';
+import {
+  calcTarget, calleeKind, classifyCompileError, closeMatch, compilerText, componentMatch, editDistance, flatten, formatProblems, nearest, NOTHING_RENDERED, oneLine, problem, readsAsViewerLine,
+  SpecError,
+} from '../../src/spec/errors.ts';
 
 let tools: Toolchain;
 beforeAll(async () => {
@@ -42,6 +45,14 @@ describe('compiler message patterns', () => {
     ['E_SPEC', `root=Page('x',[FileRef('a','b',3,4,5,6,7)])`, /^FileRef takes at most 3 positional arguments/],
     ['E_TYPE', `root=Page('x',[Grid([Text('a')],4)])`, /^Positional argument 2 for component 'Grid' is a number, which is not valid for optional property 'cols'\.$/],
     ['E_TYPE', `root=Page('x',[Grid([Text('a')],cols=4)])`, /^Validation failed for component 'Grid' \(root_children_0\): cols: Expected string, received number$/],
+    // decision what-if-as-a2ui-calls: the four functions, as the strict schemas of calc.ts check them
+    ['E_UNKNOWN', `root=Page('x',[Stat(pow(2,3))])`, /^Function 'pow' is not defined in the catalog\.$/],
+    ['E_UNKNOWN', `root=Page('x',[a])\na=Text('a')\nx=Div(1,2)`, /^Component 'Div' is not defined in the catalog\.$/],
+    ['E_TYPE', `root=Page('x',[Stat(div(2))])`, /^Validation failed for function 'div': b: Expected number, received undefined/],
+    ['E_TYPE', `root=Page('x',[Stat(div('ten',2))])`, /^Validation failed for function 'div': a: Expected number, received string/],
+    ['E_PROP', `root=Page('x',[Stat(div(a=1,b=2,c=3))])`, /^Argument 'c' is not a valid parameter of function 'div'\.$/],
+    ['E_SYNTAX', `root=Page('x',[Stat($/x*2)])`, /^Syntax error at line 2:\d+: token recognition error at: '\*'/],
+    ['E_SYNTAX', `root=Page('x',[Stat($/a+$/b)])`, /^Syntax error at line 2:\d+: token recognition error at: '\+\$'/],
   ])('%s: %s', (code, spec, pattern) => {
     const error = raw(spec);
     expect(compilerText(error)).toMatch(pattern);
@@ -114,6 +125,54 @@ describe('problem texts', () => {
 
   it('E_PARENT states both components and the allowed parents', () => {
     expect(text(`root=Page('x',[Page('y',[])])`)).toBe('E_PARENT Page (root_children_0) cannot sit inside Page (root). Allowed parents: Surface. Page is the root: use it once, as root=Page(...).');
+  });
+
+  // Decision what-if-as-a2ui-calls: what an author gets wrong about the four functions, each said with what to write instead.
+  it('an unknown function lists the four; a name one of them stands for is marked for renaming', () => {
+    expect(text(`root=Page('x',[Stat(pow(2,3))])`)).toBe('E_UNKNOWN "pow" is not a function. Functions: add sub mul div, each (a, b).');
+    expect(classifyCompileError(raw(`root=Page('x',[Stat(pow(2,3))])`), ctx).repair).toBeUndefined();
+    expect(classifyCompileError(raw(`root=Page('x',[Stat(mod(2,3))])`), ctx).repair).toBeUndefined();
+    for (const name of ['multiply', 'Div', 'sum', 'mult']) {
+      expect(classifyCompileError(raw(`root=Page('x',[Stat(${name}(2,3))])`), ctx), name).toEqual({
+        code: 'E_UNKNOWN', message: `"${name}" is not a function. Functions: add sub mul div, each (a, b).`, repair: {kind: 'call', name},
+      });
+    }
+    // a capitalised statement-level name that one of them stands for: the compiler says Component
+    expect(classifyCompileError(raw(`root=Page('x',[a])\na=Text('a')\nx=Div(1,2)`), ctx).repair).toEqual({kind: 'call', name: 'Div'});
+    // components keep their own repair, also in another case
+    expect(classifyCompileError(raw(`root=Page('x',[DataTabel('git.churn')])`), ctx).repair).toEqual({kind: 'component', name: 'DataTabel'});
+    expect(classifyCompileError(raw(`root=Page('x',[text('a')])`), ctx).repair).toEqual({kind: 'component', name: 'text'});
+  });
+
+  // Decision no-markdown-component with what-if-as-a2ui-calls: a removed component is a component in any case, never a function.
+  it('a removed Markdown, in either case, is a component to repair to Text', () => {
+    expect(['Markdown', 'markdown', 'MARKDOWN', 'table', 'pow', 'multiply', 'chart'].map(calleeKind)).toEqual(['component', 'component', 'component', 'component', 'function', 'function', 'either']);
+    expect(['Markdown', 'markdown', 'table'].map(componentMatch)).toEqual(['Text', 'Text', 'DataTable']);
+    for (const name of ['Markdown', 'markdown']) {
+      expect(classifyCompileError(raw(`root=Page('x',[${name}('a')])`), ctx).repair, name).toEqual({kind: 'component', name});
+    }
+  });
+
+  it('calcTarget reads a case, an alias or a near miss, and nothing else', () => {
+    expect(['div', 'Div', 'MUL', 'multiply', 'times', 'plus', 'subtract', 'quotient', 'mult', 'ad'].map(calcTarget)).toEqual(['div', 'div', 'mul', 'mul', 'mul', 'add', 'sub', 'div', 'mul', 'add']);
+    expect(['pow', 'mod', 'round', 'max', 'Text'].map(calcTarget)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+  });
+
+  it('a missing operand, a literal that is not a number and an unknown argument name the function', () => {
+    expect(text(`root=Page('x',[Stat(div(2))])`)).toBe('E_TYPE div: b is missing. a and b are numbers, $/paths or calls, e.g. div($/w/seats,60).');
+    expect(text(`root=Page('x',[Stat(div(b=2))])`)).toBe('E_TYPE div: a is missing. a and b are numbers, $/paths or calls, e.g. div($/w/seats,60).');
+    expect(text(`root=Page('x',[Stat(div('ten',2))])`)).toBe('E_TYPE div: a is a string; a and b are numbers, $/paths or calls, e.g. div($/w/seats,60).');
+    expect(text(`root=Page('x',[Stat(mul(2,[1]))])`)).toBe('E_TYPE mul: b is an array; a and b are numbers, $/paths or calls, e.g. div($/w/seats,60).');
+    expect(text(`root=Page('x',[Stat(div(a=1,b=2,c=3))])`)).toBe('E_PROP div: unknown argument "c". Arguments: a b');
+  });
+
+  it('arithmetic written with * or + says there are no operators; - and / are left as they are', () => {
+    const hint = 'There are no operators: write mul(a, b), div(a, b), add(a, b) or sub(a, b).';
+    expect(text(`root=Page('x',[Stat($/x*2)])`)).toBe(`E_SYNTAX line 1 col 23: token recognition error at: '*'. ${hint}`);
+    expect(text(`root=Page('x',[Stat($/a+$/b)])`)).toBe(`E_SYNTAX line 1 col 23: token recognition error at: '+$'. ${hint}`);
+    expect(text(`root=Page('x',[Stat($/a + 1)])`)).toBe(`E_SYNTAX line 1 col 24: token recognition error at: '+ '. ${hint}`);
+    expect(text(`root=Page('x',[Stat($/a-$/b)])`)).toBe(`E_SYNTAX line 1 col 23: token recognition error at: '-$'`);
+    expect(text(`root=Page('x',[Stat($/a / 2)])`)).toBe(`E_SYNTAX line 1 col 24: token recognition error at: '/ '`);
   });
 
   it('unrecognised messages pass through as E_SPEC without the SDK help text', () => {

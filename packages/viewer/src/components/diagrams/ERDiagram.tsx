@@ -1,8 +1,8 @@
 // ERDiagram: tables with column rows and key marks, joined by relations with crow's-foot ends (design 5.6).
 import type * as C from '@glimpse/catalog';
-import {parseFileLoc, type EntityRef, type ErData} from '@glimpse/catalog';
+import {cleanSchema, parseFileLoc, type EntityRef, type ErData, type SchemaTable} from '@glimpse/catalog';
 import {useCallback, useMemo, useState, type ReactNode} from 'react';
-import {DataGate, Empty, Redline, fmtNum, useDataset, type GlView} from '../../kit/index.ts';
+import {DataGate, Empty, Redline, fmtNum, useDataset, useReportState, type GlView} from '../../kit/index.ts';
 import {
   Diagram, MONO_11, MONO_12, UI_12, fitText, textWidth,
   type DiagramEdge, type DiagramNode, type Dir, type Mark, type NodeFlags,
@@ -23,88 +23,6 @@ const CARDINALITY: Record<string, readonly [Mark, Mark]> = {
   '1-1': ['one', 'one'], '1-n': ['one', 'many'], 'n-1': ['many', 'one'], 'n-n': ['many', 'many'],
 };
 const CARD_TEXT: Record<string, string> = {'1-1': 'one to one', '1-n': 'one to many', 'n-1': 'many to one', 'n-n': 'many to many'};
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const textOf = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : typeof v === 'number' && Number.isFinite(v) ? String(v) : undefined);
-const describe = (v: unknown) => (v === null ? 'null' : Array.isArray(v) ? 'an array' : typeof v === 'object' ? 'an object' : `a ${typeof v}`);
-
-interface Column { name: string; type?: string; pk: boolean; fk: boolean; nullable: boolean }
-interface Table { name: string; file?: string; columns: Column[] }
-interface Relation { from: string; fromColumn?: string; to: string; toColumn?: string; label?: string; card?: string }
-export interface CleanSchema { tables: Table[]; relations: Relation[]; dropped: {tables: number; relations: number} }
-
-/**
- * Coerces the bound value into tables and relations, or returns a message when it is not a schema at all. The value
- * is `{tables, relations?}` or the bare list of tables. A column's `fk` is true, or names what it points at
- * ('users.id', or just 'users'; `ref` and `references` are read the same way): that also draws the relation, many
- * rows to one, unless `relations` already has one between the two ends.
- */
-export function cleanSchema(data: unknown): CleanSchema | string {
-  const rawTables = Array.isArray(data) ? data : isRecord(data) ? data.tables : undefined;
-  if (!Array.isArray(data) && !isRecord(data)) return `expected tables [{name, columns}] or {tables, relations}, received ${describe(data)}`;
-  if (!Array.isArray(rawTables)) return `expected tables to be an array, received ${describe(rawTables)}`;
-  const rawRelations: unknown[] = isRecord(data) && Array.isArray(data.relations) ? data.relations : [];
-  const dropped = {tables: 0, relations: 0};
-  const tables: Table[] = [];
-  const byName = new Map<string, Table>();
-  /** What the columns say they point at, in table and column order. */
-  const pointers: Array<{from: string; to: string}> = [];
-  for (const raw of rawTables) {
-    const name = isRecord(raw) ? textOf(raw.name) : undefined;
-    if (!isRecord(raw) || name === undefined || byName.has(name)) {
-      dropped.tables++;
-      continue;
-    }
-    const columns: Column[] = [];
-    for (const col of Array.isArray(raw.columns) ? raw.columns : []) {
-      // A bare string is a column name.
-      const colName = isRecord(col) ? textOf(col.name) : textOf(col);
-      if (colName === undefined) continue;
-      const c = isRecord(col) ? col : {};
-      const target = [c.fk, c.ref, c.references].map(v => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined)).find(v => v !== undefined);
-      if (target !== undefined) pointers.push({from: `${name}.${colName}`, to: target});
-      columns.push({name: colName, type: textOf(c.type), pk: c.pk === true, fk: c.fk === true || target !== undefined, nullable: c.nullable === true});
-    }
-    const table = {name, file: textOf(raw.file), columns};
-    byName.set(name, table);
-    tables.push(table);
-  }
-  if (rawTables.length > 0 && tables.length === 0) return `expected tables [{name, columns}], but none of the ${rawTables.length} ${rawTables.length === 1 ? 'entry has' : 'entries have'} a name`;
-  // 'table.column' or 'table'. A table name may itself contain dots, so whole names are tried first.
-  const end = (ref: unknown): {table: string; column?: string} | undefined => {
-    const text = textOf(ref);
-    if (text === undefined) return undefined;
-    if (byName.has(text)) return {table: text};
-    const dot = text.lastIndexOf('.');
-    const table = dot > 0 ? text.slice(0, dot) : undefined;
-    return table !== undefined && byName.has(table) ? {table, column: text.slice(dot + 1)} : undefined;
-  };
-  const relations: Relation[] = [];
-  for (const raw of rawRelations) {
-    const from = isRecord(raw) ? end(raw.from) : undefined;
-    const to = isRecord(raw) ? end(raw.to) : undefined;
-    if (!isRecord(raw) || !from || !to) {
-      dropped.relations++;
-      continue;
-    }
-    const card = textOf(raw.card);
-    relations.push({from: from.table, fromColumn: from.column, to: to.table, toColumn: to.column, label: textOf(raw.label), card: card !== undefined && card in CARDINALITY ? card : undefined});
-  }
-  const joins = (rel: Relation, a: {table: string; column?: string}, b: {table: string; column?: string}) =>
-    rel.from === a.table && rel.to === b.table && (rel.fromColumn ?? a.column) === a.column && (rel.toColumn ?? b.column) === b.column;
-  for (const pointer of pointers) {
-    const from = end(pointer.from);
-    const to = end(pointer.to);
-    if (!from || !to) {
-      dropped.relations++;
-      continue;
-    }
-    // Written out in `relations` as well, in either direction: one line is enough.
-    if (relations.some(rel => joins(rel, from, to) || joins(rel, to, from))) continue;
-    relations.push({from: from.table, fromColumn: from.column, to: to.table, toColumn: to.column, card: 'n-1'});
-  }
-  return {tables, relations, dropped};
-}
 
 interface RowDraw { name: string; type?: string; pk: boolean; fk: boolean }
 interface TableDraw { title: string; rows: RowDraw[]; foldable: boolean; folded: boolean; more: number }
@@ -144,15 +62,28 @@ function drawTable(node: DiagramNode<TableDraw>, flags: NodeFlags): ReactNode {
   );
 }
 
-function entityOf(table: Table): EntityRef {
-  if (!table.file) return {type: 'node', id: table.name, label: table.name};
-  const loc = parseFileLoc(table.file);
-  return {type: 'file', id: loc.path, path: loc.path, ...(loc.line != null ? {line: loc.line} : {}), ...(loc.endLine != null ? {endLine: loc.endLine} : {}), label: table.name};
+/**
+ * Decision links-through-node-ids: a table always selects itself as a node. Its file adds the place (so /ui/file follows and Cmd-click
+ * opens it, and the tables of one file stay apart by their lines); its `node` adds the diagram nodes it stands for.
+ */
+function entityOf(table: SchemaTable): EntityRef {
+  const loc = table.file !== undefined ? parseFileLoc(table.file) : undefined;
+  return {
+    type: 'node', id: table.name, label: table.name,
+    ...(loc ? {path: loc.path, ...(loc.line != null ? {line: loc.line} : {}), ...(loc.endLine != null ? {endLine: loc.endLine} : {})} : {}),
+    ...(table.nodes ? {nodes: [...table.nodes]} : {}),
+  };
 }
 
 function ErBody(p: {id: string; data: unknown; dir?: Dir}) {
   const {id, dir} = p;
-  const clean = useMemo(() => cleanSchema(p.data), [p.data]);
+  const cleaned = useMemo(() => cleanSchema(p.data), [p.data]);
+  const clean = cleaned.ok ? cleaned.ast : undefined;
+  // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
+  const dropped = cleaned.ok ? cleaned.dropped : [];
+  // Entries left out, counted: the list folds past 8, and its lines for unknown keys leave nothing out.
+  const notDrawn = cleaned.ok ? cleaned.droppedCount : 0;
+  useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
   const toggle = useCallback((name: string) => {
     setUnfolded(prev => {
@@ -163,7 +94,7 @@ function ErBody(p: {id: string; data: unknown; dir?: Dir}) {
   }, []);
 
   const model = useMemo(() => {
-    if (typeof clean === 'string' || clean.tables.length > MAX_TABLES) return undefined;
+    if (!clean || clean.tables.length > MAX_TABLES) return undefined;
     // Row index of each column a relation can attach to, per table, as drawn right now.
     const rowOf = new Map<string, Map<string, number>>();
     const nodes: Array<DiagramNode<TableDraw>> = clean.tables.map(table => {
@@ -235,18 +166,14 @@ function ErBody(p: {id: string; data: unknown; dir?: Dir}) {
   }, [toggle]);
   const onDrill = useCallback((node: DiagramNode<TableDraw>) => toggle(node.id), [toggle]);
 
-  if (typeof clean === 'string') return <Redline code="E_SHAPE" id={`ERDiagram#${id}`} message={clean} />;
-  if (clean.tables.length === 0) return <Empty message="no tables to draw" />;
+  if (!cleaned.ok) return <Redline code="E_SHAPE" id={`ERDiagram#${id}`} message={cleaned.error} />;
+  const schema = cleaned.ast;
+  if (schema.tables.length === 0) return <Empty message="no tables to draw" />;
   if (!model) {
-    return <Redline code="E_TOO_LARGE" id={`ERDiagram#${id}`} message={`${fmtNum(clean.tables.length)} tables is more than a diagram can show (${MAX_TABLES}). Bind a part of the schema.`} />;
+    return <Redline code="E_TOO_LARGE" id={`ERDiagram#${id}`} message={`${fmtNum(schema.tables.length)} tables is more than a diagram can show (${MAX_TABLES}). Bind a part of the schema.`} />;
   }
-  const {dropped} = clean;
-  const notes = [
-    dropped.relations > 0 ? `${fmtNum(dropped.relations)} ${dropped.relations === 1 ? 'relation' : 'relations'} to unknown tables dropped` : undefined,
-    dropped.tables > 0 ? `${fmtNum(dropped.tables)} unnamed or repeated ${dropped.tables === 1 ? 'table' : 'tables'} dropped` : undefined,
-  ].filter(Boolean);
-  const names = clean.tables.slice(0, 6).map(table => table.name.slice(0, 40)).join(', ');
-  const ariaLabel = `Entity-relationship diagram, ${clean.tables.length} ${clean.tables.length === 1 ? 'table' : 'tables'}, ${clean.relations.length} ${clean.relations.length === 1 ? 'relation' : 'relations'}: ${names}${clean.tables.length > 6 ? ' and more' : ''}`;
+  const names = schema.tables.slice(0, 6).map(table => table.name.slice(0, 40)).join(', ');
+  const ariaLabel = `Entity-relationship diagram, ${schema.tables.length} ${schema.tables.length === 1 ? 'table' : 'tables'}, ${schema.relations.length} ${schema.relations.length === 1 ? 'relation' : 'relations'}: ${names}${schema.tables.length > 6 ? ' and more' : ''}`;
   return (
     <Diagram
       id={id}
@@ -255,7 +182,7 @@ function ErBody(p: {id: string; data: unknown; dir?: Dir}) {
       edges={model.edges}
       dir={dir}
       ariaLabel={ariaLabel}
-      note={notes.join(' · ') || undefined}
+      note={notDrawn > 0 ? `${fmtNum(notDrawn)} not drawn` : undefined}
       renderNode={drawTable}
       onNodeClick={onNodeClick}
       onDrill={onDrill}

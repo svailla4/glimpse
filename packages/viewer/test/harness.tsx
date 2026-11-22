@@ -24,7 +24,7 @@
 // between tests) unmounts; the fakes are removed with it.
 import {A2uiSurface, type ReactCatalogComponent} from '@a2ui/react';
 import {Catalog, MessageProcessor, type ActionPayload, type SurfaceModel} from '@a2ui/web_core/v1_0';
-import {CATALOG_ID, COMPONENTS, PROTOCOL_VERSION, type A2uiMessage, type Chunk, type DataClient, type LinkStatus} from '@glimpse/catalog';
+import {CATALOG_ID, COMPONENTS, PROTOCOL_VERSION, calcFunctions, type A2uiMessage, type Chunk, type DataClient, type LinkStatus} from '@glimpse/catalog';
 import {createFixtureHost, type FixtureHost} from '@glimpse/catalog/fixtures';
 import {buildSurface, type BuildSurfaceOptions} from '@glimpse/catalog/testing';
 import {act, render} from '@testing-library/react';
@@ -74,7 +74,7 @@ const LOADERS = Object.fromEntries(
 
 /** A fresh catalog (A2uiSurface mutates the one it renders), equivalent to createGlimpseCatalog(kitSlots). */
 function createTestCatalog(): Catalog<ReactCatalogComponent> {
-  return new Catalog<ReactCatalogComponent>(CATALOG_ID, PROTOCOL_VERSION, COMPONENTS.map(def => implement(def as never, LOADERS, kitSlots)), []);
+  return new Catalog<ReactCatalogComponent>(CATALOG_ID, PROTOCOL_VERSION, COMPONENTS.map(def => implement(def as never, LOADERS, kitSlots)), calcFunctions());
 }
 
 export interface RenderSpecOptions {

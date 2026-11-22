@@ -1,7 +1,7 @@
 // Error vocabulary of the spec pipeline (design 6.6): one Problem per line the model reads, and the mapping from
 // the Express compiler's messages to Glimpse codes. All contact with @a2ui/agent message texts is here; the patterns
 // are pinned by test/spec/errors.test.ts, so an SDK upgrade that rewords a message fails there, not in production.
-import {COMPONENT_BY_NAME, COMPONENTS, signatureOf} from '@glimpse/catalog';
+import {CALC_NAMES, calcName, COMPONENT_BY_NAME, COMPONENTS, signatureOf, type CalcName} from '@glimpse/catalog';
 
 export type ErrorCode =
   | 'E_SYNTAX' | 'E_UNKNOWN' | 'E_PROP' | 'E_ENUM' | 'E_REQUIRED' | 'E_TYPE' | 'E_REF' | 'E_PARENT'
@@ -16,6 +16,8 @@ export const sourceCode = (code: string): ErrorCode => (SOURCE_CODES.has(code) ?
 /** What a bounded auto-repair may try for a problem (spec/repair.ts). */
 export type RepairHint =
   | {kind: 'component'; name: string}
+  /** A function written another way ('multiply', 'Div', 'mult'): renamed to the one it means (decision what-if-as-a2ui-calls). */
+  | {kind: 'call'; name: string}
   | {kind: 'prop'; component: string; name: string}
   /** An enum value that is not allowed: a synonym or a near miss is replaced by the value it meant. */
   | {kind: 'enum'; component: string; prop: string; value: string}
@@ -218,7 +220,7 @@ export function editDistance(a: string, b: string): number {
 }
 
 /** Case-insensitive distance; a candidate that merely extends or shortens the name by a prefix ranks close. */
-function looseDistance(name: string, candidate: string): number {
+export function looseDistance(name: string, candidate: string): number {
   const a = name.toLowerCase();
   const b = candidate.toLowerCase();
   const d = editDistance(a, b);
@@ -296,15 +298,56 @@ export const REMOVED_COMPONENTS: Readonly<Record<string, {to: string; note: stri
   Markdown: {to: 'Text', note: 'headings, tables and code fences show as written: use Section, DataTable, CodeBlock'},
 };
 
+/**
+ * The removed component a name stands for, written in any case ('Markdown', 'markdown': a lower-case name of a
+ * component is that component, decision what-if-as-a2ui-calls), or undefined.
+ */
+export function removedComponent(name: string): {to: string; note: string} | undefined {
+  const key = Object.keys(REMOVED_COMPONENTS).find(removed => removed.toLowerCase() === name.toLowerCase());
+  return key === undefined ? undefined : REMOVED_COMPONENTS[key];
+}
+
 /** The single component a misspelt or removed name most plausibly meant (same limits as closeMatch), or undefined. */
 export function componentMatch(name: string): string | undefined {
-  if (Object.hasOwn(REMOVED_COMPONENTS, name)) return REMOVED_COMPONENTS[name]!.to;
+  const removed = removedComponent(name);
+  if (removed) return removed.to;
   const limit = name.length <= 4 ? 1 : 2;
   const ranked = COMPONENT_NAMES.map(candidate => ({candidate, d: componentDistance(name, candidate)})).sort((x, y) => x.d - y.d);
   const [best, second] = ranked;
   if (!best || best.d > limit || best.d >= name.length || (second && second.d === best.d)) return undefined;
   return best.candidate;
 }
+
+/**
+ * Decision what-if-as-a2ui-calls: the function a written name means: the name itself in another case ('Div'), an alias ('multiply',
+ * 'sum') or a near miss of one of the four ('mult'); undefined for anything else ('pow', 'mod').
+ */
+export function calcTarget(name: string): CalcName | undefined {
+  return calcName(name) ?? (closeMatch(name, CALC_NAMES) as CalcName | undefined);
+}
+
+/**
+ * What an unknown callee most plausibly is (decision what-if-as-a2ui-calls). A name one of the four stands for is a function ('multiply',
+ * 'Div', 'mult'), unless it is capitalised and near a component. A lower-case name that is a component or one word
+ * of a single component in another case ('text', 'table' -> DataTable, 'tree' -> FileTree), or a longer near miss of
+ * one ('tabel'), is that component. Any other lower-case name is a function ('pow', 'round': components are written
+ * Capitalised, so pow is not read as Row) or, when it is a word of several components ('chart', 'code'), either. A
+ * capitalised name is a component, and so is a removed one in any case ('markdown' is drawn as Text, decision no-markdown-component).
+ */
+export function calleeKind(name: string): 'function' | 'component' | 'either' {
+  if (COMPONENT_BY_NAME.has(name) || removedComponent(name)) return 'component';
+  if (calcName(name) !== undefined) return 'function';
+  const match = componentMatch(name);
+  if (!/^[a-z]/.test(name)) return calcTarget(name) !== undefined && match === undefined ? 'function' : 'component';
+  if (calcTarget(name) !== undefined) return 'function';
+  if (match !== undefined && (componentDistance(name, match) < 1 || name.length > 4)) return 'component';
+  return COMPONENT_NAMES.some(candidate => componentDistance(name, candidate) < 1) ? 'either' : 'function';
+}
+
+export const FUNCTION_LIST = `Functions: ${CALC_NAMES.join(' ')}, each (a, b).`;
+const CALL_EXAMPLE = 'a and b are numbers, $/paths or calls, e.g. div($/w/seats,60).';
+/** Express has no operators: what the lexer refuses when a model writes arithmetic (`$/x*2`, `$/a+$/b`). */
+const OPERATOR = /token recognition error at: '[*+]/;
 
 // ---------------------------------------------------------------- compiler messages -> problems
 /** Props of a component in positional order, as the model may write them. */
@@ -346,14 +389,31 @@ export function classifyCompileError(error: unknown, ctx: ClassifyContext): Prob
   if (syntax) {
     const line = Math.max(1, Number(syntax[1]) - 1);
     const what = oneLine(syntax[3] || 'unexpected input', 160);
-    return problem('E_SYNTAX', `line ${ctx.lineOf ? ctx.lineOf(line) : line} col ${syntax[2]}: ${what}`, /<EOF>/.test(what) ? {repair: {kind: 'eof'}} : {});
+    // Decision what-if-as-a2ui-calls: arithmetic written as operators; '-' and '/' are left alone (negative numbers, paths).
+    const hint = OPERATOR.test(what) ? `. There are no operators: write mul(a, b), div(a, b), add(a, b) or sub(a, b).` : '';
+    return problem('E_SYNTAX', `line ${ctx.lineOf ? ctx.lineOf(line) : line} col ${syntax[2]}: ${what}${hint}`, /<EOF>/.test(what) ? {repair: {kind: 'eof'}} : {});
   }
 
   const unknown = /^(?:Function|Component) '([^']+)' is not defined in the catalog/.exec(text);
   if (unknown) {
     const name = unknown[1]!;
+    const kind = calleeKind(name);
+    if (kind === 'function') {
+      return problem('E_UNKNOWN', `"${name}" is not a function. ${FUNCTION_LIST}`, calcTarget(name) !== undefined ? {repair: {kind: 'call', name}} : {});
+    }
+    if (kind === 'either') return problem('E_UNKNOWN', `"${name}" is not a component or a function. Nearest: ${componentNearest(name).join(' ')}. ${FUNCTION_LIST}`);
     return problem('E_UNKNOWN', `"${name}" is not a component. Nearest: ${componentNearest(name).join(' ')}`, {repair: {kind: 'component', name}});
   }
+
+  // Decision what-if-as-a2ui-calls: a call's arguments, as the strict schemas of calc.ts check them (an unset or wrong literal operand).
+  const badCall = /^Validation failed for function '([^']+)': (\w+): Expected \w+, received (\w+)/.exec(text);
+  if (badCall) {
+    const [, fn, arg, got] = badCall as unknown as [string, string, string, string];
+    return problem('E_TYPE', got === 'undefined' ? `${fn}: ${arg} is missing. ${CALL_EXAMPLE}` : `${fn}: ${arg} is ${/^[aeiou]/.test(got) ? 'an' : 'a'} ${got}; ${CALL_EXAMPLE}`);
+  }
+
+  const badArgument = /^Argument '([^']+)' is not a valid parameter of function '([^']+)'/.exec(text);
+  if (badArgument) return problem('E_PROP', `${badArgument[2]}: unknown argument "${oneLine(badArgument[1]!, 40)}". Arguments: a b`);
 
   const badProp = /^Property '([^']+)' is not a valid property of component '([^']+)'/.exec(text);
   if (badProp) {

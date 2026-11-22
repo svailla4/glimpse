@@ -4,9 +4,9 @@ import {existsSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {serverInstructions, VIEWS} from '@glimpse/catalog';
+import {calcDoc, componentDoc, serverInstructions, VIEWS} from '@glimpse/catalog';
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
-import {catalogTool} from '../../src/mcp/catalogTool.ts';
+import {catalogTool, GRAMMAR} from '../../src/mcp/catalogTool.ts';
 import {eventsTool} from '../../src/mcp/events.ts';
 import {pendingContextTool} from '../../src/mcp/pendingContext.ts';
 import {cell, graphText, queryTool} from '../../src/mcp/query.ts';
@@ -16,6 +16,7 @@ import {showRequest, showTool} from '../../src/mcp/show.ts';
 import {VERSION} from '../../src/mcp/version.ts';
 import {EventQueue} from '../../src/session/events.ts';
 import {codeShare, firstCodeLine, type ShowOutcome} from '../../src/session/session.ts';
+import {compileSpec, loadToolchain} from '../../src/spec/compile.ts';
 import {problem, SpecError} from '../../src/spec/errors.ts';
 import {fakeDeps, fixedSource, tempRoot, testSession, type TestSession} from '../session/fakes.ts';
 
@@ -225,6 +226,31 @@ describe('showTool', () => {
       expect([...record.bindings.values()].map(ref => ref.target)).toEqual(['Docs']);
       // spelled as on disk: nothing to say
       expect(body(await showTool(t.session, {view: 'file Docs/README.md'}, 100))).not.toContain('fixed path');
+    } finally {
+      await own.cleanup();
+    }
+  });
+
+  // Review S10: a file named inside diagram or Steps data in another case opened, so nothing was said, and the
+  // selection then carried a name no FileTree row has.
+  it.skipIf(!CASE_INSENSITIVE)('a file inside diagram and Steps data written in another case is named with its spelling on disk', async () => {
+    const own = await tempRoot();
+    try {
+      await mkdir(join(own.root, 'Docs'), {recursive: true});
+      await writeFile(join(own.root, 'Docs', 'README.md'), '# r\n');
+      const deps = fakeDeps();
+      const index = deps.createRepoIndex;
+      deps.createRepoIndex = (...args) => ({...index(...args), canonical: async (path: string) => (path.toLowerCase() === 'docs/readme.md' ? 'Docs/README.md' : undefined)});
+      const t = testSession(own.root, {deps});
+      live.push(t);
+      const spec = "root=Page('x',[f,l,s])\nf=Flowchart({nodes:{A:{label:'A',file:'docs/readme.md#L1'},B:{label:'B',file:'Docs/README.md'}},edges:[]})\n"
+        + "l=Layers([{name:'D',items:[{label:'r',file:'DOCS/readme.md'}]}])\ns=Steps([{title:'r',file:'docs/README.md'}])";
+      const lines = body(await showTool(t.session, {id: 'n', spec}, 100)).split('\n').filter(line => line.startsWith('warn'));
+      expect(lines).toEqual([
+        'warn Flowchart#f node A: "docs/readme.md" is "Docs/README.md" on disk; write that.',
+        'warn Layers#l item \'r\': "DOCS/readme.md" is "Docs/README.md" on disk; write that.',
+        'warn Steps#s step 1: "docs/README.md" is "Docs/README.md" on disk; write that.',
+      ]);
     } finally {
       await own.cleanup();
     }
@@ -534,6 +560,56 @@ describe('catalogTool', () => {
     expect(none.isError).toBe(true);
     expect(body(none)).toContain('Views: overview');
     expect(body(await catalogTool({names: 'DataTable' as never}, undefined))).toMatch(/^Views: /);
+  });
+
+  // Decision what-if-as-a2ui-calls: the four functions are answered by name or alias, in any case, and named in the index.
+  it('answers the functions by name, alias or case with calcDoc, and the index says it does', async () => {
+    for (const name of ['div', 'multiply', 'Div', 'sum']) expect(body(await catalogTool({names: [name]}, undefined)), name).toBe(calcDoc());
+    expect(body(await catalogTool({names: ['mult']}, undefined))).toBe(`"mult" -> mul\n${calcDoc()}`);
+    expect(body(await catalogTool({}, undefined)).split('\n').at(-1)).toBe('catalog{names:[...]} for details: a component, a function ("div"), a source, "view:<name>", "grammar" or "examples".');
+  });
+
+  // Review S8: calcDoc was printed once per function name, and 'round' was pointed at Row Grid Column.
+  it('gives the functions once per call, and answers a function-like unknown name with the four, not a component', async () => {
+    const blocks = body(await catalogTool({names: ['div', 'multiply', 'round', 'add', 'pow']}, undefined)).split('\n\n');
+    expect(blocks[0]).toBe(calcDoc());
+    expect(blocks.slice(1)).toEqual([
+      '"multiply": the functions, above',
+      expect.stringMatching(/^unknown "round"\. Nearest: \S+ \S+ \S+\. Functions: add sub mul div, each \(a, b\)\.$/),
+      '"add": the functions, above',
+      expect.stringMatching(/^unknown "pow"\. Nearest: \S+ \S+ \S+\. Functions: add sub mul div, each \(a, b\)\.$/),
+    ]);
+    for (const block of blocks.slice(1)) expect(block).not.toMatch(/\b(?:Row|Grid|Column)\b/);
+    // a capitalised near miss still gets its component
+    expect(body(await catalogTool({names: ['Tabel']}, undefined))).toMatch(/^"Tabel" -> /);
+  });
+
+  // Decision no-markdown-component: catalog{names:['Markdown']} answered 'unknown "Markdown". Nearest: Row Section Grid' while show drew
+  // it as Text. It answers, in any case as show reads it, with Text and what Text does not carry over.
+  it('answers a removed Markdown, in any case, with Text and the no-markdown-component note, not a near miss', async () => {
+    const note = 'headings, tables and code fences show as written: use Section, DataTable, CodeBlock';
+    for (const name of ['Markdown', 'markdown', 'MARKDOWN']) {
+      const result = await catalogTool({names: [name]}, undefined);
+      expect(result.isError, name).toBeFalsy();
+      expect(body(result), name).toBe(`"${name}" -> Text (removed, decision no-markdown-component: ${note})\n${componentDoc('Text')}`);
+    }
+  });
+
+  // The examples the grammar gives, rule by rule, written together as one spec: it compiles as Glimpse accepts it.
+  it('the examples of the grammar rules compile', async () => {
+    const examples = [
+      "root=Page('T',[intro,table])", "Grid([a,b],_,'m')", "[intro, Text('x')]", "'doesn't'", "$/plan=[{title:'A',status:'done'}]",
+      "$/plan/0/status='doing'", 'Steps($/plan)', "'git.churn src top=20'", 'Stat(div($/w/seats,60))', "Slider('Seats',$/w/seats)", 'mul($/a,2)',
+    ];
+    for (const example of examples) expect(GRAMMAR, example).toContain(example);
+    const spec = [
+      "root=Page('T',[intro,table,grid,steps,rps,seats,k]) # a comment", "intro=Column([Text('doesn't'), Text('x')])", "table=DataTable('git.churn src top=20')",
+      "a=Text('a'); b=Text('b')", "grid=Grid([a,b],_,'m')", "$/plan=[{title:'A',status:'done'}]", "$/plan/0/status='doing'", 'steps=Steps($/plan)',
+      '$/w={seats:50000}', '$/a=2', 'rps=Stat(div($/w/seats,60))', "seats=Slider('Seats',$/w/seats)", "k=Stats([{label:'x',value:mul($/a,2)}])",
+    ].join('\n');
+    const compiled = compileSpec(await loadToolchain(), {surfaceId: 'g', sources: [spec], surfaces: []});
+    expect(compiled.fixes).toEqual([]);
+    expect(compiled.warnings).toEqual([]);
   });
 
   it('documents sources that only the registry knows', async () => {

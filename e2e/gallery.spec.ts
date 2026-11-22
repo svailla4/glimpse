@@ -11,8 +11,8 @@ const catalog = JSON.parse(readFileSync(join(ROOT, 'packages', 'catalog', 'gener
 const COMPONENTS = Object.keys(catalog.components);
 const SECTIONS = ['layout', 'content', 'data', 'charts', 'diagrams', 'code', 'input'];
 
-test('the catalog has 43 components', () => {
-  expect(COMPONENTS).toHaveLength(43);
+test('the catalog has 44 components', () => {
+  expect(COMPONENTS).toHaveLength(44);
 });
 
 test('gallery: every component renders; a screenshot per section, theme and width', async ({page, glimpse, watched}, testInfo) => {
@@ -22,6 +22,8 @@ test('gallery: every component renders; a screenshot per section, theme and widt
   expect(shown.lines[0]).toMatch(/^ok gallery /);
   expect(shown.lines).toContain(`parts ${SECTIONS.join(' ')} | slots $/g`);
   expect(shown.text.length).toBeLessThanOrEqual(1200);
+  // every file the gallery names, in prose, code plates and diagram data (decision links-through-node-ids), is a file of this repository
+  expect(shown.lines.filter(line => line.startsWith('warn ') || line.startsWith('fixed ')), shown.text).toEqual([]);
 
   await page.emulateMedia({colorScheme: 'light', reducedMotion: 'reduce'});
   await openViewer(page, glimpse);

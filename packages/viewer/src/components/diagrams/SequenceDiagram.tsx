@@ -1,9 +1,11 @@
 // SequenceDiagram: lifelines, messages, notes and blocks written as data (design 5.6, decision diagrams-are-data). No layout
 // library: columns are actors, rows are steps, a block is a frame round its rows.
 import type * as C from '@glimpse/catalog';
-import {cleanSequence, seqLeaves, type SeqArrow, type SeqAst} from '@glimpse/catalog';
-import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode} from 'react';
-import {DataGate, Empty, Redline, fmtNum, useDataset, useReportState, useSize, useSizeCap, useTooltip, type GlView} from '../../kit/index.ts';
+import {cleanSequence, seqLeaves, type EntityRef, type SeqArrow, type SeqAst} from '@glimpse/catalog';
+import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode} from 'react';
+import {
+  DataGate, Empty, Redline, fmtNum, marksSelection, useDataset, useReportState, useSelection, useSize, useSizeCap, useTooltip, type GlView,
+} from '../../kit/index.ts';
 import {MONO_11, UI_12, fitText, markPath, roundedPath, textWidth, wrapText, type Face} from './flowkit/index.ts';
 import css from './SequenceDiagram.module.css';
 
@@ -38,6 +40,12 @@ const NOTE_LINE = 14;
 /** Steps drawn; the rest are counted in the last row. A diagram this long is not read as a picture. */
 export const MAX_STEPS = 400;
 export const MAX_ACTORS = 40;
+/**
+ * A message's selection label is what it says, cut to this length: the server keeps no label over 1,024 characters,
+ * and a selection restored without its label would name no row here (ownRow matches the number and the words).
+ */
+export const MAX_SAID = 200;
+const saidLabel = (said: string) => (said.length > MAX_SAID ? `${said.slice(0, MAX_SAID - 1)}…` : said);
 
 interface ActorDraw { id: string; label: string; text: string; x: number; w: number }
 type RowDraw =
@@ -378,8 +386,31 @@ function messageRow(row: Extract<RowDraw, {kind: 'message'}>): ReactNode {
   );
 }
 
-function SequenceBody(p: {ast: SeqAst}) {
-  const {ast} = p;
+/**
+ * Decision links-through-node-ids: what selecting a drawn row writes, by row: a message is `{type:'message', id:'<component>:<n>'}`
+ * standing for the nodes it passes, in order (its sender's node, its `via`, its receiver's node; an actor's node is
+ * its id unless written); a note selects nothing. And what selecting an actor's head writes: its node.
+ */
+function entitiesOf(id: string, ast: SeqAst, plan: Plan): {rows: Array<EntityRef | undefined>; actors: Map<string, EntityRef>; ends: Array<[string, string] | undefined>} {
+  const byId = new Map(ast.actors.map(actor => [actor.id, actor]));
+  const nodeOf = (actor: string) => byId.get(actor)?.node ?? actor;
+  const ends: Array<[string, string] | undefined> = [];
+  const rows = plan.rows.map((row): EntityRef | undefined => {
+    const step = ast.steps[row.index];
+    if (row.kind !== 'message' || step?.kind !== 'message') {
+      ends.push(undefined);
+      return undefined;
+    }
+    ends.push([step.from, step.to]);
+    // A self-message stands for its node twice: [A, A].
+    return {type: 'message', id: `${id}:${row.n}`, label: saidLabel(row.said), nodes: [nodeOf(step.from), ...(step.via ?? []), nodeOf(step.to)]};
+  });
+  const actors = new Map<string, EntityRef>(plan.actors.map(actor => [actor.id, {type: 'node', id: nodeOf(actor.id), label: actor.label}]));
+  return {rows, actors, ends};
+}
+
+function SequenceBody(p: {id: string; ast: SeqAst}) {
+  const {id, ast} = p;
   // As tall as its steps, up to the plate's maximum height (decision content-sized-plates); past that it scrolls under sticky actors.
   const cap = useSizeCap();
   const boxRef = useRef<HTMLDivElement>(null);
@@ -390,6 +421,35 @@ function SequenceBody(p: {ast: SeqAst}) {
   const [active, setActive] = useState<number>();
   const activeRow = active !== undefined ? plan.rows[active] : undefined;
   const {scale} = plan;
+  const {selected, select} = useSelection(id);
+  const entities = useMemo(() => entitiesOf(id, ast, plan), [id, ast, plan]);
+  // The row of this diagram's message that is the selection, matched by its number and its words: a patch that
+  // renumbered the messages leaves the selection naming no row here (its trace still shows elsewhere).
+  const ownRow = useMemo(() => {
+    if (selected?.type !== 'message' || !selected.id.startsWith(`${id}:`)) return undefined;
+    const at = entities.rows.findIndex(entity => entity?.id === selected.id && entity.label === selected.label);
+    return at < 0 ? -1 : at;
+  }, [selected, entities, id]);
+  // A selection restored (a reload, a second tab) or made by a click moves the keyboard's row to it.
+  useEffect(() => {
+    if (ownRow !== undefined && ownRow >= 0) setActive(ownRow);
+  }, [ownRow]);
+  const marks = useMemo(() => {
+    const rows = new Set<number>();
+    const actors = new Set<string>();
+    if (ownRow !== undefined) {
+      // Stepping through this diagram: its row and the two actors it joins, nothing dimmed, so the sequence stays readable.
+      const ends = ownRow >= 0 ? entities.ends[ownRow] : undefined;
+      if (ends) {
+        rows.add(ownRow);
+        for (const actor of ends) actors.add(actor);
+      }
+      return {rows, actors, dim: false};
+    }
+    entities.rows.forEach((entity, i) => { if (entity && marksSelection(selected, entity)) rows.add(i); });
+    for (const [actor, entity] of entities.actors) if (marksSelection(selected, entity)) actors.add(actor);
+    return {rows, actors, dim: rows.size > 0};
+  }, [ownRow, entities, selected]);
 
   // Keep the step the keyboard is on inside the scrolled window, below the sticky actors.
   useEffect(() => {
@@ -425,11 +485,34 @@ function SequenceBody(p: {ast: SeqAst}) {
     else if (event.key === 'PageUp') next = Math.max(0, (active ?? 8) - 8);
     else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       if (scrollRef.current) scrollRef.current.scrollLeft += event.key === 'ArrowRight' ? 80 : -80;
-    } else if (event.key === 'Escape' && active !== undefined) setActive(undefined);
-    else return;
-    if (next !== undefined && lastRow >= 0) setActive(next);
+    } else if (event.key === 'Escape' && (active !== undefined || selected)) {
+      // The kit's rule (EntityLink): Escape also clears the selection.
+      setActive(undefined);
+      if (selected) select(null);
+    } else return;
+    if (next !== undefined && lastRow >= 0) {
+      setActive(next);
+      // Decision links-through-node-ids: the selection follows the keyboard onto a message (the trace moves with it); a note leaves it.
+      const entity = entities.rows[next];
+      if (entity && next !== ownRow) select(entity);
+    }
     event.preventDefault();
     event.stopPropagation();
+  };
+  // A click on a message selects it, on a note moves the keyboard's row there; empty space changes nothing (a plain
+  // click never deselects, as in the other diagrams).
+  const onStepClick = (event: MouseEvent<SVGSVGElement>) => {
+    const index = (event.target as Element).closest?.('[data-step]')?.getAttribute('data-step');
+    if (index == null) return;
+    const at = Number(index);
+    setActive(at);
+    const entity = entities.rows[at];
+    if (entity) select(entity);
+  };
+  const onActorClick = (event: MouseEvent<SVGSVGElement>) => {
+    const actor = (event.target as Element).closest?.('[data-actor]')?.getAttribute('data-actor');
+    const entity = actor != null ? entities.actors.get(actor) : undefined;
+    if (entity) select(entity);
   };
   const onPointerMove = (event: PointerEvent<SVGSVGElement>) => {
     const index = (event.target as Element).closest?.('[data-step]')?.getAttribute('data-step');
@@ -447,20 +530,29 @@ function SequenceBody(p: {ast: SeqAst}) {
       <div ref={scrollRef} className={css.scroll} style={{maxHeight: cap}} role="img" aria-label={ariaLabel} tabIndex={0} onKeyDown={onKeyDown} onScroll={measure}>
         {width > 0 ? (
           <>
-            <svg className={css.head} width={plan.width * scale} height={HEAD_H * scale} viewBox={`0 0 ${plan.width} ${HEAD_H}`} aria-hidden="true">
+            <svg className={css.head} width={plan.width * scale} height={HEAD_H * scale} viewBox={`0 0 ${plan.width} ${HEAD_H}`} aria-hidden="true" onClick={onActorClick}>
               {plan.actors.map(actor => (
-                <g key={actor.id} data-actor={actor.id}>
+                <g key={actor.id} className={css.actorHead} data-actor={actor.id} data-selected={marks.actors.has(actor.id) || undefined}>
                   <line className={css.lifeline} x1={actor.x} x2={actor.x} y1={8 + ACTOR_H} y2={HEAD_H} />
                   <rect className={css.actor} x={actor.x - actor.w / 2} y={8} width={actor.w} height={ACTOR_H} />
                   <text className={css.actorText} x={actor.x} y={8 + ACTOR_H / 2 + 0.5}>{actor.text}</text>
                 </g>
               ))}
             </svg>
-            <svg className={css.steps} width={plan.width * scale} height={plan.height * scale} viewBox={`0 0 ${plan.width} ${plan.height}`} data-scale={scale < 1 ? scale.toFixed(2) : undefined} aria-hidden="true" onPointerMove={onPointerMove} onPointerLeave={() => tooltip.hide()}>
+            <svg className={css.steps} width={plan.width * scale} height={plan.height * scale} viewBox={`0 0 ${plan.width} ${plan.height}`} data-scale={scale < 1 ? scale.toFixed(2) : undefined} aria-hidden="true" onPointerMove={onPointerMove} onPointerLeave={() => tooltip.hide()} onClick={onStepClick}>
               {plan.actors.map(actor => <line key={actor.id} className={css.lifeline} x1={actor.x} x2={actor.x} y1={0} y2={plan.height} />)}
               {plan.frames.map(frameView)}
               {plan.rows.map((row, i) => (
-                <g key={row.index} className={css.step} data-step={i} data-kind={row.kind} data-arrow={row.kind === 'message' ? row.arrow : undefined} data-active={i === active || undefined}>
+                <g
+                  key={row.index}
+                  className={css.step}
+                  data-step={i}
+                  data-kind={row.kind}
+                  data-arrow={row.kind === 'message' ? row.arrow : undefined}
+                  data-active={i === active || undefined}
+                  data-selected={marks.rows.has(i) || undefined}
+                  data-dim={(marks.dim && !marks.rows.has(i)) || undefined}
+                >
                   <rect className={css.stepHit} x={0} y={row.kind === 'note' ? row.y - 6 : row.y} width={plan.width} height={row.kind === 'note' ? row.h + 14 : row.h} />
                   {row.kind === 'message' ? messageRow(row) : (
                     <>
@@ -488,13 +580,15 @@ function SequenceData(p: {id: string; data: unknown}) {
   const cleaned = useMemo(() => cleanSequence(p.data), [p.data]);
   // What the data asked for but is not drawn is told to the model: data written by a patch was never checked by the server.
   const dropped = cleaned.ok ? cleaned.dropped : [];
+  // Entries left out, counted: the list folds past 8, and its lines for unknown keys leave nothing out.
+  const notDrawn = cleaned.ok ? cleaned.droppedCount : 0;
   useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
   if (!cleaned.ok) return <Redline code="E_SHAPE" id={`SequenceDiagram#${p.id}`} message={cleaned.error} />;
   if (seqLeaves(cleaned.ast.steps).length === 0) return <Empty message="no steps to draw: SequenceDiagram takes {actors?, steps}" />;
   return (
     <>
-      <SequenceBody ast={cleaned.ast} />
-      {dropped.length > 0 ? <div className={css.dropped}>{`${fmtNum(dropped.length)} not drawn: ${dropped.join('; ')}`}</div> : null}
+      <SequenceBody id={p.id} ast={cleaned.ast} />
+      {notDrawn > 0 ? <div className={css.dropped}>{`${fmtNum(notDrawn)} not drawn: ${dropped.join('; ')}`}</div> : null}
     </>
   );
 }

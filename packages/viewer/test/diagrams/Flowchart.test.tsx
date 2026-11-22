@@ -1,10 +1,11 @@
+import type {EntityRef} from '@glimpse/catalog';
 import {fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
-import {CONTROLS, POSITIONS_KEY, configurePositionStorage} from '../../src/components/diagrams/flowkit/index.ts';
+import {CONTROLS, POSITIONS_KEY, configurePositionStorage, legsOf} from '../../src/components/diagrams/flowkit/index.ts';
 import {buildPatch, buildSurface, renderExpress, renderSpec} from '../harness.tsx';
 import {
   click, drag, drawn, edgeOf, elk, fakeStorage, focus, inside, key, lineOf, nodeIds, nodeOf, onStage, pointsOf, positionOf, runsAlong, sizeOf, stageHeight,
-  stageOf, viewOf, type FakeStorage,
+  stageOf, viewOf, wrapperOf, type FakeStorage,
 } from './util.tsx';
 
 // Express data literals, as a model writes them.
@@ -192,6 +193,80 @@ describe('Flowchart', () => {
     expect(view.getData('/ui/sel')).toMatchObject({id: 'RL'});
     key(stage, 'Escape');
     expect(view.getData('/ui/sel') ?? null).toBeNull();
+  });
+
+  // Decision links-through-node-ids: a node's note and file are in its tooltip, its announcement and, once selected, the plate's margin.
+  it('shows a node\'s note and file, marks the node, and selects the file with it', async () => {
+    const view = await ready("{nodes:{A:{label:'API',note:'routes',file:'src/api.ts#L3-9'},B:'Worker',C:{label:'Store',description:'orders'}},edges:[['A','B'],['B','C']]}", `,dir='LR'`);
+    const noted = (id: string) => nodeOf(view, 'f', id).querySelector('[data-shape]')!.hasAttribute('data-noted');
+    expect(['A', 'B', 'C'].map(noted)).toEqual([true, false, true]);
+    expect(nodeOf(view, 'f', 'A').querySelector('circle')).not.toBeNull();
+    // the size is the label's: a note does not grow the box
+    expect(sizeOf(nodeOf(view, 'f', 'B')).h).toBe(sizeOf(nodeOf(view, 'f', 'A')).h);
+
+    fireEvent.mouseEnter(wrapperOf(nodeOf(view, 'f', 'A')), {clientX: 10, clientY: 10});
+    await waitFor(() => expect(document.querySelector('.gl-tooltip')?.textContent).toBe('APIroutes · src/api.ts#L3-9'));
+
+    const stage = stageOf(view, 'f');
+    focus(stage);
+    key(stage, 'Home');
+    expect(view.cell('f').querySelector('[aria-live]')!.textContent).toBe('API, routes · src/api.ts#L3-9');
+
+    click(nodeOf(view, 'f', 'A'));
+    expect(view.getData('/ui/sel')).toEqual({type: 'node', id: 'A', label: 'API', path: 'src/api.ts', line: 3, endLine: 9});
+    expect(view.getData('/ui/file')).toBe('src/api.ts#L3-9');
+    expect(view.cell('f').querySelector('[data-gl-note]')!.textContent).toBe('API: routes · src/api.ts#L3-9');
+    click(nodeOf(view, 'f', 'C'));
+    expect(view.getData('/ui/sel')).toEqual({type: 'node', id: 'C', label: 'Store'});
+    expect(view.cell('f').querySelector('[data-gl-note]')!.textContent).toBe('Store: orders');
+    // a node without a note leaves the margin empty
+    click(nodeOf(view, 'f', 'B'));
+    expect(view.cell('f').querySelector('[data-gl-note]')).toBeNull();
+
+    click(nodeOf(view, 'f', 'A'), {metaKey: true});
+    expect(view.actions.at(-1)).toMatchObject({name: 'gl_open', context: {file: 'src/api.ts#L3-9'}});
+    // and the node lights when its file is selected elsewhere
+    view.setData('/ui/sel', {type: 'file', id: 'src/api.ts', path: 'src/api.ts'});
+    expect(nodeOf(view, 'f', 'A').hasAttribute('data-selected')).toBe(true);
+  });
+
+  it('legsOf: the consecutive pairs of a path, both ways; nothing for a node or a single id (links-through-node-ids)', () => {
+    const message: EntityRef = {type: 'message', id: 'co:1', nodes: ['Client', 'CDN', 'Q', 'GW']};
+    expect([...legsOf(message)].sort()).toEqual([['CDN', 'Client'], ['CDN', 'Q'], ['Client', 'CDN'], ['GW', 'Q'], ['Q', 'CDN'], ['Q', 'GW']].map(pair => JSON.stringify(pair)).sort());
+    expect(legsOf(message).has(JSON.stringify(['Client', 'GW']))).toBe(false);
+    // a self-message is a leg from its node to itself
+    expect([...legsOf({type: 'message', id: 's:2', nodes: ['A', 'A']})]).toEqual([JSON.stringify(['A', 'A'])]);
+    expect(legsOf(null).size).toBe(0);
+    expect(legsOf({type: 'node', id: 'orders', nodes: ['PG']}).size).toBe(0);
+    expect(legsOf({type: 'row', id: 'r', nodes: ['PG']}).size).toBe(0);
+  });
+
+  // Decision links-through-node-ids: a selection that is not a node and names several (a message) is a path: only its legs are hot.
+  it('lights the boxes a selected message passes through and only the edges between consecutive ones', async () => {
+    const view = await ready("{nodes:{A:'a',B:'b',C:'c',D:'d'},edges:[['A','B'],['B','C'],['A','C'],['C','D']]}", `,dir='LR'`);
+    const lit = () => nodeIds(view, 'f').filter(id => nodeOf(view, 'f', id).hasAttribute('data-selected'));
+    view.setData('/ui/sel', {type: 'message', id: 's:1', label: '1. a to c: go', nodes: ['A', 'B', 'C']});
+    expect(lit()).toEqual(['A', 'B', 'C']);
+    expect(edgeOf(view, 'f', 'A->B').hasAttribute('data-hot')).toBe(true);
+    expect(edgeOf(view, 'f', 'B->C').hasAttribute('data-hot')).toBe(true);
+    expect(edgeOf(view, 'f', 'A->C').hasAttribute('data-hot')).toBe(false);
+    expect(edgeOf(view, 'f', 'C->D').hasAttribute('data-hot')).toBe(false);
+    // nothing brings its neighbours: D is not on the path
+    expect(nodeOf(view, 'f', 'D').hasAttribute('data-dim')).toBe(true);
+    // a leg is hot in either direction
+    view.setData('/ui/sel', {type: 'message', id: 's:2', label: '2. c to a, reply: ok', nodes: ['C', 'B', 'A']});
+    expect(['A->B', 'B->C', 'A->C'].map(edge => edgeOf(view, 'f', edge).hasAttribute('data-hot'))).toEqual([true, true, false]);
+
+    // a row linked to one node lights that node alone, with no neighbours
+    view.setData('/ui/sel', {type: 'row', id: 'r', label: 'r', nodes: ['A']});
+    expect(lit()).toEqual(['A']);
+    expect(nodeOf(view, 'f', 'B').hasAttribute('data-dim')).toBe(true);
+    expect(view.cell('f').querySelector('[data-edge][data-hot]')).toBeNull();
+    // a node selected elsewhere (a sequence actor, a Layers item) is this node: its neighbours light as on a click
+    view.setData('/ui/sel', {type: 'node', id: 'C', label: 'Gateway'});
+    expect(lit()).toEqual(['C']);
+    expect(nodeOf(view, 'f', 'D').hasAttribute('data-dim')).toBe(false);
+    expect(edgeOf(view, 'f', 'C->D').hasAttribute('data-hot')).toBe(true);
   });
 
   it('lets nodes be dragged: edges follow, the position is stored, Re-layout brings the layout back', async () => {

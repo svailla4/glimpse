@@ -190,6 +190,62 @@ describe('the presets and the gallery need none of it', () => {
   });
 });
 
+describe('function names (decision what-if-as-a2ui-calls)', () => {
+  it('renames a function written another way wherever it is called, and says so', () => {
+    expect(repair('root=Page("x",[Stat(multiply($/a,2)),Stat(multiply(1,2))])', {kind: 'call', name: 'multiply'}))
+      .toEqual({text: 'root=Page("x",[Stat(mul($/a,2)),Stat(mul(1,2))])', note: 'multiply -> mul'});
+    expect(repair('Stat(Div(1,2),"Div(")', {kind: 'call', name: 'Div'})).toEqual({text: 'Stat(div(1,2),"Div(")', note: 'Div -> div'});
+  });
+
+  it('leaves a name that stands for none of the four', () => {
+    expect(repair('Stat(pow(2,3))', {kind: 'call', name: 'pow'})).toBeUndefined();
+    expect(repair('Stat(mod(2,3))', {kind: 'call', name: 'mod'})).toBeUndefined();
+  });
+
+  it('compiles multiply, Div, sum and mult as the function they mean, with a fixed line; pow and mod stay errors', () => {
+    for (const [written, meant] of [['multiply', 'mul'], ['Div', 'div'], ['sum', 'add'], ['mult', 'mul']] as const) {
+      const {fixes, messages} = compile(`root=Page('x',[Stat(${written}(6,3),'n')])`);
+      expect(fixes, written).toEqual([`${written} -> ${meant}`]);
+      const first = messages[0]!;
+      if (!('createSurface' in first)) throw new Error('expected createSurface');
+      expect(first.createSurface.components[1]!.value).toEqual({'@call': meant, args: {a: 6, b: 3}});
+    }
+    expect(() => compile(`root=Page('x',[Stat(pow(2,3))])`)).toThrow(/^E_UNKNOWN "pow" is not a function\. Functions: add sub mul div, each \(a, b\)\.$/);
+    expect(() => compile(`root=Page('x',[Stat(mod(2,3))])`)).toThrow(/^E_UNKNOWN "mod" is not a function\./);
+  });
+
+  // Review S7: each alias spent one of the six repair passes, so the seventh was 'not a function'.
+  it('renames every function alias before the first compile, one fixed line per name, however many there are', () => {
+    const stat = (call: string) => `Stat(${call}($/w/seats,2),'n')`;
+    const {fixes} = compile(`root=Page('T',[r])\n$/w={seats:50000}\nr=Row([Stat(divide(multiply($/w/seats,0.6),2),'a'),${['Mul', 'times', 'minus', 'plus', 'subtract', 'times'].map(stat).join(',')}])`);
+    expect(fixes).toEqual(['divide -> div', 'multiply -> mul', 'Mul -> mul', 'times -> mul', 'minus -> sub', 'plus -> add', 'subtract -> sub']);
+  });
+
+  // Review S1: every lower-case unknown name was called 'not a function', so table and tree lost their repair.
+  it('a lower-case component name is still repaired; a function-like one is a function; a word of several is either', () => {
+    expect(compile(`root=Page('x',[a])\na=table('fake.rows')`).fixes).toEqual(['table -> DataTable']);
+    expect(compile(`root=Page('x',[a])\na=tree()`).fixes).toEqual(['tree -> FileTree']);
+    expect(compile(`root=Page('x',[a])\na=tabel('fake.rows')`).fixes).toEqual(['tabel -> DataTable']);
+    expect(() => compile(`root=Page('x',[a])\na=pow(2,3)`)).toThrow(/^E_UNKNOWN "pow" is not a function\. Functions: add sub mul div, each \(a, b\)\.$/);
+    expect(() => compile(`root=Page('x',[a])\na=chart('fake.rows')`))
+      .toThrow(/^E_UNKNOWN "chart" is not a component or a function\. Nearest: BarChart LineChart \w+\. Functions: add sub mul div, each \(a, b\)\.$/);
+  });
+
+  // what-if-as-a2ui-calls and no-markdown-component together: the removed Markdown is a component in any case (what-if-as-a2ui-calls reads a lower-case component name as
+  // that component), so it becomes Text with no-markdown-component's note and never "not a function"; the what-if-as-a2ui-calls readings are unchanged.
+  it('reads a removed Markdown in any case as Text with its note, next to table, pow and multiply as before', () => {
+    const note = 'headings, tables and code fences show as written: use Section, DataTable, CodeBlock';
+    const lower = compile(`root=Page('x',[a,b])\na=markdown('hi')\nb=Text('ok')`);
+    expect(lower.fixes).toEqual([`markdown -> Text: ${note}`]);
+    const first = lower.messages[0]!;
+    if (!('createSurface' in first)) throw new Error('expected createSurface');
+    expect(first.createSurface.components.find(c => c.id === 'a')).toEqual({id: 'a', component: 'Text', text: 'hi'});
+    const together = compile(`root=Page('x',[a,b,c])\n$/w={n:2}\na=Markdown('hi')\nb=table('fake.rows')\nc=Stat(multiply($/w/n,2),'n')`);
+    expect(together.fixes).toEqual(['multiply -> mul', `Markdown -> Text: ${note}`, 'table -> DataTable']);
+    expect(() => compile(`root=Page('x',[Markdown('hi'),Stat(pow(2,3))])`)).toThrow(/^E_UNKNOWN "pow" is not a function\. Functions: add sub mul div, each \(a, b\)\.$/);
+  });
+});
+
 describe('errors that point at the mistake', () => {
   // Finding V041: Tabel was read as Tabs, and the error then blamed Tabs for a missing children prop.
   it('a misspelt component is matched by its words, and a guess that does not fit says what was written', () => {

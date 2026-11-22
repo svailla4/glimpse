@@ -82,7 +82,7 @@ which `.github/workflows/release.yml` writes (decision `release-every-merge`):
 Each decision has a short name that says what was decided, and code comments cite it by that name
 (`decision content-sized-plates`), so a reader finds the reason with one search. A new decision gets a new name, never a
 number: names read as words, and two branches cannot take the same one (numbers did, 2026-11-21). Until 2026-11-22
-decisions were numbered D1 to D28; "was D20" keeps old commit messages and pull requests traceable. In anything people
+decisions were numbered `drill-has-way-back` to `no-a2ui-over-mcp`; "was D20" keeps old commit messages and pull requests traceable. In anything people
 read, write the decision in plain words and give the name beside it.
 
 Decisions explained in the code that cites them:
@@ -124,7 +124,7 @@ Decisions explained here:
   Flowchart groups are drawn as nested frames by flowkit. Sequence blocks (loop, alt, opt, par, critical, break, with
   `else` branches) are written nested and drawn by the renderer from #5 (merged the day before `diagrams-are-data`), which `cleanSequence`
   feeds balanced open/else/end frame steps; #5's Mermaid block parsing and repair went with the parser.
-- **`no-invented-string-formats`: no invented string formats; no silent fallbacks (was D22, 2026-11-21).** After D21, every prop whose string Glimpse
+- **`no-invented-string-formats`: no invented string formats; no silent fallbacks (was D22, 2026-11-21).** After `diagrams-are-data`, every prop whose string Glimpse
   takes apart was audited. One was an invented grammar; four read what they could and dropped the rest without a word.
   Why: the cost of a format is not its syntax but what happens when a model gets it wrong. A wrong value that is
   reported is fixed in one step; one that is dropped silently is never fixed. Now:
@@ -143,7 +143,8 @@ Decisions explained here:
   Kept as they are, because models already know them and errors come back with suggestions: source refs
   (`'git.churn src top=20'`), view refs, `path#L10-20`, git ranges, `sort='-field'`, ERDiagram `fk:'users.id'`.
   Not done: `[[...]]` refs in text bound to a `$/path` and in Steps notes are not checked, and a file ref past the
-  last line is reported nowhere.
+  last line is reported nowhere. (Since `links-through-node-ids` the `file` of a Flowchart node, Layers item, ER table and Steps item is
+  checked at show time, inline or bound to a `$/path`.)
 - **`release-every-merge`: every merge into main is released (was D23, 2026-11-21).** `release.yml` runs on pushes to `main` as well as on
   version tags, and releases a merge as the next patch version.
   Why: installs come from the `release` branch, and nothing had been tagged for a day of merges, so `diagrams-are-data` and `no-invented-string-formats` were
@@ -151,10 +152,115 @@ Decisions explained here:
   run after the build passes, not by a separate workflow: a tag pushed with `GITHUB_TOKEN` starts no other run, and a
   broken `main` should get no version. A commit that already has a version tag is left to that tag's run. Runs are
   serialized (`concurrency: release`), so each counts from the tag the last one pushed.
+- **`links-through-node-ids`: links are one hub of diagram node ids; a message is a path (was D24, 2026-11-21).** An item names the diagram node it
+  stands for with `node:'ID'` (or a list; `nodes` is fixed to `node`): Layers and Steps items, ER tables, rows of a
+  DataTable that do not come from a source, and sequence actors, whose node is their id unless given. A sequence
+  message may list the nodes it passes through, `via:['CDN','Q']` (a list, or `{via}`, after a list message's label or
+  arrow is read as its via, with a `fixed` line; further elements are a `warn` line). Flowchart nodes gain `note` and
+  `file`: the note shows on hover and in the plate margin, and a file makes the node carry a path, so CodeView follows
+  it and Cmd-click opens it. `path` is read as `file` (and a node's `notes` as `note`) with a `fixed` line on every
+  item that takes a file. One reader, `readNodes` (catalog `links.ts`, kept apart from `diagrams.ts` so eager Steps
+  stays small), and `rowNodes` for table rows (`rowlinks.ts`, so it stays out of the eager script).
+  - DataTable rows (owner's rule): a row links only through a field named exactly `node` holding a text id or a list
+    of them; `nodes` is not read and numbers are not ids. What a row's node did not link is said only when the view
+    declares diagram nodes and one of the table's rows names one of them (`linkNotes`), worded `row 2: node null is
+    not a node id, not linked`, never `not drawn` (the row draws). Otherwise nothing is said. Why: a row is data. The
+    review found `{cluster, nodes:12}` tables told `nodes -> node`, pods with `node:null` told their rows were not
+    drawn, and a column of counts read as node ids that cross-linked other parts; each line asked the model to rename
+    correct data.
+  - Selection: `EntityRef.nodes` carries the ids and `parseEntity` keeps 1 to 16 of them (anything else is dropped
+    whole), so a trace survives a show and a reload. `ENTITY_TYPES` lives in the catalog. A message selects
+    `{type:'message', id:'<comp>:<n>', nodes:[from, ...via, to]}`; an ER table always selects a `node`, with its path.
+    Two `node` entities on one file are one place only where their line ranges meet.
+  - Matching (`matchSelection` returns `'linked'`): an entity standing for one node lights when the selection names
+    it; one standing for several lights when it stands for every node the selection names. One hop; links never
+    chain. In flowkit only a node that is itself selected lights its neighbours; a linked node lights alone; a
+    selection that is not a node lights only the edges between consecutive ids of its list (`legsOf`, by `edge.key`).
+  - Checks: the Layers and ER readers moved to the catalog as `Clean<T>` cleaners (`cleanLayers`, `cleanSchema`), so
+    unknown keys and bad entries are reported by the server and by the tab (`W_DROPPED`); inline Layers or ER data
+    that is not the shape is now `E_SHAPE`. The server checks the files that diagram and Steps data name, after the
+    files of props (`FileCheck.nested`), so under the cap on warning lines a plate whose own file is missing is never
+    crowded out by links inside diagrams; and Steps keys (`cleanItems`). `linkNotes` warns when an id links to nothing
+    on the view, naming the label it may mean or the nearest id. The gallery links its diagrams through node DB, and
+    its files are lines of its one real file.
+  Why: same-id `{type:'node'}` matching already linked Flowchart, ER and Graph by accident. Making that the documented
+  hub costs one authored field and one EntityRef field, no new component or prop, 2 instruction characters and no
+  grammar. Rejected: per-part id scoping (it breaks today's links and about 20 selection tests); link tags
+  (`link:'pg'`, a second key space); a shortest path inferred through the Flowchart (a guess drawn as fact, where
+  `via` says it); hiding a DataTable `node` column (it would hide real data); a global line-overlap rule for file
+  identity. Budgets: the diagrams chunk limit went from 36 to 43 kB by the `diagram-engine-in-worker` rule (measured plus about 15%).
+  Not done: the rename of a file in diagram or Steps data written in another case. Where the file system ignores
+  case it opens, so the check says it (`"CALC.ts" is "src/calc.ts" on disk; write that`, `checkNamed`), but the
+  selection keeps the spelling written until the model fixes it; where case matters it is a missing file. Also not
+  done: `fixed` lines for Steps status synonyms, links on List, charts and Stats, edge selection, and `[[refs]]` in
+  diagram notes.
+- **`what-if-as-a2ui-calls`: what-if inputs and computed values are A2UI calls (was D25, 2026-11-21).** `add|sub|mul|div(a, b)`, written
+  `div($/a,2)`, are A2UI function calls that the tab recomputes when a `$/path` they read changes; each argument is a
+  number, an absolute `$/path` or another call, in any component argument and in inline rows. There are no operators
+  and no `round`. `Slider(label, value, min?, max?, step?, unit?)` writes the `$/path` its value binds, through the
+  binder's own `setValue`.
+  - Catalog: `calc.ts` defines the four once, with strict schemas for the server and catalog.json (`calcApis`) and
+    permissive ones for the tab (`calcFunctions`: a held value that is not a number gives no value, never an
+    `EXPRESSION_ERROR` that only reaches the log). `calcName` reads a name, another case or an alias for the server's
+    repair (`fixed multiply -> mul`) and for `catalog{names:['div']}`. The messages that say why a value is not
+    computed (`explainValue`) and the readers of calls in props (`callsIn`, `reads`) are in `calls.ts`, apart from
+    `calc.ts`, because the eager script imports `calc.ts` and a module it imports is bundled whole.
+  - Tab: the Slider is in the lazy `charts` chunk, with its note hook in `kit/calcNote.ts` (views never import
+    `@a2ui/*`). It writes while typing only a finite number within min and max, and commits one `gl_set {value}` on
+    Enter, blur, range pointer-up or key-up, 600 ms idle or unmount. A bound value that is not a number is `W_VALUE`,
+    reported and shown under the field; a value the user's number makes uncomputable is a note under the field and
+    never a `viewer: error`.
+  - Server: `gl_set` carries only the number. The path comes from the stored Slider's binding and the number is held
+    to its min and max, so a tab can set only the numbers the model bound; `setInput` refuses a path it cannot write.
+    The number goes into `record.data`, not `/ui` (writing `/ui` drops the selection), so a reload, a patch and a
+    replace keep it. A spec that writes the exact path wins; re-sending an enclosing value whose leaf is unchanged
+    keeps what the user set, with a `fixed $/w/seats stays 80000 (set in the tab)` line, held to the min and max of
+    the Slider shown now (the line then says `set in the tab to 80000, held to the Slider's range`). Only own
+    properties of the data are read (`lookup`), so `$/w/toString` is an unset path. The server recomputes what
+    reads the path and puts it, or why it failed, in one coalesced `viewer: set` line (`events.latest`): per
+    component the values that computed, then one group per distinct problem.
+  - Checks, for what the upstream compiler does silently or reports in its own words (`no-invented-string-formats`): a function written
+    another way (`multiply`, `Div`, `mult`) is renamed at every call before the first compile, one `fixed` line per
+    name, so aliases never spend repair passes. An unknown callee is read by `calleeKind` (errors.ts): a lower-case
+    name that is a component or a word of one in another case (`table` -> DataTable, `tree` -> FileTree), or a near
+    miss of one longer than four letters (`tabel`), is that component; a word of several (`chart`) is `E_UNKNOWN ...
+    not a component or a function` with both lists; any other lower-case name is `E_UNKNOWN` with the four names, so
+    `pow` is never repaired to `Row`; `catalog{}` answers such a name with the four too, and gives their doc once per
+    call. A missing or wrong-typed operand is `E_TYPE`, an unknown keyword `E_PROP`; `*` and `+` get the "no
+    operators" hint; a third positional argument is `E_TYPE`; a bare call statement and a named call nothing uses are
+    `warn` lines (in a whole spec `nothing uses rps`; in a patch, resend the parts that use it; a patch of only such a
+    call is the `E_REF` with that text); a call in `$/data` or as an action, a Slider bound to a literal, a call, a
+    relative path or a path under `/ui`, `/ds` or `/meta`, `min >= max` and a seed outside min..max are reported;
+    `calcNotes` warns about a call that cannot compute from the model's own data, and about a relative `$path` inside
+    a call (reason `relative`). Inline diagram, Steps and table data is checked as the tab draws it (`asDrawn`,
+    authored.ts): A2UI computes the calls and resolves the `$/paths` inside a component's arguments before the view
+    reads them, so a call is checked as its number, and inline data with `$/paths` inside is checked by
+    `diagramNotes` against the data model. Judging the call or binding objects themselves gave `not drawn` lines for
+    parts that drew.
+  Why: `fn(args)` is A2UI's own convention, so there is no grammar of ours (`no-invented-string-formats`), and A2UI already does reactivity and
+  two-way binding. Outputs stay ordinary props, so any Stat, Stats row or table cell can show one and `links-through-node-ids` links can
+  reach them. Rejected: a formula string (a grammar, refused as Mermaid was under `diagrams-are-data`); a self-contained what-if
+  component with JSON Logic (its outputs reach no other component, and the numbers live in one browser); a tab-side
+  call reporter (eager code, and it would blame the model for the user's input); `sum` and `product` of up to 8
+  arguments and no `sub`; `round`; storing inputs under `/ui`.
+  Budgets: instructions 3,748 (`Components (? optional):` paid for the Slider index entry), 3,723 once merged with
+  `no-markdown-component`. The eager script did not fit: the component `example` strings (44 since `no-markdown-component`) moved from `ComponentMeta` to
+  `COMPONENT_EXAMPLES` in docs.ts, since the tab never reads them (about 1.4 kB gzip); it was 194,207 of 195,000 bytes
+  with the Slider, 193,782 once merged with `no-markdown-component`, 193,927 once merged with `only-problems-are-errors`. GRAMMAR rule 9 is shorter than designed, to stay under F043's 1,600
+  characters.
+  Not done: a call reading `/ds` is not checked at show time; the model resets a number only by writing its leaf
+  path; a second tab sees a set number at its next snapshot; a number set after the session ended changes only the
+  tab; a step of 0 or less is read as no step without a report; a call with a relative `$path` is warned at show
+  time but left out of the `viewer: set` line. A call in data bound to a `$/path` is not computed
+  (the `$/data` warning says so), and the tab then draws a diagram label holding one as its id, without a report of
+  its own.
 - **`no-markdown-component`: no Markdown component; Text is the one text component (was D26, 2026-11-21).** The owner's call: Markdown was only
   used for text. `Text` draws inline `code`, *em*, **strong** and `[[path#L10]]` refs and keeps line breaks; headings
   are a `Section`, tables a `DataTable`, code a `CodeBlock`. A spec that still writes `Markdown(...)` is drawn as Text
-  with a `fixed` line that says what Text does not draw (`REMOVED_COMPONENTS`, server `spec/errors.ts`).
+  with a `fixed` line that says what Text does not draw (`REMOVED_COMPONENTS`, server `spec/errors.ts`). A removed
+  name is read in any case, as `what-if-as-a2ui-calls` reads a component name (`removedComponent`): `markdown(` is Text with the same
+  line, where main alone, before `what-if-as-a2ui-calls`, gave `E_UNKNOWN`. `catalog{names:['Markdown']}` answers with Text's entry and
+  the same note, not with near misses.
   Why: Markdown was a way around the catalog. A table or a code fence in it drew as plain HTML: no checks, dead paths,
   no sorting, no entity ids, so nothing could be selected, patched or (later) commented row by row, and a Markdown
   table hugged its content and left two thirds of its frame empty beside a DataTable that does all of that. Same

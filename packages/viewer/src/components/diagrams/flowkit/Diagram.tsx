@@ -26,7 +26,7 @@ import {
 } from './geometry.ts';
 import {GROUP_PAD, hasCycle, partCount, type Laid, type LayoutSpec} from './graph.ts';
 import {
-  DiagramContext, FULL_ZOOM, LABEL_LINE, LOD_ZOOM, edgeTypes, handlesOf, nodeTypes, portHandle, zoomStep,
+  DiagramContext, FULL_ZOOM, LABEL_LINE, LOD_ZOOM, edgeTypes, handlesOf, legsOf, nodeTypes, portHandle, zoomStep,
   type BoxFlowNode, type DiagramContextValue, type DiagramEdge, type DiagramGroup, type DiagramNode, type FlowEdge,
   type FlowNode, type FrameFlowNode, type NodeFlags, type Plate,
 } from './parts.tsx';
@@ -96,6 +96,8 @@ const VISIBLE_ONLY_FROM = 80;
 const IN_VIEW_MIN_WIDTH = 520;
 /** Above this many edges a diagram is laid out dense (graph.ts: shared first and last stretches, closer lanes). */
 const DENSE_EDGES = 40;
+/** No edge is hot: nothing is selected. */
+const NO_EDGES: ReadonlySet<string> = new Set();
 /** Height of the frame while the first layout is computed. */
 const PENDING_HEIGHT = 200;
 /**
@@ -550,16 +552,22 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
   const bounds = useMemo(() => drawnBounds(laid, moved, boxes, frames), [laid, moved, boxes, frames]);
 
   // ---- selection
-  const selectedIds = useMemo(() => {
+  // Decision links-through-node-ids: a node matched `exact` or `within` is the diagram's own selection and brings its neighbours; a node
+  // `linked` to the selection (it stands for a diagram node the selection names) lights alone.
+  const {selectedIds, own} = useMemo(() => {
     const ids = new Set<string>();
-    if (!selected) return ids;
+    const own = new Set<string>();
+    if (!selected) return {selectedIds: ids, own};
     // Of the nodes that hold the selection (the module a selected file is in), only the innermost.
     let holders: string[] = [];
     let deepest = -1;
     for (const node of nodes) {
       const ref = node.match ?? node.entity;
       const how = matchSelection(selected, ref);
-      if (how === 'exact' || how === 'within') ids.add(node.id);
+      if (how === 'exact' || how === 'within') {
+        ids.add(node.id);
+        own.add(node.id);
+      } else if (how === 'linked') ids.add(node.id);
       else if (how === 'contains') {
         const depth = (ref.path ?? ref.id).length;
         if (depth > deepest) {
@@ -568,20 +576,32 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
         } else if (depth === deepest) holders.push(node.id);
       }
     }
-    if (ids.size === 0) for (const nodeId of holders) ids.add(nodeId);
-    return ids;
-  }, [selected, nodes]);
-  const lit = useMemo(() => {
-    if (selectedIds.size === 0) return null;
-    const ids = new Set(selectedIds);
-    for (const edge of edges) {
-      if (selectedIds.has(edge.from) || selectedIds.has(edge.to)) {
-        ids.add(edge.from);
-        ids.add(edge.to);
+    if (own.size === 0) {
+      for (const nodeId of holders) {
+        ids.add(nodeId);
+        own.add(nodeId);
       }
     }
-    return ids;
-  }, [selectedIds, edges]);
+    return {selectedIds: ids, own};
+  }, [selected, nodes]);
+  const legs = useMemo(() => legsOf(selected), [selected]);
+  // Decision links-through-node-ids: neighbours light only round a node that is itself selected; a node lit through a link lights alone,
+  // and an edge between two lit nodes is hot; a path (a selected message) heats only the edges that are its legs.
+  const {lit, hot} = useMemo(() => {
+    if (selectedIds.size === 0) return {lit: null, hot: NO_EDGES};
+    const lit = new Set(selectedIds);
+    const hot = new Set<string>();
+    for (const edge of edges) {
+      const touchesOwn = own.has(edge.from) || own.has(edge.to);
+      const between = selectedIds.has(edge.from) && selectedIds.has(edge.to) && (legs.size === 0 || legs.has(JSON.stringify([edge.from, edge.to])));
+      if (touchesOwn || between) hot.add(edge.key);
+      if (touchesOwn) {
+        lit.add(edge.from);
+        lit.add(edge.to);
+      }
+    }
+    return {lit, hot};
+  }, [selectedIds, own, legs, edges]);
 
   const [activeId, setActiveId] = useState<string>();
   const active = activeId !== undefined ? byId.get(activeId) : undefined;
@@ -592,13 +612,14 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
     lod: p.lod === true,
     dir: laid.dir,
     selected: selectedIds,
+    hot,
     lit,
     active: activeId,
     focus: p.focusId,
     plates,
     shapes,
     drillGroups: p.onDrillGroup !== undefined,
-  }), [p.renderNode, p.lod, laid.dir, selectedIds, lit, activeId, p.focusId, plates, shapes, p.onDrillGroup]);
+  }), [p.renderNode, p.lod, laid.dir, selectedIds, lit, hot, activeId, p.focusId, plates, shapes, p.onDrillGroup]);
 
   // ---- React Flow's nodes and edges. A node object is kept while nothing about it changes, so a drag or a new
   // selection does not make React Flow rebuild the others.
@@ -700,18 +721,18 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
     for (const edge of edges) {
       const route = routes.get(edge.key);
       if (!route) continue;
-      const hot = selectedIds.has(edge.from) || selectedIds.has(edge.to);
+      const isHot = hot.has(edge.key);
       out.push({
         id: edge.key, type: 'elk', source: edge.from, target: edge.to,
         sourceHandle: edge.fromPort !== undefined ? portHandle('source', edge.fromPort) : null,
         targetHandle: edge.toPort !== undefined ? portHandle('target', edge.toPort) : null,
-        focusable: false, selectable: false, zIndex: hot ? 1 : 0,
+        focusable: false, selectable: false, zIndex: isHot ? 1 : 0,
         data: {edge, points: route.points, labelAt: route.labelAt, faint: edge.faint === true || (alongFrames.has(edge.key) && !edge.cycle)},
       });
     }
     // Light edges first, highlighted edges last, on top of the ones they cross.
     return out.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0) || Number(b.data!.faint) - Number(a.data!.faint));
-  }, [edges, routes, selectedIds, alongFrames]);
+  }, [edges, routes, hot, alongFrames]);
 
   // ---- the view
   const fitAll = fitZoom(bounds, width, height);

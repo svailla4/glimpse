@@ -187,3 +187,66 @@ test.describe('diagram-engine-in-worker/content-sized-plates: diagrams open whol
     await expect(plate.locator('.react-flow__minimap')).toHaveCount(0);
   });
 });
+
+// Decision links-through-node-ids: diagrams and lists the model writes link through node ids (node:'PG'), and a selected message lights
+// the route it takes (via) on the Flowchart; the server keeps the trace, so it survives a reload.
+test.describe('links-through-node-ids: links and traces', () => {
+  test.use({viewport: {width: 1440, height: 900}});
+
+  const SPEC = `root=Page('Ticketing',[arch,er,tiers,choices,co])
+arch=Flowchart({nodes:{Client:'Client',CDN:'CDN',Q:'Queue',GW:'Gateway',Inv:'Inventory',PG:{label:'Postgres',shape:'store'}},edges:[['Client','CDN'],['CDN','Q'],['Q','GW'],['Client','GW'],['GW','Inv'],['Inv','PG']]},title='System')
+er=ERDiagram([{name:'orders',node:'PG',columns:[{name:'id',pk:true}]},{name:'seats',node:'PG',columns:[{name:'id',pk:true},{name:'order_id',fk:'orders.id'}]}],title='Schema')
+tiers=Layers([{name:'Data',items:[{label:'Postgres',node:'PG'},{label:'Edge',node:'GW'}]}],title='Tiers')
+choices=DataTable([{choice:'System of record',node:'PG'},{choice:'Front door',node:'GW'}],title='Choices')
+co=SequenceDiagram({actors:{U:{label:'User',node:'Client'},G:{label:'Gateway',node:'GW'},I:{label:'Inventory',node:'Inv'}},steps:[{from:'U',to:'G',label:'POST /checkout',via:['CDN','Q']},['G','I','hold seats']]},title='Checkout')`;
+
+  const hotEdges = (page: Page) =>
+    page.locator('.gl-cell[data-id="arch"] [data-edge][data-hot]').evaluateAll(edges => edges.map(edge => edge.getAttribute('data-edge') ?? '').sort());
+  const selections = async (glimpse: Glimpse) => (await glimpse.call('events', {})).lines.filter(line => line.startsWith('viewer: select'));
+
+  test('a node lights what links to it; a message lights its route, follows the keyboard and survives a reload', async ({page, glimpse}) => {
+    await showSettled(page, glimpse, 'links', SPEC);
+    await (await stageOf(page, 'arch')).locator('[data-node="PG"]').click();
+    for (const table of ['orders', 'seats']) await expect(page.locator(`.gl-cell[data-id="er"] [data-node="${table}"]`)).toHaveAttribute('data-selected', 'true');
+    await expect(page.locator('.gl-cell[data-id="tiers"] [data-layer-item="Postgres"]')).toHaveAttribute('data-selected', 'true');
+    await expect(page.locator('.gl-cell[data-id="tiers"] [data-layer-item="Edge"]')).toHaveAttribute('data-dim', 'true');
+    await expect(page.locator('.gl-cell[data-id="choices"] [role="row"]', {hasText: 'System of record'})).toHaveAttribute('data-selected', 'within');
+
+    await page.locator('.gl-cell[data-id="co"] [role="img"]').focus();
+    await page.keyboard.press('ArrowDown');
+    // the legs of Client -> CDN -> Q -> GW, and not the direct Client -> GW edge
+    await expect.poll(() => hotEdges(page)).toEqual(['CDN->Q', 'Client->CDN', 'Q->GW']);
+    await expect.poll(() => selections(glimpse), {timeout: 3000}).toEqual(['viewer: select message co:1 "1. User to Gateway: POST /checkout" (links)']);
+
+    await page.keyboard.press('ArrowDown');
+    await expect.poll(() => hotEdges(page)).toEqual(['GW->Inv']);
+    // the selection reaches the server (debounced) before the reload
+    await expect.poll(async () => (await selections(glimpse)).some(line => line.startsWith('viewer: select message co:2 ')), {timeout: 3000}).toBe(true);
+
+    await page.reload();
+    await expectSettled(page);
+    await stageOf(page, 'arch');
+    await expect.poll(() => hotEdges(page)).toEqual(['GW->Inv']);
+  });
+
+  // The gallery shows the same links on its own diagrams: node DB has a note and a file, the sessions table and the
+  // postgres item stand for it, and a click on it says where it is.
+  test('the gallery links its diagrams through Flowchart node DB', async ({page, glimpse}) => {
+    const shown = await glimpse.call('show', {view: 'gallery'});
+    expect(shown.isError, shown.text).toBe(false);
+    await openViewer(page, glimpse);
+    await expectSettled(page);
+    const flow = await stageOf(page, 'diagrams_children_2');
+    const db = flow.locator('[data-node="DB"]');
+    await expect(db.locator('[data-noted]')).toHaveCount(1);
+    await db.click();
+    await expect(page.locator('.gl-cell[data-id="diagrams_children_4"] [data-node="sessions"]')).toHaveAttribute('data-selected', 'true');
+    await expect(page.locator('.gl-cell[data-id="diagrams_children_4"] [data-node="orders"]')).not.toHaveAttribute('data-selected', 'true');
+    await expect(page.locator('.gl-cell[data-id="diagrams_children_1"] [data-layer-item="postgres"]')).toHaveAttribute('data-selected', 'true');
+    // the gallery's one real file is the source file it picked for its Code section
+    const file = (await page.locator('[data-gl="CodeView"] [data-gl-path]').first().getAttribute('data-gl-path')) ?? '';
+    expect(file).toMatch(/\.(?:ts|py|go)$/);
+    await expect(page.locator('.gl-cell[data-id="diagrams_children_2"]')).toContainText(`Postgres: users and sessions · ${file}`);
+    await expect.poll(() => selections(glimpse), {timeout: 3000}).toEqual([`viewer: select node DB Postgres ${file} (gallery)`]);
+  });
+});

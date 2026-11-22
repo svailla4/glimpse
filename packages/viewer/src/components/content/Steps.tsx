@@ -1,10 +1,10 @@
 // Steps (design 5.3): a numbered plan on a vertical ink rail. Each step is a 20 px numeral box, a title, an optional
 // note and file, and a status glyph drawn in line with its label. A header counts what is done over a segmented
 // progress rule. Selecting a step selects its file. One tab stop; arrows, Home and End move between steps.
-import {Steps as StepsDef, type EntityRef, type StepItem, type StepStatus} from '@glimpse/catalog';
+import {Steps as StepsDef, readNodes, type EntityRef, type StepItem, type StepStatus} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';
 import {useMemo, useState, type JSX} from 'react';
-import {Empty, PathText, Redline, fmtNum, toNumber, useDataset, type GlView} from '../../kit/index.ts';
+import {Empty, PathText, Redline, fmtNum, linkedEntity, toNumber, useDataset, type GlView} from '../../kit/index.ts';
 import {cellText, fileEntity, isRecord, shapeHint, shapeMessage} from './shared/data.ts';
 import {useEntityRows} from './shared/entityRow.ts';
 import {Inline, textOf} from './shared/inline.tsx';
@@ -38,14 +38,23 @@ export function toStatus(value: unknown): StepStatus | undefined {
 
 interface Step { title: string; note: string; status?: StepStatus; file?: string; entity?: EntityRef }
 
-function normalize(items: readonly unknown[]): Step[] {
+/**
+ * The steps as drawn. A step with a file selects that file; one naming diagram nodes (`node:'PG'`, decision links-through-node-ids)
+ * carries them, and without a file selects the node itself. What a step cannot use is reported by the server
+ * (catalog cleanItems).
+ */
+function normalize(items: readonly unknown[], componentId: string): Step[] {
   const steps: Step[] = [];
-  for (const item of items as readonly (StepItem | unknown)[]) {
+  for (const [i, item] of (items as readonly (StepItem | unknown)[]).entries()) {
     if (isRecord(item)) {
-      const file = typeof item.file === 'string' && item.file.trim() !== '' ? item.file.trim() : undefined;
+      // `path` is read as the file when there is no `file`, as the server says (catalog cleanItems).
+      const written = item.file ?? item.path;
+      const file = typeof written === 'string' && written.trim() !== '' ? written.trim() : undefined;
       const title = cellText(item.title ?? item.name ?? item.label).trim() || file || '';
       if (!title) continue;
-      steps.push({title, note: cellText(item.note).trim(), status: toStatus(item.status), file, entity: file ? fileEntity(file) : undefined});
+      // By place (step 3 is `s:3`, as the server numbers it), not title: two steps may share a title and stand for different nodes.
+      const entity = linkedEntity(file ? fileEntity(file) : undefined, readNodes(item).ids, {id: `${componentId}:${i + 1}`, label: title});
+      steps.push({title, note: cellText(item.note).trim(), status: toStatus(item.status), file, entity});
     } else {
       const title = cellText(item).trim();
       if (title) steps.push({title, note: ''});
@@ -84,7 +93,7 @@ function Progress(p: {steps: Step[]}): JSX.Element {
 
 export const StepsView: GlView<typeof C.Steps> = ({id, props}) => {
   const state = useDataset<StepItem[]>(props.data);
-  const steps = useMemo(() => (Array.isArray(state.data) ? normalize(state.data) : []), [state.data]);
+  const steps = useMemo(() => (Array.isArray(state.data) ? normalize(state.data, id) : []), [state.data, id]);
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? steps : steps.slice(0, FOLD);
   const roving = useRoving<HTMLOListElement>(shown.length);

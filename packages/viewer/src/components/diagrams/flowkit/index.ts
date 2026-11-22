@@ -14,7 +14,7 @@ export type {ElkLaid, ElkReply, ElkRequest, ElkWorker, ElkWorkerFactory} from '.
 export * from './geometry.ts';
 export {GROUP_PAD, fromElk, hasCycle, partCount, signatureOf, toElk} from './graph.ts';
 export type {Laid, LayoutEdge, LayoutGroup, LayoutNode, LayoutSpec, Route} from './graph.ts';
-export {FULL_ZOOM, LOD_ZOOM, detailAt, zoomStep} from './parts.tsx';
+export {FULL_ZOOM, LOD_ZOOM, detailAt, legsOf, zoomStep} from './parts.tsx';
 export type {Detail, DiagramEdge, DiagramGroup, DiagramNode, NodeFlags} from './parts.tsx';
 export {POSITIONS_KEY, configurePositionStorage, positionsKey, readPositions, useNodePositions, writePositions} from './positions.ts';
 export type {NodePositions, Positions} from './positions.ts';

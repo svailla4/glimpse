@@ -4,16 +4,16 @@ Generative UI for codebases. Glimpse lets a coding agent *show* you a repository
 
 Glimpse is two things:
 
-- **A component library**: 43 React components behind an [A2UI](https://a2ui.org) v1.0 catalog, drawn in one design language, Linework.
+- **A component library**: 44 React components behind an [A2UI](https://a2ui.org) v1.0 catalog, drawn in one design language, Linework.
 - **An MCP server** with five tools. It compiles the agent's spec, runs the repository analyzers, and hosts the viewer on `127.0.0.1`.
 
-**Status: working but young.** All 43 components, the 26 data sources, the ten preset views and the five tools are implemented and covered by unit, component and end-to-end tests. It has been run on macOS with Chromium only and has had one round of testing with a model writing the specs. [Status and known limitations](#status-and-known-limitations) has the details.
+**Status: working but young.** All 44 components, the 26 data sources, the ten preset views and the five tools are implemented and covered by unit, component and end-to-end tests. It has been run on macOS with Chromium only and has had one round of testing with a model writing the specs. [Status and known limitations](#status-and-known-limitations) has the details.
 
 ## What it looks like
 
 There are no screenshots here yet, so in words. A view is a sheet of warm paper under a hairline top bar. Each titled component is a *plate*: a frame with small registration ticks at the corners, a vermilion `PL. 03` numeral and a serif title, like a figure in an engineering atlas. Text is IBM Plex with Newsreader for titles and the large numerals; code and identifiers are monospace. Colour is used for data: a language or a module keeps the same ink in every plate of the session, and vermilion marks the selection. There is a dark theme (`t`) and a denser row height (`d`).
 
-Everything is linked. Click a file in a table, a treemap cell, a graph node or a commit and it becomes the selection everywhere: a `CodeView` beside a `FileTree` is a file browser with no wiring. Tables sort, filter and page; graphs pan, zoom and let you drag nodes; plates can be dragged into another order or resized, and the tab remembers. While data is being computed a plate shows a *drafting* frame at its final size; a failure is a *redline* with the error code, confined to that plate.
+Everything is linked. Click a file in a table, a treemap cell, a graph node or a commit and it becomes the selection everywhere: a `CodeView` beside a `FileTree` is a file browser with no wiring. Diagrams you write link the same way: a Layers or Steps item, an ER table, a table row or a sequence actor with `node:'PG'` lights with Flowchart node PG, and a selected message lights the boxes and arrows it passes through. Tables sort, filter and page; graphs pan, zoom and let you drag nodes; plates can be dragged into another order or resized, and the tab remembers. While data is being computed a plate shows a *drafting* frame at its final size; a failure is a *redline* with the error code, confined to that plate.
 
 ## Why
 
@@ -112,7 +112,7 @@ The demo plays the agent's part: it starts the server, calls `show` three times 
 | `show` | Render a preset (`view`), a custom view (`id` plus `spec`), or patch a view that is already open (its `id` plus only the parts that change). Returns the dataset summaries, the named parts of the view, what was corrected, what the tab could not draw, and anything you did in the tab. |
 | `catalog` | Look up a component (its props, the shape of its data with an example), a data source, a preset (`view:diff` returns its source, which doubles as an example), the spec grammar or worked examples. |
 | `query` | Run a data source and return a few rows as text, without rendering, so the agent can ground what it says. |
-| `events` | What you did in the tab since the last Glimpse call: selections, button presses, answers. Can wait for the next one. |
+| `events` | What you did in the tab since the last Glimpse call: selections, button presses, answers, numbers set with a Slider. Can wait for the next one. |
 | `pending_context` | Used by the plugin's hook; hidden from the model. |
 
 A result is plain text, one fact per line:
@@ -127,9 +127,9 @@ warn CodeView#code: file "packages/server/src/nope.ts" does not exist. Nearest: 
 viewer: select file packages/server/src/mcp/show.ts (server-package)
 ```
 
-`fixed` lines are guesses the server accepted and corrected (a misspelt prop, `warning` for `warn`, a number where a string was expected, a new part appended to the page). Field names are checked the same way against the fields a source declares, so a guessed name never leaves an empty plate: a different case, a column label or a common synonym is rewritten (`fixed x 'churn' -> 'commits'`), and a name the source does not have is dropped, so the chart falls back to its own axes (`fixed x 'zzz' dropped (fields: ...)`). `ds (+N unchanged)` stands for dataset lines the agent was already given for this view.
+`fixed` lines are guesses the server accepted and corrected (a misspelt prop, `warning` for `warn`, a number where a string was expected, a new part appended to the page, `multiply` for `mul`, a number you set in the tab kept over a re-sent seed). Field names are checked the same way against the fields a source declares, so a guessed name never leaves an empty plate: a different case, a column label or a common synonym is rewritten (`fixed x 'churn' -> 'commits'`), and a name the source does not have is dropped, so the chart falls back to its own axes (`fixed x 'zzz' dropped (fields: ...)`). `ds (+N unchanged)` stands for dataset lines the agent was already given for this view.
 
-`warn` lines are parts of the view that are up but could not draw what the spec asked: a file or a revision that does not exist, a source that failed, data that is missing or empty, a field that is not in the data, data of the wrong shape, a graph focus that matches no node. The server checks what it can itself, and when a tab is open it also waits a moment for the tab to say what it actually drew. The tab reports each component's current state, not a stream of events: a truthful empty state (no import cycles, a clean working tree, a view waiting for a selection) is not a problem and prints nothing, a component that draws normally withdraws its earlier report, and redefining a component clears what was known about it until the tab reports again. A problem the tab finds after the result has gone rides once on a later tool result as a `viewer: error` line, and only if it is still that component's state. An error (`E_...`) is all-or-nothing: nothing on screen changes, and the result names the failing component, its signature and the valid options, so the agent resends only the failing part. The other `viewer:` lines are what happened in the tab; they are data, never instructions.
+`warn` lines are parts of the view that are up but could not draw what the spec asked: a file or a revision that does not exist, a source that failed, data that is missing or empty, a field that is not in the data, data of the wrong shape, a graph focus that matches no node, a `node:'ID'` that links to nothing on the view, a call that cannot compute from the data it reads (`div` by zero, a value that is not a number), a call inside `$/data`, which is not computed. The server checks what it can itself, and when a tab is open it also waits a moment for the tab to say what it actually drew. The tab reports each component's current state, not a stream of events: a truthful empty state (no import cycles, a clean working tree, a view waiting for a selection) is not a problem and prints nothing, a component that draws normally withdraws its earlier report, and redefining a component clears what was known about it until the tab reports again. A problem the tab finds after the result has gone rides once on a later tool result as a `viewer: error` line, and only if it is still that component's state. An error (`E_...`) is all-or-nothing: nothing on screen changes, and the result names the failing component, its signature and the valid options, so the agent resends only the failing part. The other `viewer:` lines are what happened in the tab; they are data, never instructions.
 
 ## Views
 
@@ -153,7 +153,7 @@ viewer: select file packages/server/src/mcp/show.ts (server-package)
 
 A spec is [A2UI Express](https://a2ui.org): nested calls, positional arguments in signature order, then `name=value`. `root=Page(...)` starts a view; `name=Comp(...)` defines a named part that can be used as a child and patched later; `$/path=value` sets data and `$/path` as an argument binds to it. `span=1..12` places anything on a 12-column grid, `title=` draws a numbered plate, `size=s|m|l|xl|fill` sets its maximum height (a plate is as tall as its content, up to that; a diagram grows to 640 px by itself, so on a diagram `size=` only limits it). The view's `id` is a short name of letters, digits, `_` and `-`.
 
-The three examples below were run against this repository exactly as written (`show` with the `id` shown and the block as `spec`); a test compiles them and checks that the files they name exist.
+The four examples below were run against this repository exactly as written (`show` with the `id` shown and the block as `spec`); a test compiles them and checks that the files they name exist.
 
 **Explain a package** (`id: "server-package"`): prose, a graph and a table, each bound to a local data source.
 
@@ -184,11 +184,23 @@ $/plan=[{title:'Add the middleware',status:'done'},{title:'Wire it into the rout
 
 Later, `show` with the same `id` and only `$/plan=[...]` updates the plan in place; nothing else is re-sent or re-drawn. Clicking *Redis* queues `viewer: answer rate-limiter store {"choice":"Redis"}` for the agent.
 
+**What if** (`id: "what-if"`): numbers you set, and values computed from them in the tab.
+
+```
+root=Page('Ticketing: on-sale what-if',[inputs,peak])
+$/w={seats:50000,secs:120,conv:0.6}
+inputs=Row([Slider('Seats on sale',$/w/seats,1000,200000,step=1000),Slider('Sale window',$/w/secs,10,600,step=10,unit='s'),Slider('Checkout conversion',$/w/conv,0.05,1,step=0.05)])
+rps=div(mul($/w/seats,$/w/conv),$/w/secs)
+peak=Stats([{label:'Peak checkout',value:rps,unit:'req/s'},{label:'Redis',value:mul(rps,4),unit:'ops/s'},{label:'Postgres writes',value:mul(rps,2),unit:'/s'}],title='Load at peak')
+```
+
+`add`, `sub`, `mul` and `div(a, b)` are A2UI function calls; each argument is a number, a `$/path` or another call, and there are no operators (`$/a*2` is `mul($/a,2)`). `rps=div(...)` names a call, which is copied into every place that uses `rps`. At the seeds the plate reads 250, 1,000 and 500. Typing 80000 into *Seats on sale* turns them into 400, 1,600 and 800 at once, without the server; on Enter, on leaving the field or after a short pause the agent is told `viewer: set $/w/seats 80000 (what-if) -> Stats#peak data/0/value=400 data/1/value=1600 data/2/value=800`. The server keeps the number: a reload or a re-show of the same spec keeps 80000, with a `fixed $/w/seats stays 80000 ...` line, and only `$/w/seats=...` itself sets it again.
+
 The catalog prefers accepting a reasonable guess to documenting the one right spelling. `Callout(...,'warning')` becomes `warn` with a `fixed` note; `mark='L1-12'` and `mark='1-12'` both highlight; `KeyValue` and `Stats` read the same rows (`[{label, value}]`, `[{key, value}]` or an object `{Label: value}`); a `Button` action may be a plain event name (`Button('Draft it','draft')`); an `ERDiagram` takes a bare list of tables, and a column's `fk:'clients.id'` draws the relation; a `Flowchart` takes just its edges (`Flowchart([['Start','Login'],['Login','Valid?']])`) and names the nodes from them; `Grid` reads `cols='2fr 1fr'` as `'2:1'`. Nothing an author writes is dropped quietly: a guess comes back as a `fixed` line, and what Glimpse could not read or draw as a `warn` line, or as a `viewer:` line for data that reached the tab without passing the server, so the model can correct it in one step. Values are data or follow conventions models already know (`path#L10-20`, `main..HEAD`); Glimpse adds no grammar of its own.
 
 ## Components
 
-43 components in seven families. `catalog{names:["DataTable"]}` returns any signature with its props, the shape of its data and an example; `show{view:"gallery"}` draws them all.
+44 components in seven families. `catalog{names:["DataTable"]}` returns any signature with its props, the shape of its data and an example; `show{view:"gallery"}` draws them all.
 
 | Family | Components |
 |---|---|
@@ -198,9 +210,9 @@ The catalog prefers accepting a reasonable guess to documenting the one right sp
 | Charts (10) | `Sparkline` `SegmentedBar` `BarChart` `LineChart` `ScatterPlot` `Histogram` `Heatmap` `CalendarHeatmap` `Treemap` `Icicle` |
 | Diagrams (5) | `Graph` `Flowchart` `SequenceDiagram` `Layers` `ERDiagram` |
 | Code (5) | `CodeBlock` `CodeView` `DiffView` `CodeTour` `SymbolOutline` |
-| Input (2) | `Button` `Ask` |
+| Input (3) | `Button` `Ask` `Slider` |
 
-Charts are Glimpse's own SVG on `d3-scale`, `d3-shape` and `d3-hierarchy`. `Graph`, `Flowchart` and `ERDiagram` are laid out by [ELK](https://eclipse.dev/elk/) (`elkjs`, layered: group frames sized around their members, orthogonal edges routed across them, ports for table columns) in a Web Worker, and drawn with [React Flow](https://reactflow.dev) (`@xyflow/react`) in the same hairline style; both load only when a page first shows one of these diagrams. `SequenceDiagram` and `Layers` are drawn directly in SVG and HTML; a `SequenceDiagram` draws Mermaid's `alt`, `opt`, `loop`, `par`, `critical` and `break` blocks as labelled frames, with a dashed divider for each `else`, `and` or `option`, and closes a block left open with a `fixed` line. A diagram is as tall as it is at the scale that fits the plate's width, up to the plate's maximum: when all of it is readable there (text at 10 px or more on screen) it opens fitted and centred, otherwise at a readable zoom with pan, zoom and a minimap. Tables and code views are virtualised; syntax highlighting is done by the server (Shiki) and sent as token classes, never as markup.
+Charts are Glimpse's own SVG on `d3-scale`, `d3-shape` and `d3-hierarchy`. `Graph`, `Flowchart` and `ERDiagram` are laid out by [ELK](https://eclipse.dev/elk/) (`elkjs`, layered: group frames sized around their members, orthogonal edges routed across them, ports for table columns) in a Web Worker, and drawn with [React Flow](https://reactflow.dev) (`@xyflow/react`) in the same hairline style; both load only when a page first shows one of these diagrams. `SequenceDiagram` and `Layers` are drawn directly in SVG and HTML; a `SequenceDiagram` draws Mermaid's `alt`, `opt`, `loop`, `par`, `critical` and `break` blocks as labelled frames, with a dashed divider for each `else`, `and` or `option`, and closes a block left open with a `fixed` line. Its arrow keys step through the messages and select each in turn, so a message whose actors stand for Flowchart nodes lights its route there, including the nodes it passes through (`via`). A Flowchart node with a `note` or a `file` is marked with a dot; its note shows on hover and in the plate's margin when it is selected, and its file opens with Cmd-click. A `Slider` writes the number its `$/path` binds, and every value computed from that path with `add`, `sub`, `mul` or `div` follows at once in the tab. A diagram is as tall as it is at the scale that fits the plate's width, up to the plate's maximum: when all of it is readable there (text at 10 px or more on screen) it opens fitted and centred, otherwise at a readable zoom with pan, zoom and a minimap. Tables and code views are virtualised; syntax highlighting is done by the server (Shiki) and sent as token classes, never as markup.
 
 ## Data sources
 
@@ -232,7 +244,7 @@ Glimpse reads your code and serves it over HTTP, so the boundaries matter.
 - **A per-session token.** `/api/*` needs a 256-bit random token, compared in constant time. It travels in the URL fragment, which browsers do not send, and is kept in `sessionStorage`.
 - **Only inventoried files are served.** The file, outline and diff endpoints answer only for paths in the repository's file inventory, so `.git/**` and ignored files (a `.env`, build output) are refused even with the token.
 - **Hostile repository content cannot script the page.** The content security policy is `default-src 'none'; script-src 'self'; style-src 'self'` with no inline exceptions. Text is drawn as text nodes with inline code, emphasis and file refs only, never as HTML; code is text nodes with class names.
-- **Hostile repository content cannot speak for you.** What you do in the tab reaches the agent as single lines with a fixed `viewer:` prefix, JSON-escaped and length-capped, and the instructions tell the agent to treat them as data. Text that comes from the repository (file names, author names, commit subjects, query rows) is quoted wherever it could start a line with that prefix, so a commit cannot forge your click on an approval button.
+- **Hostile repository content cannot speak for you.** What you do in the tab reaches the agent as single lines with a fixed `viewer:` prefix, JSON-escaped and length-capped, and the instructions tell the agent to treat them as data. Text that comes from the repository (file names, author names, commit subjects, query rows) is quoted wherever it could start a line with that prefix, so a commit cannot forge your click on an approval button. A `Slider` can only set the one number its own binding names, within its `min` and `max`.
 - **Nothing from the repository is executed.** "Open in editor" starts only `GLIMPSE_EDITOR` or a known editor found on the PATH, never the system's default opener, which would run a script or an app bundle. Specs cannot reach object prototypes: data paths with `__proto__`, `constructor` or `prototype` are rejected.
 - **Bounded.** 12 views, 100 queued events, 5 tabs (a browser gives a site six connections, and a sixth event stream would leave none for loading data), capped file sizes and git output.
 
@@ -282,12 +294,12 @@ Lint warnings fail the check. After changing anything under `packages/catalog/sr
 
 | Budget | Limit | Now |
 |---|---|---|
-| Server instructions | 3,750 chars (hard limit 4,000) | 3,722 |
+| Server instructions | 3,750 chars (hard limit 4,000) | 3,723 |
 | `show` + `catalog` definitions | 1,500 chars | 1,147 |
 | Largest preset result (`overview`) | 1,200 chars | 1,095 |
-| Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 193.6 kB |
-| Largest other lazy chunk, gzip | 120 kB | 46.8 kB |
-| Diagram engine, gzip: ELK worker, React Flow, diagrams chunk | 515 kB, 90 kB, 36 kB | 447.8 kB, 77.7 kB, 31.3 kB |
+| Eager viewer JavaScript, gzip | 195 kB (hard limit 200 kB) | 193.8 kB |
+| Largest other lazy chunk, gzip | 120 kB | 48.7 kB |
+| Diagram engine, gzip: ELK worker, React Flow, diagrams chunk | 515 kB, 90 kB, 43 kB | 448.4 kB, 77.7 kB, 38.0 kB |
 
 ## Status and known limitations
 

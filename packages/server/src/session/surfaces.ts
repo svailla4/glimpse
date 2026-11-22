@@ -2,10 +2,11 @@
 // a detached next version of one record; only commit() touches the store. A call that fails anywhere before commit
 // therefore leaves every surface exactly as it was.
 import {
-  CATALOG_ID, COMPONENT_BY_NAME, PROTOCOL_VERSION,
+  CATALOG_ID, COMPONENT_BY_NAME, inputValue, PROTOCOL_VERSION,
   type A2uiMessage, type Dataset, type EntityRef, type Prop, type SourceRef, type SurfaceInfo, type SurfaceMeta, type WireComponent,
 } from '@glimpse/catalog';
-import {boundKeys} from '../spec/expand.ts';
+import {isBinding} from '../spec/authored.ts';
+import {boundKeys, lookup} from '../spec/expand.ts';
 import {UNSAFE_KEYS} from '../spec/guard.ts';
 
 export const MAX_SURFACES = 12;
@@ -19,7 +20,7 @@ export interface SurfaceRecord {
   /** The preset call that built the surface, e.g. "diff main..HEAD". */
   view?: string;
   components: Map<string, WireComponent>;
-  /** The agent's data: everything in the data model except /ds and /meta. */
+  /** The agent's data: everything in the data model except /ds and /meta, and the numbers a Slider set. */
   data: Record<string, unknown>;
   /** Source ref per dataset key, as the spec wrote it. */
   bindings: Map<string, SourceRef>;
@@ -36,6 +37,12 @@ export interface SurfaceRecord {
   sel?: EntityRef | null;
   /** The file that selection last pointed at (the value of /ui/file). */
   file?: string;
+  /**
+   * Numbers the user set with a Slider (gl_set), by path, with the value the spec had there before (decision what-if-as-a2ui-calls).
+   * A spec that sends the same seed again keeps the number; one that writes the path itself, or a new value over the
+   * seed, replaces it.
+   */
+  typed?: Map<string, {value: number; seed: unknown}>;
   /**
    * Ids of the components a preset defined and the model has not redefined since. What such a part draws when its
    * data is empty is the preset's state, not something the model wrote (decision reports-are-component-state).
@@ -62,6 +69,11 @@ export interface Draft {
   newKeys: string[];
   /** /ds bindings that name no dataset of this surface. */
   unknownKeys: string[];
+  /**
+   * Decision what-if-as-a2ui-calls: numbers set in the tab that this call sent its old seed over, and that were kept; `typed` is the
+   * number set in the tab when the Slider's new min or max held it to `value` (review S2).
+   */
+  kept: Array<{path: string; value: number; typed?: number}>;
 }
 
 export interface DraftOptions {
@@ -146,15 +158,19 @@ const segmentsOf = (path: string | undefined): string[] => (path ?? '/').split('
 /**
  * Decision patch-sends-whole-slot: a patch below a top-level slot (`$/plan/1/status='done'`) is published as the whole slot. The
  * viewer's data model changes a container in place, so a component bound to `/plan` would otherwise never see that
- * its value changed. /ui is the viewer's own and keeps its fine-grained writes.
+ * its value changed. /ui is the viewer's own and keeps its fine-grained writes. `extra` names slots published whole
+ * whatever was written to them: those holding a number the user set, which the call's own value would undo (what-if-as-a2ui-calls).
  */
-function wholeSlots(messages: readonly A2uiMessage[], data: Record<string, unknown>): A2uiMessage[] {
+function wholeSlots(messages: readonly A2uiMessage[], data: Record<string, unknown>, extra: ReadonlySet<string> = new Set()): A2uiMessage[] {
   const topOf = (message: A2uiMessage): string | undefined => {
     const top = 'updateDataModel' in message ? segmentsOf(message.updateDataModel.path)[0] : undefined;
     return top === 'ui' ? undefined : top;
   };
   // Slots with at least one write below the top level: every write to such a slot collapses into one final value.
-  const nested = new Set(messages.filter(message => 'updateDataModel' in message && segmentsOf(message.updateDataModel.path).length >= 2).map(topOf).filter(top => top !== undefined));
+  const nested = new Set([
+    ...messages.filter(message => 'updateDataModel' in message && segmentsOf(message.updateDataModel.path).length >= 2).map(topOf).filter(top => top !== undefined),
+    ...extra,
+  ]);
   const out: A2uiMessage[] = [];
   const sent = new Set<string>();
   for (const message of messages) {
@@ -228,6 +244,33 @@ export function inPlaceMessages(previous: SurfaceRecord, record: SurfaceRecord, 
   return out;
 }
 
+/**
+ * Decision what-if-as-a2ui-calls: the numbers set with a Slider that the next version keeps, written into `data` where a re-sent seed
+ * covered them. A number is forgotten when no Slider binds its path any more, and when the call wrote that path
+ * itself (`$/w/seats=50000`: the spec wins) or a value other than the old seed over it. `kept` lists the numbers a
+ * re-sent, unchanged seed would have undone. A kept number is held to the min and max of the Sliders that bind it now
+ * (review S2), as gl_set holds it, and `kept` says so when that changed it.
+ */
+function keepTyped(current: SurfaceRecord | undefined, messages: readonly A2uiMessage[], components: ReadonlyMap<string, WireComponent>, data: Record<string, unknown>) {
+  const typed = new Map<string, {value: number; seed: unknown}>();
+  const kept: Array<{path: string; value: number; typed?: number}> = [];
+  if (!current?.typed) return {typed, kept};
+  const exact = new Set(messages.flatMap(message => ('updateDataModel' in message ? [`/${segmentsOf(message.updateDataModel.path).join('/')}`] : [])));
+  const sliders = [...components.values()].filter(comp => comp.component === 'Slider' && isBinding(comp.value));
+  for (const [path, entry] of current.typed) {
+    const own = sliders.filter(comp => (comp.value as {'@path': string})['@path'] === path);
+    if (own.length === 0 || exact.has(path)) continue;
+    const now = lookup(data, path);
+    if (!sameJson(now, entry.value) && !sameJson(now, entry.seed)) continue;
+    const value = own.reduce((held, comp) => inputValue(held, {min: comp.min, max: comp.max}) ?? held, entry.value);
+    typed.set(path, {value, seed: entry.seed});
+    if (sameJson(now, value)) continue;
+    setPath(data, path, value);
+    kept.push({path, value, ...(value !== entry.value ? {typed: entry.value} : {})});
+  }
+  return {typed, kept};
+}
+
 export class SurfaceStore {
   private records = new Map<string, SurfaceRecord>();
 
@@ -289,6 +332,7 @@ export class SurfaceStore {
       }
     }
     const pruned = prune(components);
+    const {typed, kept} = keepTyped(current, messages, components, data);
 
     const known = new Map<string, SourceRef>([...(current?.bindings ?? []), ...options.refs]);
     const bound = boundKeys(components.values());
@@ -330,11 +374,13 @@ export class SurfaceStore {
       // The user's selection survives unless this call wrote /ui itself; viewer reports belong to one layout.
       ...(current && !wroteUi && current.sel !== undefined ? {sel: current.sel} : {}),
       ...(current && !wroteUi && current.file !== undefined ? {file: current.file} : {}),
+      ...(typed.size > 0 ? {typed} : {}),
       preset: new Set([...(current?.preset ?? []), ...(options.presetIds ?? [])].filter(compId => components.has(compId) && !options.modelIds?.has(compId))),
       createdAt: previous?.createdAt ?? options.now,
       updatedAt: options.now,
     };
-    return {record, mode, ...(inPlace ? {inPlace} : {}), delta: mode === 'patch' ? wholeSlots(messages, data) : [], newKeys, unknownKeys};
+    const slots = new Set(kept.map(entry => segmentsOf(entry.path)[0]!));
+    return {record, mode, ...(inPlace ? {inPlace} : {}), delta: mode === 'patch' ? wholeSlots(messages, data, slots) : [], newKeys, unknownKeys, kept};
   }
 
   /** Stores the draft. Returns the ids evicted to keep at most MAX_SURFACES (least recently updated first). */

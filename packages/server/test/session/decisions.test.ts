@@ -728,6 +728,96 @@ describe('the selection is part of the snapshot', () => {
   });
 });
 
+// ---------------------------------------------------------------- decision what-if-as-a2ui-calls
+describe('what-if-as-a2ui-calls: a number set with a Slider', () => {
+  const WHAT_IF = [
+    `root=Page('Ticketing: on-sale what-if',[inputs,peak,go])`,
+    `$/w={seats:50000,secs:120,conv:0.6}`,
+    `inputs=Row([seats,secs,conv])`,
+    `seats=Slider('Seats on sale',$/w/seats,1000,200000,step=1000)`,
+    `secs=Slider('Sale window',$/w/secs,max=600,unit='s')`,
+    `conv=Slider('Checkout conversion',$/w/conv,0.05,1,step=0.05)`,
+    `rps=div(mul($/w/seats,$/w/conv),$/w/secs)`,
+    `peak=Stats([{label:'Peak checkout',value:rps},{label:'Redis',value:mul(rps,4)},{label:'Postgres writes',value:mul(rps,2)}],title='Load at peak')`,
+    `go=Button('Go',Event('go'))`,
+  ].join('\n');
+  const setUp = async () => {
+    const t = start();
+    const router = new ActionRouter(t.session, () => {});
+    const outcome = await t.session.show(spec('what-if', WHAT_IF));
+    expect(outcome.warnings).toEqual([]);
+    t.session.events.drain();
+    const set = (value: unknown, source = 'seats', extra: Record<string, unknown> = {}) => router.handle(action('gl_set', {value, ...extra}, source, 'what-if'));
+    return {t, router, set, record: () => t.session.surfaces.get('what-if')!};
+  };
+
+  it('stores the number at the path the Slider binds, with the seed, and publishes nothing', async () => {
+    const {t, set, record} = await setUp();
+    const frames = t.host.frames.length;
+    expect(set(80000)).toBe(true);
+    expect(record().data.w).toEqual({seats: 80000, secs: 120, conv: 0.6});
+    expect(record().typed).toEqual(new Map([['/w/seats', {value: 80000, seed: 50000}]]));
+    expect(t.host.frames).toHaveLength(frames);
+    expect(t.session.events.drain()).toEqual(['viewer: set $/w/seats 80000 (what-if) -> Stats#peak data/0/value=400 data/1/value=1600 data/2/value=800']);
+    // a reload or a second tab starts from it
+    expect((created(t.session.replay().find(frame => frame.surfaceId === 'what-if') as Frame).dataModel as {w: unknown}).w).toEqual({seats: 80000, secs: 120, conv: 0.6});
+  });
+
+  it('takes the path from the Slider, never from the post, and holds the number to its min and max', async () => {
+    const {set, record} = await setUp();
+    expect(set(70000, 'seats', {path: '/w/secs'})).toBe(true);
+    expect(record().data.w).toEqual({seats: 70000, secs: 120, conv: 0.6});
+    set(5);
+    expect((record().data.w as {seats: number}).seats).toBe(1000);
+    set(9_999_999);
+    expect((record().data.w as {seats: number}).seats).toBe(200000);
+    // the seed stays the one the spec wrote
+    expect(record().typed?.get('/w/seats')?.seed).toBe(50000);
+  });
+
+  it('refuses anything that is not a finite number from a Slider bound to a path of the model\'s own', async () => {
+    const {t, set, record} = await setUp();
+    for (const value of [Number.NaN, '80000', Infinity, null, undefined, {n: 1}]) expect(set(value), String(value)).toBe(false);
+    expect(set(80000, 'go')).toBe(false);
+    expect(set(80000, 'peak')).toBe(false);
+    // a Slider the server would not have stored, written into the record by hand
+    const seats = record().components.get('seats')!;
+    record().components.set('lit', {...seats, id: 'lit', value: 50000});
+    record().components.set('ui', {...seats, id: 'ui', value: {'@path': '/ui/seats'}});
+    record().components.set('rel', {...seats, id: 'rel', value: {'@path': 'w/seats'}});
+    record().components.set('proto', {...seats, id: 'proto', value: {'@path': '/w/__proto__/x'}});
+    // a path the data model cannot hold: an index far past the end of a list
+    record().data.list = [];
+    record().components.set('far', {...seats, id: 'far', value: {'@path': '/list/20000'}});
+    for (const source of ['lit', 'ui', 'rel', 'proto', 'far']) expect(set(80000, source), source).toBe(false);
+    expect(record().data.list).toEqual([]);
+    delete record().data.list;
+    expect(record().data.w).toEqual({seats: 50000, secs: 120, conv: 0.6});
+    expect(record().typed).toBeUndefined();
+    expect(t.session.events.drain()).toEqual([]);
+  });
+
+  it('two numbers set at one path are one line, the latest', async () => {
+    const {t, set} = await setUp();
+    set(60000);
+    set(80000);
+    set(60, 'secs');
+    expect(t.session.events.drain()).toEqual([
+      'viewer: set $/w/seats 80000 (what-if) -> Stats#peak data/0/value=400 data/1/value=1600 data/2/value=800',
+      'viewer: set $/w/secs 60 (what-if) -> Stats#peak data/0/value=800 data/1/value=3200 data/2/value=1600',
+    ]);
+  });
+
+  it('a value the user\'s own number leaves uncomputable is said in the set line, never as a viewer error', async () => {
+    const {t, set} = await setUp();
+    expect(set(0, 'secs')).toBe(true);
+    const zero = 'div: b = $/w/secs is 0 (division by zero)';
+    expect(t.session.events.drain()).toEqual([`viewer: set $/w/secs 0 (what-if) -> Stats#peak data/0/value data/1/value data/2/value: ${zero}`]);
+    expect(t.session.events.reports.pending).toBe(0);
+    expect(t.session.lateWarnings({id: 'what-if', fields: []})).toEqual([]);
+  });
+});
+
 // ---------------------------------------------------------------- finding F036, end to end
 describe('adding a part to a preset', () => {
   it('view plus a new part: the part is appended to the preset root and the call says so', async () => {

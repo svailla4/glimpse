@@ -1,0 +1,89 @@
+@layer gl.components {
+  .slider {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  /* The caption reads as a Stat label, so a Slider sits in a row of Stats without a seam. */
+  .label {
+    overflow: hidden;
+    color: var(--gl-ink-3);
+    font: 400 11px/16px var(--gl-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* In a narrow cell the number goes under the range, at the right; narrower still, the field shrinks, never past the cell. */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-width: 0;
+    margin-top: 4px;
+  }
+  /* Ink, not vermilion: the accent is kept for the selection. */
+  .range {
+    flex: 1 1 64px;
+    min-width: 64px;
+    height: var(--gl-control);
+    margin: 0;
+    accent-color: var(--gl-ink);
+    cursor: pointer;
+  }
+  .field {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-sizing: border-box;
+    max-width: 100%;
+    height: var(--gl-control);
+    padding: 0 8px;
+    border: 1px solid var(--gl-rule);
+    border-radius: var(--gl-r-2);
+    background: var(--gl-surface);
+    transition: border-color var(--gl-t-hover) var(--gl-ease);
+  }
+  .field:hover {
+    border-color: var(--gl-rule-strong);
+  }
+  .field:focus-within {
+    outline: 2px solid var(--gl-accent);
+    outline-offset: 2px;
+    border-color: var(--gl-rule-strong);
+  }
+  .input {
+    all: unset;
+    flex: 0 1 10ch;
+    width: 10ch;
+    min-width: 3ch;
+    color: var(--gl-ink);
+    font: 13px/18px var(--gl-font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .unit {
+    color: var(--gl-ink-3);
+    font: 400 11px/16px var(--gl-font-mono);
+  }
+  /* Always in the tree, so a screen reader hears it when it appears; takes no room while empty. */
+  .note {
+    margin: 0;
+    color: var(--gl-ink-2);
+    font: 400 11px/16px var(--gl-font-mono);
+    overflow-wrap: anywhere;
+  }
+  .note:not(:empty) {
+    margin-top: 6px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .field {
+      transition: none;
+    }
+  }
+}

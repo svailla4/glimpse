@@ -135,7 +135,7 @@ log=${range === 'wt' || range === 'staged' ? `List('code.todos top=8',title='Ope
   },
   {
     name: 'feature', doc: 'Follow a feature while it is built: plan, design, notes, live working-tree diff, blast radius.',
-    slots: {'/plan': "StepItem[]: [{title,note?,status?,file?}] with status todo|doing|done|blocked|skipped.", '/notes': 'Notes.'},
+    slots: {'/plan': "StepItem[]: [{title,note?,status?,file?,node?}] with status todo|doing|done|blocked|skipped.", '/notes': 'Notes.'},
     replace: {design: "the design drawing: $/design={nodes:{A:'Request',B:{label:'OK?',shape:'diamond'}},edges:[['A','B']]}; design=Flowchart($/design,title='Design'), or design=SequenceDiagram({steps:[...]})"},
     build: () => `$/plan=[]
 $/notes=''

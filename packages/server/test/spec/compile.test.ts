@@ -2,7 +2,7 @@
 // preset-plus-patch on one twin, and line mapping for multi-line strings.
 import {VIEW_BY_NAME, type A2uiMessage, type WireComponent} from '@glimpse/catalog';
 import {beforeAll, describe, expect, it} from 'vitest';
-import {compileSpec, loadToolchain, originalLine, rootLineOf, strayText, unclosedString, type Seed, type Toolchain} from '../../src/spec/compile.ts';
+import {calcText, compileSpec, loadToolchain, originalLine, rootLineOf, strayText, unclosedString, type Seed, type Toolchain} from '../../src/spec/compile.ts';
 import {normalizeSpec} from '../../src/spec/normalize.ts';
 
 let tools: Toolchain;
@@ -164,6 +164,54 @@ describe('what the compiler lets through in silence', () => {
     expect(compile(`root=Page('U',[Text('abc`).fixes).toEqual(['unterminated string at line 1 col 21, end of input -> )])']);
     // a string that ran over the rest of the call: closing brackets would render the code as text
     expect(() => compile(`root=Page('U',[Text('one), Text(two)])`)).toThrow(/^E_SYNTAX line 1 col 21: this string never ends/);
+  });
+});
+
+describe('calls (decision what-if-as-a2ui-calls)', () => {
+  it('a call with more than two arguments is E_TYPE with the line, not computed without the rest', () => {
+    expect(() => compile(`$/a=1\nroot=Page('x',[Stat(div($/a,2,3),'n')])`))
+      .toThrow(/^E_TYPE line 2: div takes 2 arguments \(a, b\); this call passes 3\. Nest calls for more: add\(add\(\$\/a,\$\/b\),\$\/c\)\.$/);
+    // a nested call is counted on its own, and the line is the one the author wrote
+    expect(() => compile(`root=Page('x',[a,b])\na=Text('one\ntwo')\nb=Stat(add(mul(1,2,3,4),5))`)).toThrow(/^E_TYPE line 4: mul takes 2 arguments \(a, b\); this call passes 4\./);
+    // by keyword, an argument beyond a and b is the compiler's own E_PROP
+    expect(() => compile(`root=Page('x',[Stat(div(a=1,b=2,c=3))])`)).toThrow(/^E_PROP div: unknown argument "c"\. Arguments: a b$/);
+    expect(calcText(`x=Stat(add(add(1,2),3))`, `x=Stat(add(add(1,2),3))`)).toEqual({warnings: []});
+  });
+
+  it('a call written as a statement of its own is left out and said, never refused', () => {
+    const {messages, warnings, steps} = compile(`root=Page('x',[Stat(1,'n')])\n\ndiv(1,2)`);
+    expect(messages.map(kind)).toEqual(['createSurface']);
+    expect(steps).toEqual([0]);
+    expect(warnings).toEqual([`line 3: div(...) on its own computes nothing and was left out; use it as an argument, e.g. Stat(div(...),'label').`]);
+    // an alias renamed first is said by its own name
+    const renamed = compile(`root=Page('x',[Stat(1,'n')]); multiply(2,3)`);
+    expect(renamed.fixes).toEqual(['multiply -> mul']);
+    expect(renamed.warnings).toEqual([`line 1: mul(...) on its own computes nothing and was left out; use it as an argument, e.g. Stat(mul(...),'label').`]);
+    // and in a patch; a patch of nothing else defines nothing, and says why
+    const seed = seedOf(compile(`root=Page('x',[a])\na=Stat(1,'n')`).messages);
+    expect(compile(`$/k=1\nadd(1,2)`, seed).warnings).toEqual([`line 2: add(...) on its own computes nothing and was left out; use it as an argument, e.g. Stat(add(...),'label').`]);
+    expect(() => compile(`add(1,2)`, seed)).toThrow(/^E_REF the spec defines nothing to render: line 1: add\(\.\.\.\) on its own computes nothing/);
+  });
+
+  it('a named call nothing in the text uses is a warning; one that is used is not', () => {
+    // review S9: a whole spec has no other parts to resend, so it is told that nothing uses the name
+    expect(compile(`root=Page('x',[Stat(1,'n')])\nrps=div(1,2)`).warnings)
+      .toEqual([`line 2: nothing uses rps, so rps=div(...) computes nothing; use it as an argument, e.g. Stat(rps,'label').`]);
+    const used = compile(`root=Page('x',[s])\ns=Stat(rps,'n')\nrps=div(1,2)`);
+    expect(used.warnings).toEqual([]);
+    expect(created(used.messages).find(c => c.id === 's')!.value).toEqual({'@call': 'div', args: {a: 1, b: 2}});
+    // a patch that resends the named call without the parts that use it
+    const seed = seedOf(used.messages);
+    expect(compile(`$/k=1\nrps=div(3,4)`, seed).warnings).toEqual(['line 2: rps=div(...) is copied into the arguments that use rps, so on its own it changes nothing; resend the parts that use rps.']);
+    expect(() => compile(`rps=div(3,4)`, seed)).toThrow(/^E_REF the spec defines nothing to render: line 1: rps=div\(\.\.\.\) is copied into the arguments that use rps/);
+    expect(compile(`rps=div(3,4)\ns=Stat(rps,'n')`, seed).warnings).toEqual([]);
+  });
+
+  it('fixes multiply -> mul, and says there are no operators for * and +, not for -', () => {
+    expect(compile(`root=Page('x',[Stat(multiply(2,3))])`).fixes).toEqual(['multiply -> mul']);
+    expect(() => compile(`root=Page('x',[Stat($/x*2)])`)).toThrow(/There are no operators: write mul\(a, b\), div\(a, b\), add\(a, b\) or sub\(a, b\)\.$/);
+    expect(() => compile(`root=Page('x',[Stat($/x + 2)])`)).toThrow(/There are no operators/);
+    expect(() => compile(`root=Page('x',[Stat($/a-$/b)])`)).toThrow(/^E_SYNTAX line 1 col \d+: token recognition error at: '-\$'$/);
   });
 });
 

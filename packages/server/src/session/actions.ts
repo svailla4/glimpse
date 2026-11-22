@@ -2,16 +2,24 @@
 // Host actions (gl_*) are handled here and never reach the model; every other action is queued as one `viewer:` line.
 // Everything in a post is untrusted input: the shape is checked, the surface and the source component must exist,
 // and only then is anything done.
-import {HOST_ACTION_PREFIX, REPORT_OK, type ActionPayload, type EntityRef} from '@glimpse/catalog';
+import {ENTITY_TYPES as CATALOG_ENTITY_TYPES, HOST_ACTION_PREFIX, MAX_ENTITY_NODES, REPORT_OK, type ActionPayload, type EntityRef} from '@glimpse/catalog';
 import {actionLine} from './events.ts';
 import type {Session} from './session.ts';
 
-const ENTITY_TYPES: ReadonlySet<string> = new Set(['file', 'dir', 'module', 'package', 'symbol', 'author', 'commit', 'node', 'row']);
+const ENTITY_TYPES: ReadonlySet<string> = new Set(CATALOG_ENTITY_TYPES);
 const MAX_TEXT = 1024;
+/** Longest diagram node id a selection may name (decision links-through-node-ids). */
+const MAX_NODE_ID = 200;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const text = (value: unknown): value is string => typeof value === 'string' && value.length <= MAX_TEXT;
 const lineNumber = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0 && value < 10_000_000;
+/**
+ * Decision links-through-node-ids: the diagram node ids a selection stands for (an item's node:'PG', a message's route), 1 to
+ * MAX_ENTITY_NODES non-empty strings. Anything else is dropped whole, not trimmed: a part of a route is a wrong route.
+ */
+const nodeIds = (value: unknown): value is string[] => Array.isArray(value) && value.length > 0 && value.length <= MAX_ENTITY_NODES
+  && value.every(id => typeof id === 'string' && id !== '' && id.length <= MAX_NODE_ID);
 
 function parseAction(value: unknown): ActionPayload | undefined {
   if (!isRecord(value) || !text(value.name) || value.name === '' || !text(value.surfaceId) || !text(value.sourceComponentId)) return undefined;
@@ -34,6 +42,7 @@ function parseEntity(value: unknown): EntityRef | null | undefined {
     ...(lineNumber(value.line) ? {line: value.line} : {}),
     ...(lineNumber(value.endLine) ? {endLine: value.endLine} : {}),
     ...(text(value.label) ? {label: value.label} : {}),
+    ...(nodeIds(value.nodes) ? {nodes: [...value.nodes]} : {}),
   };
 }
 
@@ -92,6 +101,9 @@ export class ActionRouter {
         session.select(record.id, ref);
         return true;
       }
+      case 'gl_set':
+        // Decision what-if-as-a2ui-calls: only the number; the path is the one the stored Slider binds, never one the tab names.
+        return session.setInput(record, source, context.value);
       case 'gl_open':
         if (!text(context.file) || context.file === '') return false;
         void session.openFile(context.file).then(refused => {
