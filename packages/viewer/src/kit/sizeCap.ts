@@ -1,5 +1,5 @@
 // packages/viewer/src/kit/sizeCap.ts  (owned by the viewer kit)
-// Decision D20, content-sized plates: a plate's body takes its content's natural height, and the catalog's `size`
+// Decision content-sized-plates: a plate's body takes its content's natural height, and the catalog's `size`
 // prop is a MAXIMUM height, not a fixed one. A view reads that maximum, in px, with useSizeCap():
 //   const cap = useSizeCap();
 //   // a scroller that needs a definite height: min(content height, cap)
@@ -8,7 +8,7 @@
 //   s 160, m 280, l 420, xl 640, fill = the viewport height minus the masthead (160 px), never under 420.
 // Without a size step the cap is the family default: 640 for diagrams, 420 for everything else (what tables, file
 // trees, JSON and code views have capped themselves at so far). Only the cell's own size step counts: a cell
-// nested in a sized container without a size of its own gets its family default, as before D20.
+// nested in a sized container without a size of its own gets its family default, as before content-sized-plates.
 import {createContext, useContext, useSyncExternalStore} from 'react';
 
 /** The catalog's size steps in px (`size` of the FRAME group and of Split). */
@@ -45,7 +45,7 @@ const viewportHeight = (): number => window.innerHeight;
 const noHeight = (): number => 0;
 
 /**
- * The maximum height in px of the calling view (decision D20; see the top of this file). Follows the window's
+ * The maximum height in px of the calling view (decision content-sized-plates; see the top of this file). Follows the window's
  * height for `size='fill'` (and only then listens to resizes). Outside a component (no cell): DEFAULT_CAP.
  */
 export function useSizeCap(): number {

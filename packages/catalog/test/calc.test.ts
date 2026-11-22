@@ -1,4 +1,4 @@
-// Decision D25: the four functions add|sub|mul|div(a, b), and what the server and the Slider read about calls.
+// Decision what-if-as-a2ui-calls: the four functions add|sub|mul|div(a, b), and what the server and the Slider read about calls.
 import {Catalog, ComponentContext, GenericBinder, MessageProcessor} from '@a2ui/web_core/v1_0';
 import {describe, expect, it} from 'vitest';
 import {

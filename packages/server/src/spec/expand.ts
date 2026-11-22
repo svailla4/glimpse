@@ -1,6 +1,6 @@
 // Expansion (design 2.2 step 4): compiled messages are rewritten in place so that every data prop naming a source
 // becomes a /ds binding, and the things only Glimpse can judge are checked: source refs, diagram data, DataTable
-// columns, reserved data paths, and what a Slider binds and where a call computes nothing (decision D25). Pure apart
+// columns, reserved data paths, and what a Slider binds and where a call computes nothing (decision what-if-as-a2ui-calls). Pure apart
 // from the in-place rewrite of messages nobody else holds yet.
 import {
   acceptsArg, callReads, callsIn, columnKey, explainValue, isCall, COMPONENT_BY_NAME, datasetKey, fieldsFor, formatRef, looksLikeRef, normalizeCols, parseFileLoc,
@@ -29,7 +29,7 @@ export interface Expansion {
   ranges: Array<{where: string; range: string}>;
   /** Field names a component asks of a dataset, checked against the dataset's fields once it has settled. */
   fields: Array<{where: string; key: string; names: string[]}>;
-  /** What expansion corrected, as the text of `fixed` lines (field names, decision D15). */
+  /** What expansion corrected, as the text of `fixed` lines (field names, decision guessed-fields-repaired). */
   fixes: string[];
   /**
    * Finding V071: the paths the spec writes (literal file props, path targets of refs), as written, for the session to
@@ -40,7 +40,7 @@ export interface Expansion {
 
 /**
  * A file to check, and the part that names it. `nested` marks one named inside a component's data (a Flowchart node's
- * or a Layers item's file, decision D24): the session checks those after the rest, so a plate whose own file is
+ * or a Layers item's file, decision links-through-node-ids): the session checks those after the rest, so a plate whose own file is
  * missing is reported before the links inside a diagram, under the cap on warning lines.
  */
 export interface FileCheck { where: string; file: string; nested?: true }
@@ -62,7 +62,7 @@ function kindWarning(component: string, id: string, meta: SourceMeta, kinds: Rea
 }
 
 /**
- * Split's ratio as Split draws it, said (D22): a share rewritten to 'a:b' is a `fixed` line, and a value Split cannot
+ * Split's ratio as Split draws it, said (no-invented-string-formats): a share rewritten to 'a:b' is a `fixed` line, and a value Split cannot
  * read (it then opens the panes half and half) is a `warn` line.
  */
 function splitRatioChecked(comp: WireComponent, out: Expansion): void {
@@ -205,7 +205,7 @@ function proseRefs(comp: WireComponent, name: string, out: Expansion, names: Pat
   if (next !== text) comp[prop] = next;
 }
 
-// ---------------------------------------------------------------- field names (decision D15)
+// ---------------------------------------------------------------- field names (decision guessed-fields-repaired)
 /**
  * What people write for a field, and the fields it may stand for, in order of preference: the first one the dataset
  * has wins. Keys are lower case with everything but letters and digits removed. Gathered from the field names cold
@@ -313,7 +313,7 @@ function variantMeant(comp: WireComponent, name: string, props: Record<string, P
 }
 
 /**
- * Decision D15: every field a component bound to a source names is one the source returns. An exact name stays; a
+ * Decision guessed-fields-repaired: every field a component bound to a source names is one the source returns. An exact name stays; a
  * name the author plainly meant is rewritten (`ScatterPlot.x 'churn' -> 'commits'`); anything else is dropped so the
  * component draws its default encoding (`... 'zzz' dropped (fields: a b c)`). Never an empty plate for a guess.
  */
@@ -422,7 +422,7 @@ function focusAsTarget(comp: WireComponent, name: string, text: string, registry
 }
 
 /**
- * Decision D22: a literal `mark` (CodeView, CodeBlock) is read here. A part written another plain way ('lines 10-20',
+ * Decision no-invented-string-formats: a literal `mark` (CodeView, CodeBlock) is read here. A part written another plain way ('lines 10-20',
  * '10..20', '20-10') is rewritten as a fix; a part that names no line is a `warn` line (the tab notes it too).
  */
 function checkMark(comp: WireComponent, name: string, out: Expansion): void {
@@ -442,7 +442,7 @@ const shown = (value: unknown): string => {
 };
 
 /**
- * Decision D25: a Slider edits the data at the $/path its value binds, so that value is a binding to a path of the
+ * Decision what-if-as-a2ui-calls: a Slider edits the data at the $/path its value binds, so that value is a binding to a path of the
  * model's own. A literal or a call is refused with the two statements to write instead; a relative path, and one
  * under /ui (the viewer's) or /ds and /meta (the server's), likewise. min not below max draws no range: a `warn`.
  */
@@ -539,14 +539,14 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
   if (def.name === 'Split' && typeof comp.ratio === 'string') splitRatioChecked(comp, out);
   if (def.name === 'Grid') gridCols(comp, out);
   if (def.name === 'Slider') checkSlider(comp, out);
-  // Decision D25: a call in an action is run by the tab as an action and computes a number nobody sees.
+  // Decision what-if-as-a2ui-calls: a call in an action is run by the tab as an action and computes a number nobody sees.
   for (const [key, prop] of Object.entries(def.props) as Array<[string, Prop]>) {
     const call = prop.kind === 'action' ? (comp[key] as {functionCall?: unknown} | undefined)?.functionCall : undefined;
     if (isCall(call)) out.problems.push(problem('E_TYPE', `${where(key)}: ${oneLine(call['@call'], 40)}(...) computes a number; an action is Event('name',{...}).`, {component: def.name}));
   }
-  // Inline authored data (decision D24, authored.ts): what is not the shape at all is refused, the rest draws and says
+  // Inline authored data (decision links-through-node-ids, authored.ts): what is not the shape at all is refused, the rest draws and says
   // what it corrected or left out, and the files it names are checked like file props. It is read as the tab reads it,
-  // each call computed (decision D25, asDrawn). Data bound to a $/path, or with $/paths inside it, is checked against
+  // each call computed (decision what-if-as-a2ui-calls, asDrawn). Data bound to a $/path, or with $/paths inside it, is checked against
   // the data model after the call (diagramNotes).
   const authored = AUTHORED[def.name];
   if (authored && comp.data !== undefined && typeof comp.data !== 'string' && !isDynamic(comp.data) && inlinePaths(comp.data).length === 0) {
@@ -601,7 +601,7 @@ export function expandMessages(messages: A2uiMessage[], registry: SourceRegistry
     checkPaths(message, out, calls);
     for (const comp of componentsOf(message)) expandComponent(comp, registry, out, names);
   }
-  // Decision D25: A2UI computes calls in component arguments only; one in the data model stays a raw object there.
+  // Decision what-if-as-a2ui-calls: A2UI computes calls in component arguments only; one in the data model stays a raw object there.
   if (calls.length > 0) {
     const more = calls.length > 1 ? ` (and ${calls.length - 1} more)` : '';
     out.warnings.push(`$${oneLine(calls[0]!, 80)}: a call in data is not computed; write it in a component argument, e.g. Stats([{label:'x',value:mul($/a,2)}]).${more}`);
@@ -624,7 +624,7 @@ function outsideRange(value: number, min: unknown, max: unknown): string | undef
 }
 
 /**
- * Decision D25: the calls of the components a call defines, and of those reading a path whose top segment it wrote,
+ * Decision what-if-as-a2ui-calls: the calls of the components a call defines, and of those reading a path whose top segment it wrote,
  * computed against the data after the call. One that gives no number (division by zero, an operand that is not a
  * number, a result too large) is a `warn` line: `Stat#rps: value: div: b = $/w/secs is 0 (division by zero)`. An
  * operand not set is left to the unbound line; a relative one is said (review S6). A Slider whose path holds

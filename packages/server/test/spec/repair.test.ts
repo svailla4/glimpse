@@ -64,7 +64,7 @@ describe('repair inside compileSpec', () => {
     expect(first.createSurface.components[1]).toEqual({id: 'root_children_0', component: 'DataTable', data: 'fake.rows', columns: 'path'});
   });
 
-  // Decision D26: Markdown was removed; a spec written from habit or from an older skill still draws, as Text, and the
+  // Decision no-markdown-component: Markdown was removed; a spec written from habit or from an older skill still draws, as Text, and the
   // model hears what Text does not draw.
   it('draws a removed Markdown as Text and says what Text does not carry over', () => {
     const {messages, fixes} = compile(`root=Page('x',[Markdown('hi'),notes])\nnotes=Markdown($/notes,title='Notes')`);
@@ -89,7 +89,7 @@ describe('repair inside compileSpec', () => {
     expect(() => compile(`root=Page('x',[notez])\nnotes=Text('a')`)).toThrow(/^E_REF/);
   });
 
-  // Decision D5 and finding F035: 3 of 4 first Callout attempts wrote kind 'warning'.
+  // Decision accept-familiar-variants and finding F035: 3 of 4 first Callout attempts wrote kind 'warning'.
   it.each([
     [`Callout('Careful','warning')`, 'Callout.kind warning -> warn', {kind: 'warn'}],
     [`Callout('Careful',kind='danger')`, 'Callout.kind danger -> risk', {kind: 'risk'}],
@@ -139,7 +139,7 @@ describe('repair inside compileSpec', () => {
   });
 });
 
-// Decision D15 for enums (finding V069): aliases are rewritten in one pass before anything is compiled.
+// Decision guessed-fields-repaired for enums (finding V069): aliases are rewritten in one pass before anything is compiled.
 describe('rewrite before the first compile', () => {
   const componentsOf = (source: string) => {
     const first = compile(source).messages[0]!;
@@ -190,7 +190,7 @@ describe('the presets and the gallery need none of it', () => {
   });
 });
 
-describe('function names (decision D25)', () => {
+describe('function names (decision what-if-as-a2ui-calls)', () => {
   it('renames a function written another way wherever it is called, and says so', () => {
     expect(repair('root=Page("x",[Stat(multiply($/a,2)),Stat(multiply(1,2))])', {kind: 'call', name: 'multiply'}))
       .toEqual({text: 'root=Page("x",[Stat(mul($/a,2)),Stat(mul(1,2))])', note: 'multiply -> mul'});
@@ -231,8 +231,8 @@ describe('function names (decision D25)', () => {
       .toThrow(/^E_UNKNOWN "chart" is not a component or a function\. Nearest: BarChart LineChart \w+\. Functions: add sub mul div, each \(a, b\)\.$/);
   });
 
-  // D25 and D26 together: the removed Markdown is a component in any case (D25 reads a lower-case component name as
-  // that component), so it becomes Text with D26's note and never "not a function"; the D25 readings are unchanged.
+  // what-if-as-a2ui-calls and no-markdown-component together: the removed Markdown is a component in any case (what-if-as-a2ui-calls reads a lower-case component name as
+  // that component), so it becomes Text with no-markdown-component's note and never "not a function"; the what-if-as-a2ui-calls readings are unchanged.
   it('reads a removed Markdown in any case as Text with its note, next to table, pow and multiply as before', () => {
     const note = 'headings, tables and code fences show as written: use Section, DataTable, CodeBlock';
     const lower = compile(`root=Page('x',[a,b])\na=markdown('hi')\nb=Text('ok')`);

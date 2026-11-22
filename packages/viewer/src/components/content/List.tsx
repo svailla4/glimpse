@@ -160,7 +160,7 @@ export const ListView: GlView<typeof C.List> = ({id, props}) => {
                       {item.file === item.title ? <PathText file={item.file} /> : <span className={styles.text}>{item.title}</span>}
                     </span>
                     {/* A row titled by its text (a TODO, a match) still says where it is: the location has its own box, which
-                        keeps the file name and line whole while the text gives way (V039, D12). */}
+                        keeps the file name and line whole while the text gives way (V039, paths-keep-file-name). */}
                     {item.file && item.file !== item.title ? (
                       <span className={styles.where} data-gl-list-where="">
                         <PathText file={item.file} />

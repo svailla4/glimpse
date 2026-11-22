@@ -45,7 +45,7 @@ describe('compiler message patterns', () => {
     ['E_SPEC', `root=Page('x',[FileRef('a','b',3,4,5,6,7)])`, /^FileRef takes at most 3 positional arguments/],
     ['E_TYPE', `root=Page('x',[Grid([Text('a')],4)])`, /^Positional argument 2 for component 'Grid' is a number, which is not valid for optional property 'cols'\.$/],
     ['E_TYPE', `root=Page('x',[Grid([Text('a')],cols=4)])`, /^Validation failed for component 'Grid' \(root_children_0\): cols: Expected string, received number$/],
-    // decision D25: the four functions, as the strict schemas of calc.ts check them
+    // decision what-if-as-a2ui-calls: the four functions, as the strict schemas of calc.ts check them
     ['E_UNKNOWN', `root=Page('x',[Stat(pow(2,3))])`, /^Function 'pow' is not defined in the catalog\.$/],
     ['E_UNKNOWN', `root=Page('x',[a])\na=Text('a')\nx=Div(1,2)`, /^Component 'Div' is not defined in the catalog\.$/],
     ['E_TYPE', `root=Page('x',[Stat(div(2))])`, /^Validation failed for function 'div': b: Expected number, received undefined/],
@@ -127,7 +127,7 @@ describe('problem texts', () => {
     expect(text(`root=Page('x',[Page('y',[])])`)).toBe('E_PARENT Page (root_children_0) cannot sit inside Page (root). Allowed parents: Surface. Page is the root: use it once, as root=Page(...).');
   });
 
-  // Decision D25: what an author gets wrong about the four functions, each said with what to write instead.
+  // Decision what-if-as-a2ui-calls: what an author gets wrong about the four functions, each said with what to write instead.
   it('an unknown function lists the four; a name one of them stands for is marked for renaming', () => {
     expect(text(`root=Page('x',[Stat(pow(2,3))])`)).toBe('E_UNKNOWN "pow" is not a function. Functions: add sub mul div, each (a, b).');
     expect(classifyCompileError(raw(`root=Page('x',[Stat(pow(2,3))])`), ctx).repair).toBeUndefined();
@@ -144,7 +144,7 @@ describe('problem texts', () => {
     expect(classifyCompileError(raw(`root=Page('x',[text('a')])`), ctx).repair).toEqual({kind: 'component', name: 'text'});
   });
 
-  // Decision D26 with D25: a removed component is a component in any case, never a function.
+  // Decision no-markdown-component with what-if-as-a2ui-calls: a removed component is a component in any case, never a function.
   it('a removed Markdown, in either case, is a component to repair to Text', () => {
     expect(['Markdown', 'markdown', 'MARKDOWN', 'table', 'pow', 'multiply', 'chart'].map(calleeKind)).toEqual(['component', 'component', 'component', 'component', 'function', 'function', 'either']);
     expect(['Markdown', 'markdown', 'table'].map(componentMatch)).toEqual(['Text', 'Text', 'DataTable']);

@@ -6,7 +6,7 @@
 // The box a view is given (one rule for the frame, base.css and every view):
 //   .gl-cell > .gl-frame > ... .gl-body > view      framed: a non-layout component that takes `title` and has one
 //   .gl-cell > .gl-body > view                      everything else
-// A view always sits in a .gl-body, which is as tall as the view makes it (decision D20, content-sized plates). The
+// A view always sits in a .gl-body, which is as tall as the view makes it (decision content-sized-plates). The
 // size step is a maximum: base.css caps the .gl-body of a cell that has data-size at `--gl-h`, and a view that
 // scrolls reads the same number from useSizeCap() and makes itself min(its content, cap) tall. Charts and Split
 // are the exception: for them the size step is the height of the box (base.css), so `height: 100%` fills it.
@@ -18,7 +18,7 @@
 // - The plate header. Controls and notes that belong in the header go through <PlateAside> (below).
 // - Errors. A view that throws shows a redline in its own cell. The boundary lets go of the error when the
 //   component's props change (new data, a patch), so a view comes back once what broke it is replaced.
-// - Its maximum height. useSizeCap() (sizeCap.ts) answers in px from the cell's `size` step and family (D20).
+// - Its maximum height. useSizeCap() (sizeCap.ts) answers in px from the cell's `size` step and family (content-sized-plates).
 // - Other chunks. A view of another chunk is reused through borrowView() (below), never by importing its file.
 // - Styles. Component CSS Modules wrap their content in `@layer gl.components { ... }`; the build checks it.
 import {Component, Suspense, createContext, lazy, useContext, useMemo, useState, type FC, type ReactNode} from 'react';
@@ -174,7 +174,7 @@ class Quiet extends Component<{fallback: ReactNode; children: ReactNode}, {faile
  * `Fallback` renders while that chunk loads, when it has no such view yet, when it fails to load and when the
  * borrowed view throws, so your component never depends on another package being finished. Never import another
  * chunk's component file by path. Pass your own component `id`: actions and selection need a real component id.
- * A borrowed view is a part of your component (decision D14): an empty state or a redline it draws is not reported as
+ * A borrowed view is a part of your component (decision reports-are-component-state): an empty state or a redline it draws is not reported as
  * your component's state. Report what your component as a whole shows with your own <Empty> or useReportState().
  */
 export function borrowView<D = AnyComponentDef>(load: () => Promise<ViewModule>, name: string, Fallback: GlView<D>): GlView<D> {
@@ -223,7 +223,7 @@ type LazyLoader = () => Promise<ViewModule>;
 /**
  * The lazy chunk modules that have arrived, by loader. React.lazy suspends on its first render even when the module
  * is already here (a promise settles a tick later), and React 19 then holds the revealed boundary back for 300 ms:
- * the whole grace a `show` gives a live tab to report what it drew (decision D3), and a needless drafting flash. A
+ * the whole grace a `show` gives a live tab to report what it drew (decision show-reports-what-tab-drew), and a needless drafting flash. A
  * view of a chunk that has arrived therefore renders at once.
  */
 const arrived = new WeakMap<LazyLoader, ViewModule>();
@@ -298,7 +298,7 @@ export function implement<N extends string, P extends PropMap>(
     const cell = useMemo<CellInfo>(() => ({name: def.name, id, framed, flush: framed && flush}), [id, framed]);
     const size: SizeStep | undefined = typeof props.size === 'string' && Object.hasOwn(SIZE_PX, props.size) ? props.size : undefined;
     const sizeCell = useMemo<SizeCell>(() => ({size, family: def.family}), [size]);
-    // The component's state for the host (decision D14): what the states inside this cell draw, as one report.
+    // The component's state for the host (decision reports-are-component-state): what the states inside this cell draw, as one report.
     const reporter = useCellReporter(def.name, id, useA2uiSurface()?.id);
     const body = (
       <CellContext.Provider value={cell}>

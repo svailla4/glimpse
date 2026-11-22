@@ -1,4 +1,4 @@
-// SequenceDiagram: lifelines, messages, notes and blocks written as data (design 5.6, decision D21). No layout
+// SequenceDiagram: lifelines, messages, notes and blocks written as data (design 5.6, decision diagrams-are-data). No layout
 // library: columns are actors, rows are steps, a block is a frame round its rows.
 import type * as C from '@glimpse/catalog';
 import {cleanSequence, seqLeaves, type EntityRef, type SeqArrow, type SeqAst} from '@glimpse/catalog';
@@ -27,7 +27,7 @@ const MAX_WRAP_COL = 400;
 const TIGHT = 0.68;
 /**
  * ...then the whole drawing is scaled down, to this at most: its smallest text (11 px step numbers and notes) stays
- * 10 px on screen (design rule D18). After that it scrolls.
+ * 10 px on screen (design rule diagrams-open-readable). After that it scrolls.
  */
 const MIN_SCALE = 0.91;
 /** A message label too long for its gap takes a second line before it is cut. */
@@ -387,7 +387,7 @@ function messageRow(row: Extract<RowDraw, {kind: 'message'}>): ReactNode {
 }
 
 /**
- * Decision D24: what selecting a drawn row writes, by row: a message is `{type:'message', id:'<component>:<n>'}`
+ * Decision links-through-node-ids: what selecting a drawn row writes, by row: a message is `{type:'message', id:'<component>:<n>'}`
  * standing for the nodes it passes, in order (its sender's node, its `via`, its receiver's node; an actor's node is
  * its id unless written); a note selects nothing. And what selecting an actor's head writes: its node.
  */
@@ -411,7 +411,7 @@ function entitiesOf(id: string, ast: SeqAst, plan: Plan): {rows: Array<EntityRef
 
 function SequenceBody(p: {id: string; ast: SeqAst}) {
   const {id, ast} = p;
-  // As tall as its steps, up to the plate's maximum height (decision D20); past that it scrolls under sticky actors.
+  // As tall as its steps, up to the plate's maximum height (decision content-sized-plates); past that it scrolls under sticky actors.
   const cap = useSizeCap();
   const boxRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -492,7 +492,7 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
     } else return;
     if (next !== undefined && lastRow >= 0) {
       setActive(next);
-      // Decision D24: the selection follows the keyboard onto a message (the trace moves with it); a note leaves it.
+      // Decision links-through-node-ids: the selection follows the keyboard onto a message (the trace moves with it); a note leaves it.
       const entity = entities.rows[next];
       if (entity && next !== ownRow) select(entity);
     }

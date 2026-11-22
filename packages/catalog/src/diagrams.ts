@@ -1,6 +1,6 @@
 // packages/catalog/src/diagrams.ts
-// Flowchart and SequenceDiagram data (decision D21): plain objects, not a text notation. Layers, ERDiagram and Steps
-// data are read here the same way (decision D24), since they too name diagram nodes (`node:'PG'`). Pure functions
+// Flowchart and SequenceDiagram data (decision diagrams-are-data): plain objects, not a text notation. Layers, ERDiagram and Steps
+// data are read here the same way (decision links-through-node-ids), since they too name diagram nodes (`node:'PG'`). Pure functions
 // shared by the server (checks the data a spec writes and says what it corrected or left out) and the viewer (draws
 // the cleaned data, and tells the model what it could not draw when the data arrived by a patch the server did not
 // check).
@@ -95,7 +95,7 @@ function fileAt(o: Record<string, unknown>, key: string, where: string, dropped:
   dropped.add(`${where}: ${key}: expected 'path#L10-20', received ${received(raw)}`);
   return undefined;
 }
-/** The file an entry names (decision D24): its `file`, or its `path` read as the file and said in `fixes`. */
+/** The file an entry names (decision links-through-node-ids): its `file`, or its `path` read as the file and said in `fixes`. */
 function fileOf(o: Record<string, unknown>, where: string, fixes: Notes, dropped: Notes): FileLoc | undefined {
   const key = o.file !== undefined ? 'file' : o.path !== undefined ? 'path' : undefined;
   const file = key !== undefined ? fileAt(o, key, where, dropped) : undefined;
@@ -127,7 +127,7 @@ function entries(raw: unknown, what: string, dropped: Notes): Array<[string, unk
   return out;
 }
 
-// ================================================================ node links (decision D24; readNodes is in links.ts)
+// ================================================================ node links (decision links-through-node-ids; readNodes is in links.ts)
 /** readNodes at `where`: its alias said in `fixes`, its problem in `dropped`. */
 function nodesAt(o: Record<string, unknown>, where: string, fixes: Notes, dropped: Notes, key = 'node', max = MAX_ENTITY_NODES): string[] {
   const read = readNodes(o, key, max);
@@ -141,7 +141,7 @@ const idList = (ids: readonly string[]): string => `[${ids.slice(0, 3).map(id =>
 // ================================================================ Flowchart
 export const FLOW_SHAPES = ['box', 'diamond', 'pill', 'store', 'circle'] as const;
 export type FlowShape = (typeof FLOW_SHAPES)[number];
-/** `note` and `file` are what the node says when hovered or selected (decision D24); `file` also makes it a place. */
+/** `note` and `file` are what the node says when hovered or selected (decision links-through-node-ids); `file` also makes it a place. */
 export interface FlowNode { id: string; label: string; shape: FlowShape; group?: string; note?: string; file?: FileLoc }
 export interface FlowEdge { from: string; to: string; label?: string; dashed?: boolean }
 export interface FlowGroup { id: string; label: string; parent?: string }
@@ -222,7 +222,7 @@ export function cleanFlow(data: unknown): Clean<FlowAst> {
     }
     const group = textOf(pick(o, ['group', 'parent', 'in']));
     if (group !== undefined) addGroup(group, `node ${clip(id)}`);
-    // Decision D24: a note and a file; `notes`, `detail` and `description` are read as the note, `path` as the file.
+    // Decision links-through-node-ids: a note and a file; `notes`, `detail` and `description` are read as the note, `path` as the file.
     const where = `node ${clip(id)}`;
     const noteKeys = NODE_NOTE_KEYS.filter(key => o[key] !== undefined);
     const note = noteKeys[0] !== undefined ? textAt(o, noteKeys[0], where, dropped) : undefined;
@@ -310,7 +310,7 @@ export type SeqStep =
   | {kind: 'frame'; edge: 'end'};
 /**
  * A cleaned sequence. An actor's `node` is the diagram node it stands for, when written (else its id stands for it);
- * a message's `via` lists the nodes it passes through between its actors' nodes (decision D24).
+ * a message's `via` lists the nodes it passes through between its actors' nodes (decision links-through-node-ids).
  */
 export interface SeqAst { actors: Array<{id: string; label: string; node?: string}>; steps: SeqStep[] }
 
@@ -342,7 +342,7 @@ const SEQ_EXAMPLE = "{steps:[['User','API','POST /login'],['API','User','200','r
  * or a block `{loop: 'label', steps: [...]}` (also alt, opt, par, critical, break) whose `else` lists further branches
  * `[{label, steps}]`; a `group` (rect, box) draws its steps without a frame. Actors appear in the order `actors` lists
  * them, then in order of first mention. An actor written `{label, node}` stands for that diagram node, and a message's
- * `via` names the nodes it passes through (decision D24): one id, or a list. A list message read with a list (or
+ * `via` names the nodes it passes through (decision links-through-node-ids): one id, or a list. A list message read with a list (or
  * `{via}`) after its label or arrow takes it as its via, and says so.
  */
 export function cleanSequence(data: unknown): Clean<SeqAst> {
@@ -363,7 +363,7 @@ export function cleanSequence(data: unknown): Clean<SeqAst> {
     let node: string | undefined;
     if (isRecord(raw)) {
       dropped.ignore('actor', unknownKeys(raw, ACTOR_KEYS));
-      // Decision D24: the node an actor stands for; its id when not given. An actor is one node.
+      // Decision links-through-node-ids: the node an actor stands for; its id when not given. An actor is one node.
       const where = `actor ${clip(id)}`;
       const ids = nodesAt(raw, where, fixes, dropped);
       if (ids.length > 1) fixes.add(`${where}: node ${idList(ids)} -> '${clip(ids[0]!, 20)}' (an actor is one node)`);
@@ -410,7 +410,7 @@ export function cleanSequence(data: unknown): Clean<SeqAst> {
     const out: SeqStep[] = [];
     list.forEach((raw, i) => {
       const where = `step ${path}${i + 1}`;
-      // A message as a list: ['from', 'to', 'label'?, arrow?], and a via written after it as a list or {via} (D24).
+      // A message as a list: ['from', 'to', 'label'?, arrow?], and a via written after it as a list or {via} (links-through-node-ids).
       if (Array.isArray(raw)) {
         const [from, to] = [textOf(raw[0]), textOf(raw[1])];
         if (from === undefined || to === undefined) {
@@ -503,7 +503,7 @@ export function cleanSequence(data: unknown): Clean<SeqAst> {
         return;
       }
       dropped.ignore('message', unknownKeys(raw, MESSAGE_KEYS));
-      // Decision D24: with the sender's and the receiver's nodes, a selected message names at most MAX_ENTITY_NODES.
+      // Decision links-through-node-ids: with the sender's and the receiver's nodes, a selected message names at most MAX_ENTITY_NODES.
       const via = nodesAt(raw, where, fixes, dropped, 'via', MAX_ENTITY_NODES - 2);
       out.push({
         kind: 'message', from: actor(from), to: actor(to), label: textOf(pick(raw, LABEL_KEYS)) ?? '',
@@ -521,7 +521,7 @@ export function seqLeaves(steps: readonly SeqStep[]): Array<Exclude<SeqStep, {ki
   return steps.filter((step): step is Exclude<SeqStep, {kind: 'frame'}> => step.kind !== 'frame');
 }
 
-// ================================================================ Layers (decision D24: moved here from the viewer)
+// ================================================================ Layers (decision links-through-node-ids: moved here from the viewer)
 export interface LayersItem { label: string; note?: string; file?: FileLoc; nodes?: string[] }
 export interface LayersBand { name: string; note?: string; items: LayersItem[] }
 export interface LayersAst { bands: LayersBand[] }
@@ -581,7 +581,7 @@ export function cleanLayers(data: unknown): Clean<LayersAst> {
   return cleaned({bands}, fixes, dropped);
 }
 
-// ================================================================ ERDiagram (decision D24: moved here from the viewer)
+// ================================================================ ERDiagram (decision links-through-node-ids: moved here from the viewer)
 const ER_CARDS = ['1-1', '1-n', 'n-1', 'n-n'] as const;
 type ErCard = NonNullable<ErRelation['card']>;
 export interface SchemaColumn { name: string; type?: string; pk: boolean; fk: boolean; nullable: boolean }
@@ -712,7 +712,7 @@ export function cleanSchema(data: unknown): Clean<SchemaAst> {
   return cleaned({tables, relations}, fixes, dropped);
 }
 
-// ================================================================ Steps and table rows (decision D24)
+// ================================================================ Steps and table rows (decision links-through-node-ids)
 const STEP_KEY_SET: ReadonlySet<string> = new Set(STEP_KEYS);
 /** What one item of a list links to, and where it is ('step 3', 'row 2'). */
 export interface ItemLinks { at: string; file?: FileLoc; nodes?: string[] }

@@ -101,7 +101,7 @@ describe('Layers', () => {
 
   it('shows an E_SHAPE redline for a value that is not a list of tiers', async () => {
     const view = renderExpress(BOUND, {data: {'/layers': {name: 'not a list'}}});
-    // The catalog's cleanLayers' message (decision D24), the one the server gives for inline data.
+    // The catalog's cleanLayers' message (decision links-through-node-ids), the one the server gives for inline data.
     await waitFor(() => expect(view.cell('l').querySelector('[data-code="E_SHAPE"]')!.textContent).toMatch(/Layers#l expected tiers \[\{name, items\}\], received an object/));
     view.setData('/layers', 'tiers');
     await waitFor(() => expect(view.cell('l').querySelector('[data-code="E_SHAPE"]')!.textContent).toMatch(/received a string/));
@@ -120,7 +120,7 @@ describe('Layers', () => {
     const cell = view.cell('l');
     expect(bands(cell).map(band => band.getAttribute('data-layer'))).toEqual(['Mixed', '—', 'No items', 'bare', '42']);
     expect(bands(cell).map(items)).toEqual([['ok', '7', 'fine'], ['nameless tier'], [], [], []]);
-    // Decision D24: each entry left out is named, as Flowchart does, and the tab tells the model.
+    // Decision links-through-node-ids: each entry left out is named, as Flowchart does, and the tab tells the model.
     expect(cell.querySelector('[data-gl-note]')!.textContent).toBe('6 not drawn');
     await waitFor(() => expect(view.stateOf('l')).toBe('W_DROPPED'));
     expect(view.reports.findLast(report => report.code === 'W_DROPPED')!.message).toBe(
@@ -130,7 +130,7 @@ describe('Layers', () => {
     );
   });
 
-  // Decision D25: the server checks inline data as drawn here (asDrawn), calls computed and $/paths resolved.
+  // Decision what-if-as-a2ui-calls: the server checks inline data as drawn here (asDrawn), calls computed and $/paths resolved.
   it('draws a call or a $/path inside inline items as its value, with nothing reported', async () => {
     const view = await ready(`$/w={name:'cache'}\nroot=Page('T',[l])\nl=Layers([{name:'T',items:[div(1,2),{label:add(1,1)},$/w/name,{label:$/w/name,note:mul(2,3)}]}])`);
     expect(bands(view.cell('l')).map(items)).toEqual([['0.5', '2', 'cache', 'cache']]);
@@ -157,7 +157,7 @@ describe('Layers', () => {
     await waitFor(() => expect(view.stateOf('l')).toBe('OK'));
   });
 
-  // Decision D24: an item that names a diagram node stands for it.
+  // Decision links-through-node-ids: an item that names a diagram node stands for it.
   it('makes an item naming a node an entity: it selects that node and lights with it', async () => {
     const data = [
       {name: 'Edge', items: [{label: 'Gateway', node: 'GW'}, {label: 'API', file: 'src/api.ts', node: 'GW'}]},
@@ -230,7 +230,7 @@ describe('Layers', () => {
     expect(view.errors).toEqual([]);
   });
 
-  it('names a band by name, label or title, and an item by label, name or title (D5, F040)', async () => {
+  it('names a band by name, label or title, and an item by label, name or title (accept-familiar-variants, F040)', async () => {
     const clean = cleanLayers([
       {title: 'Interface', items: [{title: 'ui'}, {name: 'api', file: 'src/api.ts'}]},
       {label: 'Domain', items: ['auth']},
@@ -246,7 +246,7 @@ describe('Layers', () => {
   });
 });
 
-// Decision D20: the tiers take their natural height, up to the plate's maximum height; past that they scroll.
+// Decision content-sized-plates: the tiers take their natural height, up to the plate's maximum height; past that they scroll.
 describe('Layers: content-sized', () => {
   it.each([
     ['no size: the diagram family\'s 640 px', SPEC, () => 640],

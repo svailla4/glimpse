@@ -1,4 +1,4 @@
-// Authored data (decision D24): what the data a model writes for a diagram or a list declares, links and names. One
+// Authored data (decision links-through-node-ids): what the data a model writes for a diagram or a list declares, links and names. One
 // table, AUTHORED, says it for every component whose data names diagram nodes or files, read by the catalog's own
 // cleaners (diagrams.ts), so the server checks exactly what the tab draws. From it come the checks of inline data
 // (expand.ts), of data bound to a $/path (diagramNotes) and of the links between components (linkNotes).
@@ -11,7 +11,7 @@ import type {FileCheck} from './expand.ts';
 /**
  * What one component's data says: the node ids it declares, the ones it links to, and the files it names. `unlinked`
  * holds what a DataTable's rows did not link ('row 2: node null is not a node id, not linked'): said by linkNotes only
- * where the table links the view's diagrams, since the rows draw either way (decision D24).
+ * where the table links the view's diagrams, since the rows draw either way (decision links-through-node-ids).
  */
 export interface Authored {
   declares: Array<{id: string; label: string}>;
@@ -33,7 +33,7 @@ const withFile = <T extends {file?: FileLoc}>(at: (item: T) => string) => (item:
 const withNodes = <T extends {nodes?: string[]}>(at: (item: T) => string) => (item: T) => (item.nodes?.length ? [{at: at(item), ids: item.nodes}] : []);
 
 /**
- * Decision D24, by component: the data's declarations (Flowchart nodes, ER tables, sequence actors without a node,
+ * Decision links-through-node-ids, by component: the data's declarations (Flowchart nodes, ER tables, sequence actors without a node,
  * inline Graph nodes), its links (node:'PG' on an item, a table, a row or an actor; a message's via) and its files.
  * The cleaners' fixes and dropped clauses are those the tab would report; a value that is not the shape at all is
  * refused (Steps and DataTable never are: a value that is not a list links nothing).
@@ -62,7 +62,7 @@ export const AUTHORED: Readonly<Record<string, (value: unknown) => Clean<Authore
     return {links: items.flatMap(withNodes(at)), files: items.flatMap(withFile(at))};
   }),
   Steps: value => mapClean(cleanItems('step', value), ast => ({links: ast.flatMap(withNodes(item => item.at)), files: ast.flatMap(withFile(item => item.at))})),
-  // Decision D24: a row always draws, so what its node did not link is no `not drawn` line here; linkNotes says it.
+  // Decision links-through-node-ids: a row always draws, so what its node did not link is no `not drawn` line here; linkNotes says it.
   DataTable: value => {
     const cleaned = cleanItems('row', value);
     return cleaned.ok
@@ -82,7 +82,7 @@ export const AUTHORED: Readonly<Record<string, (value: unknown) => Clean<Authore
   }),
 };
 
-/** The diagrams that once read Mermaid: text in their data prop is refused, with the data to write instead (D21). */
+/** The diagrams that once read Mermaid: text in their data prop is refused, with the data to write instead (diagrams-are-data). */
 export const TEXT_DIAGRAMS: ReadonlySet<string> = new Set(['Flowchart', 'SequenceDiagram']);
 
 // ---------------------------------------------------------------- the data model
@@ -119,7 +119,7 @@ export function inlinePaths(value: unknown, into: string[] = []): string[] {
 }
 
 /**
- * Inline data as the tab's view reads it (decision D25): A2UI computes each call and resolves each $/path inside a
+ * Inline data as the tab's view reads it (decision what-if-as-a2ui-calls): A2UI computes each call and resolves each $/path inside a
  * component's arguments, inline data included, before the view sees them, so the cleaners must not judge the call or
  * binding objects themselves (a call in a Layers item is drawn as its number, not "no label"). A call is its number,
  * or 0 when it has none (calcNotes says why); a $/path is what `read` finds there. Undefined when a path cannot be read
@@ -163,7 +163,7 @@ function dataRead(comp: WireComponent, data: Record<string, unknown>): {at: stri
 
 /**
  * What the components bound to a $/path draw from the data model after a call, as `fixed` and `warn` lines, and the
- * files their data names (decision D24), for the session to check: those the call defines, and those whose path the
+ * files their data names (decision links-through-node-ids), for the session to check: those the call defines, and those whose path the
  * call wrote (`$/arch/nodes/G/group='api'` changes a diagram the call does not name). Inline data with $/paths inside
  * it is checked here too, as the tab reads it (dataRead); the rest of inline data was checked by expandComponent.
  * `written` holds the top segments of the paths written.
@@ -196,7 +196,7 @@ export function diagramNotes(
 const MAX_LINK_IDS = 3;
 
 /**
- * Decision D24: the node ids a component links to (node:'PG', an actor's node, a message's via) that nothing else on
+ * Decision links-through-node-ids: the node ids a component links to (node:'PG', an actor's node, a message's via) that nothing else on
  * the view declares or links to, one `warn` line per component, with the declared node whose label it is or the
  * nearest id. Checked like diagramNotes: the components the call defines and those bound under a path it wrote.
  * Every component on the view counts as a place an id may live, so a page built over two calls is judged whole.

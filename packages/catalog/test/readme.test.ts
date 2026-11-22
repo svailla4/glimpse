@@ -55,7 +55,7 @@ describe('README: the example specs', () => {
     for (const ref of refs.values()) if (ref.target && /^[\w./-]+$/.test(ref.target) && ref.target.includes('/')) expect(existsSync(repoFile(ref.target)), formatRef(ref)).toBe(true);
   });
 
-  // Decision D25: the fourth example is a what-if, a Slider and the calls that read the number it sets.
+  // Decision what-if-as-a2ui-calls: the fourth example is a what-if, a Slider and the calls that read the number it sets.
   it('between them the examples use a source ref, a slot, a diagram, a code view, inputs and computed values', () => {
     const all = specs.join('\n');
     for (const needle of ["Graph('deps.modules", "DataTable('git.churn", 'SequenceDiagram(', 'CodeView(', 'Steps($/plan', '$/plan=[', 'ERDiagram(', 'Ask(', 'Slider(', 'div(mul(']) expect(all, needle).toContain(needle);

@@ -72,7 +72,7 @@ const PATH_LIKE = /^(?![\w+.-]+:)(?!@)[^\s/][^\s]*\/[^\s/]+$/;
 /**
  * A value that reads as a repository path: `src/a.ts`, `docs/guide/intro`, `web/x.tsx#L19`. A single slash between
  * two words without an extension (`and/or`, `@ledger/site`, `km/h`) is not one. A column of such values is a path
- * column whatever its name ('with', 'where'), so its cells keep the file name and give way at the directory (D12).
+ * column whatever its name ('with', 'where'), so its cells keep the file name and give way at the directory (paths-keep-file-name).
  */
 export function looksLikePath(value: string): boolean {
   if (!PATH_LIKE.test(value)) return false;
@@ -150,7 +150,7 @@ export interface CheckedColumns {
 }
 
 /**
- * resolveColumns, without the columns the data does not have (decisions D14, D15): a guessed field name never draws
+ * resolveColumns, without the columns the data does not have (decisions reports-are-component-state, guessed-fields-repaired): a guessed field name never draws
  * a column of dashes. When none of the named columns exists the table falls back to its default columns. The server
  * already corrects the field names of a bound source; this catches inline data and anything it could not know.
  */
@@ -304,7 +304,7 @@ export function cellEntity(column: Column, row: DataRow, ds: Dataset | undefined
 /**
  * What activating a row selects: the file in its `path` / `file` field, else its first entity cell, else the row
  * itself (identified by its first cell). A row written inline (not from a source) that names diagram nodes in a `node`
- * field (`node:'PG'`, decision D24) carries them, so it lights with node PG; a source's `node` field is only data, and
+ * field (`node:'PG'`, decision links-through-node-ids) carries them, so it lights with node PG; a source's `node` field is only data, and
  * so are `nodes` and numbers (catalog rowNodes: a column of counts or hosts links nothing).
  */
 export function rowEntity(row: DataRow, columns: readonly Column[], index: number, ds: Dataset | undefined): EntityRef {
@@ -326,7 +326,7 @@ function ownEntity(row: DataRow, columns: readonly Column[], index: number, ds: 
 
 /**
  * How the surface selection marks an entity: it is the selection, it lies inside the selected directory or names the
- * same diagram nodes (decision D24: marked, but not the selected row), or neither.
+ * same diagram nodes (decision links-through-node-ids: marked, but not the selected row), or neither.
  */
 export type SelectionMark = 'exact' | 'within' | undefined;
 
@@ -335,7 +335,7 @@ export function selectionMark(selected: EntityRef | null, entity: EntityRef): Se
   if (!selected || !match) return undefined;
   if (match === 'exact') {
     // Two rows of one file ('a.ts#L3', 'a.ts#L9') are different places: a selection with a line marks only its row.
-    // A diagram node's range (decision D24) was already met by matchSelection: a row inside it is that place.
+    // A diagram node's range (decision links-through-node-ids) was already met by matchSelection: a row inside it is that place.
     if (selected.type === 'node' || entity.type === 'node' || selected.line == null || entity.line == null || selected.line === entity.line) return 'exact';
     // Another place of the same file may still name the selected diagram nodes.
     return linksSelection(selected, entity) ? 'within' : undefined;

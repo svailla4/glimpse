@@ -1,13 +1,13 @@
 // The cross-area decisions of the review round, end to end against the bundled server: a drill has a way back that
-// survives a reload (D1), ids may carry hyphens (D2), what the tab drew reaches the agent (D3), a nested patch
-// re-renders the views bound to its slot (D4, in interaction.spec.ts with the plan), and every call sees the working
-// tree as it is, tab or no tab (D8). D7 is in overview.spec.ts and D10 in security.spec.ts.
+// survives a reload (drill-has-way-back), ids may carry hyphens (hyphenated-surface-ids), what the tab drew reaches the agent (show-reports-what-tab-drew), a nested patch
+// re-renders the views bound to its slot (patch-sends-whole-slot, in interaction.spec.ts with the plan), and every call sees the working
+// tree as it is, tab or no tab (fresh-tree-every-call). readable-module-graph is in overview.spec.ts and untrusted-input-contained in security.spec.ts.
 import {appendFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {expectSettled, expectSurface, openViewer} from './support/glimpse.ts';
 import {expect, FIXTURE, test} from './support/test.ts';
 
-test('D1: a drill into a module has a way back, survives a reload, and a re-show starts whole again', async ({page, glimpse}) => {
+test('drill-has-way-back: a drill into a module has a way back, survives a reload, and a re-show starts whole again', async ({page, glimpse}) => {
   await glimpse.call('show', {view: 'deps'});
   await openViewer(page, glimpse);
   await expectSettled(page);
@@ -43,7 +43,7 @@ test('D1: a drill into a module has a way back, survives a reload, and a re-show
   await expect(graph.locator('svg [data-node="src/auth"]')).toBeVisible();
 });
 
-test('D2: a hyphenated id is a view of its own, end to end', async ({page, glimpse}) => {
+test('hyphenated-surface-ids: a hyphenated id is a view of its own, end to end', async ({page, glimpse}) => {
   const shown = await glimpse.call('show', {id: 'auth-flow', spec: "root=Page('Auth flow',[Text($/msg)])\n$/msg='first'"});
   expect(shown.isError, shown.text).toBe(false);
   expect(shown.lines[0]).toMatch(/^ok auth-flow #\/auth-flow tab=none /);
@@ -59,7 +59,7 @@ test('D2: a hyphenated id is a view of its own, end to end', async ({page, glimp
   await expect(page.locator('[data-gl="Text"]')).toContainText('second');
 });
 
-test('D3: what the tab drew instead of a component reaches the show result, and only once', async ({page, glimpse}) => {
+test('show-reports-what-tab-drew: what the tab drew instead of a component reaches the show result, and only once', async ({page, glimpse}) => {
   await glimpse.call('show', {id: 'probe', spec: "root=Page('Probe',[Text('ready')])"});
   await openViewer(page, glimpse);
   await expect(page.locator('[data-gl="Text"]')).toContainText('ready');
@@ -82,7 +82,7 @@ test('D3: what the tab drew instead of a component reaches the show result, and 
   await expect(page.locator('.gl-cell[data-id="rows"] [role="row"][data-index]')).toHaveCount(1);
 });
 
-test('D8: a file edited while no tab is open is seen by the very next call', async ({glimpse, repoRoot}) => {
+test('fresh-tree-every-call: a file edited while no tab is open is seen by the very next call', async ({glimpse, repoRoot}) => {
   const first = await glimpse.call('show', {view: 'stack'});
   expect(first.lines[1]).toMatch(/\| 36 files /);
   expect((await glimpse.call('query', {ref: 'code.todos', fields: 'text'})).text).not.toContain('glimpse-fresh-marker');

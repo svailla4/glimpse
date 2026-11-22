@@ -16,7 +16,7 @@ export const sourceCode = (code: string): ErrorCode => (SOURCE_CODES.has(code) ?
 /** What a bounded auto-repair may try for a problem (spec/repair.ts). */
 export type RepairHint =
   | {kind: 'component'; name: string}
-  /** A function written another way ('multiply', 'Div', 'mult'): renamed to the one it means (decision D25). */
+  /** A function written another way ('multiply', 'Div', 'mult'): renamed to the one it means (decision what-if-as-a2ui-calls). */
   | {kind: 'call'; name: string}
   | {kind: 'prop'; component: string; name: string}
   /** An enum value that is not allowed: a synonym or a near miss is replaced by the value it meant. */
@@ -292,7 +292,7 @@ export function componentNearest(name: string, n = 3): string[] {
 
 /**
  * Components that were removed, the one that now draws what they drew, and what the rename does not carry over.
- * Decision D26: Markdown became Text, so a spec written from habit or from an older skill still draws.
+ * Decision no-markdown-component: Markdown became Text, so a spec written from habit or from an older skill still draws.
  */
 export const REMOVED_COMPONENTS: Readonly<Record<string, {to: string; note: string}>> = {
   Markdown: {to: 'Text', note: 'headings, tables and code fences show as written: use Section, DataTable, CodeBlock'},
@@ -300,7 +300,7 @@ export const REMOVED_COMPONENTS: Readonly<Record<string, {to: string; note: stri
 
 /**
  * The removed component a name stands for, written in any case ('Markdown', 'markdown': a lower-case name of a
- * component is that component, decision D25), or undefined.
+ * component is that component, decision what-if-as-a2ui-calls), or undefined.
  */
 export function removedComponent(name: string): {to: string; note: string} | undefined {
   const key = Object.keys(REMOVED_COMPONENTS).find(removed => removed.toLowerCase() === name.toLowerCase());
@@ -319,7 +319,7 @@ export function componentMatch(name: string): string | undefined {
 }
 
 /**
- * Decision D25: the function a written name means: the name itself in another case ('Div'), an alias ('multiply',
+ * Decision what-if-as-a2ui-calls: the function a written name means: the name itself in another case ('Div'), an alias ('multiply',
  * 'sum') or a near miss of one of the four ('mult'); undefined for anything else ('pow', 'mod').
  */
 export function calcTarget(name: string): CalcName | undefined {
@@ -327,12 +327,12 @@ export function calcTarget(name: string): CalcName | undefined {
 }
 
 /**
- * What an unknown callee most plausibly is (decision D25). A name one of the four stands for is a function ('multiply',
+ * What an unknown callee most plausibly is (decision what-if-as-a2ui-calls). A name one of the four stands for is a function ('multiply',
  * 'Div', 'mult'), unless it is capitalised and near a component. A lower-case name that is a component or one word
  * of a single component in another case ('text', 'table' -> DataTable, 'tree' -> FileTree), or a longer near miss of
  * one ('tabel'), is that component. Any other lower-case name is a function ('pow', 'round': components are written
  * Capitalised, so pow is not read as Row) or, when it is a word of several components ('chart', 'code'), either. A
- * capitalised name is a component, and so is a removed one in any case ('markdown' is drawn as Text, decision D26).
+ * capitalised name is a component, and so is a removed one in any case ('markdown' is drawn as Text, decision no-markdown-component).
  */
 export function calleeKind(name: string): 'function' | 'component' | 'either' {
   if (COMPONENT_BY_NAME.has(name) || removedComponent(name)) return 'component';
@@ -389,7 +389,7 @@ export function classifyCompileError(error: unknown, ctx: ClassifyContext): Prob
   if (syntax) {
     const line = Math.max(1, Number(syntax[1]) - 1);
     const what = oneLine(syntax[3] || 'unexpected input', 160);
-    // Decision D25: arithmetic written as operators; '-' and '/' are left alone (negative numbers, paths).
+    // Decision what-if-as-a2ui-calls: arithmetic written as operators; '-' and '/' are left alone (negative numbers, paths).
     const hint = OPERATOR.test(what) ? `. There are no operators: write mul(a, b), div(a, b), add(a, b) or sub(a, b).` : '';
     return problem('E_SYNTAX', `line ${ctx.lineOf ? ctx.lineOf(line) : line} col ${syntax[2]}: ${what}${hint}`, /<EOF>/.test(what) ? {repair: {kind: 'eof'}} : {});
   }
@@ -405,7 +405,7 @@ export function classifyCompileError(error: unknown, ctx: ClassifyContext): Prob
     return problem('E_UNKNOWN', `"${name}" is not a component. Nearest: ${componentNearest(name).join(' ')}`, {repair: {kind: 'component', name}});
   }
 
-  // Decision D25: a call's arguments, as the strict schemas of calc.ts check them (an unset or wrong literal operand).
+  // Decision what-if-as-a2ui-calls: a call's arguments, as the strict schemas of calc.ts check them (an unset or wrong literal operand).
   const badCall = /^Validation failed for function '([^']+)': (\w+): Expected \w+, received (\w+)/.exec(text);
   if (badCall) {
     const [, fn, arg, got] = badCall as unknown as [string, string, string, string];

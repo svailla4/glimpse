@@ -1,4 +1,4 @@
-// The ELK layout, off the main thread (decision D19). Vite bundles this file with ELK into its own same-origin
+// The ELK layout, off the main thread (decision diagram-engine-in-worker). Vite bundles this file with ELK into its own same-origin
 // asset, assets/elk.worker-<hash>.js, which the host serves under the page's CSP (no eval: elk.bundled.js has none).
 // Started only by elk.ts: new Worker(new URL('./elk.worker.ts', import.meta.url), {type: 'module'}).
 import ELK from 'elkjs/lib/elk.bundled.js';

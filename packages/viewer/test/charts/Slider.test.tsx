@@ -1,4 +1,4 @@
-// Slider (decision D25): a number the user sets, written through A2UI's own setter, recomputed by A2UI in the tab and
+// Slider (decision what-if-as-a2ui-calls): a number the user sets, written through A2UI's own setter, recomputed by A2UI in the tab and
 // posted to the server on commit. The ticketing what-if of the design is the fixture: at the seeds the Stats read
 // 250 / 1,000 / 500; with seats at 80,000 they read 400 / 1,600 / 800.
 import {act, fireEvent, screen} from '@testing-library/react';

@@ -93,7 +93,7 @@ test('the feature view follows a replaced plan', async ({page, glimpse}) => {
   await expect(page.locator('.gl-cell[data-id="design"] svg [data-node]')).toHaveCount(3);
 });
 
-// Decision D4 (was known defect E2E-01): design 7 patches one step with `$/plan/1/status='done'`. The server
+// Decision patch-sends-whole-slot (was known defect E2E-01): design 7 patches one step with `$/plan/1/status='done'`. The server
 // publishes the whole top-level slot, so views bound to the container (Steps here) re-render.
 test('a patch of one plan step updates the Steps view', async ({page, glimpse}) => {
   await glimpse.call('show', {view: 'feature', spec: PLAN('done', 'doing')});
@@ -258,7 +258,7 @@ test('a dragged graph node stays where it was put until Re-layout (design 12.1.B
   }).toBeLessThan(12);
 });
 
-// Decision D25: a Slider writes its $/path in the tab, the calls reading it recompute there at once, and on commit
+// Decision what-if-as-a2ui-calls: a Slider writes its $/path in the tab, the calls reading it recompute there at once, and on commit
 // the server keeps the number and tells the agent what it computed. A reload and a re-show of the same spec keep it;
 // a write to the exact path resets it.
 test('what-if: a number set with a Slider recomputes in the tab and is kept by the server', async ({page, glimpse, watched}) => {

@@ -109,13 +109,13 @@ describe('chartkit data', () => {
     expect(clip('a-very-long-label', 66)).toBe('a-very-lo…');
     expect(clip('abc', 5)).toBe('');
     expect(clipPath('src/auth/service.ts', 200)).toEqual({dir: 'src/auth/', base: 'service.ts'});
-    // the kit's elidePath (D12): whole directories go, at a slash; a name too long for the box keeps its extension
+    // the kit's elidePath (paths-keep-file-name): whole directories go, at a slash; a name too long for the box keeps its extension
     expect(clipPath('packages/viewer/src/auth/service.ts', 132)).toEqual({dir: '…/auth/', base: 'service.ts'});
     expect(clipPath('packages/viewer/src/auth/service.ts', 132)).toEqual(splitPath(elidePath('packages/viewer/src/auth/service.ts', 20)));
     expect(clipPath('dir/a-very-long-file-name.ts', 66)).toEqual({dir: '', base: 'a-very….ts'});
   });
 
-  it('cuts a path-like name in the middle and keeps its last segment (D12)', () => {
+  it('cuts a path-like name in the middle and keeps its last segment (paths-keep-file-name)', () => {
     // 6.6 px per character
     expect(clipName('typescript/renderers/lit', 200)).toEqual({dir: 'typescript/renderers/', base: 'lit'});
     expect(clipName('typescript/renderers/lit', 120)).toEqual({dir: 'typescript/…/', base: 'lit'});
@@ -257,7 +257,7 @@ describe('chartkit tree', () => {
     expect(areaCuts([])).toEqual([]);
   });
 
-  it('keeps session language slots and gives the rest the free inks in order of first appearance (D6)', () => {
+  it('keeps session language slots and gives the rest the free inks in order of first appearance (stable-category-colours)', () => {
     const tree = cleanTree({name: '', path: '', dir: true, children: [
       {name: 'a.zig', path: 'a.zig', lang: 'Zig', loc: 1}, {name: 'b.ts', path: 'b.ts', lang: 'TypeScript', loc: 1},
       {name: 'c.nim', path: 'c.nim', lang: 'Nim', loc: 1}, {name: 'd', path: 'd', lang: 'Other', loc: 1}, {name: 'e.zig', path: 'e.zig', lang: 'Zig', loc: 1},

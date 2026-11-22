@@ -152,7 +152,7 @@ describe('no CORS, no cookies, hardening headers', () => {
     expect(shell.headers['content-type']).toBe('text/html; charset=utf-8');
   });
 
-  // A dedicated worker takes the CSP of its own response, not the page's (decision D19: the ELK layout worker). Before,
+  // A dedicated worker takes the CSP of its own response, not the page's (decision diagram-engine-in-worker: the ELK layout worker). Before,
   // /assets/* carried none, so a worker ran with no policy; now every asset carries the page's policy, relaxed nowhere.
   it('a worker script runs under the same strict CSP as the shell, and no asset response relaxes it', async () => {
     const shell = (await raw(port, '/', {auth: false})).headers['content-security-policy'];
@@ -189,7 +189,7 @@ describe('paths and ranges', () => {
     expect((await raw(port, '/api/file')).status).toBe(400);
   });
 
-  // Decision D10, findings F052 and F095: only files of the inventory are read for the viewer.
+  // Decision untrusted-input-contained, findings F052 and F095: only files of the inventory are read for the viewer.
   describe('files that exist but are not the project\'s', () => {
     beforeAll(async () => {
       await mkdir(join(dir.root, '.git', 'hooks'), {recursive: true});

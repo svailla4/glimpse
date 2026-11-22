@@ -52,7 +52,7 @@ describe('viewer build', () => {
     expect(files.map(file => file.fileName).filter(name => name !== 'index.html' && name !== MODULE_RECORD && !name.startsWith('assets/'))).toEqual([]);
   });
 
-  // ---- the eager script (design rule D13) ------------------------------------------------------------------
+  // ---- the eager script (design rule budgets-keep-headroom) ------------------------------------------------------------------
   /** The entry chunk and every chunk it imports statically: what a tab downloads before it can draw anything. */
   function eagerChunks(): Rollup.OutputChunk[] {
     const chunks = new Map(files.flatMap(file => (file.type === 'chunk' ? [[file.fileName, file] as const] : [])));
@@ -129,7 +129,7 @@ describe('viewer build', () => {
     }
   });
 
-  // ---- the diagram engine (decision D19) ---------------------------------------------------------------------
+  // ---- the diagram engine (decision diagram-engine-in-worker) ---------------------------------------------------------------------
   // The figures are scripts/budgets.mjs's own lines (OWN_LINES); change both together.
   const ELK_WORKER_GZIP = 515_000;
   const XYFLOW_CSS_GZIP = 2_500;

@@ -77,7 +77,7 @@ export const SOURCES: readonly SourceMeta[] = [
     doc: 'Runnable scripts per package.',
     fields: [f('package', 'text'), f('script', 'code', undefined, 1), f('command', 'code', undefined, 1)]},
   // deps
-  // A graph source, so `top` is listed: by default the graph is cut to what a plate can show legibly (decision D7).
+  // A graph source, so `top` is listed: by default the graph is cut to what a plate can show legibly (decision readable-module-graph).
   {name: 'deps.modules', kind: 'graph', shape: 'GraphData', budget: 150, target: 'path', wt: true,
     doc: "Import graph by module: 24 nodes by default (20 modules, up to 4 external packages); smaller directories fold into their parent's rest node ('x/*', '(other)' at the root). A small scope is drawn file by file.",
     args: {top: 'nodes in total: default 24, at most 48 by module, 150 file by file', focus: 'node id to centre', depth: 'hops around focus'}},

@@ -1,5 +1,5 @@
 // packages/catalog/src/rowlinks.ts
-// The diagram node ids a table row stands for (decision D24), read the same way by the server's checks (cleanItems)
+// The diagram node ids a table row stands for (decision links-through-node-ids), read the same way by the server's checks (cleanItems)
 // and the viewer's table rows. A module of its own, like links.ts and for the same reason: links.ts is in the eager
 // script, and only the lazy table chunk reads rows in the tab.
 import {MAX_ENTITY_NODES} from './datasets.ts';

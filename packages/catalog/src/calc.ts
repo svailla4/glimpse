@@ -1,5 +1,5 @@
 // packages/catalog/src/calc.ts
-// Computed values (decision D25): the four A2UI functions add|sub|mul|div(a, b), written `div($/w/seats,60)` in any
+// Computed values (decision what-if-as-a2ui-calls): the four A2UI functions add|sub|mul|div(a, b), written `div($/w/seats,60)` in any
 // component argument and compiled by Express to {"@call": "div", "args": {a, b}}. A2UI resolves them in the tab and
 // recomputes them when a $/path they read changes (a Slider writes one).
 //

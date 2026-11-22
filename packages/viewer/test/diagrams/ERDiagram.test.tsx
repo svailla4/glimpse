@@ -53,7 +53,7 @@ describe('ERDiagram', () => {
     expect(view.errors).toEqual([]);
   });
 
-  // D19: a relation is an ELK edge between two ports, one on the row of each column.
+  // diagram-engine-in-worker: a relation is an ELK edge between two ports, one on the row of each column.
   it('joins tables at the related columns, through ports on their sides, with crow\'s-foot ends and a label', async () => {
     const view = await ready();
     const edge = edgeOf(view, 'e', 'sessions->users');
@@ -124,7 +124,7 @@ describe('ERDiagram', () => {
     expect(nodeOf(view, 'e', 'wide').querySelector('[data-more]')).toBeNull();
   });
 
-  // Decision D24: a table always selects itself as a node; its file adds the place (/ui/file follows it).
+  // Decision links-through-node-ids: a table always selects itself as a node; its file adds the place (/ui/file follows it).
   it('selects a table as a node; one with a file carries that file', async () => {
     const view = await ready();
     click(nodeOf(view, 'e', 'users'));
@@ -178,7 +178,7 @@ describe('ERDiagram', () => {
     expect(nodeOf(view, 'e', 'b.c').querySelector('rect')!.getAttribute('height')).toBe(String(26 + 22));
     expect(sizeOf(nodeOf(view, 'e', 'b.c')).h).toBe(26 + 22);
     expect([...view.cell('e').querySelectorAll('[data-edge]')].map(e => e.getAttribute('data-edge')).sort()).toEqual(['a->a', 'a->b.c']);
-    // Decision D24: the catalog's cleanSchema names each entry it left out; the tab tells the model (W_DROPPED).
+    // Decision links-through-node-ids: the catalog's cleanSchema names each entry it left out; the tab tells the model (W_DROPPED).
     expect(view.cell('e').querySelector('[data-gl-note]')!.textContent).toBe('9 not drawn');
     await waitFor(() => expect(view.stateOf('e')).toBe('W_DROPPED'));
     const message = view.reports.findLast(report => report.code === 'W_DROPPED')!.message;
@@ -202,7 +202,7 @@ describe('ERDiagram', () => {
     expect(view.cell('e').querySelector('[data-gl-note]')).toBeNull();
   });
 
-  // Decision D24: tables that name node PG light with it; the tables of one file stay apart by their lines.
+  // Decision links-through-node-ids: tables that name node PG light with it; the tables of one file stay apart by their lines.
   it('lights the tables linked to a selected node, and a table with its own lines alone', async () => {
     const tables = [
       {name: 'orders', file: 'db/schema.sql#L10-30', node: 'PG', columns: [{name: 'id', pk: true}, {name: 'payment_id', fk: 'payments.id'}]},
@@ -268,13 +268,13 @@ describe('ERDiagram', () => {
     expect(JSON.parse(storage.items.get(POSITIONS_KEY)!)).toEqual({});
   });
 
-  it('reads a bare list of tables and draws the relation a string fk or ref names (D5, F033)', async () => {
+  it('reads a bare list of tables and draws the relation a string fk or ref names (accept-familiar-variants, F033)', async () => {
     const tables = [
       {name: 'users', columns: [{name: 'id', type: 'uuid', pk: true}, 'email']},
       {name: 'orders', columns: [{name: 'id', pk: true}, {name: 'user_id', fk: 'users.id'}, {name: 'shop', ref: 'shops'}]},
       {name: 'shops', columns: [{name: 'id', pk: true}]},
     ];
-    // (Read by the catalog's cleanSchema since decision D24; its own tests cover every case.)
+    // (Read by the catalog's cleanSchema since decision links-through-node-ids; its own tests cover every case.)
     const clean = cleanSchema(tables);
     if (!clean.ok) throw new Error(clean.error);
     expect(clean.ast.tables.map(table => table.name)).toEqual(['users', 'orders', 'shops']);
@@ -302,7 +302,7 @@ describe('ERDiagram', () => {
   });
 });
 
-describe('ERDiagram: opens readable (design rule D18)', () => {
+describe('ERDiagram: opens readable (design rule diagrams-open-readable)', () => {
   it('grows its plate to show three tables whole at 100%, where it opened at 72% with 8 px column types', async () => {
     const orders = {name: 'orders', columns: [
       {name: 'id', type: 'uuid', pk: true}, {name: 'user_id', type: 'uuid', fk: 'users.id'}, ...['status', 'currency', 'coupon', 'placed_at', 'paid_at', 'shipped_at', 'cancelled_at', 'ship_to', 'bill_to', 'total_cents'].map(name => ({name, type: 'timestamptz'})),

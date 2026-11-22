@@ -1,5 +1,5 @@
 // packages/catalog/src/calls.ts
-// What the calls of a spec read, and why one gives no number (decision D25). The server reads them to check a spec
+// What the calls of a spec read, and why one gives no number (decision what-if-as-a2ui-calls). The server reads them to check a spec
 // against its data and to say what a number set in the tab computed; the Slider view (lazy) reads them for the note
 // under the field. Kept apart from calc.ts, which the tab loads eagerly: a module the eager script imports is
 // bundled into it with everything the lazy views use from it (see links.ts).

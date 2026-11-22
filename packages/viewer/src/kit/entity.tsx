@@ -15,7 +15,7 @@ export function splitPath(path: string): {dir: string; base: string} {
 /**
  * A path cut to `max` characters for places CSS cannot elide (SVG labels, tab titles, canvas): the directory part is
  * cut at its start and the file name is kept whole (`…/renderers/react/generic-binder.ts`); only a name longer than
- * `max` is itself cut, in the middle, so its extension survives. Design rule D12: never hide the basename.
+ * `max` is itself cut, in the middle, so its extension survives. Design rule paths-keep-file-name: never hide the basename.
  */
 export function elidePath(path: string, max: number): string {
   if (path.length <= max || max < 2) return path;
@@ -63,7 +63,7 @@ function watchBox(box: Element, changed: () => void): () => void {
 }
 
 /**
- * How many leading directories of `dir` to drop so that `…/` and the rest fit in `room` characters (decision D17:
+ * How many leading directories of `dir` to drop so that `…/` and the rest fit in `room` characters (decision paths-keep-file-name:
  * whole directories go before a name is cut). 0 when it fits as it is; all of them when not even the last one fits
  * beside `…/` (the line reads `…/name.ts`); 0 again when not even `…/` fits (the stylesheet cuts what is there).
  */
@@ -82,13 +82,13 @@ export function dropDirs(dir: string, room: number): number {
 }
 
 /**
- * The directory part of a path as a box of `room` characters shows it (decision D17): whole directories at its start
+ * The directory part of a path as a box of `room` characters shows it (decision paths-keep-file-name): whole directories at its start
  * give way to `…/`, so the last ones and the name stay. `keep` is how many directories the label needs to tell the
  * file apart from the others of its column (distinctDepths in table/widths.ts): when they do not all fit, the one
  * that differs is kept and the ones between it and the name go (`…/a2ui-kanban/…/`), so two rows never read the same
  * while the name is whole. When not even that fits, the directory that differs is all that is shown, cut at its
  * start to the room (`cut`: `…ger_core/` beside `…er_agent/`): the last resort before two rows read the same, and
- * only once every other directory has gone (D17). `dropped` counts the directories left out; 0 with the directory
+ * only once every other directory has gone (paths-keep-file-name). `dropped` counts the directories left out; 0 with the directory
  * as it is when it fits (or not even `…/` does: the stylesheet then cuts what is there).
  */
 export function fitDir(dir: string, room: number, keep = 0): {text: string; dropped: number; cut?: true} {
@@ -117,7 +117,7 @@ export function widthBoxOf(element: Element | null): Element {
 
 /**
  * The directory part of a path ('src/core/'), dim, in a `.gl-path-dir` box that gives way before the name beside it:
- * whole directories at its start are replaced by `…/` (decision D17), and only when not even the last one fits is it
+ * whole directories at its start are replaced by `…/` (decision paths-keep-file-name), and only when not even the last one fits is it
  * cut inside, at its start. PathText draws its directory with it; so does any header that writes a path its own way
  * (the code views' crumbs), so a path is never cut inside a directory while whole ones could go.
  */
@@ -156,7 +156,7 @@ export function DirText(p: {dir: string; keep?: number}): JSX.Element {
 const SPLIT_ABOVE = 12;
 
 /**
- * Where a file name too long for its box is cut (D12): the index its kept end starts at, or -1 to cut it at its end.
+ * Where a file name too long for its box is cut (paths-keep-file-name): the index its kept end starts at, or -1 to cut it at its end.
  * The end that tells files apart stays whole: the extension and the word before it (`message-proc…test.ts`,
  * `contact_form_ex…test.json`), or the last three letters of the stem (`AccountsPan…ort.tsx`).
  */
@@ -171,10 +171,10 @@ export function nameTail(base: string): number {
 /**
  * A path as text: dim directory, ink basename, `:line`, extension badge. `label` replaces the path text.
  * When the box is narrower than the path, the directory part gives way first: whole directories at its start are
- * replaced by `…/` (`…/react/src/generic-binder.ts`, decision D17), and only when not even the last one fits is it
+ * replaced by `…/` (`…/react/src/generic-binder.ts`, decision paths-keep-file-name), and only when not even the last one fits is it
  * cut inside, at its start; the basename, line and badge stay. Once only `…/` is left it stays, and a name still too
  * long is cut in its middle, its end kept (`…/message-proc…test.ts`, see nameTail). The full location is the tooltip
- * (design rule D12).
+ * (design rule paths-keep-file-name).
  * `keep`: how many directories tell this file apart from the others it is listed with (table/widths.ts
  * distinctDepths over the column): the one that differs stays even when those after it go (`…/kanban/…/x.ts`).
  * The element is an inline-flex row capped at the width of its container: put it in a box that has a width (a table

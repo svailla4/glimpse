@@ -190,6 +190,23 @@ describe('POST /api/renderer', () => {
     expect(fx.t.session.events.drain()).toEqual(['viewer: set $/w/toString 3 (demo)', 'viewer: press demo approve {"plan":1}']);
   });
 
+  // Review S4 with decision only-problems-are-errors: a component state that throws is skipped the same way.
+  it('a state that throws is logged and skipped; the other states are kept and the post answers 204', async () => {
+    const fx = await start();
+    await show(fx, 'demo', `root=Page('Demo',[go])\ngo=Button('Go',Event('approve',{plan:1}))`);
+    const kept: string[] = [];
+    fx.t.session.viewerReport = (_surface, _name, id, code) => {
+      if (id === 'boom') throw new Error('boom');
+      kept.push(`${id} ${code}`);
+      return true;
+    };
+    const state = (id: string, code: string) => ({surfaceId: 'demo', component: 'Button', id, code});
+    const response = await raw(fx.port, '/api/renderer', {body: JSON.stringify({messages: [], states: [state('boom', 'OK'), state('go', 'OK')]})});
+    expect(response.status).toBe(204);
+    expect(fx.logged).toContain('glimpse: a renderer state failed: boom');
+    expect(kept).toEqual(['go OK']);
+  });
+
   it('gl_close from the shell removes the surface and broadcasts the deletion', async () => {
     const fx = await start();
     await show(fx, 'demo', `root=Page('Demo',[])`);

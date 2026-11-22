@@ -61,7 +61,7 @@ export function createMcpServer(options: McpOptions): McpServer {
     {description: CATALOG_DESCRIPTION, inputSchema: fromJsonSchema<{names?: string[]}>(CATALOG_SCHEMA), annotations: READS, _meta: ALWAYS_LOAD},
     args => safely(async () => {
       session.warm();
-      // The catalog reads nothing from the repository, but every call is a moment to notice that it moved (D8).
+      // The catalog reads nothing from the repository, but every call is a moment to notice that it moved (fresh-tree-every-call).
       void session.revalidate();
       const result = await catalogTool(args, session.registry);
       const events = result.isError ? [] : session.events.drain();
@@ -143,7 +143,7 @@ export function serve(options: ServeOptions): void {
   console.log = console.error;
   console.info = console.error;
   console.debug = console.error;
-  // The environment as it is now, on an object nothing can add to later (decision D10).
+  // The environment as it is now, on an object nothing can add to later (decision untrusted-input-contained).
   const env = ownEnv(options.env);
   const log = (message: string) => void process.stderr.write(`${message}\n`);
   const session: Session = new Session({

@@ -1,4 +1,4 @@
-// The page side of the ELK layout (decision D19): one shared module worker, one promise per request.
+// The page side of the ELK layout (decision diagram-engine-in-worker): one shared module worker, one promise per request.
 //   const {laid, ms} = await layoutElk(graph);   // graph: ELK JSON (elkjs/lib/elk-api.js types); laid: the same tree
 //                                                // with x/y/width/height, edge sections and label positions filled in
 //   prewarmElk();                                // start the worker early (its first answer costs ~80 ms: fetch,

@@ -72,7 +72,7 @@ function need(method: string, req: IncomingMessage): void {
 }
 
 /**
- * Decision D10: only files of the inventory are read for the viewer. `refused` covers everything else that exists
+ * Decision untrusted-input-contained: only files of the inventory are read for the viewer. `refused` covers everything else that exists
  * (.git, ignored files, symbolic links, paths outside the root); `missing` is a path with no file, which the
  * services answer themselves ("does not exist", or the old side of a diff).
  */
@@ -96,16 +96,21 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, api: A
   }
   if (pathname === '/api/renderer') {
     need('POST', req);
-    const body = await readJson(req) as {messages?: unknown};
+    const body = await readJson(req) as {messages?: unknown; states?: unknown};
     if (typeof body !== 'object' || body === null || !Array.isArray(body.messages)) throw new HttpError(400, 'E_ARGS', 'expected {messages: [...]}');
-    // Review S4: one message that throws is logged and skipped; the rest of the batch is still handled.
-    for (const message of body.messages.slice(0, MAX_MESSAGES)) {
-      try {
-        api.router.handle(message);
-      } catch (error) {
-        api.log(`glimpse: a renderer message failed: ${error instanceof Error ? error.message : String(error)}`);
+    // Review S4: one message or state that throws is logged and skipped; the rest of the batch is still handled.
+    const each = (items: unknown[], what: string, handle: (item: unknown) => unknown) => {
+      for (const item of items.slice(0, MAX_MESSAGES)) {
+        try {
+          handle(item);
+        } catch (error) {
+          api.log(`glimpse: a renderer ${what} failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
-    }
+    };
+    each(body.messages, 'message', message => api.router.handle(message));
+    // Decision only-problems-are-errors: component states that are not errors (I_*, OK) come beside the A2UI messages, not as messages.
+    if (Array.isArray(body.states)) each(body.states, 'state', state => api.router.state(state));
     res.writeHead(204, {'cache-control': 'no-store'});
     res.end();
     return;

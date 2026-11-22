@@ -2,7 +2,7 @@
 // Showcase of every component. Everything except the Code section draws inline fixture data ($/g/*) and needs no
 // analyzer; the paths in its tables, trees and charts (src/auth/service.ts ...) are illustrative. The plates that read
 // from disk (CodeView, SymbolOutline, CodeTour, DiffView), every file link in prose and every file a diagram or Steps
-// item names (the server checks those, decision D24) point at ONE real file of the repository being shown,
+// item names (the server checks those, decision links-through-node-ids) point at ONE real file of the repository being shown,
 // GalleryOptions.file, so nothing is struck through as missing and the gallery prints no warning. The default,
 // README.md, is the file most repositories have, and its headings are its outline.
 // Used by: show{view:"gallery"}, scripts/demo.mjs, the viewer dev harness (?fixture=gallery) and visual tests.
@@ -35,7 +35,7 @@ function placeOf(options: GalleryOptions): {file: string; at: (from: number, to?
 
 /**
  * The fixture data under $/g. The plan's steps and the `users` table name lines of `options.file`, and the
- * `sessions` table stands for the gallery Flowchart's node DB (decision D24). `seats` is the Slider's number.
+ * `sessions` table stands for the gallery Flowchart's node DB (decision links-through-node-ids). `seats` is the Slider's number.
  */
 export function galleryData(options: GalleryOptions = {}): string {
   const {file, at} = placeOf(options);
@@ -79,10 +79,10 @@ export const GALLERY_DATA = galleryData();
  * The gallery layout. Besides one instance of every component it exercises the forms the catalog accepts beyond the
  * canonical one: a 1-based Steps `current`, an ERDiagram given as a bare table list with `fk:'users.id'` columns (and
  * a table wide enough to fold), Layers rows named by `title` and `label`, `mark='L1-3'`, graph nodes with a status,
- * and `title=` on Text. It also links its diagrams (decision D24): a Layers item, the `sessions` table and the
+ * and `title=` on Text. It also links its diagrams (decision links-through-node-ids): a Layers item, the `sessions` table and the
  * DB actor stand for Flowchart node DB (which has a note and a file), and actor Auth for node H, so a click on DB
  * lights all of them and the message Auth -> DB lights the edge H -> DB. The Input section computes a Stat from the
- * number its Slider sets (decision D25): `div(mul($/g/seats,0.6),120)`, 250 at the seed.
+ * number its Slider sets (decision what-if-as-a2ui-calls): `div(mul($/g/seats,0.6),120)`, 250 at the seed.
  */
 export function galleryRoot(options: GalleryOptions = {}): string {
   const {file, at} = placeOf(options);

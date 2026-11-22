@@ -168,7 +168,7 @@ export const DiffViewView: GlView<typeof C.DiffView> = ({id, props}) => {
   if (fetched.error) return <Redline code="E_DIFF" id={`DiffView#${id}`} message={`${range}: ${fetched.error}`} />;
   if (fetched.data === undefined) return <Drafting label={`reading diff ${range}`} />;
   if (!diff) return <Redline code="E_SHAPE" id={`DiffView#${id}`} message={`expected a diff {files: [...]}, received ${fetched.data === null ? 'null' : typeof fetched.data}`} />;
-  // A clean working tree or an empty range is the truth, not a fault of the spec (decision D14).
+  // A clean working tree or an empty range is the truth, not a fault of the spec (decision reports-are-component-state).
   if (diff.files.length === 0) return <Empty message={emptyText(range, only)} code={REPORT_CODES.truthful} />;
   return (
     <DiffPanel
@@ -372,7 +372,7 @@ function DiffPanel({id, range, files, dropped, given, boxed, busy}: DiffPanelPro
   const multi = files.length > 1;
   const totals = files.reduce((sum, entry) => ({add: sum.add + entry.add, del: sum.del + entry.del}), {add: 0, del: 0});
   const body = file.binary ? (
-    // One file of the diff: its state is a part of the view, never the DiffView's own (decision D14, V062).
+    // One file of the diff: its state is a part of the view, never the DiffView's own (decision reports-are-component-state, V062).
     <Empty message={`${file.path} is a binary file`} part />
   ) : !hunks ? (
     extra.error ? <Redline code="E_DIFF" id={`DiffView#${id}`} message={`${file.path}: ${extra.error}`} part /> : extra.loading ? <Drafting label={`reading ${file.path}`} part /> : <Empty message={`no hunks for ${file.path}`} part />

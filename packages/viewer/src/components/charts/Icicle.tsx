@@ -141,7 +141,7 @@ function Rows(p: {
     activate,
     key: event => {
       if (event.key !== 'Backspace') return false;
-      // at the top of the tree Backspace steps out of a drill (design D1), else it zooms out one level
+      // at the top of the tree Backspace steps out of a drill (design drill-has-way-back), else it zooms out one level
       if (!root.parent && state.ds?.drill) host.drill(state.ds.$ds, state.ds.drill.up);
       else p.onZoom(root.parent?.path ?? '');
       return true;

@@ -150,7 +150,7 @@ describe('show', () => {
   it('errors are isError with the problem, the signature and the fixed last line; nothing changes', async () => {
     const {client} = await connect();
     await call(client, 'show', {id: 'main', spec: "root=Page('Kept',[Text('x')])"});
-    // ('danger' would be repaired to risk under decision D5; a word that means no allowed value stays an error)
+    // ('danger' would be repaired to risk under decision accept-familiar-variants; a word that means no allowed value stays an error)
     const bad = await call(client, 'show', {spec: "root=Page('x',[Callout('y','purple')])"});
     expect(bad.isError).toBe(true);
     expect(bad.lines).toEqual([

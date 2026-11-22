@@ -24,7 +24,7 @@ const Gated: GlView<any> = ({id, props}) => {
 };
 const drilled = (extra: Partial<Dataset> = {}): Dataset => ({...datasetFixture('git.churn'), drill: {target: 'src/auth/session', up: 'src/auth'}, ...extra});
 
-describe('PathText keeps the file name (D12, F083)', () => {
+describe('PathText keeps the file name (paths-keep-file-name, F083)', () => {
   it('splits the directory from the name so the stylesheet can cut the directory first, at its start', () => {
     const {container} = render(<PathText file="typescript/renderers/react/src/resolution/generic-binder.ts#L12" />);
     const path = container.querySelector<HTMLElement>('.gl-path')!;
@@ -37,7 +37,7 @@ describe('PathText keeps the file name (D12, F083)', () => {
     expect([...path.children].map(child => child.className)).toEqual(['gl-path-dir', 'gl-path-base', 'gl-path-line', 'gl-path-ext']);
   });
 
-  it('drops whole leading directories before it cuts inside one (D17)', () => {
+  it('drops whole leading directories before it cuts inside one (paths-keep-file-name)', () => {
     const dir = 'typescript/renderers/react/src/resolution/';
     expect(dropDirs(dir, 60)).toBe(0);
     // room for `…/` and the last three directories: src/resolution/ needs 15, react/ 6 more
@@ -67,7 +67,7 @@ describe('PathText keeps the file name (D12, F083)', () => {
     expect(path.title).toBe(`${dir}generic-binder.ts#L12`);
   });
 
-  // Decision D17: in a table, a path measured before the table knew its width was never measured again when its
+  // Decision paths-keep-file-name: in a table, a path measured before the table knew its width was never measured again when its
   // column narrowed (the plate kept its width), so 'dart/a2ui_core/…' was cut inside 'dart/'. It follows its cell.
   it('a path re-measures when its table cell changes width, not only its plate', () => {
     const plate = document.createElement('div');
@@ -80,7 +80,7 @@ describe('PathText keeps the file name (D12, F083)', () => {
     plate.remove();
   });
 
-  // Decision D17: 'dart/a2ui_core/lib/src/core/' measured 202 px in a 201 px box, was taken as fitting, and the
+  // Decision paths-keep-file-name: 'dart/a2ui_core/lib/src/core/' measured 202 px in a 201 px box, was taken as fitting, and the
   // stylesheet's ellipsis then cut it inside 'dart/'. One pixel over is over.
   it('drops a directory when the path is one pixel too wide', () => {
     const dir = 'dart/a2ui_core/lib/src/core/';
@@ -96,7 +96,7 @@ describe('PathText keeps the file name (D12, F083)', () => {
     expect(container.querySelector('.gl-path-dir')?.textContent).toBe('…/a2ui_core/lib/src/core/');
   });
 
-  // Decision D17: the code views' header (CodeView, SymbolOutline, DiffView) cut 'typescript/core/web_…' inside a
+  // Decision paths-keep-file-name: the code views' header (CodeView, SymbolOutline, DiffView) cut 'typescript/core/web_…' inside a
   // directory; it now gives way the same way as PathText.
   it('the code header crumbs drop whole leading directories before cutting one', () => {
     const dir = 'typescript/core/web_core/src/processing/';
@@ -172,7 +172,7 @@ describe('PathText keeps the file name (D12, F083)', () => {
   });
 });
 
-describe('plate header (D11, F002)', () => {
+describe('plate header (header-keeps-title, F002)', () => {
   const Table: GlView<any> = () => (
     <>
       <PlateAside><input aria-label="Filter" /><span data-note="">27 files · 76 edges · 3 in cycles</span></PlateAside>
@@ -252,7 +252,7 @@ describe('plate header (D11, F002)', () => {
   });
 });
 
-describe('scope crumb: the way back from a drill (D1, F074, F017, F018)', () => {
+describe('scope crumb: the way back from a drill (drill-has-way-back, F074, F017, F018)', () => {
   it('shows nothing while the dataset is not drilled', () => {
     const view = renderStub(page("DataTable('git.churn',title='Churn')"), {DataTable: Gated}, {datasets: 'ready'});
     expect(view.cell('a').querySelector('[data-gl-scope]')).toBeNull();
@@ -342,7 +342,7 @@ describe('scope crumb: the way back from a drill (D1, F074, F017, F018)', () => 
   });
 });
 
-describe('what a component draws is its state for the host (D3, D14, F032, V060-V062)', () => {
+describe('what a component draws is its state for the host (show-reports-what-tab-drew, reports-are-component-state, F032, V060-V062)', () => {
   /** A Gated view that also follows the selection, so writing /ui/sel really renders it again (V066). */
   let gatedRenders = 0;
   const Following: GlView<any> = ({id, props}) => {
@@ -362,14 +362,14 @@ describe('what a component draws is its state for the host (D3, D14, F032, V060-
     expect(codes(view, 'root')).toEqual(['OK']);
     view.setData(CHURN, {...datasetFixture('git.churn'), data: []});
     await flushReports();
-    expect(view.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no data from git.churn', surfaceId: 'test', componentId: 'a'}]);
+    expect(view.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no data from git.churn', surfaceId: 'test', name: 'DataTable', componentId: 'a', text: 'no data from git.churn'}]);
     // the source says why it is empty: a truthful answer, not something for the model to fix
     view.setData(CHURN, {...datasetFixture('git.churn'), data: [], note: 'no import cycles'});
     await flushReports();
-    expect(view.reports.at(-1)).toEqual({code: 'I_EMPTY', message: 'DataTable#a: no import cycles (git.churn)', surfaceId: 'test', componentId: 'a'});
+    expect(view.reports.at(-1)).toEqual({code: 'I_EMPTY', message: 'DataTable#a: no import cycles (git.churn)', surfaceId: 'test', name: 'DataTable', componentId: 'a', text: 'no import cycles (git.churn)'});
     view.setData(`/ds/${datasetKey(parseRef('git.log'))}`, {$ds: datasetKey(parseRef('git.log')), kind: 'rows', status: 'error', source: 'git.log', error: {code: 'E_NO_GIT', message: 'not a git repository'}});
     await flushReports();
-    expect(view.reports.at(-1)).toEqual({code: 'E_NO_GIT', message: 'DataTable#b: not a git repository', surfaceId: 'test', componentId: 'b'});
+    expect(view.reports.at(-1)).toEqual({code: 'E_NO_GIT', message: 'DataTable#b: not a git repository', surfaceId: 'test', name: 'DataTable', componentId: 'b', text: 'not a git repository'});
     // a pending dataset is not a state worth telling, and it does not withdraw anything either
     const before = view.states.length;
     view.setData(`/ds/${datasetKey(parseRef('git.authors'))}`, pendingDataset('git.authors'));
@@ -378,7 +378,7 @@ describe('what a component draws is its state for the host (D3, D14, F032, V060-
     // inline data that is empty is the spec's own: W_EMPTY
     const inline = renderStub(`$/rows=[]\n${page('DataTable($/rows)')}`, {DataTable: Gated});
     await flushReports();
-    expect(inline.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no items', surfaceId: 'test', componentId: 'a'}]);
+    expect(inline.reports).toEqual([{code: 'W_EMPTY', message: 'DataTable#a: no items', surfaceId: 'test', name: 'DataTable', componentId: 'a', text: 'no items'}]);
   });
 
   it('reports again when the state changes, withdraws it with OK, and says nothing for the same state rendered again', async () => {
@@ -429,11 +429,11 @@ describe('what a component draws is its state for the host (D3, D14, F032, V060-
     const view = renderStub(`root=Page('T',[a,b,c])\na=DataTable('git.churn')\nb=CodeView()\nc=SymbolOutline()`, {DataTable: Boom, CodeView: Own, SymbolOutline: Waiting});
     spy.mockRestore();
     await flushReports();
-    expect(view.reports).toContainEqual({code: 'E_RENDER', message: 'DataTable#a: view bug', surfaceId: 'test', componentId: 'a'});
+    expect(view.reports).toContainEqual({code: 'E_RENDER', message: 'DataTable#a: view bug', surfaceId: 'test', name: 'DataTable', componentId: 'a', text: 'view bug'});
     // one state per component: the redline wins over the empty line beside it
-    expect(view.reports.filter(report => report.componentId === 'b')).toEqual([{code: 'E_SHAPE', message: 'CodeView#b: expected text', surfaceId: 'test', componentId: 'b'}]);
+    expect(view.reports.filter(report => report.componentId === 'b')).toEqual([{code: 'E_SHAPE', message: 'CodeView#b: expected text', surfaceId: 'test', name: 'CodeView', componentId: 'b', text: 'expected text'}]);
     // a view that waits for a selection says so with an I_ code
-    expect(view.reports).toContainEqual({code: 'I_WAITING', message: 'SymbolOutline#c: no file selected', surfaceId: 'test', componentId: 'c'});
+    expect(view.reports).toContainEqual({code: 'I_WAITING', message: 'SymbolOutline#c: no file selected', surfaceId: 'test', name: 'SymbolOutline', componentId: 'c', text: 'no file selected'});
   });
 
   it('a part of a component never speaks for it: <Subpart>, part, and every borrowed view (V062)', async () => {
@@ -462,7 +462,7 @@ describe('what a component draws is its state for the host (D3, D14, F032, V060-
     };
     const view = renderStub(`$/f='zzz'\n${page('Graph($/f)')}`, {Graph: Focus});
     await flushReports();
-    expect(view.reports).toEqual([{code: 'W_FOCUS', message: 'Graph#a: focus "zzz" matches no node', surfaceId: 'test', componentId: 'a'}]);
+    expect(view.reports).toEqual([{code: 'W_FOCUS', message: 'Graph#a: focus "zzz" matches no node', surfaceId: 'test', name: 'Graph', componentId: 'a', text: 'focus "zzz" matches no node'}]);
     view.setData('/f', 'src');
     await flushReports();
     expect(codes(view, 'a')).toEqual(['W_FOCUS', 'OK']);
@@ -520,7 +520,7 @@ describe('empty states say why (F008)', () => {
   });
 });
 
-describe('category colours without a session slot (D6, F006)', () => {
+describe('category colours without a session slot (stable-category-colours, F006)', () => {
   it('assignSlots: session slots first, then the lowest free ink in order of first appearance, grey only beyond eight', () => {
     const slots = assignSlots(['Go', 'TypeScript', 'SQL', 'CSS'], {TypeScript: 1, CSS: 4});
     expect(Object.fromEntries(slots)).toEqual({TypeScript: 1, CSS: 4, Go: 2, SQL: 3});
@@ -679,7 +679,7 @@ describe('the error boundary of a component (F078)', () => {
     view.setData('/msg', 'boom');
     await flushReports();
     expect(view.cell('a').querySelector('[data-gl-state="redline"]')?.getAttribute('data-code')).toBe('E_RENDER');
-    expect(view.reports).toEqual([{code: 'E_RENDER', message: 'Text#a: view bug on this value', surfaceId: 'test', componentId: 'a'}]);
+    expect(view.reports).toEqual([{code: 'E_RENDER', message: 'Text#a: view bug on this value', surfaceId: 'test', name: 'Text', componentId: 'a', text: 'view bug on this value'}]);
     // something else rendering the cell again does not retry a view whose props are the same (V066: a real re-render,
     // the update names the component and its cell renders once more, which the report again proves)
     const tried = attempts;
@@ -815,9 +815,9 @@ describe('one selection rule (F085)', () => {
     expect(matchSelection({type: 'author', id: 'Mira'}, {type: 'author', id: 'Mira'})).toBe('exact');
   });
 
-  // Decision D24: one hub of diagram node ids. The worked cases of the design, on a ticketing page: tables of one
+  // Decision links-through-node-ids: one hub of diagram node ids. The worked cases of the design, on a ticketing page: tables of one
   // schema.sql (each with its own lines) carry node:'PG', a Layers item and a table row name PG, actor G stands for GW.
-  describe('links through diagram node ids (D24)', () => {
+  describe('links through diagram node ids (links-through-node-ids)', () => {
     const nodePG: EntityRef = {type: 'node', id: 'PG', label: 'Postgres'};
     const orders: EntityRef = {type: 'node', id: 'orders', label: 'orders', path: 'db/schema.sql', line: 10, endLine: 30, nodes: ['PG']};
     const payments: EntityRef = {type: 'node', id: 'payments', label: 'payments', path: 'db/schema.sql', line: 31, endLine: 50, nodes: ['PG']};

@@ -101,7 +101,7 @@ describe('Icicle', () => {
     expect(new Set(short.all('[data-cell] rect:first-child').map(el => el.getAttribute('height')))).toEqual(new Set(['20']));
   });
 
-  it('names the scope of a drilled tree and steps out of the drill with Backspace (D1, F074)', async () => {
+  it('names the scope of a drilled tree and steps out of the drill with Backspace (drill-has-way-back, F074)', async () => {
     const view = await chart('Icicle()');
     view.key('Backspace');
     expect(view.actions.filter(action => action.name === 'gl_drill')).toHaveLength(0);

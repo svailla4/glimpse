@@ -1,4 +1,4 @@
-// The React Flow pieces of a diagram (decision D19), drawn in the Linework style: a node is the diagram's own SVG
+// The React Flow pieces of a diagram (decision diagram-engine-in-worker), drawn in the Linework style: a node is the diagram's own SVG
 // drawing in a box of its size (Graph's spine and status glyph, a Flowchart shape, an ER table); a frame is a group's
 // dashed outline with its label; an edge is ELK's orthogonal route with 6 px elbows, its end marks and its label.
 // Selection, the keyboard's node and the zoom-dependent level of detail come from DiagramContext, so a change to
@@ -24,7 +24,7 @@ export interface DiagramNode<T = unknown> {
   /**
    * What the node stands for when a selection made elsewhere is matched against it, when that is not `entity`: a
    * module node selects its main file but stands for its whole directory. Of the nodes that hold the selection only
-   * the innermost lights up. Its `nodes` link it to the diagram nodes it stands for (decision D24).
+   * the innermost lights up. Its `nodes` link it to the diagram nodes it stands for (decision links-through-node-ids).
    */
   match?: SelectionRef;
   /** Name, for the tooltip and for assistive technology. */
@@ -102,7 +102,7 @@ export interface DiagramContextValue {
   selected: ReadonlySet<string>;
   /** Everything at full strength while something is selected (the selection and its neighbours); null: nothing selected. */
   lit: ReadonlySet<string> | null;
-  /** The keys of the edges drawn highlighted (decision D24: round a selected node, or the legs of a selected path). */
+  /** The keys of the edges drawn highlighted (decision links-through-node-ids: round a selected node, or the legs of a selected path). */
   hot: ReadonlySet<string>;
   active: string | undefined;
   focus: string | undefined;
@@ -114,7 +114,7 @@ export interface DiagramContextValue {
 export const DiagramContext = createContext<DiagramContextValue | null>(null);
 
 /**
- * Decision D24: a selection that is not itself a node and names two or more nodes in order (a message: its sender's
+ * Decision links-through-node-ids: a selection that is not itself a node and names two or more nodes in order (a message: its sender's
  * node, the nodes it passes, its receiver's node) is a path. Its legs are the consecutive pairs, both ways, keyed
  * JSON.stringify([from, to]); a diagram heats only the edges between lit nodes that are legs. Empty for anything else.
  * (Here rather than in kit/select.ts: only the node-link diagrams use it, and the kit is in the eager script.)
@@ -260,7 +260,7 @@ export type FlowEdge = Edge<ElkEdgeData, 'elk'>;
 
 /**
  * The zoom edge labels are sized for: 1 from FULL_ZOOM up (11 px text is 10 px on screen at 91%); further out the
- * zoom in 5% steps, and a label grows so its text stays 10 px on screen (D18), like group labels and Graph's names.
+ * zoom in 5% steps, and a label grows so its text stays 10 px on screen (diagrams-open-readable), like group labels and Graph's names.
  */
 function useLabelZoom(): number {
   return useViewportStore(s => (s.transform[2] < FULL_ZOOM ? zoomStep(s.transform[2]) : 1));

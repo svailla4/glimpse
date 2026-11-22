@@ -27,7 +27,7 @@
     white-space: nowrap;
   }
   /* The entity button is a flex item: without this it keeps the width of its text and the path inside it can never
-     give way (D12: the directory is elided, the file name stays). */
+     give way (paths-keep-file-name: the directory is elided, the file name stays). */
   .entity > * { min-width: 0; }
   /* The button holds the cell's text (an author, a module, a symbol): it is the box that elides it. */
   .entity > :global(.gl-entity) { overflow: hidden; text-overflow: ellipsis; }

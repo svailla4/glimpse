@@ -36,7 +36,7 @@ describe('C1: generated/catalog.json is a valid v1.0 catalog document', () => {
       expect(entry.properties.component).toEqual({const: def.name});
       expect('unevaluatedProperties' in entry, `${def.name}: unevaluatedProperties removed`).toBe(false);
     }
-    // decision D25: add|sub|mul|div(a, b), strict here (a literal argument must be a number)
+    // decision what-if-as-a2ui-calls: add|sub|mul|div(a, b), strict here (a literal argument must be a number)
     expect(Object.keys(catalogJson.functions)).toEqual(['add', 'sub', 'mul', 'div']);
     expect(catalogJson.$defs.anyFunction.oneOf.map((f: {$ref: string}) => f.$ref)).toEqual(['add', 'sub', 'mul', 'div'].map(name => `#/functions/${name}`));
     for (const name of ['add', 'sub', 'mul', 'div']) expect(catalogJson.functions[name].properties.args.required, name).toEqual(['a', 'b']);

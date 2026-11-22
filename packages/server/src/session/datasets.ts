@@ -217,7 +217,7 @@ export class DatasetStore {
 }
 
 // ---------------------------------------------------------------- envelopes
-/** The scope a viewer drill put a dataset in (decision D1); undefined at the spec's own scope. */
+/** The scope a viewer drill put a dataset in (decision drill-has-way-back); undefined at the spec's own scope. */
 export type Drill = NonNullable<Dataset['drill']>;
 
 export function pendingEnvelope(key: string, ref: SourceRef, meta: SourceMeta | undefined, drill?: Drill): Dataset {
@@ -268,7 +268,7 @@ export function envelopeOf(key: string, ref: SourceRef, outcome: Outcome, drill?
   }
   const {meta, result} = outcome;
   // An empty result says why in its summary ('wt: 0 files; no changes'); the viewer shows `note` as the empty
-  // state's message and reports it (decision D3), instead of a generic 'no data from diff.files'.
+  // state's message and reports it (decision show-reports-what-tab-drew), instead of a generic 'no data from diff.files'.
   const note = isEmptyData(meta.kind, result.data) ? emptyReason(result.summary) : undefined;
   const fields = result.fields ?? meta.fields;
   const roles = result.roles ?? meta.roles;

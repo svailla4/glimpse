@@ -1,4 +1,4 @@
-// A look at HEAD and the working tree that needs no tab and no watcher (decision D8). The session asks the injected
+// A look at HEAD and the working tree that needs no tab and no watcher (decision fresh-tree-every-call). The session asks the injected
 // TreeWatcher first (`check()`); this is what it falls back to when the watcher has no such call, so tool results can
 // never be stale for want of one. Everything goes through the RunGit the session owns; without git the directory is
 // walked. A stamp is a digest: two equal stamps mean nothing a source reads has changed.

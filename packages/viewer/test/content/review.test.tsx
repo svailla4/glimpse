@@ -1,6 +1,6 @@
 // Regression tests for the review findings in the content family: Steps `current` and status words (F034), exact
 // figures in Stat (F042), the wrapped KPI strip (F015), tooltips on sparklines and list bars, category colours
-// without a session slot (F006, D6), a session that has ended (F024) and the one plate of a titled list (F081).
+// without a session slot (F006, stable-category-colours), a session that has ended (F024) and the one plate of a titled list (F081).
 import type {LinkStatus} from '@glimpse/catalog';
 import {act, fireEvent, screen, waitFor, within} from '@testing-library/react';
 import {useSyncExternalStore, type ReactNode} from 'react';
@@ -14,7 +14,7 @@ import {renderExpress} from '../harness.tsx';
 const value = (cell: HTMLElement) => cell.querySelector('[data-gl-stat-value]')?.textContent;
 const queued = (cell: HTMLElement) => cell.querySelector('[role="status"]') as HTMLElement;
 
-describe('Steps (F034, D5)', () => {
+describe('Steps (F034, accept-familiar-variants)', () => {
   it('counts `current` the way the numerals on screen do: 1 is the first step', async () => {
     const view = renderExpress(`$/plan=['Plan','Build','Ship']\nroot=Page('T',[a,b,c])\na=Steps($/plan,current=2)\nb=Steps($/plan,1)\nc=Steps($/plan,0)`);
     const current = (id: string) => [...view.cell(id).querySelectorAll('ol > li')].map(step => step.getAttribute('aria-current'));
@@ -129,7 +129,7 @@ describe('tooltips on sparklines and list bars', () => {
   });
 });
 
-describe('category colours without a session slot (F006, D6)', () => {
+describe('category colours without a session slot (F006, stable-category-colours)', () => {
   const segments = (cell: HTMLElement) => [...cell.querySelectorAll<HTMLElement>('[data-segment]')];
   const SLOTS = {lang: {TypeScript: 1, CSS: 2}, module: {}, author: {}};
 

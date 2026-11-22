@@ -3,7 +3,7 @@ import {describe, expect, it} from 'vitest';
 import {actionLine, EventQueue, MAX_EVENTS, reportLine, reportText, selectLine, setLine, type Computed} from '../../src/session/events.ts';
 import {MAX_REPORT_LINES} from '../../src/session/reports.ts';
 
-describe('setLine (decision D25)', () => {
+describe('setLine (decision what-if-as-a2ui-calls)', () => {
   const at = (where: string, entries: Array<[string, number | string]>): Computed[] =>
     entries.map(([place, got]) => (typeof got === 'number' ? {where, at: place, value: got} : {where, at: place, problem: got}));
 
@@ -49,7 +49,7 @@ describe('line format', () => {
     expect(selectLine({type: 'file', id: 'a b.ts', path: 'docs/a b.ts'}, 's')).toBe('viewer: select file "docs/a b.ts" (s)');
   });
 
-  // Decision D24: diagram nodes, rows and messages say their label unless the id does; a node with a file says where.
+  // Decision links-through-node-ids: diagram nodes, rows and messages say their label unless the id does; a node with a file says where.
   it('a node, row or message says its label once, and a node with a file its place', () => {
     expect(selectLine({type: 'node', id: 'PG', label: 'Postgres', path: 'db/schema.sql', line: 1, endLine: 120}, 'arch'))
       .toBe('viewer: select node PG Postgres db/schema.sql#L1-120 (arch)');
@@ -121,7 +121,7 @@ describe('EventQueue', () => {
     expect(queue.drain()).toEqual([]);
   });
 
-  // Decision D25: the last number set at a path replaces an undelivered earlier one; other keys are left alone.
+  // Decision what-if-as-a2ui-calls: the last number set at a path replaces an undelivered earlier one; other keys are left alone.
   it('keeps the latest line per key, and nothing else', () => {
     const queue = new EventQueue();
     queue.latest('set\nw\n/w/seats', 'viewer: set $/w/seats 60000 (w)');
@@ -135,7 +135,7 @@ describe('EventQueue', () => {
     ]);
   });
 
-  // Decision D14: a report is the component's current state, kept in a store of its own.
+  // Decision reports-are-component-state: a report is the component's current state, kept in a store of its own.
   it('keeps the latest state per component; only untold problems are delivered, after the queued events', () => {
     const queue = new EventQueue();
     queue.reports.set('overview', 'DataTable#impact', 'W_EMPTY', 'no rows');

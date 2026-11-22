@@ -195,7 +195,7 @@ function entityOf(node: CleanNode): EntityRef {
 }
 
 /**
- * A label cut to `maxWidth`. A path gives up its directories first and keeps its last segment (design rule D12):
+ * A label cut to `maxWidth`. A path gives up its directories first and keeps its last segment (design rule paths-keep-file-name):
  * `…/core/web_core`, not `typescript/co…`. A package name (`@angular/core`) is a name, not a path: it is cut at the
  * end, so it never passes for one (`@angular/co…`, not `…/core`).
  */
@@ -523,9 +523,9 @@ function widenNode(node: DiagramNode<NodeDraw>, zoom: number): number {
 
 function GraphBody(p: {
   id: string; data: unknown; dsKey?: string; dir?: Dir; focus?: string; depth: number;
-  /** What to say, and report, when the data has no nodes (decision D14): the source's reason makes it I_EMPTY. */
+  /** What to say, and report, when the data has no nodes (decision reports-are-component-state): the source's reason makes it I_EMPTY. */
   empty: {code: string; message: string; detail?: string};
-  /** The source cut the graph: it drew `returned` of `total` (modules for deps.modules, decision D16). */
+  /** The source cut the graph: it drew `returned` of `total` (modules for deps.modules, decision numbers-on-a-page-agree). */
   cut?: {returned: number; total: number};
 }) {
   const {id, data, focus, depth} = p;
@@ -544,7 +544,7 @@ function GraphBody(p: {
   }, [clean, focus, depth]);
 
   // A focus that names no node (and not the scope the graph is drawn for) is drawn as the whole graph, and the
-  // model hears it (decision D14): W_FOCUS, with the ids closest to what it asked for.
+  // model hears it (decision reports-are-component-state): W_FOCUS, with the ids closest to what it asked for.
   const missingFocus = useMemo(() => {
     if (!shown || shown.focused || focus === undefined || focus === '' || isScope(shown.graph, focus)) return undefined;
     const nearest = nearestIds(shown.graph.nodes.map(node => node.id), focus);
@@ -552,7 +552,7 @@ function GraphBody(p: {
   }, [shown, focus]);
   useReportState(missingFocus !== undefined ? 'W_FOCUS' : undefined, missingFocus ?? '');
 
-  // Spine inks (design rule D6): a key the session knows keeps its ink, the rest take the free ones in order.
+  // Spine inks (design rule stable-category-colours): a key the session knows keeps its ink, the rest take the free ones in order.
   const slotKeys = useMemo(() => (shown ? shown.graph.nodes.flatMap(node => (node.slotKey !== undefined ? [node.slotKey] : [])) : []), [shown]);
   const cat = useCatSlots(SPINE_SLOTS, slotKeys);
 
@@ -676,7 +676,7 @@ function GraphBody(p: {
     return {nodes, edges, groups, lodZoom: authored ? Math.max(nameZoom(nodes), wholeZoom(nodes)) : nameZoom(nodes)};
   }, [shown, cat, p.dsKey, authored]);
 
-  // Drilling only asks the host for another scope; the plate's scope row (DataGate) is the way back (design rule D1).
+  // Drilling only asks the host for another scope; the plate's scope row (DataGate) is the way back (design rule drill-has-way-back).
   const dsKey = p.dsKey;
   const onDrill = useCallback((node: DiagramNode<NodeDraw>) => {
     if (dsKey !== undefined) host.drill(dsKey, node.id);
@@ -702,7 +702,7 @@ function GraphBody(p: {
   const cycles = graph.nodes.filter(node => node.cycle).length;
   const {dropped} = graph;
   // What a cut dataset drew of how many is said once, here, in the graph's own unit: '20 of 54 modules' (decision
-  // D16; the gate's own 'showing ...' note is off). The external packages a module or file graph adds are counted
+  // numbers-on-a-page-agree; the gate's own 'showing ...' note is off). The external packages a module or file graph adds are counted
   // apart: they are not modules, and the Modules KPI beside the graph does not count them.
   const packages = LEVEL_NOUN[graph.level ?? ''] && graph.level !== 'package' ? graph.nodes.filter(node => node.kind === 'external').length : 0;
   const own = count(graph.nodes.length - packages, one, many);
@@ -711,7 +711,7 @@ function GraphBody(p: {
     p.cut && p.cut.total > p.cut.returned ? `${fmtNum(p.cut.returned)} of ${count(p.cut.total, one, many)}` : own,
     extra,
     count(graph.edges.length, 'edge', 'edges'),
-    // Which level the cycle marks are at, as the Cycles KPI says (decision D16).
+    // Which level the cycle marks are at, as the Cycles KPI says (decision numbers-on-a-page-agree).
     cycles > 0 ? `${count(cycles, one, many)} in cycles` : undefined,
     shown.focused && focus !== undefined ? `focus ${elidePath(focus, 32)} · ${count(depth, 'hop', 'hops')}` : undefined,
     focus !== undefined && focus !== '' && !shown.focused && !isScope(graph, focus) ? `focus "${fitLabel(focus, 120, MONO_11)}" not found` : undefined,

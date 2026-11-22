@@ -95,7 +95,7 @@ describe('cleanFlow', () => {
     expect(dropped.at(-1)).toBe('and 4 more');
   });
 
-  // Decision D24: a node's note and file.
+  // Decision links-through-node-ids: a node's note and file.
   it('reads a node note and file, and the other words for them, saying so', () => {
     const {ast, fixes, dropped} = flow({nodes: {
       P: {label: 'Postgres', shape: 'store', note: 'orders', file: ' db/schema.sql#L1-20 '},
@@ -134,7 +134,7 @@ describe('cleanFlow', () => {
   });
 });
 
-// Decision D24: the diagram node ids an item names.
+// Decision links-through-node-ids: the diagram node ids an item names.
 describe('readNodes', () => {
   it('reads one id, a list (each id once, in order) and a number', () => {
     expect(readNodes({node: 'PG'})).toEqual({ids: ['PG']});
@@ -164,7 +164,7 @@ describe('readNodes', () => {
   });
 });
 
-// Decision D24 (owner's rule): a table row links only through a field named exactly `node` holding text ids.
+// Decision links-through-node-ids (owner's rule): a table row links only through a field named exactly `node` holding text ids.
 describe('rowNodes', () => {
   it('reads node as one text id or a list of them, and nothing else', () => {
     expect(rowNodes({node: ' PG '})).toEqual({ids: ['PG']});
@@ -252,7 +252,7 @@ describe('cleanSequence', () => {
     expect(cleanSequence(null)).toEqual({ok: false, error: 'expected {actors?, steps} or a list of steps, received null'});
   });
 
-  // Decision D24: the node an actor stands for, and the nodes a message passes through.
+  // Decision links-through-node-ids: the node an actor stands for, and the nodes a message passes through.
   it('reads the node an actor stands for, in a map or a list; an actor without one has none', () => {
     const map = seq({actors: {G: {label: 'Gateway', node: 'GW'}, U: 'User'}, steps: [['U', 'G', 'hi']]});
     expect(map.ast.actors).toEqual([{id: 'G', label: 'Gateway', node: 'GW'}, {id: 'U', label: 'User'}]);
@@ -317,7 +317,7 @@ describe('cleanSequence', () => {
   });
 });
 
-// Decision D24: Layers is read here, by the server and the viewer alike.
+// Decision links-through-node-ids: Layers is read here, by the server and the viewer alike.
 describe('cleanLayers', () => {
   it('names a tier by name, label or title, and an item by label, name or title', () => {
     const {ast, fixes, dropped} = layers([
@@ -394,7 +394,7 @@ describe('cleanLayers', () => {
   });
 });
 
-// Decision D24: ERDiagram is read here, by the server and the viewer alike.
+// Decision links-through-node-ids: ERDiagram is read here, by the server and the viewer alike.
 // The tab's "N not drawn": the notes fold past 8 lines and name unknown keys, so their lines are not the count.
 describe('droppedCount', () => {
   it('counts every entry left out, the folded ones too, and no unknown key', () => {
@@ -513,7 +513,7 @@ describe('cleanSchema', () => {
   });
 });
 
-// Decision D24: what Steps items and inline table rows link to, for the server's checks.
+// Decision links-through-node-ids: what Steps items and inline table rows link to, for the server's checks.
 describe('cleanItems', () => {
   it('reads a step file and nodes, checks step keys, and lists only the steps that link', () => {
     const result = cleanItems('step', [

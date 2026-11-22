@@ -1,5 +1,5 @@
 // packages/catalog/src/links.ts
-// The diagram node ids an item names (decision D24: `node:'PG'`), read the same way by the server's checks, the
+// The diagram node ids an item names (decision links-through-node-ids: `node:'PG'`), read the same way by the server's checks, the
 // diagram cleaners (diagrams.ts) and the viewer's Steps and table rows.
 //
 // A module of its own, apart from diagrams.ts: Steps is in the eager script, and a module the eager script imports is
@@ -16,7 +16,7 @@ const textOf = (v: unknown): string | undefined =>
 const received = (v: unknown): string => (typeof v === 'string' ? 'an empty string' : describeValue(v));
 
 /**
- * The diagram node ids an item stands for (decision D24): `node:'PG'` or `node:['PG', 'Redis']`; `nodes` is read as
+ * The diagram node ids an item stands for (decision links-through-node-ids): `node:'PG'` or `node:['PG', 'Redis']`; `nodes` is read as
  * `node` and said in `alias`. Ids are kept once each, in written order, at most `max`. `problem` names what could not
  * be read (the readable ids are still returned).
  */

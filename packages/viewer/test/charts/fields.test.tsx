@@ -1,4 +1,4 @@
-// Field names a spec gives a chart (decisions D14, D15; V001, V012): a name the data has is drawn, in any case or by
+// Field names a spec gives a chart (decisions reports-are-component-state, guessed-fields-repaired; V001, V012): a name the data has is drawn, in any case or by
 // its label; a name it does not have is dropped for the chart's default encoding, named in the plate header and
 // reported once as W_FIELD with the fields the data does have. A guess never leaves an empty plate.
 import {describe, expect, it} from 'vitest';
@@ -6,7 +6,7 @@ import {chart} from './util.tsx';
 
 const note = (view: Awaited<ReturnType<typeof chart>>) => view.root.querySelector('[data-chart-note]')?.textContent ?? '';
 const fieldReports = (view: Awaited<ReturnType<typeof chart>>) => view.reports.filter(report => report.code === 'W_FIELD').map(report => report.message);
-/** What the chart told the host other than OK (a cell that draws normally says OK, decision D14). */
+/** What the chart told the host other than OK (a cell that draws normally says OK, decision reports-are-component-state). */
 const problems = (view: Awaited<ReturnType<typeof chart>>) => view.reports.filter(report => report.code !== 'OK');
 
 describe('chart field names', () => {
@@ -90,7 +90,7 @@ describe('chart field names', () => {
     expect(problems(scatter)).toEqual([expect.objectContaining({code: 'W_SHAPE', message: 'ScatterPlot#c: no rows with numbers in "owner" and "path" (git.hotspots)'})]);
   });
 
-  it('withdraws the field report once the data has the field the spec names (D14: state, not event)', async () => {
+  it('withdraws the field report once the data has the field the spec names (reports-are-component-state: state, not event)', async () => {
     const view = await chart(`BarChart($/d,'name','lines')`, {rows: [{name: 'a', loc: 3}]});
     expect(note(view)).toBe('no field "lines"');
     expect(fieldReports(view)).toHaveLength(1);

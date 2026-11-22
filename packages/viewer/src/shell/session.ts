@@ -5,17 +5,19 @@
 //   - a snapshot for a surface that already exists replaces it, and `/ui` (selection, followed file) is carried over
 //     a delete + create unless the new snapshot sets it;
 //   - messages the processor rejects, and errors raised while rendering, go back to the host as v1.0 `error` messages;
-//   - so does the state of every component (decision D14: OK, or the I_/W_/E_ state it shows instead of its content),
+//   - so does the state of every component (decision reports-are-component-state: OK, or the I_/W_/E_ state it shows instead of its content),
 //     when its cell mounts, when it changes and each time an update names the component again, so the host always
-//     knows what the view really looks like. The kit decides what a component's state is (kit/report.ts); the
-//     session tells the cells about updates and posts the states, a task's worth in one post;
+//     knows what the view really looks like. A problem (W_*, E_*) is an `error` message; a state that is not an
+//     error (I_*, OK) goes beside the messages as a Glimpse ComponentState (decision only-problems-are-errors). The kit decides what a
+//     component's state is (kit/report.ts); the session tells the cells about updates and posts the states, a
+//     task's worth in one post;
 //   - actions go back as v1.0 `action` messages, `gl_select` debounced so that dragging a selection does not flood;
 //   - the lazy chunks of the component types a message names start loading before React asks for them.
 import type {ReactCatalogComponent} from '@a2ui/react';
 import {MessageProcessor, type SurfaceModel} from '@a2ui/web_core/v1_0';
 import {
-  PATHS, type A2uiMessage, type ActionPayload, type DataClient, type LinkStatus, type RendererMessage, type ServerEvent, type SessionInfo,
-  type SurfaceInfo, type Transport,
+  PATHS, isProblemReport, type A2uiMessage, type ActionPayload, type ComponentState, type DataClient, type LinkStatus, type RendererMessage,
+  type ServerEvent, type SessionInfo, type SurfaceInfo, type Transport,
 } from '@glimpse/catalog';
 import {createGlimpseCatalog, preloadChunks} from '../catalog.ts';
 import {createRedefinitions, kitSlots, type RenderReport, type ReportChannel} from '../kit/index.ts';
@@ -113,6 +115,7 @@ export function createViewerSession(transport: Transport, options: SessionOption
   const states = new Map<string, number>();
   /** States waiting for the end of the task, to go out in one post. */
   let outbox: RendererMessage[] = [];
+  let stateOutbox: ComponentState[] = [];
   const redefinitions = createRedefinitions();
   const selectDelay = options.selectDelay ?? SELECT_DELAY;
   let snapshot: SessionSnapshot = {status: 'connecting', session: undefined, surfaces: [], focus: undefined, generation: 0};
@@ -155,8 +158,8 @@ export function createViewerSession(transport: Transport, options: SessionOption
     for (const listener of [...listeners]) listener();
   };
 
-  const post = (messages: RendererMessage[]) => {
-    if (messages.length > 0 && snapshot.status !== 'ended') transport.send(messages);
+  const post = (messages: RendererMessage[], states: ComponentState[] = []) => {
+    if ((messages.length > 0 || states.length > 0) && snapshot.status !== 'ended') transport.send(messages, states.length > 0 ? states : undefined);
   };
 
   const flushSelect = () => {
@@ -198,8 +201,10 @@ export function createViewerSession(transport: Transport, options: SessionOption
 
   const flushStates = () => {
     const messages = outbox;
+    const states = stateOutbox;
     outbox = [];
-    for (let at = 0; at < messages.length; at += MAX_POST) post(messages.slice(at, at + MAX_POST));
+    stateOutbox = [];
+    for (let at = 0; at < Math.max(messages.length, states.length); at += MAX_POST) post(messages.slice(at, at + MAX_POST), states.slice(at, at + MAX_POST));
   };
 
   const reportState = (state: RenderReport) => {
@@ -207,8 +212,10 @@ export function createViewerSession(transport: Transport, options: SessionOption
     const count = states.get(state.surfaceId) ?? 0;
     if (count >= MAX_STATES) return;
     states.set(state.surfaceId, count + 1);
-    if (outbox.length === 0) queueMicrotask(flushStates);
-    outbox.push({version: V, error: {code: state.code, message: state.message, surfaceId: state.surfaceId}});
+    if (outbox.length === 0 && stateOutbox.length === 0) queueMicrotask(flushStates);
+    // Decision only-problems-are-errors: only a problem is an A2UI renderer error; a truthful state and OK are Glimpse's own.
+    if (isProblemReport(state.code)) outbox.push({version: V, error: {code: state.code, message: state.message, surfaceId: state.surfaceId}});
+    else stateOutbox.push({surfaceId: state.surfaceId, component: state.name, id: state.componentId, code: state.code, message: state.text});
   };
 
   const dispose = () => {
@@ -220,6 +227,7 @@ export function createViewerSession(transport: Transport, options: SessionOption
     reported.clear();
     states.clear();
     outbox = [];
+    stateOutbox = [];
     instances.clear();
     processor?.model.dispose();
     processor?.dispose();
@@ -288,7 +296,7 @@ export function createViewerSession(transport: Transport, options: SessionOption
     } finally {
       applying = false;
     }
-    // Every component an update named says its state again once it has rendered (decision D14).
+    // Every component an update named says its state again once it has rendered (decision reports-are-component-state).
     redefinitions.applied(batch);
     for (const [id, ui] of carried) {
       const model = target.getSurface(id)?.dataModel;

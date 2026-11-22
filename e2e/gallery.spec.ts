@@ -22,7 +22,7 @@ test('gallery: every component renders; a screenshot per section, theme and widt
   expect(shown.lines[0]).toMatch(/^ok gallery /);
   expect(shown.lines).toContain(`parts ${SECTIONS.join(' ')} | slots $/g`);
   expect(shown.text.length).toBeLessThanOrEqual(1200);
-  // every file the gallery names, in prose, code plates and diagram data (decision D24), is a file of this repository
+  // every file the gallery names, in prose, code plates and diagram data (decision links-through-node-ids), is a file of this repository
   expect(shown.lines.filter(line => line.startsWith('warn ') || line.startsWith('fixed ')), shown.text).toEqual([]);
 
   await page.emulateMedia({colorScheme: 'light', reducedMotion: 'reduce'});
@@ -77,7 +77,7 @@ test('gallery: every component renders; a screenshot per section, theme and widt
   // the gallery's buttons are live
   await page.setViewportSize({width: 1320, height: 900});
   await page.locator('[data-gl="Button"] button', {hasText: 'Queue an event'}).click();
-  // (decision D3: a render report, `viewer: error ...`, may ride along with the press, so the line is looked for)
+  // (decision show-reports-what-tab-drew: a render report, `viewer: error ...`, may ride along with the press, so the line is looked for)
   await expect.poll(async () => (await glimpse.call('events', {})).lines, {timeout: 5000}).toContain('viewer: press gallery demo_pressed {"from":"gallery"}');
   expect(watched.problems).toEqual([]);
   expect(await watched.csp()).toEqual([]);

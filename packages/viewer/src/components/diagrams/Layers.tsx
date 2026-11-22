@@ -1,5 +1,5 @@
 // Layers: architecture tiers as stacked bands of boxes, top tier first (design 5.6). CSS grid only. The data is read
-// by the catalog's cleanLayers (decision D24), as on the server; how much of it is drawn is decided here.
+// by the catalog's cleanLayers (decision links-through-node-ids), as on the server; how much of it is drawn is decided here.
 import type * as C from '@glimpse/catalog';
 import {cleanLayers, type EntityRef, type LayerItem, type LayersAst} from '@glimpse/catalog';
 import {useEffect, useMemo, useRef, useState, type KeyboardEvent} from 'react';
@@ -18,7 +18,7 @@ interface Band { name: string; note?: string; items: Item[]; more: number }
 
 /**
  * The bands as drawn: at most MAX_BANDS, each with at most MAX_ITEMS items. An item with a file selects that file; one
- * naming diagram nodes (`node:'PG'`, decision D24) carries them, and without a file selects the node itself.
+ * naming diagram nodes (`node:'PG'`, decision links-through-node-ids) carries them, and without a file selects the node itself.
  */
 function bandsOf(ast: LayersAst, componentId: string): Band[] {
   return ast.bands.slice(0, MAX_BANDS).map((band, b) => ({
@@ -36,7 +36,7 @@ function bandsOf(ast: LayersAst, componentId: string): Band[] {
 
 function LayersBody(p: {id: string; data: unknown}) {
   const {id} = p;
-  // As tall as its tiers, up to the plate's maximum height (decision D20); past that it scrolls.
+  // As tall as its tiers, up to the plate's maximum height (decision content-sized-plates); past that it scrolls.
   const cap = useSizeCap();
   const rootRef = useRef<HTMLDivElement>(null);
   const {selected} = useSelection(id);
@@ -93,7 +93,7 @@ function LayersBody(p: {id: string; data: unknown}) {
   };
 
   // The red-pencil rule of the kit: the selected file itself, a file inside the selected directory or module, or an
-  // item naming the selected diagram node (decision D24).
+  // item naming the selected diagram node (decision links-through-node-ids).
   const isHit = (entity: EntityRef | undefined) => marksSelection(selected, entity);
   const anySelected = bands.some(band => band.items.some(item => isHit(item.entity)));
   const items = bands.reduce((sum, band) => sum + band.items.length + band.more, 0);

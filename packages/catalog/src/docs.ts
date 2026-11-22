@@ -166,7 +166,7 @@ export const SHAPES: Readonly<Record<string, ShapeDoc>> = {
 /**
  * One Express example call per component, the last line of its catalog entry (componentDoc); each one compiles
  * (test/lint.test.ts). Kept here, not in the component's entry, because components.ts is in the tab's eager script
- * and the tab never reads an example: 1.4 kB gzip of text it would download for nothing (decision D25).
+ * and the tab never reads an example: 1.4 kB gzip of text it would download for nothing (decision what-if-as-a2ui-calls).
  */
 export const COMPONENT_EXAMPLES: Readonly<Record<ComponentName, string>> = {
   Page: "root=Page('Auth flow',[Text('Login goes through **AuthService**.')])",
@@ -251,7 +251,7 @@ export function componentDoc(name: string): string | undefined {
 }
 
 /**
- * catalog({names:[...]}) body for the four functions (decision D25), answered for any of their names or aliases. Not
+ * catalog({names:[...]}) body for the four functions (decision what-if-as-a2ui-calls), answered for any of their names or aliases. Not
  * budgeted: the instructions carry only the Slider entry, and its doc and Stat's name the functions.
  */
 export function calcDoc(): string {
@@ -325,7 +325,7 @@ export function viewGroups(): string {
 
 /** The budget test/docs.test.ts and scripts/budgets.mjs hold the instructions to (the host cuts at 4,096). */
 export const INSTRUCTIONS_BUDGET = 4000;
-/** What serverInstructions() must stay under so that new components and sources still fit (decision D13). */
+/** What serverInstructions() must stay under so that new components and sources still fit (decision budgets-keep-headroom). */
 export const INSTRUCTIONS_TARGET = 3750;
 /**
  * The longest line serverInstructions() may have. A longer one is split in two: a newline costs what a space does,

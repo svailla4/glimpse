@@ -117,7 +117,7 @@ describe('show', () => {
     expect(t.session.surfaces.get('feature')!.data).toEqual({plan: [], notes: ''});
   });
 
-  // Decision D24: the files its diagrams and Steps name are checked too, so they are lines of the one real file.
+  // Decision links-through-node-ids: the files its diagrams and Steps name are checked too, so they are lines of the one real file.
   it('the gallery compiles, expands, binds no dataset at all and warns of nothing in a repository with a README.md', async () => {
     const repo = await tempRoot();
     const t = testSession(repo.root);
@@ -184,7 +184,7 @@ describe('all or nothing', () => {
     expect(dump(t)).toBe(before);
   });
 
-  it('a patch that writes the data a stored diagram binds is checked like inline data (D21)', async () => {
+  it('a patch that writes the data a stored diagram binds is checked like inline data (diagrams-are-data)', async () => {
     const t = start();
     await t.session.show(spec('seq', `$/seq={steps:[['A','B','hi']]}\nroot=Page('S',[s])\ns=SequenceDiagram($/seq)`));
     const dropped = await t.session.show(spec('seq', `$/seq/steps/1={note:'lost'}`));
@@ -310,7 +310,7 @@ describe('working tree', () => {
   });
 });
 
-// Decision D24: the files diagram and Steps data name are checked like file props, inline or bound to a $/path.
+// Decision links-through-node-ids: the files diagram and Steps data name are checked like file props, inline or bound to a $/path.
 describe('files named inside data', () => {
   beforeAll(async () => {
     await mkdir(join(dir.root, 'db'), {recursive: true});
@@ -421,7 +421,7 @@ describe('host actions', () => {
     expect(t.session.events.drain()).toEqual([]);
   });
 
-  // Decision D24: a selection names the diagram nodes it stands for; the server keeps them, so a trace survives.
+  // Decision links-through-node-ids: a selection names the diagram nodes it stands for; the server keeps them, so a trace survives.
   it('gl_select keeps the message type and valid node ids, and drops any other nodes whole', async () => {
     const {t, router} = await withRouter();
     const message = {type: 'message', id: 'checkout:1', label: '1. User to Gateway: POST /checkout', nodes: ['Client', 'CDN', 'Q', 'GW', 'GW']};
@@ -451,7 +451,7 @@ describe('host actions', () => {
     expect(ui).toEqual({sel: ref, file: 'db/schema.sql#L10-30'});
   });
 
-  // Decision D25: a number set in the tab survives the same spec shown again, which says so; writing the path resets it.
+  // Decision what-if-as-a2ui-calls: a number set in the tab survives the same spec shown again, which says so; writing the path resets it.
   it('gl_set: the same spec shown again keeps the number with a fixed line; a write to its path resets it', async () => {
     const what = `root=Page('What if',[seats,rps])\n$/w={seats:50000,secs:120}\nseats=Slider('Seats',$/w/seats,1000,200000)\nrps=Stat(div($/w/seats,$/w/secs),'req/s')`;
     const {t, router} = await withRouter(what);
@@ -485,7 +485,7 @@ describe('host actions', () => {
     expect(t2.session.surfaces.get('demo')!.data.w).toEqual({seats: 70000, secs: 120});
   });
 
-  // Decision D25: a call checked against the data after the call: what gives no number is a warning.
+  // Decision what-if-as-a2ui-calls: a call checked against the data after the call: what gives no number is a warning.
   it('a call that gives no number at show time is a warning; one reading a path not set is the unbound line', async () => {
     const {outcome} = await withRouter(`root=Page('x',[a,b])\n$/w={secs:0}\na=Stat(div(100,$/w/secs),'rps')\nb=Stat(mul($/w/none,2),'n')`);
     expect(outcome.warnings).toEqual(['Stat#a: value: div: b = $/w/secs is 0 (division by zero)', 'unbound $/w/none']);

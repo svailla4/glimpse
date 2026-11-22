@@ -1,4 +1,4 @@
-// flowkit: the engine Graph, Flowchart and ERDiagram draw with (decisions D19, D20): ELK lays out in a worker
+// flowkit: the engine Graph, Flowchart and ERDiagram draw with (decisions diagram-engine-in-worker, content-sized-plates): ELK lays out in a worker
 // (elk.ts), React Flow 13 draws (Diagram.tsx), and the height and opening view follow the content (sizing.ts).
 // SequenceDiagram and Layers draw themselves and use the text and path helpers only. Views import from here, never
 // elk.worker.ts or elkjs itself.

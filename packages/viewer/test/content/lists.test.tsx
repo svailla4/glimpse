@@ -83,7 +83,7 @@ describe('Steps', () => {
     await waitFor(() => expect(cell.querySelectorAll('ol > li[data-selected]')).toHaveLength(2));
   });
 
-  // Decision D24: a step that names a diagram node stands for it.
+  // Decision links-through-node-ids: a step that names a diagram node stands for it.
   it('makes a step naming a node selectable, and marks it when that node is selected', async () => {
     const view = renderExpress(`$/plan=[{title:'Migrate',node:'PG'},{title:'Cache',file:'src/cache.ts',node:['PG','Redis']},{title:'Docs'}]\nroot=Page('T',[plan])\nplan=Steps($/plan)`);
     const cell = view.cell('plan');

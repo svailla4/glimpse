@@ -5,7 +5,7 @@
 //   node scripts/budgets.mjs --repo <dir>    also measure the preset results on that repository (default: this one)
 //   node scripts/budgets.mjs --json          print the measurements as JSON instead of a table
 //
-// Each limit keeps headroom under the hard figure of design section 10 (decision D13), so the next component or
+// Each limit keeps headroom under the hard figure of design section 10 (decision budgets-keep-headroom), so the next component or
 // source still fits: the hard figure is in parentheses.
 // What the agent pays for, in characters (the bundled server is started over stdio and asked through the MCP client):
 //   instructions                 <= 3,750   sent once per session (4,000; the catalog's INSTRUCTIONS_TARGET)
@@ -15,15 +15,15 @@
 // What the browser pays for, gzip (default level, as Vite reports it; 1 kB = 1,000 bytes):
 //   eager viewer JS              <= 195 kB  the entry script and everything it imports statically (200 kB;
 //                                           the same figure as packages/viewer/test/build.test.ts)
-//   lines of their own (decision D19: the diagram engine; each is its measured size plus about 15 %, see OWN_LINES):
+//   lines of their own (decision diagram-engine-in-worker: the diagram engine; each is its measured size plus about 15 %, see OWN_LINES):
 //     ELK layout worker          <= 515 kB  assets/elk.worker-<hash>.js, the whole ELK engine (447.8 kB measured)
 //     React Flow chunk           <=  90 kB  assets/xyflow-<hash>.js, once a view imports React Flow (77.6 kB measured)
 //     React Flow stylesheet      <= 2.5 kB  assets/xyflow-<hash>.css (2.2 kB measured)
 //     diagrams chunk             <=  43 kB  assets/diagrams-<hash>.js (38.0 kB measured, the ELK + React Flow views;
-//                                           the D26 merge changed it by 3 bytes: same modules, renamed imports;
+//                                           the no-markdown-component merge changed it by 3 bytes: same modules, renamed imports;
 //                                           25.4 kB at the Install phase, before the wrap/widen pass, the window
 //                                           search, routing for dragged edges and the minimap placement; 31.3 kB
-//                                           when the line was first set at 36 kB; 35.8 kB before D24 links, which
+//                                           when the line was first set at 36 kB; 35.8 kB before links-through-node-ids links, which
 //                                           added the Layers and ERDiagram cleaners that name what they drop, node
 //                                           notes, selectable sequence messages and traces)
 //   each other lazy chunk        <= 120 kB  every other script
@@ -45,7 +45,7 @@ const LIMITS = {instructions: INSTRUCTIONS_TARGET, definitions: 1500, preset: 12
  * instead of the generic lazy line: the ELK worker would never fit that one, and the others get a tighter line so the
  * diagram engine cannot grow unnoticed. `required`: the build must contain the file. The React Flow chunk appears
  * once a view imports React Flow; until then (and should it ever be renamed) the generic lazy line still holds it.
- * The measurements are from the build that set the line (D19 Install phase); keep about 15 % above the measurement.
+ * The measurements are from the build that set the line (diagram-engine-in-worker Install phase); keep about 15 % above the measurement.
  */
 const OWN_LINES = [
   {name: 'ELK layout worker', file: /^elk\.worker-[\w-]{8}\.js$/, limit: 515_000, required: true},

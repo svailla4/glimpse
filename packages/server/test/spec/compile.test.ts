@@ -167,7 +167,7 @@ describe('what the compiler lets through in silence', () => {
   });
 });
 
-describe('calls (decision D25)', () => {
+describe('calls (decision what-if-as-a2ui-calls)', () => {
   it('a call with more than two arguments is E_TYPE with the line, not computed without the rest', () => {
     expect(() => compile(`$/a=1\nroot=Page('x',[Stat(div($/a,2,3),'n')])`))
       .toThrow(/^E_TYPE line 2: div takes 2 arguments \(a, b\); this call passes 3\. Nest calls for more: add\(add\(\$\/a,\$\/b\),\$\/c\)\.$/);

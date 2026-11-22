@@ -189,7 +189,7 @@ export function strayText(text: string): string[] {
   return stray.slice(0, 3).map(span => `line ${span.line}: ignored text that is not a statement: ${JSON.stringify(oneLine(text.slice(span.start, span.end), 60))}`);
 }
 
-// ---------------------------------------------------------------- calls (decision D25)
+// ---------------------------------------------------------------- calls (decision what-if-as-a2ui-calls)
 /** The index of the first token of each statement of a text (a statement ends at `;` or a line end outside brackets). */
 function statementStarts(tokens: readonly SpecToken[]): number[] {
   const starts: number[] = [];
@@ -205,7 +205,7 @@ function statementStarts(tokens: readonly SpecToken[]): number[] {
 }
 
 /**
- * What the compiler does with calls in silence, said (decision D25): a third argument is dropped (`div($/a,2,3)`
+ * What the compiler does with calls in silence, said (decision what-if-as-a2ui-calls): a third argument is dropped (`div($/a,2,3)`
  * computes $/a/2), a call written as a statement of its own computes nothing, and a named call (`rps=div(...)`) is
  * copied into the arguments that use its name, so sent alone (or never used) it changes nothing. The first is
  * refused; the others are `warn` lines. `source` is the text as written, for line numbers.
@@ -424,7 +424,7 @@ export function compileSpec(tools: Toolchain, request: CompileRequest): CompileR
       const call = bareCall(texts[step]!, name);
       found = problem('E_REF', `${call ? `line ${lineOf(call.line)}: ` : ''}${name}(...) is not assigned to a name. Write part=${name}(...) and list part in a parent's children, e.g. root=Page('Title',[...,part]).`, {component: name});
     }
-    // Decision D25: a patch of nothing but a call (`rps=div(...)`, `div(...)`) compiles to nothing; say why.
+    // Decision what-if-as-a2ui-calls: a patch of nothing but a call (`rps=div(...)`, `div(...)`) compiles to nothing; say why.
     const calc = found.code === 'E_REF' && found.message.startsWith('the spec defines nothing') ? calcText(texts[step]!, request.sources[step]!).warnings[0] : undefined;
     if (calc) found = problem('E_REF', `the spec defines nothing to render: ${calc}`);
     const hint = pass < MAX_REPAIR_PASSES + adoptions ? found.repair : undefined;

@@ -38,14 +38,14 @@ export interface SurfaceRecord {
   /** The file that selection last pointed at (the value of /ui/file). */
   file?: string;
   /**
-   * Numbers the user set with a Slider (gl_set), by path, with the value the spec had there before (decision D25).
+   * Numbers the user set with a Slider (gl_set), by path, with the value the spec had there before (decision what-if-as-a2ui-calls).
    * A spec that sends the same seed again keeps the number; one that writes the path itself, or a new value over the
    * seed, replaces it.
    */
   typed?: Map<string, {value: number; seed: unknown}>;
   /**
    * Ids of the components a preset defined and the model has not redefined since. What such a part draws when its
-   * data is empty is the preset's state, not something the model wrote (decision D14).
+   * data is empty is the preset's state, not something the model wrote (decision reports-are-component-state).
    */
   preset: Set<string>;
   createdAt: number;
@@ -70,7 +70,7 @@ export interface Draft {
   /** /ds bindings that name no dataset of this surface. */
   unknownKeys: string[];
   /**
-   * Decision D25: numbers set in the tab that this call sent its old seed over, and that were kept; `typed` is the
+   * Decision what-if-as-a2ui-calls: numbers set in the tab that this call sent its old seed over, and that were kept; `typed` is the
    * number set in the tab when the Slider's new min or max held it to `value` (review S2).
    */
   kept: Array<{path: string; value: number; typed?: number}>;
@@ -156,10 +156,10 @@ export function setPath(data: Record<string, unknown>, path: string, value: unkn
 const segmentsOf = (path: string | undefined): string[] => (path ?? '/').split('/').filter(Boolean).map(decode);
 
 /**
- * Decision D4: a patch below a top-level slot (`$/plan/1/status='done'`) is published as the whole slot. The
+ * Decision patch-sends-whole-slot: a patch below a top-level slot (`$/plan/1/status='done'`) is published as the whole slot. The
  * viewer's data model changes a container in place, so a component bound to `/plan` would otherwise never see that
  * its value changed. /ui is the viewer's own and keeps its fine-grained writes. `extra` names slots published whole
- * whatever was written to them: those holding a number the user set, which the call's own value would undo (D25).
+ * whatever was written to them: those holding a number the user set, which the call's own value would undo (what-if-as-a2ui-calls).
  */
 function wholeSlots(messages: readonly A2uiMessage[], data: Record<string, unknown>, extra: ReadonlySet<string> = new Set()): A2uiMessage[] {
   const topOf = (message: A2uiMessage): string | undefined => {
@@ -245,7 +245,7 @@ export function inPlaceMessages(previous: SurfaceRecord, record: SurfaceRecord, 
 }
 
 /**
- * Decision D25: the numbers set with a Slider that the next version keeps, written into `data` where a re-sent seed
+ * Decision what-if-as-a2ui-calls: the numbers set with a Slider that the next version keeps, written into `data` where a re-sent seed
  * covered them. A number is forgotten when no Slider binds its path any more, and when the call wrote that path
  * itself (`$/w/seats=50000`: the spec wins) or a value other than the old seed over it. `kept` lists the numbers a
  * re-sent, unchanged seed would have undone. A kept number is held to the min and max of the Sliders that bind it now
@@ -345,13 +345,13 @@ export class SurfaceStore {
     }
     const mode: CommitMode = !previous ? 'create' : !current || rootRedefined || lostProp || pruned > 0 ? 'replace' : 'patch';
     // The viewer replaces a component's props wholesale and recreates one whose type changed, so a replace only needs
-    // a new surface when a component of the previous version would be left behind. Decision D14 (finding V051): every
+    // a new surface when a component of the previous version would be left behind. Decision reports-are-component-state (finding V051): every
     // component the call defines is sent and its state forgotten, also when the definition is the same as before, so
     // a fix that leaves it as broken as it was is reported again; components the call does not name are left alone.
     const inPlace = mode === 'replace' && previous !== undefined && [...previous.components.keys()].every(compId => components.has(compId))
       ? {previous, changed: new Set([...components].filter(([compId, comp]) => defined.has(compId) || !sameJson(previous.components.get(compId), comp)).map(([compId]) => compId))}
       : undefined;
-    // Decision D1: a show that creates or replaces the surface starts every dataset at the spec's own scope again;
+    // Decision drill-has-way-back: a show that creates or replaces the surface starts every dataset at the spec's own scope again;
     // a patch keeps the scopes the user drilled to. A dataset that loses its drill needs a fresh run.
     const keep = mode === 'patch' ? current : undefined;
     const ds: Record<string, Dataset> = {};

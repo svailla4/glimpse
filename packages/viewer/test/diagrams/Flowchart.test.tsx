@@ -195,7 +195,7 @@ describe('Flowchart', () => {
     expect(view.getData('/ui/sel') ?? null).toBeNull();
   });
 
-  // Decision D24: a node's note and file are in its tooltip, its announcement and, once selected, the plate's margin.
+  // Decision links-through-node-ids: a node's note and file are in its tooltip, its announcement and, once selected, the plate's margin.
   it('shows a node\'s note and file, marks the node, and selects the file with it', async () => {
     const view = await ready("{nodes:{A:{label:'API',note:'routes',file:'src/api.ts#L3-9'},B:'Worker',C:{label:'Store',description:'orders'}},edges:[['A','B'],['B','C']]}", `,dir='LR'`);
     const noted = (id: string) => nodeOf(view, 'f', id).querySelector('[data-shape]')!.hasAttribute('data-noted');
@@ -230,7 +230,7 @@ describe('Flowchart', () => {
     expect(nodeOf(view, 'f', 'A').hasAttribute('data-selected')).toBe(true);
   });
 
-  it('legsOf: the consecutive pairs of a path, both ways; nothing for a node or a single id (D24)', () => {
+  it('legsOf: the consecutive pairs of a path, both ways; nothing for a node or a single id (links-through-node-ids)', () => {
     const message: EntityRef = {type: 'message', id: 'co:1', nodes: ['Client', 'CDN', 'Q', 'GW']};
     expect([...legsOf(message)].sort()).toEqual([['CDN', 'Client'], ['CDN', 'Q'], ['Client', 'CDN'], ['GW', 'Q'], ['Q', 'CDN'], ['Q', 'GW']].map(pair => JSON.stringify(pair)).sort());
     expect(legsOf(message).has(JSON.stringify(['Client', 'GW']))).toBe(false);
@@ -241,7 +241,7 @@ describe('Flowchart', () => {
     expect(legsOf({type: 'row', id: 'r', nodes: ['PG']}).size).toBe(0);
   });
 
-  // Decision D24: a selection that is not a node and names several (a message) is a path: only its legs are hot.
+  // Decision links-through-node-ids: a selection that is not a node and names several (a message) is a path: only its legs are hot.
   it('lights the boxes a selected message passes through and only the edges between consecutive ones', async () => {
     const view = await ready("{nodes:{A:'a',B:'b',C:'c',D:'d'},edges:[['A','B'],['B','C'],['A','C'],['C','D']]}", `,dir='LR'`);
     const lit = () => nodeIds(view, 'f').filter(id => nodeOf(view, 'f', id).hasAttribute('data-selected'));
@@ -307,7 +307,7 @@ describe('Flowchart', () => {
   });
 });
 
-describe('Flowchart: content-sized and readable (decisions D18, D20, V005)', () => {
+describe('Flowchart: content-sized and readable (decisions diagrams-open-readable, content-sized-plates, V005)', () => {
   const LOGIN = "{nodes:{Start:{label:'Open login page',shape:'pill'},Form:'Enter email and password',Submit:'Submit credentials',Check:{label:'Credentials valid?',shape:'diamond'},Session:'Create session',Done:{label:'Signed in',shape:'pill'},Fail:'Show error and count the attempt'},edges:[['Start','Form'],['Form','Submit'],['Submit','Check'],['Check','Session','yes'],['Session','Done'],['Check','Fail','no'],['Fail','Form','retry']]}";
   const STATES = "{nodes:{Start:{label:'start',shape:'circle'}},edges:[['Start','Created','show with root='],['Created','Patched','show without root='],['Patched','Patched','show without root='],['Created','Replaced','show with root='],['Patched','Replaced','show with root='],['Replaced','Patched','show without root='],['Created','Deleted','removed'],['Patched','Deleted','removed'],['Replaced','Deleted','removed']]}";
 

@@ -1,4 +1,4 @@
-// Flowchart: nodes, edges and groups written as data, drawn as shapes on the dot grid (design 5.6, decision D21).
+// Flowchart: nodes, edges and groups written as data, drawn as shapes on the dot grid (design 5.6, decision diagrams-are-data).
 import type * as C from '@glimpse/catalog';
 import {cleanFlow, parseFileLoc, type EntityRef, type FlowAst, type FlowNode, type FlowShape} from '@glimpse/catalog';
 import {useMemo, type ReactNode} from 'react';
@@ -13,7 +13,7 @@ const MAX_LINES = 3;
 /** Beyond this a flowchart is no longer a picture; the layout would also hold the page up. */
 export const MAX_NODES = 150;
 
-/** `noted`: the node has a note or a file (decision D24), marked with a dot in its corner. */
+/** `noted`: the node has a note or a file (decision links-through-node-ids), marked with a dot in its corner. */
 interface NodeDraw { shape: FlowShape; lines: string[]; noted: boolean }
 
 const even = (v: number) => Math.ceil(v / 2) * 2;
@@ -71,10 +71,10 @@ function drawNode(node: DiagramNode<NodeDraw>, flags: NodeFlags): ReactNode {
   );
 }
 
-/** What a node's note and file say, for its tooltip and the plate's margin (decision D24). */
+/** What a node's note and file say, for its tooltip and the plate's margin (decision links-through-node-ids). */
 const aboutOf = (node: FlowNode): string | undefined => [node.note, node.file].filter(Boolean).join(' · ') || undefined;
 
-/** Decision D24: a node selects itself; with a file it also carries the path, so CodeView follows and Cmd-click opens. */
+/** Decision links-through-node-ids: a node selects itself; with a file it also carries the path, so CodeView follows and Cmd-click opens. */
 function entityOf(node: FlowNode): EntityRef {
   const entity: EntityRef = {type: 'node', id: node.id, label: node.label};
   if (node.file === undefined) return entity;
@@ -110,7 +110,7 @@ function FlowBody(p: {id: string; data: unknown; dir: Dir | undefined}) {
   // Entries left out, counted: the list folds past 8, and its lines for unknown keys leave nothing out.
   const notDrawn = cleaned.ok ? cleaned.droppedCount : 0;
   useReportState(dropped.length > 0 ? 'W_DROPPED' : undefined, `not drawn: ${dropped.join('; ')}`);
-  // Decision D24: the selected node's note is in the plate's margin, for touch and click readers (hovering shows it too).
+  // Decision links-through-node-ids: the selected node's note is in the plate's margin, for touch and click readers (hovering shows it too).
   const {selected} = useSelection(id);
   const picked = useMemo(() => {
     if (!cleaned.ok || selected?.type !== 'node') return undefined;

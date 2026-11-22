@@ -6,7 +6,7 @@ import {DirText, useReportState, useSizeCap} from '../../../kit/index.ts';
 import s from './lines.module.css';
 
 /**
- * The style that gives a code view (`.code[data-fit='cap']`) its maximum height (decision D20): the cell's size step,
+ * The style that gives a code view (`.code[data-fit='cap']`) its maximum height (decision content-sized-plates): the cell's size step,
  * or the family default without one. The view is as tall as its lines and scrolls only past that, sized or not.
  */
 export function useCapStyle(extra?: Record<`--${string}`, string | number>): CSSProperties {
@@ -74,7 +74,7 @@ export function Crumbs(p: {path: string}): ReactNode {
   const slash = p.path.lastIndexOf('/');
   return (
     <span className={s.crumbs} title={p.path} data-gl-path={p.path}>
-      {/* Decision D17: whole leading directories give way before one is cut ('…/processing/', not 'web_…'). */}
+      {/* Decision paths-keep-file-name: whole leading directories give way before one is cut ('…/processing/', not 'web_…'). */}
       {slash >= 0 ? <DirText dir={p.path.slice(0, slash + 1)} /> : null}
       <span className={s.base}>{p.path.slice(slash + 1)}</span>
     </span>
@@ -87,7 +87,7 @@ const rangeText = ([from, to]: readonly [number, number]) => (from === to ? `${f
 
 /**
  * The `mark` prop as line ranges ('3,7-9', read by readLineMarks, as the server reads it). What the view cannot
- * honour is reported as W_MARK (decision D14): parts that name no line (the server says so for a mark it saw; this
+ * honour is reported as W_MARK (decision reports-are-component-state): parts that name no line (the server says so for a mark it saw; this
  * is for marks that reached the tab another way) and, once the view knows how many lines there are, ranges past the
  * last one. The view also notes the ignored parts in its header (ignoredMarksText).
  */

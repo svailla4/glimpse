@@ -1,4 +1,4 @@
-// Slider (decision D25): a number the user sets. A number field, and a range beside it when min < max.
+// Slider (decision what-if-as-a2ui-calls): a number the user sets. A number field, and a range beside it when min < max.
 // A number is written to the $/path `value` binds through A2UI's own setter (`setValue`, from GenericBinder), so
 // every call reading that path (div($/w/seats,60) in a Stat, a Stats row) is computed again in the tab at once,
 // without the server.

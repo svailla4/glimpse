@@ -226,7 +226,7 @@ export function missingFileHint(path: string, candidates: readonly string[]): st
 }
 
 /**
- * Decision D25: what the calls reading `path` compute now, component by component in the view's order: a value or
+ * Decision what-if-as-a2ui-calls: what the calls reading `path` compute now, component by component in the view's order: a value or
  * why there is none. Read from the model's data with the datasets the surface holds.
  */
 export function computedFrom(record: SurfaceRecord, path: string): Computed[] {
@@ -281,7 +281,7 @@ function slotKeys(kind: SlotKind, data: unknown): string[] {
 }
 
 /**
- * Decision D1: where a drilled dataset is, and the scope one level out. `up` is '' when the next step out is the
+ * Decision drill-has-way-back: where a drilled dataset is, and the scope one level out. `up` is '' when the next step out is the
  * spec's own scope (or the target is not below it at all), which is also what "reset" sends.
  */
 export function drillOf(own: string | undefined, target: string | undefined): Drill | undefined {
@@ -629,11 +629,11 @@ export class Session {
     const defined = new Set(compiled.messages.flatMap(message => componentsOf(message).map(comp => comp.id)));
     const components = [...draft.record.components.values()];
     const diagrams = diagramNotes(components, draft.record.data, defined, compiledData);
-    // Decision D24: the files bound diagram and Steps data name are checked with the call's own (checkNamed).
+    // Decision links-through-node-ids: the files bound diagram and Steps data name are checked with the call's own (checkNamed).
     for (const entry of diagrams.files) if (expansion.files.length < MAX_CHECKS) expansion.files.push(entry);
     const links = linkNotes(components, draft.record.data, defined, compiledData);
     const calcs = calcNotes(components, draft.record.data, defined, compiledData);
-    // Decision D25: a number the user set that this call's own, unchanged seed would have undone.
+    // Decision what-if-as-a2ui-calls: a number the user set that this call's own, unchanged seed would have undone.
     const kept = draft.kept.map(({path, value, typed}) =>
       `$${path} stays ${value} (set in the tab${typed === undefined ? '' : ` to ${typed}, held to the Slider's range`}); write $${path}=... itself to change it`);
     return {
@@ -677,7 +677,7 @@ export class Session {
     let datasets: ShowOutcome['datasets'] = [];
     let tab: TabState = 'none';
     try {
-      // Decision D14: the state of every component this call defines again is forgotten, and the tab reports it afresh
+      // Decision reports-are-component-state: the state of every component this call defines again is forgotten, and the tab reports it afresh
       // while this call waits: a fix that leaves a component as broken as before is told as such. A patch redefines
       // the components it sends, a replace in place those its text defines (identical or not) and any whose
       // definition changed, any other replace all of them.
@@ -723,14 +723,14 @@ export class Session {
   }
 
   /**
-   * Decision D3, the static half: what the server can know without a tab. A literal file that is not a file of the
+   * Decision show-reports-what-tab-drew, the static half: what the server can know without a tab. A literal file that is not a file of the
    * project and a revision git does not know each give one `Name#id: ...` warning.
    */
   private async checkNamed(services: Services, expansion: Expansion): Promise<string[]> {
     const {ctx} = services;
     const out: string[] = [];
     let candidates: string[] | undefined;
-    // the files of props first, then those named inside data (FileCheck.nested, decision D24)
+    // the files of props first, then those named inside data (FileCheck.nested, decision links-through-node-ids)
     for (const {where, file, nested} of [...expansion.files.filter(entry => !entry.nested), ...expansion.files.filter(entry => entry.nested)]) {
       if (out.length >= MAX_CHECK_WARNINGS) break;
       const path = parseFileLoc(file).path;
@@ -762,7 +762,7 @@ export class Session {
   }
 
   /**
-   * What became known while a `show` waited (decisions D3 and D5): field names the spec asks for that the settled
+   * What became known while a `show` waited (decisions show-reports-what-tab-drew and accept-familiar-variants): field names the spec asks for that the settled
    * dataset does not have, and what the tab reported drawing instead of a component. Reports taken here are not
    * delivered again as `viewer:` lines.
    */
@@ -793,7 +793,7 @@ export class Session {
   }
 
   /**
-   * Decision D14, the viewer half: a tab reports the current state of component `name#id`: OK, a truthful empty or
+   * Decision reports-are-component-state, the viewer half: a tab reports the current state of component `name#id`: OK, a truthful empty or
    * waiting state (I_*), or a problem (W_*, E_*). The store keeps the latest one; the model hears of a problem once.
    * Returns false for a surface or component that does not exist.
    */
@@ -1001,7 +1001,7 @@ export class Session {
   }
 
   /**
-   * Decision D8: looks at HEAD and the working tree before a tool call is served, tab or no tab, and refreshes when
+   * Decision fresh-tree-every-call: looks at HEAD and the working tree before a tool call is served, tab or no tab, and refreshes when
    * they moved, so no answer is computed on a HEAD, a revision or a file index that is out of date. Cheap when
    * nothing changed (two git calls). There is deliberately no "looked a moment ago" shortcut: an agent edits a file
    * and asks in the same breath. Does nothing before the services are loaded: nothing can be stale yet. Never rejects.
@@ -1084,7 +1084,7 @@ export class Session {
 
   // ---------------------------------------------------------------- files the viewer may ask for
   /**
-   * Decision D10: whether a repo-relative path names a file of the inventory (tracked, or untracked and not
+   * Decision untrusted-input-contained: whether a repo-relative path names a file of the inventory (tracked, or untracked and not
    * ignored). Everything under .git, ignored files, symbolic links and anything outside the root are `refused`,
    * whether or not they exist; a path with no file at all is `missing`, so a typo still reads "does not exist".
    */
@@ -1121,7 +1121,7 @@ export class Session {
   }
 
   /**
-   * gl_set (decision D25): the number a Slider set. The tab names no path: it is the one the stored Slider binds, a
+   * gl_set (decision what-if-as-a2ui-calls): the number a Slider set. The tab names no path: it is the one the stored Slider binds, a
    * path of the model's own, and the number is held to the Slider's own min and max. It goes into the data, so a
    * reload, a second tab and a patch keep it, with the value the spec had there, so the same seed sent again does not
    * undo it (surfaces.ts keepTyped). Nothing is published: the tab that set it already computed what reads it. The
@@ -1146,7 +1146,7 @@ export class Session {
 
   /**
    * gl_drill: one dataset of one surface gets a new positional target; "" (or the spec's own target) restores the
-   * spec's scope. The envelope says where it is and what is one level out (decision D1), pending or settled, so
+   * spec's scope. The envelope says where it is and what is one level out (decision drill-has-way-back), pending or settled, so
    * the viewer's way back survives a reload.
    */
   drillTo(surfaceId: string, key: string, target: string): void {

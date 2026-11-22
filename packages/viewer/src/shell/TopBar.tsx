@@ -46,7 +46,7 @@ export function fullTitle(info: Pick<SurfaceInfo, 'id' | 'title' | 'view'>): str
   return target && target.length > title.length && target.startsWith(title.replace(/…$/, '')) && PATH_LIKE.test(target) ? target : title;
 }
 
-/** A title that is a file path keeps its file name: the directories are cut, not the end (design rule D12). */
+/** A title that is a file path keeps its file name: the directories are cut, not the end (design rule paths-keep-file-name). */
 export function tabLabel(info: Pick<SurfaceInfo, 'id' | 'title' | 'view'>): string {
   const title = fullTitle(info);
   return PATH_LIKE.test(title) ? elidePath(title, TAB_PATH_CHARS) : title;

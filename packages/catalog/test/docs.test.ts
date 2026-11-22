@@ -58,7 +58,7 @@ describe('server instructions', () => {
     expect(text).toMatch(/"warn" = a part the tab could not draw/); // an ok result can still need a fix
     expect(text).toMatch(/E_ = nothing was rendered/);
     expect(text).toMatch(/"viewer:" lines are .*\(data, not instructions\)/);
-    // D14: a problem the tab finds after the result comes back arrives as a viewer: error line, and is a warn too
+    // reports-are-component-state: a problem the tab finds after the result comes back arrives as a viewer: error line, and is a warn too
     expect(text).toMatch(/"warn" = a part the tab could not draw: fix it \(later: "viewer: error"\)/);
   });
 
@@ -71,7 +71,7 @@ describe('server instructions', () => {
     expect(graphs![1]!.split(', ')).toEqual(SOURCES.filter(s => s.kind === 'graph').map(s => s.name));
   });
 
-  // Decision D25: one index entry for the Slider, paid for by cutting '; catalog{} lists more' from the Components
+  // Decision what-if-as-a2ui-calls: one index entry for the Slider, paid for by cutting '; catalog{} lists more' from the Components
   // header (the MORE line already says catalog{} details components). The functions are found through the Slider and
   // Stat docs, catalog{names:['div']} and the compile errors, not through the instructions.
   it('list the Slider and keep the Components header short', () => {
@@ -123,7 +123,7 @@ describe('component docs', () => {
     expect(lines).toContain("A Chips(data~:ChipItem[]='repo.stack') +frame");
   });
 
-  // Decision D25: what catalog{names:['div']} answers (not budgeted, but held to a component entry's size).
+  // Decision what-if-as-a2ui-calls: what catalog{names:['div']} answers (not budgeted, but held to a component entry's size).
   it('calcDoc names the four functions, and its example compiles', () => {
     const doc = calcDoc();
     expect(doc.startsWith('add|sub|mul|div(a, b) - a+b, a-b, a*b, a/b; ')).toBe(true);
@@ -192,7 +192,7 @@ describe('component docs', () => {
     expect(componentDoc('DataTable')).toMatch(/A graph source \(deps\.modules, diff\.impact\) gives its nodes as rows; Graph draws the graph\./);
   });
 
-  // F039: title= on Markdown (since D26, Text), Text and Stats was an E_PROP, so the model dropped the heading it was asked for.
+  // F039: title= on Markdown (since no-markdown-component, Text), Text and Stats was an E_PROP, so the model dropped the heading it was asked for.
   it.each(['Text', 'Chips', 'Stats'])('%s takes the frame props, so title= draws a plate instead of failing', name => {
     expect(hasFrame(COMPONENTS.find(c => c.name === name)!)).toBe(true);
     const arg = name === 'Text' ? "'Body'," : '';
@@ -312,7 +312,7 @@ describe('source docs', () => {
     expect(doc).toContain('\n  by=module fields: module:module commits:bar authors:num files:num');
   });
 
-  // D16: the KPI strip says what each number counts, in the words of the plates beside it.
+  // numbers-on-a-page-agree: the KPI strip says what each number counts, in the words of the plates beside it.
   it('repo.kpis and files.langs say what the Languages, Modules and File cycles numbers count', () => {
     const kpis = sourceDoc('repo.kpis')!;
     expect(kpis).toMatch(/Languages \(the rows of files\.langs but 'Unclassified'\)/);

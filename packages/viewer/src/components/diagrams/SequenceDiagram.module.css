@@ -7,7 +7,7 @@
   :global(.gl-frame) .root {
     --sq-paper: var(--gl-surface);
   }
-  /* As tall as the steps, up to the plate's maximum height (set inline from useSizeCap, decision D20). */
+  /* As tall as the steps, up to the plate's maximum height (set inline from useSizeCap, decision content-sized-plates). */
   .scroll {
     overflow: auto;
     outline: none;
@@ -121,7 +121,7 @@
     fill: var(--gl-ink);
   }
   /*
-   * Decision D24: a message that is the selection, or names the selected node, is drawn in the selection's accent like
+   * Decision links-through-node-ids: a message that is the selection, or names the selected node, is drawn in the selection's accent like
    * a selected box in the other diagrams; while any is, the other rows dim as unconnected nodes do (flowkit).
    */
   .step[data-kind='message'],

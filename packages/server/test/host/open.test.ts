@@ -78,7 +78,7 @@ describe('editorCommand', () => {
     expect(editorCommand('/repo/a.ts', 1, {GLIMPSE_EDITOR: 'code {file}'}, none)).toBeUndefined();
   });
 
-  it('GLIMPSE_EDITOR counts only as an own property of the environment (decision D10)', () => {
+  it('GLIMPSE_EDITOR counts only as an own property of the environment (decision untrusted-input-contained)', () => {
     const inherited = Object.create({GLIMPSE_EDITOR: '/bin/sh -c id'}) as NodeJS.ProcessEnv;
     expect(editorCommand('/repo/a.ts', 1, inherited, none)).toBeUndefined();
     expect(editorCommand('/repo/a.ts', 1, ownEnv({GLIMPSE_EDITOR: 'code -g {file}:{line}'}), found('code'))).toEqual(['/usr/local/bin/code', ['-g', '/repo/a.ts:1']]);
@@ -145,7 +145,7 @@ describe('findProgram and trustedPath', () => {
     expect(findProgram('myeditor', env, project.root)).toBeUndefined();
   });
 
-  it('an inherited PATH is not a PATH (decision D10)', () => {
+  it('an inherited PATH is not a PATH (decision untrusted-input-contained)', () => {
     expect(trustedPath(Object.create({PATH: '/usr/bin'}) as NodeJS.ProcessEnv, project.root)).toEqual([]);
   });
 

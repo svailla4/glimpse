@@ -81,11 +81,11 @@ export interface DeltaCell { add: number; del: number }
 // ---------------------------------------------------------------- entities and selection
 /**
  * What a selection can be. The server keeps only these in /ui/sel. `message` is one drawn message of one
- * SequenceDiagram (decision D24).
+ * SequenceDiagram (decision links-through-node-ids).
  */
 export const ENTITY_TYPES = ['file', 'dir', 'module', 'package', 'symbol', 'author', 'commit', 'node', 'row', 'message'] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
-/** Most diagram node ids one item names, or one entity stands for (decision D24); the server holds /ui/sel to the same. */
+/** Most diagram node ids one item names, or one entity stands for (decision links-through-node-ids); the server holds /ui/sel to the same. */
 export const MAX_ENTITY_NODES = 16;
 /** Value of /ui/sel. One per surface. */
 export interface EntityRef {
@@ -97,7 +97,7 @@ export interface EntityRef {
   endLine?: number;
   label?: string;
   /**
-   * Diagram node ids this entity stands for besides itself (decision D24): an item's node:'PG'; a message's sender,
+   * Diagram node ids this entity stands for besides itself (decision links-through-node-ids): an item's node:'PG'; a message's sender,
    * via and receiver nodes, in order. At most MAX_ENTITY_NODES.
    */
   nodes?: string[];
@@ -168,7 +168,7 @@ export function fileRefs(text: string): string[] {
 }
 
 /**
- * Decision D22: `mark` is written the way file anchors are ('3,7-9', 'L7-9'). A part written another plain way is
+ * Decision no-invented-string-formats: `mark` is written the way file anchors are ('3,7-9', 'L7-9'). A part written another plain way is
  * read and the reading is returned in `fixed`; a part that names no line (lines start at 1) is returned in `ignored`,
  * so the server and the view can say so instead of marking nothing. The server and the viewer both read marks here.
  */
@@ -270,7 +270,7 @@ export type Format = 'num' | 'compact' | 'bytes' | 'pct' | 'duration';
 export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info';
 export interface StatItem { label: string; value: number | string; unit?: string; delta?: number; spark?: number[]; format?: Format; tone?: Tone }
 export type StepStatus = 'todo' | 'doing' | 'done' | 'blocked' | 'skipped';
-/** `node` names the diagram node (or nodes) a step stands for: selecting the step lights them (decision D24). */
+/** `node` names the diagram node (or nodes) a step stands for: selecting the step lights them (decision links-through-node-ids). */
 export interface StepItem { title: string; note?: string; status?: StepStatus; file?: FileLoc; node?: string | string[] }
 /** The keys a Steps item is read from; `name` and `label` are other words for `title`, `path` for `file`, `nodes` for `node`. */
 export const STEP_KEYS: readonly string[] = ['title', 'name', 'label', 'note', 'status', 'file', 'path', 'node', 'nodes'];
@@ -285,7 +285,7 @@ export interface LayerItem { name: string; note?: string; items: Array<string | 
  * form. The string form also draws the relation, so `relations` can be left out.
  */
 export interface ErColumn { name: string; type?: string; pk?: boolean; fk?: boolean | string; ref?: string; nullable?: boolean }
-/** `node` names the diagram node (or nodes) the table stands for, as StepItem's (decision D24). */
+/** `node` names the diagram node (or nodes) the table stands for, as StepItem's (decision links-through-node-ids). */
 export interface ErTable { name: string; file?: FileLoc; node?: string | string[]; columns: ErColumn[] }
 /** `from` and `to` are 'table.column' (or a bare table name). */
 export interface ErRelation { from: string; to: string; label?: string; card?: '1-1' | '1-n' | 'n-1' | 'n-n' }

@@ -139,7 +139,7 @@ describe('expandMessages: diagram data, columns, paths', () => {
     ]);
   });
 
-  // Decision D24: Layers, ERDiagram, Steps and DataTable rows are read by the catalog cleaners the tab draws with.
+  // Decision links-through-node-ids: Layers, ERDiagram, Steps and DataTable rows are read by the catalog cleaners the tab draws with.
   it('inline Layers and ERDiagram data say what they leave out, and what is not the shape at all is E_SHAPE', () => {
     const out = expand(`root=Page('x',[Layers([{name:'Data',colour:'red',items:[{label:'Postgres',size:3,node:'PG'},true]}]),ERDiagram([{name:'users',columns:[{name:'id',unique:true}]},{name:'users',columns:[]}]),Flowchart({nodes:{PG:'Postgres'},edges:[]})])`);
     expect(out.problems).toEqual([]);
@@ -173,7 +173,7 @@ describe('expandMessages: diagram data, columns, paths', () => {
     ]);
   });
 
-  it('reads path as file on every D24 item with a fixed line, and a via written in a list message', () => {
+  it('reads path as file on every links-through-node-ids item with a fixed line, and a via written in a list message', () => {
     const out = expand(`root=Page('T',[Flowchart({nodes:{A:{label:'A',path:'README.md',notes:'n'}},edges:[]}),Layers([{name:'x',items:[{label:'b',path:'README.md'}]}]),ERDiagram([{name:'users',path:'README.md',columns:['id']}]),Steps([{title:'c',path:'README.md'}]),SequenceDiagram({steps:[['A','B','x',['Q']],['A','B','y','sync','Q']]})])`);
     expect(out.problems).toEqual([]);
     expect(out.fixes).toEqual([
@@ -190,7 +190,7 @@ describe('expandMessages: diagram data, columns, paths', () => {
     ]);
   });
 
-  // Decision D24 (owner's rule): a row always draws, and its node is data unless the table links the view's diagrams.
+  // Decision links-through-node-ids (owner's rule): a row always draws, and its node is data unless the table links the view's diagrams.
   it('says nothing about DataTable rows as it expands them: a nodes count or a null node is data', () => {
     const out = expand(`root=Page('x',[DataTable([{cluster:'prod',nodes:12},{cluster:'dev',nodes:3}]),DataTable([{pod:'api',node:'ip-1'},{pod:'w',node:null},{pod:'c',node:''}])])`);
     expect(out.problems).toEqual([]);
@@ -229,7 +229,7 @@ describe('expandMessages: diagram data, columns, paths', () => {
     expect(out.lines[0]).toMatch(/^E_ENUM DataTable#root_children_0\.columns column 2: unknown kind "bars" for column "n"\. Kinds: text num /);
   });
 
-  it('the list form of columns is checked entry by entry: an unknown kind is E_ENUM, the rest is warn and draws (D22)', () => {
+  it('the list form of columns is checked entry by entry: an unknown kind is E_ENUM, the rest is warn and draws (no-invented-string-formats)', () => {
     const bad = expand(`root=Page('x',[DataTable('fake.rows',['path',{key:'n',kind:'bars'}])])`);
     expect(bad.lines).toEqual([expect.stringMatching(/^E_ENUM DataTable#root_children_0\.columns column 2: unknown kind "bars" for column "n"\. Kinds: text num /)]);
     const partly = expand(`root=Page('x',[DataTable('fake.rows',['path',{kind:'bar'},{key:'n',width:80}])])`);
@@ -265,13 +265,13 @@ describe('expandMessages: diagram data, columns, paths', () => {
     expect(out.codes).toEqual(['E_SOURCE', 'E_SHAPE', 'E_ENUM', 'E_ARGS']);
   });
 
-  it('a reserved path segment in a compiled message is E_PATH (decision D10)', () => {
+  it('a reserved path segment in a compiled message is E_PATH (decision untrusted-input-contained)', () => {
     const out = expandMessages([{version: '1.0', updateDataModel: {surfaceId: 's', path: '/a/__proto__/b', value: 1}}], registry);
     expect(out.problems.map(p => `${p.code} ${p.message}`)).toEqual(['E_PATH "__proto__" cannot be used as a data path segment: __proto__, constructor and prototype are reserved. Rename it.']);
   });
 });
 
-// Decision D25: what a Slider binds, a call where it computes nothing, and calls checked against the data.
+// Decision what-if-as-a2ui-calls: what a Slider binds, a call where it computes nothing, and calls checked against the data.
 describe('expandMessages: Slider and calls', () => {
   it('a Slider value that is not a binding to a path of the model\'s own is refused with what to write', () => {
     expect(expand(`root=Page('x',[s])\ns=Slider('Seats',50000)`).lines)
@@ -404,7 +404,7 @@ e=ERDiagram([{name:'t',columns:[{name:'c',type:add(1,1)}]}])`);
 });
 
 // Findings F032 and F090: an `ok` whose view shows a redline. What the spec alone gives away is said at once.
-// Decision D24: an id an item links to that nothing else on the view declares or links is named, with a hint.
+// Decision links-through-node-ids: an id an item links to that nothing else on the view declares or links is named, with a hint.
 describe('linkNotes', () => {
   const flow: WireComponent = {id: 'arch', component: 'Flowchart', data: {nodes: {PG: 'Postgres', GW: 'Gateway', Inv: 'Inventory', Q: 'Queue'}, edges: []}};
   const tiers = (...nodes: unknown[]): WireComponent => ({id: 'tiers', component: 'Layers', data: [{name: 'Data', items: nodes.map((node, i) => ({label: `item ${i}`, node}))}]});
@@ -451,7 +451,7 @@ describe('linkNotes', () => {
     expect(linkNotes([flow, tiers('PG')], {}, new Set(['tiers']), new Set())).toEqual([]);
   });
 
-  it('reads inline data as the tab draws it: calls computed, $/paths resolved (decision D25)', () => {
+  it('reads inline data as the tab draws it: calls computed, $/paths resolved (decision what-if-as-a2ui-calls)', () => {
     const items = (label: unknown) => ({id: 'tiers', component: 'Layers', data: [{name: 'Data', items: [{label, node: 'PGG'}]}]}) as WireComponent;
     const warning = "Layers#tiers: node 'PGG' links to nothing on this view (nearest: PG)";
     expect(notes([flow, items({'@call': 'add', args: {a: 1, b: 1}})])).toEqual([warning]);
@@ -624,7 +624,7 @@ e=Text($/n)`);
   });
 });
 
-// Decision D15 (finding V001): a guessed field name never produces an empty plate.
+// Decision guessed-fields-repaired (finding V001): a guessed field name never produces an empty plate.
 describe('expandMessages: field names', () => {
   const fixesOf = (spec: string) => expand(spec).fixes;
   const propsOf = (spec: string, name: string) => expand(spec).byComponent(name);
@@ -703,7 +703,7 @@ describe('expandMessages: field names', () => {
     expect(out.byComponent('Split').ratio).toBe('3:7');
   });
 
-  it("says what it did to Split's ratio: a share rewritten is fixed, a value Split cannot read is warn (D22)", () => {
+  it("says what it did to Split's ratio: a share rewritten is fixed, a value Split cannot read is warn (no-invented-string-formats)", () => {
     const out = expand(`root=Page('x',[Split(Text('a'),Text('b'),'0.3'),Split(Text('c'),Text('d'),'1:2'),Split(Text('e'),Text('f'),'wide')])`);
     expect(out.problems).toEqual([]);
     expect(out.fixes).toEqual(["Split.ratio '0.3' -> '3:7'"]);
@@ -736,7 +736,7 @@ describe('expandMessages: field names', () => {
   });
 });
 
-// Decision D22: a mark that reads as a guess is rewritten and said; a part that names no line is a warn line.
+// Decision no-invented-string-formats: a mark that reads as a guess is rewritten and said; a part that names no line is a warn line.
 describe('expandMessages: mark', () => {
   it('rewrites a guessed mark and says it as a fix', () => {
     const out = expand(`root=Page('x',[a,b,c,d,e,f])\na=CodeView('src/a.ts',mark='lines 10-20')\nb=CodeView('src/a.ts',mark='L10:L20')\nc=CodeView('src/a.ts',mark='#L10-L20')\nd=CodeBlock('x','ts',mark='10..20')\ne=CodeView('src/a.ts',mark='10\u201320')\nf=CodeView('src/a.ts',mark='20-10')`);

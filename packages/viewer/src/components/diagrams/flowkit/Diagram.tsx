@@ -1,10 +1,10 @@
-// The node-link stage Graph, Flowchart and ERDiagram draw on (decisions D19, D20): ELK lays the diagram out in a
+// The node-link stage Graph, Flowchart and ERDiagram draw on (decisions diagram-engine-in-worker, content-sized-plates): ELK lays the diagram out in a
 // worker, React Flow draws it. A component turns its data into nodes, edges and groups and supplies the drawing of one
 // node; everything else is here: the plate's height, the opening view, selection linking through /ui/sel, keyboard
 // traversal, Cmd/Ctrl-click and `o` to open, `c` to copy, double-click to drill, dragging nodes with the positions
 // remembered (glimpse.pos.v1) and the Re-layout control, the zoom controls and the minimap.
 //
-// Height and opening view (D20, sizing.ts). The drawing is as tall as it is at the scale that fits the plate's width,
+// Height and opening view (content-sized-plates, sizing.ts). The drawing is as tall as it is at the scale that fits the plate's width,
 // never above 100%, between 140 px and the size step's maximum (useSizeCap). When all of it then shows at a zoom where
 // its smallest text is 10 px on screen it opens fitted and centred; otherwise it opens at that readable zoom at the
 // start of the flow, with pan, zoom and the minimap. A diagram without a direction is laid out both ways and drawn the
@@ -552,7 +552,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
   const bounds = useMemo(() => drawnBounds(laid, moved, boxes, frames), [laid, moved, boxes, frames]);
 
   // ---- selection
-  // Decision D24: a node matched `exact` or `within` is the diagram's own selection and brings its neighbours; a node
+  // Decision links-through-node-ids: a node matched `exact` or `within` is the diagram's own selection and brings its neighbours; a node
   // `linked` to the selection (it stands for a diagram node the selection names) lights alone.
   const {selectedIds, own} = useMemo(() => {
     const ids = new Set<string>();
@@ -585,7 +585,7 @@ function Canvas<T>(p: CanvasProps<T>): ReactNode {
     return {selectedIds: ids, own};
   }, [selected, nodes]);
   const legs = useMemo(() => legsOf(selected), [selected]);
-  // Decision D24: neighbours light only round a node that is itself selected; a node lit through a link lights alone,
+  // Decision links-through-node-ids: neighbours light only round a node that is itself selected; a node lit through a link lights alone,
   // and an edge between two lit nodes is hot; a path (a selected message) heats only the edges that are its legs.
   const {lit, hot} = useMemo(() => {
     if (selectedIds.size === 0) return {lit: null, hot: NO_EDGES};

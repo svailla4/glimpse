@@ -1,7 +1,7 @@
 // packages/viewer/src/components/charts/index.ts
 // The `charts` chunk (`chunk: 'charts'` in @glimpse/catalog): one view per component, each in the file of its name,
 // all drawn as SVG on the shared chartkit/. Exports exactly `views`.
-// It also holds Slider, an input (family `input`), which is kept lazy here for the eager budget (decision D25).
+// It also holds Slider, an input (family `input`), which is kept lazy here for the eager budget (decision what-if-as-a2ui-calls).
 import type {GlView} from '../../kit/index.ts';
 import {BarChartView} from './BarChart.tsx';
 import {CalendarHeatmapView} from './CalendarHeatmap.tsx';

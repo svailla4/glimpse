@@ -63,7 +63,7 @@ function drawTable(node: DiagramNode<TableDraw>, flags: NodeFlags): ReactNode {
 }
 
 /**
- * Decision D24: a table always selects itself as a node. Its file adds the place (so /ui/file follows and Cmd-click
+ * Decision links-through-node-ids: a table always selects itself as a node. Its file adds the place (so /ui/file follows and Cmd-click
  * opens it, and the tables of one file stay apart by their lines); its `node` adds the diagram nodes it stands for.
  */
 function entityOf(table: SchemaTable): EntityRef {

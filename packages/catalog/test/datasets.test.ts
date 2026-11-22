@@ -34,7 +34,7 @@ describe('file anchors and line ranges', () => {
     expect(readLineMarks(spec)).toEqual({ranges, ignored: []});
   });
 
-  // Decision D22: a plain guess is read and the reading is said; it is never dropped in silence.
+  // Decision no-invented-string-formats: a plain guess is read and the reading is said; it is never dropped in silence.
   it.each([
     ['lines 10-20', [[10, 20]], '10-20'],
     ['line 7', [[7, 7]], '7'],
@@ -71,7 +71,7 @@ describe('[[path]] file refs in prose', () => {
     expect(fileRefs('[[ a.ts]] [[a.ts ]] [[]] [[a\nb]] [[a[b]] [a.ts] [[ok.ts]]')).toEqual(['ok.ts']);
     expect(fileRefs('`[[in/code.ts]]` then [[out.ts]] and **[[bold.ts]]**')).toEqual(['out.ts', 'bold.ts']);
     expect(fileRefs(`[[${'x'.repeat(401)}]] [[${'y'.repeat(400)}]]`)).toEqual(['y'.repeat(400)]);
-    // Text has inline code spans only (decision D26): a fence is not code, so a ref between fences is a link
+    // Text has inline code spans only (decision no-markdown-component): a fence is not code, so a ref between fences is a link
     expect(fileRefs('```\n[[a.ts]]\n```')).toEqual(['a.ts']);
   });
 
@@ -105,7 +105,7 @@ describe('gallery', () => {
     expect(galleryData()).toBe(GALLERY_DATA);
   });
 
-  // The forms decision D5 accepts beyond the canonical one are in the showcase, so every screenshot run and the
+  // The forms decision accept-familiar-variants accepts beyond the canonical one are in the showcase, so every screenshot run and the
   // end-to-end gallery test exercise them.
   it('exercises the accepted forms: 1-based Steps.current, ER as a table list with fk strings, Layers title and label, mark L-ranges', () => {
     const steps = props(one('Steps'));
@@ -135,7 +135,7 @@ describe('gallery', () => {
   });
 
   // F014: half the file links were struck through as missing, because they named fixture paths that are not in the
-  // repository being shown. F092: the outline read README.md, which has no symbols. Decision D24: the server checks the
+  // repository being shown. F092: the outline read README.md, which has no symbols. Decision links-through-node-ids: the server checks the
   // files diagram and Steps data name, so those point at the same file.
   it('points every plate that reads the disk, every file link in prose and every file data names at one file of the host repository', () => {
     const paths = (text: string) => [...text.matchAll(/\[\[([^\]#]+)/g)].map(m => m[1]);
@@ -211,7 +211,7 @@ describe('gallery', () => {
     for (const clean of [cleanLayers(props(one('Layers')).data), cleanSchema(model.g.schema), cleanItems('step', model.g.plan)]) expect(clean.ok && {fixes: clean.fixes, dropped: clean.dropped}).toEqual({fixes: [], dropped: []});
   });
 
-  // Decision D24: the showcase links its diagrams, so a click on Postgres shows what a link lights.
+  // Decision links-through-node-ids: the showcase links its diagrams, so a click on Postgres shows what a link lights.
   it('links a Layers item, an ER table and two sequence actors to Flowchart nodes that exist', () => {
     const flow = cleanFlow(props(one('Flowchart')).data);
     const seq = cleanSequence(props(one('SequenceDiagram')).data);
@@ -227,7 +227,7 @@ describe('gallery', () => {
     const ids = new Set(flow.ast.nodes.map(n => n.id));
     for (const id of ['DB', 'H']) expect(ids.has(id), id).toBe(true);
   });
-  // Decision D25: the Input section's Stat is computed from the number its Slider sets.
+  // Decision what-if-as-a2ui-calls: the Input section's Stat is computed from the number its Slider sets.
   it('computes a Stat from the Slider it shows: 250 checkout req/s at 50,000 seats', () => {
     expect(props(one('Slider'))).toMatchObject({value: {'@path': '/g/seats'}, min: 1000, max: 200000, step: 1000});
     expect(model.g.seats).toBe(50000);

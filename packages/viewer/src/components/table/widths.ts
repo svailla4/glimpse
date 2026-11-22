@@ -23,7 +23,7 @@ type Kind = Column['kind'];
 const TRACKS: Readonly<Record<Kind, readonly [floor: number, grow: number]>> = {
   text: [88, 2],
   code: [140, 3],
-  // The path column takes the largest share: it is what tells the rows apart (D12).
+  // The path column takes the largest share: it is what tells the rows apart (paths-keep-file-name).
   path: [168, 4],
   symbol: [112, 2],
   module: [88, 1.4],
@@ -380,7 +380,7 @@ export function columnWidths(boxes: readonly ColumnBox[], width: number): number
   // name is made whole cheaply and a column of long commands then takes the width (raiseByText).
   raiseByText(textual.filter(i => boxes[i]!.steps !== undefined));
   // Text is whole, outliers too, before a path shows more directories than its label needs: a path gives way at its
-  // directories by design (D12), a package name or an owner cut is just cut.
+  // directories by design (paths-keep-file-name), a package name or an owner cut is just cut.
   const paths = textual.filter(i => boxes[i]!.label !== undefined);
   const words = textual.filter(i => boxes[i]!.label === undefined);
   raise(words, box => box.typical);

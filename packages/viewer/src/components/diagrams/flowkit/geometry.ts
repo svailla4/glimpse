@@ -1,4 +1,4 @@
-// Geometry the diagrams still draw themselves once ELK has placed and routed everything (decision D19): the shapes
+// Geometry the diagrams still draw themselves once ELK has placed and routed everything (decision diagram-engine-in-worker): the shapes
 // edges end on, the marks at their ends, elbows, and the nearest node in a direction for the arrow keys. Pure
 // functions, no DOM. Routing is ELK's (graph.ts), except for an edge whose node the reader dragged somewhere no
 // layout kept a way free: routeAround() finds it an orthogonal way past the other nodes and frames, and freeSpot()

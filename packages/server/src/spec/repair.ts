@@ -52,7 +52,7 @@ function callNames(src: string): Rewrite {
   return edits.length > 0 ? {text: replaceAt(src, edits), fixes} : {text: src, fixes};
 }
 
-/** Decision D25: a function written another way ('multiply', 'Div', 'mult') takes the name it means: `multiply -> mul`. */
+/** Decision what-if-as-a2ui-calls: a function written another way ('multiply', 'Div', 'mult') takes the name it means: `multiply -> mul`. */
 function renameCall(src: string, name: string): Repair | undefined {
   const target = calcTarget(name);
   if (!target || target === name) return undefined;
@@ -223,14 +223,14 @@ function stringList(src: string, open: SpecToken): {start: number; end: number; 
 }
 
 /**
- * Rewrites what the author plainly meant, in one pass over every call, before anything is compiled (decision D15:
+ * Rewrites what the author plainly meant, in one pass over every call, before anything is compiled (decision guessed-fields-repaired:
  * deterministic, and not limited by the number of repair passes):
  * - an enum value given as one of the catalog's aliases, a synonym or a near miss becomes the value it stands for
  *   (`Callout.kind warning -> warn`), however many there are (finding V069);
  * - a number where the prop takes a string is quoted, silently: its meaning is unchanged (finding V015);
  * - a plain string where the prop takes an action becomes Event('that name') (finding V042);
  * - hyphenated part names take underscores (finding V043);
- * - a function written another way takes the name it means, at every call (`multiply -> mul`, decision D25).
+ * - a function written another way takes the name it means, at every call (`multiply -> mul`, decision what-if-as-a2ui-calls).
  */
 export function rewrite(src: string): Rewrite {
   const named = hyphenatedNames(src);

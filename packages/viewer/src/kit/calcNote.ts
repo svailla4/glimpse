@@ -1,5 +1,5 @@
 // packages/viewer/src/kit/calcNote.ts
-// Why the values computed from a Slider's number have none at the number it holds now (decision D25). Like hooks.ts
+// Why the values computed from a Slider's number have none at the number it holds now (decision what-if-as-a2ui-calls). Like hooks.ts
 // this reads the surface model, so views never import @a2ui/*. It is not exported from kit/index.ts: only the Slider
 // imports it, so it and the call walkers of the catalog's calls.ts stay in the lazy `charts` chunk, out of the
 // eager script.

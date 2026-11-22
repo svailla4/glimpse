@@ -5,7 +5,7 @@
 // Accepting a reasonable guess beats documenting the one right spelling: enum props list the other words authors
 // write as `aliases` (the spec pipeline rewrites them and says so), and data shapes say which key spellings a
 // component reads (datasets.ts). The shapes (SHAPES) and one example call per component (COMPONENT_EXAMPLES) are in
-// docs.ts: the tab bundles this file eagerly and never reads them (decision D25).
+// docs.ts: the tab bundles this file eagerly and never reads them (decision what-if-as-a2ui-calls).
 import {component, minor, opt, p} from './props.ts';
 import type {
   ChipItem, CodeNote, CommitRow, DirNode, ErData, GraphData, KeyValueData, LayerItem, ListItem, Rows, StatItem,
@@ -499,7 +499,7 @@ export const Ask = component('Ask', {
 });
 
 /**
- * Decision D25: writes the number at the $/path its value binds, and every call reading that path recomputes in the
+ * Decision what-if-as-a2ui-calls: writes the number at the $/path its value binds, and every call reading that path recomputes in the
  * tab. In the charts chunk: an input, kept lazy for the eager budget. min, max and step are static, so the server and
  * the tab hold a number to the same limits.
  */

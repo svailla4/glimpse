@@ -25,7 +25,7 @@ const name = (value: string) => value.replace(/[^\w.-]/g, '_').slice(0, 64) || '
 /**
  * `viewer: select file src/hub/hub.ts#L41-58 (overview)`. A file, symbol or row with a path is named by its place; any
  * other entity by its id. A symbol, node, row or message also says its label, unless the id already does
- * (`select node orders`, `select row tiers:Data stores`); a node with a file says where it is (decision D24):
+ * (`select node orders`, `select row tiers:Data stores`); a node with a file says where it is (decision links-through-node-ids):
  * `viewer: select node PG Postgres db/schema.sql#L1-120 (arch)`. The node ids a selection stands for (`nodes`) are
  * not printed: the model wrote those links.
  */
@@ -52,7 +52,7 @@ export function actionLine(verb: 'press' | 'answer' | 'event', surfaceId: string
   return `${PREFIX} ${verb} ${name(surfaceId)} ${name(action)}${json ? ' ' + json : ''}`;
 }
 
-/** What a number set in the tab gave one call (decision D25): its value, or why it has none. */
+/** What a number set in the tab gave one call (decision what-if-as-a2ui-calls): its value, or why it has none. */
 export interface Computed {
   /** `Name#id`, e.g. `Stats#peak`. */
   where: string;
@@ -66,7 +66,7 @@ export interface Computed {
 const MAX_SET_PARTS = 8;
 
 /**
- * Decision D25: `viewer: set $/w/seats 80000 (what-if) -> Stats#peak data/0/value=400 data/1/value=1600`. The values
+ * Decision what-if-as-a2ui-calls: `viewer: set $/w/seats 80000 (what-if) -> Stats#peak data/0/value=400 data/1/value=1600`. The values
  * the server recomputed from the number the user set, one group per component (at most MAX_SET_PARTS); values that
  * have none are listed with why, those that fail the same way together: `data/0/value data/1/value: div: b = $/w/secs
  * is 0 (division by zero)`, each further reason after a `;`. A problem the user's own number causes is said here only,
@@ -96,7 +96,7 @@ export class EventQueue {
   private entries: Entry[] = [];
   private waiters = new Set<() => void>();
   /**
-   * Decision D14: what the tabs said about each component, in a store of its own. It never takes a place in the
+   * Decision reports-are-component-state: what the tabs said about each component, in a store of its own. It never takes a place in the
    * queue, so a flood of reports cannot push out a press; its untold problems follow the queued lines on delivery.
    */
   readonly reports = new ReportStore(() => this.wakeAll());
@@ -108,7 +108,7 @@ export class EventQueue {
 
   /**
    * The latest line of its kind replaces an undelivered earlier one with the same key; null withdraws it. Keys:
-   * 'select' (the current selection), `set\n<surface>\n<path>` (the last number set at a path, decision D25).
+   * 'select' (the current selection), `set\n<surface>\n<path>` (the last number set at a path, decision what-if-as-a2ui-calls).
    */
   latest(key: string, line: string | null): void {
     this.entries = this.entries.filter(entry => entry.key !== key);
@@ -132,7 +132,7 @@ export class EventQueue {
 
   /**
    * Delivers pending lines, oldest first, and forgets them: the queued events, then the render problems not told yet
-   * (decision D14). With `maxChars` (the prompt hook), only as many whole event lines as fit are delivered (always at
+   * (decision reports-are-component-state). With `maxChars` (the prompt hook), only as many whole event lines as fit are delivered (always at
    * least one), the rest stay queued, and render problems wait for the next tool result.
    */
   drain(maxChars = Infinity): string[] {

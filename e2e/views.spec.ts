@@ -70,7 +70,7 @@ test('catalog answers the index, a component, a source and a preset', async ({gl
   expect(detail.text).toContain("root=Page('Changes'");
 });
 
-// Decision D3 (was known defect E2E-04): a dataset ref with a bad target was reported to the agent, but a CodeView or
+// Decision show-reports-what-tab-drew (was known defect E2E-04): a dataset ref with a bad target was reported to the agent, but a CodeView or
 // DiffView with one answered a bare "ok" while the person saw "does not exist" or a redline. The server now checks
 // literal files and revisions itself and says so in the result.
 test('show tells the agent when a code or diff target does not exist', async ({glimpse}) => {

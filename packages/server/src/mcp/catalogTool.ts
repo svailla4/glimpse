@@ -52,10 +52,10 @@ function lookup(name: string, registry: SourceRegistry | undefined): string | un
   if (name === 'grammar') return GRAMMAR;
   if (name === 'examples') return examplesDoc();
   if (COMPONENT_BY_NAME.has(name)) return componentDoc(name);
-  // Decision D26: a removed component, in any case as show reads it ('markdown'), answers with what now draws it.
+  // Decision no-markdown-component: a removed component, in any case as show reads it ('markdown'), answers with what now draws it.
   const removed = removedComponent(name);
-  if (removed) return `"${name}" -> ${removed.to} (removed, decision D26: ${removed.note})\n${componentDoc(removed.to)}`;
-  // Decision D25: the four functions, by name or alias, in any case ('div', 'Div', 'multiply').
+  if (removed) return `"${name}" -> ${removed.to} (removed, decision no-markdown-component: ${removed.note})\n${componentDoc(removed.to)}`;
+  // Decision what-if-as-a2ui-calls: the four functions, by name or alias, in any case ('div', 'Div', 'multiply').
   if (calcName(name) !== undefined) return calcDoc();
   if (SOURCE_BY_NAME.has(name)) return sourceDoc(name);
   const extra = registry?.get(name);
@@ -73,7 +73,7 @@ const readsAsFunction = (name: string): boolean => /^[a-z]\w*$/.test(name) && ca
 
 /**
  * The answer for a name the tool does not know. One that reads as a function is told the four and pointed at no
- * component (decision D25: pow is not Row); sources and views stay in its Nearest list.
+ * component (decision what-if-as-a2ui-calls: pow is not Row); sources and views stay in its Nearest list.
  */
 function unknown(name: string, registry: SourceRegistry | undefined): string {
   if (!readsAsFunction(name)) return `unknown "${name.slice(0, 60)}". Nearest: ${nearest(name, vocabulary(registry)).join(' ')}`;

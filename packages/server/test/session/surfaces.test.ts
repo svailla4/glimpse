@@ -137,7 +137,7 @@ describe('draft and commit', () => {
     expect(store.get('feature')!.components.get('design')!.component).toBe('Flowchart');
   });
 
-  it('a patch replaces one node of a bound diagram, whether it was written as text or as {label} (decision D21)', () => {
+  it('a patch replaces one node of a bound diagram, whether it was written as text or as {label} (decision diagrams-are-data)', () => {
     const store = new SurfaceStore();
     apply(store, 'arch', `$/f={nodes:{A:'a',B:'b',C:{label:'c'}},edges:[['A','B']]}\nroot=Page('T',[f])\nf=Flowchart($/f)`);
     apply(store, 'arch', `$/f/nodes/B={label:'renamed',shape:'diamond'}\n$/f/nodes/C/label='also renamed'\n$/f/edges/1=['B','C']`);
@@ -158,7 +158,7 @@ describe('draft and commit', () => {
     expect(store.get('demo')).toBe(record);
   });
 
-  // Decision D1: a patch keeps the scopes the user drilled to; a show that replaces the surface clears them.
+  // Decision drill-has-way-back: a patch keeps the scopes the user drilled to; a show that replaces the surface clears them.
   it('a patch keeps envelopes and drill targets; a replace keeps undrilled envelopes and resets drilled ones', () => {
     const store = new SurfaceStore();
     const first = apply(store, 'demo', BASE);
@@ -272,7 +272,7 @@ describe('setPath', () => {
   });
 });
 
-describe('patches below a slot (decision D4)', () => {
+describe('patches below a slot (decision patch-sends-whole-slot)', () => {
   it('the delta of a patch carries each touched slot once, whole and detached from the record', () => {
     const store = new SurfaceStore();
     apply(store, 'demo', `$/plan=[{title:'A',status:'todo'},{title:'B',status:'todo'}]\n$/n=1\nroot=Page('x',[Steps($/plan)])`);
@@ -289,7 +289,7 @@ describe('patches below a slot (decision D4)', () => {
   });
 });
 
-// Decision D25: a number the user set with a Slider lives in the data, with the seed it replaced.
+// Decision what-if-as-a2ui-calls: a number the user set with a Slider lives in the data, with the seed it replaced.
 describe('numbers set in the tab', () => {
   const WHAT_IF = `root=Page('What if',[s,peak])\n$/w={seats:50000,secs:120}\ns=Slider('Seats',$/w/seats,1000,200000)\npeak=Stat(div($/w/seats,$/w/secs),'rps')`;
   /** What Session.setInput does to the record for gl_set {value} from Slider s. */
