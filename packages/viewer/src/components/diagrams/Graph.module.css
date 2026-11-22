@@ -56,7 +56,7 @@
     fill: var(--gl-ink-2);
     pointer-events: none;
   }
-  /* 11 px: still 10 px on screen at the 91% where full detail starts (design rule D18). */
+  /* 11 px: still 10 px on screen at the 91% where full detail starts (design rule diagrams-open-readable). */
   .cycle {
     font: 500 11px var(--gl-font-mono);
     letter-spacing: 0.02em;

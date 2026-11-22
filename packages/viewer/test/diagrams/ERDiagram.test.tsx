@@ -52,7 +52,7 @@ describe('ERDiagram', () => {
     expect(view.errors).toEqual([]);
   });
 
-  // D19: a relation is an ELK edge between two ports, one on the row of each column.
+  // diagram-engine-in-worker: a relation is an ELK edge between two ports, one on the row of each column.
   it('joins tables at the related columns, through ports on their sides, with crow\'s-foot ends and a label', async () => {
     const view = await ready();
     const edge = edgeOf(view, 'e', 'sessions->users');
@@ -222,7 +222,7 @@ describe('ERDiagram', () => {
     expect(JSON.parse(storage.items.get(POSITIONS_KEY)!)).toEqual({});
   });
 
-  it('reads a bare list of tables and draws the relation a string fk or ref names (D5, F033)', async () => {
+  it('reads a bare list of tables and draws the relation a string fk or ref names (accept-familiar-variants, F033)', async () => {
     const tables = [
       {name: 'users', columns: [{name: 'id', type: 'uuid', pk: true}, 'email']},
       {name: 'orders', columns: [{name: 'id', pk: true}, {name: 'user_id', fk: 'users.id'}, {name: 'shop', ref: 'shops'}]},
@@ -255,7 +255,7 @@ describe('ERDiagram', () => {
   });
 });
 
-describe('ERDiagram: opens readable (design rule D18)', () => {
+describe('ERDiagram: opens readable (design rule diagrams-open-readable)', () => {
   it('grows its plate to show three tables whole at 100%, where it opened at 72% with 8 px column types', async () => {
     const orders = {name: 'orders', columns: [
       {name: 'id', type: 'uuid', pk: true}, {name: 'user_id', type: 'uuid', fk: 'users.id'}, ...['status', 'currency', 'coupon', 'placed_at', 'paid_at', 'shipped_at', 'cancelled_at', 'ship_to', 'bill_to', 'total_cents'].map(name => ({name, type: 'timestamptz'})),

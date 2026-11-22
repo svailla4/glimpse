@@ -287,7 +287,7 @@ describe('planSequence', () => {
     // span=5 of a 1440 px page: the case from the review, six lifelines in 510 px
     const narrow = planSequence(six, 510);
     expect(narrow.scale).toBeLessThan(1);
-    // 11 px step numbers and notes stay 10 px on screen (design rule D18): the rest scrolls
+    // 11 px step numbers and notes stay 10 px on screen (design rule diagrams-open-readable): the rest scrolls
     expect(narrow.scale).toBeGreaterThanOrEqual(10 / 11);
 
     // far too narrow: the floor, and the rest scrolls
@@ -329,7 +329,7 @@ describe('planSequence', () => {
   });
 });
 
-// Decision D20: a sequence diagram is as tall as its steps, up to the plate's maximum height; past that it scrolls.
+// Decision content-sized-plates: a sequence diagram is as tall as its steps, up to the plate's maximum height; past that it scrolls.
 describe('SequenceDiagram: content-sized', () => {
   it.each([
     ['no size: the diagram family\'s 640 px', '', 640],

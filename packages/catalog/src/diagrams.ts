@@ -1,5 +1,5 @@
 // packages/catalog/src/diagrams.ts
-// Flowchart and SequenceDiagram data (decision D21): plain objects, not a text notation. Pure functions shared by the
+// Flowchart and SequenceDiagram data (decision diagrams-are-data): plain objects, not a text notation. Pure functions shared by the
 // server (checks the data a spec writes and says what it corrected or left out) and the viewer (draws the cleaned
 // data, and tells the model what it could not draw when the data arrived by a patch the server did not check).
 //

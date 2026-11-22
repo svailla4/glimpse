@@ -1,5 +1,5 @@
 // packages/viewer/test/sizeCap.test.tsx  (owned by the viewer kit)
-// Decision D20: useSizeCap() gives a view its maximum height in px, from its own cell's size step and its family,
+// Decision content-sized-plates: useSizeCap() gives a view its maximum height in px, from its own cell's size step and its family,
 // with the very numbers implement() puts in the cell's --gl-h. Stub views, as a component package writes them.
 import {A2uiSurface, type ReactCatalogComponent} from '@a2ui/react';
 import {Catalog, MessageProcessor} from '@a2ui/web_core/v1_0';
@@ -54,7 +54,7 @@ afterEach(() => {
   if (innerHeight) Object.defineProperty(window, 'innerHeight', innerHeight);
 });
 
-describe('useSizeCap (D20: size is a maximum height)', () => {
+describe('useSizeCap (content-sized-plates: size is a maximum height)', () => {
   it('answers the size step in px, and the cell gets the same height', async () => {
     const {container} = renderComponents([
       {id: 's', component: 'DataTable', data: [{a: 1}], size: 's'},

@@ -496,7 +496,7 @@ function moduleGraph(model: RepoModel, repoName: string, ref: SourceRef, target:
   const extra: string[] = [];
   if (level === 'module') {
     // The cut folds the smaller directories into rest clusters: the graph shows `drawn` of the scope's modules, the
-    // number the Modules KPI gives for the repository (decision D16). A focus or a degree cut says more and wins.
+    // number the Modules KPI gives for the repository (decision numbers-on-a-page-agree). A focus or a degree cut says more and wins.
     const all = target === '' ? model.modules : countModules(files, model.manifests, parseModuleId(target).dir);
     const drawn = finished.graph.nodes.filter(node => node.kind === 'cluster' && draft.nodes.has(node.id)).length;
     if (all > drawn) {

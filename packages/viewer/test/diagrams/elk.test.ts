@@ -1,4 +1,4 @@
-// The page side of the ELK layout (flowkit/elk.ts, decision D19): one worker shared by every diagram, one promise per
+// The page side of the ELK layout (flowkit/elk.ts, decision diagram-engine-in-worker): one worker shared by every diagram, one promise per
 // request, failures that reach only the requests they concern. ELK itself runs in-process here (test/diagrams/elk.ts).
 import type {ElkExtendedEdge, ElkNode} from 'elkjs/lib/elk-api.js';
 import {afterEach, describe, expect, it} from 'vitest';
@@ -7,7 +7,7 @@ import {inProcessElk} from './elk.ts';
 
 afterEach(() => configureElkWorker(undefined));
 
-/** Two groups, a cross-group edge with a label, and a table whose columns are fixed ports (the D19 options). */
+/** Two groups, a cross-group edge with a label, and a table whose columns are fixed ports (the diagram-engine-in-worker options). */
 function sample(): ElkNode {
   const box = (id: string) => ({id, width: 120, height: 32});
   return {

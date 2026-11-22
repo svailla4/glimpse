@@ -289,7 +289,7 @@ describe('FileTree: rollups', () => {
     // the keyboard is not left on <body>: the first row of the new tree has the focus the rollup had
     await waitFor(() => expect(document.activeElement).toBe(row(view, 'src/ui/app.css')));
 
-    // The tree draws no back control and holds no drilled state (D1): the kit shows the crumb from `dataset.drill`,
+    // The tree draws no back control and holds no drilled state (drill-has-way-back): the kit shows the crumb from `dataset.drill`,
     // so it is there after a reload and on every other component bound to the dataset.
     expect(view.cell('t').querySelector('[data-gl-tree-back]')).toBeNull();
     const reset = view.cell('t').querySelector<HTMLElement>('[data-gl-scope-reset]')!;

@@ -146,7 +146,7 @@ export function inspect(rows: Rows, fields?: Field[]): FieldSet {
   };
 }
 
-// ---------------------------------------------------------------- field names a spec gave (decisions D14, D15)
+// ---------------------------------------------------------------- field names a spec gave (decisions reports-are-component-state, guessed-fields-repaired)
 /** A field name the spec gave for `prop` that the data does not have. */
 export interface FieldMiss {
   prop: string;
@@ -198,7 +198,7 @@ export function missNote(misses: readonly FieldMiss[]): string | undefined {
 
 /**
  * Why a chart draws nothing. W_FIELD: a field the spec named is not in the data (and the default found nothing
- * either). W_SHAPE: the data has no field the chart can draw. Both are told to the model (decision D14).
+ * either). W_SHAPE: the data has no field the chart can draw. Both are told to the model (decision reports-are-component-state).
  */
 export interface Unfit {
   code: 'W_FIELD' | 'W_SHAPE';
@@ -300,7 +300,7 @@ export function slotKind(info: Pick<FieldInfo, 'key' | 'kind'> | undefined): Slo
   return undefined;
 }
 
-// Colour slots for series names come from the kit (design D6): a name the session gave a slot keeps it, the rest
+// Colour slots for series names come from the kit (design stable-category-colours): a name the session gave a slot keeps it, the rest
 // take the lowest free slots in order of first appearance, and only a ninth name is `other`. Re-exported so the
 // charts have one import site.
 export {assignSlots, isOtherKey} from '../../../kit/index.ts';
@@ -370,7 +370,7 @@ export function clip(text: string, maxPx: number, px = 11): string {
 
 /**
  * Cuts a path to a pixel width with the ellipsis at the front: the end of a path is the part that names it. The cut
- * is the kit's (elidePath, design rule D12): whole directories go first and the last name stays whole when it can.
+ * is the kit's (elidePath, design rule paths-keep-file-name): whole directories go first and the last name stays whole when it can.
  */
 export function clipTail(text: string, maxPx: number, px = 11): string {
   const fit = Math.floor(maxPx / (px * ADVANCE));

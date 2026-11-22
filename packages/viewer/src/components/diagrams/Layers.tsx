@@ -53,7 +53,7 @@ export function cleanLayers(data: readonly unknown[]): CleanLayers {
 
 function LayersBody(p: {id: string; data: unknown}) {
   const {id} = p;
-  // As tall as its tiers, up to the plate's maximum height (decision D20); past that it scrolls.
+  // As tall as its tiers, up to the plate's maximum height (decision content-sized-plates); past that it scrolls.
   const cap = useSizeCap();
   const rootRef = useRef<HTMLDivElement>(null);
   const {selected} = useSelection(id);

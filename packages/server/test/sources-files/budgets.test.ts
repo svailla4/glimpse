@@ -148,7 +148,7 @@ describe('a generated repository of more than 5,000 files', () => {
     expect([...used].sort()).toEqual([...model.cut.ids].sort());
   });
 
-  it('the Modules KPI is the number of modules the module graph is a cut of, never the cap (D16)', async () => {
+  it('the Modules KPI is the number of modules the module graph is a cut of, never the cap (numbers-on-a-page-agree)', async () => {
     const result = await run(ctx, 'repo.kpis');
     const kpis = result.data as Array<{label: string; value: number}>;
     const modules = kpis.find(stat => stat.label === 'Modules')?.value;

@@ -1,4 +1,4 @@
-// The diagram engine and plate sizing of decisions D19 and D20, end to end against the bundled server: a small
+// The diagram engine and plate sizing of decisions diagram-engine-in-worker and content-sized-plates, end to end against the bundled server: a small
 // diagram opens fitted and centred with every node on the stage, a Flowchart flows the way dir= says
 // (dir= still wins), and plates in one row keep the height of what they show instead of growing to the tallest.
 import type {Locator, Page} from '@playwright/test';
@@ -52,7 +52,7 @@ const union = (rects: readonly Rect[]): Rect => {
   return {x, y, w: Math.max(...rects.map(r => r.x + r.w)) - x, h: Math.max(...rects.map(r => r.y + r.h)) - y};
 };
 
-test.describe('D19/D20: diagrams open whole when they can, the way they are written', () => {
+test.describe('diagram-engine-in-worker/content-sized-plates: diagrams open whole when they can, the way they are written', () => {
   test.use({viewport: {width: 1440, height: 900}});
 
   // Five nodes with a group, and eight with sub-lines, statuses and edge labels in a wide, short plate: both fit at a
@@ -89,7 +89,7 @@ test.describe('D19/D20: diagrams open whole when they can, the way they are writ
       expect(shape.minimap, `${id}: minimap on a diagram that fits`).toBe(0);
       await expect(page.locator(`.gl-cell[data-id="${id}"] [data-in-view]`)).toHaveCount(0);
       expect(Number(shape.zoom.replace('%', '')), `${id}: opening zoom`).toBeLessThanOrEqual(100);
-      // content-sized (D20): a small drawing does not take all the height its plate may grow to
+      // content-sized (content-sized-plates): a small drawing does not take all the height its plate may grow to
       expect(shape.stage.h, `${id}: stage height, px`).toBeLessThanOrEqual(maxHeight);
     }
     expect(watched.problems).toEqual([]);

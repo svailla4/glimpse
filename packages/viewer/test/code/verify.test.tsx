@@ -1,4 +1,4 @@
-// Regression tests for decision D14 in the code family: what a code view reports is the state of the whole component.
+// Regression tests for decision reports-are-component-state in the code family: what a code view reports is the state of the whole component.
 // A part of it (one file of a diff, one stop of a tour) never speaks for the component (V062), and a
 // truthful empty or a view waiting for a selection is an I_* state, never a problem told to the agent.
 import {fireEvent, waitFor} from '@testing-library/react';
@@ -15,7 +15,7 @@ const DIFF = {
   ],
 };
 
-describe('D14 in the code family (V062)', () => {
+describe('reports-are-component-state in the code family (V062)', () => {
   it('one binary file of a diff is not the DiffView being empty', async () => {
     const view = renderExpress(`root=Page('T',[d])\nd=DiffView(title='Changes')`, {host: {diff: () => Promise.resolve(DIFF as never)}});
     const cell = view.cell('d');

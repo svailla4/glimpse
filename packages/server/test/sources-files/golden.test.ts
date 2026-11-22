@@ -150,9 +150,9 @@ describe('repo.*', () => {
     expect(result.data).toEqual([
       {label: 'Files', value: 36},
       {label: 'Lines', value: 634, format: 'compact'},
-      // the rows of files.langs (D16): nine languages, none unclassified
+      // the rows of files.langs (numbers-on-a-page-agree): nine languages, none unclassified
       {label: 'Languages', value: 9},
-      // the nine clusters deps.modules draws: the cut folds nothing in a repository this small (D16)
+      // the nine clusters deps.modules draws: the cut folds nothing in a repository this small (numbers-on-a-page-agree)
       {label: 'Modules', value: 9},
       {label: 'File cycles', value: 1, tone: 'warn'},
       // one commit in the 30 days before the pinned clock (4 Nov), three in the 30 days before that

@@ -156,7 +156,7 @@ export function fileRefs(text: string): string[] {
 }
 
 /**
- * Decision D22: `mark` is written the way file anchors are ('3,7-9', 'L7-9'). A part written another plain way is
+ * Decision no-invented-string-formats: `mark` is written the way file anchors are ('3,7-9', 'L7-9'). A part written another plain way is
  * read and the reading is returned in `fixed`; a part that names no line (lines start at 1) is returned in `ignored`,
  * so the server and the view can say so instead of marking nothing. The server and the viewer both read marks here.
  */

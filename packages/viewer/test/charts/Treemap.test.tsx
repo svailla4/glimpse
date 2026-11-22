@@ -203,7 +203,7 @@ describe('Treemap', () => {
   });
   const file = (path: string, lang: string, loc: number, extra: Record<string, unknown> = {}) => ({name: path.split('/').pop(), path, dir: false, files: 1, loc, bytes: loc * 30, lang, ...extra});
 
-  it('gives a language without a session slot the next free ink, and never a hue to Other (D6, F006)', async () => {
+  it('gives a language without a session slot the next free ink, and never a hue to Other (stable-category-colours, F006)', async () => {
     const tree = {name: '', path: '', dir: true, files: 5, loc: 500, children: [
       file('a.ts', 'TypeScript', 100), file('b.zig', 'Zig', 100), file('c.nim', 'Nim', 100), file('d.txt', 'Other', 100), file('e.zig', 'Zig', 100),
     ]};
@@ -244,7 +244,7 @@ describe('Treemap', () => {
     expect(view.root.querySelector('[data-chart-ramp]')?.textContent).toBe('commits per file 130');
   });
 
-  it('names the scope of a drilled tree and steps out of the drill with Backspace (D1, F017, F074)', async () => {
+  it('names the scope of a drilled tree and steps out of the drill with Backspace (drill-has-way-back, F017, F074)', async () => {
     const view = await chart('Treemap()');
     view.key('Backspace');
     expect(view.actions.filter(action => action.name === 'gl_drill')).toHaveLength(0);

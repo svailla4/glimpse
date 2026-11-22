@@ -1,6 +1,6 @@
 // packages/viewer/src/components/layout/Grid.tsx
 // Columns: `cols='3'` is three equal tracks, `cols='2:1'` is `2fr 1fr`; by default one track per child, at most 4.
-// A child without `span` takes one track. `span` is a width on the 12-column grid, as everywhere (decision D17):
+// A child without `span` takes one track. `span` is a width on the 12-column grid, as everywhere (decision layout-does-the-obvious):
 // once a child names one, the Grid lays its children on 12 columns like the page does, and a child that names none
 // takes the share of the width its track would have had (12 / tracks, or its ratio). So `Grid([a(span=6), b(span=6)])`
 // and `Grid([map(span=8), tree(span=4)],'2:1')` sit side by side. Below 720 px of page width it is one column.

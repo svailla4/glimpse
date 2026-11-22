@@ -222,7 +222,7 @@ function packRows(ids: readonly string[], span: (id: string) => number, tracks: 
 }
 
 /**
- * New spans for a grid container after the person sets child `id` to `wanted` columns (decision D17: rows stay
+ * New spans for a grid container after the person sets child `id` to `wanted` columns (decision layout-does-the-obvious: rows stay
  * full). `ids` are the children in visual order and `spanOf` their current spans. Returns only the spans that change.
  *   wider     the row's hole first, then columns from the row-mates (nearest after it first, then nearest before it,
  *             none below `minShare`); when they have none left, the last row-mates move down to a row of their own,
@@ -363,7 +363,7 @@ export interface Relocation {
 
 /**
  * The visual order and the spans of a grid container after the person moves child `id` to index `to` of the visual
- * order (decision D17: rearranging keeps rows full, V037). `ids` are the children in visual order, `spanOf` their
+ * order (decision layout-does-the-obvious: rearranging keeps rows full, V037). `ids` are the children in visual order, `spanOf` their
  * current spans, `beside` the plate the drop slot was next to (from the keyboard: the plate it stepped over) and
  * `natural` the span a child has in the spec. The first of these that leaves no row shorter than before wins:
  *   1. the spec spans for the plates of the two rows involved: a plate that goes back where it came from gets its
@@ -519,7 +519,7 @@ export function useArrangement(surfaceId: string, containerId: string, childIds:
         if (from === undefined || !Number.isFinite(toIndex)) return;
         const to = Math.min(ids.length - 1, Math.max(0, Math.round(toIndex)));
         if (to === from) return;
-        // On a grid the spans that filled the old rows need not fill the new ones: the rows are refitted (D17).
+        // On a grid the spans that filled the old rows need not fill the new ones: the rows are refitted (layout-does-the-obvious).
         let order: readonly string[];
         let changed: Record<string, number> = {};
         if (flow === 'grid') {
@@ -542,7 +542,7 @@ export function useArrangement(surfaceId: string, containerId: string, childIds:
           if (spans[childId] !== next || base !== spans) write(ids, {...base, [childId]: next});
           return next;
         }
-        // On a grid the row keeps its width: what one plate gains or gives up, its row-mates give or take (D17).
+        // On a grid the row keeps its width: what one plate gains or gives up, its row-mates give or take (layout-does-the-obvious).
         const shown = from?.shown ?? shownSpans();
         const spanOf = (id: string) => shown.get(id) ?? defaultSpan;
         const changed = rebalance(ids, spanOf, childId, next, tracks);

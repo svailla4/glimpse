@@ -15,7 +15,7 @@
     tab-size: 4;
   }
   /* A code view is as tall as its lines up to its cap (the cell's size step or the family default: useCapStyle in
-     lines.tsx, decision D20), then scrolls. One inside another view (the file of a CodeTour stop) fills its pane. */
+     lines.tsx, decision content-sized-plates), then scrolls. One inside another view (the file of a CodeTour stop) fills its pane. */
   .code[data-fit='fill'] { height: 100%; }
   .code[data-fit='cap'] { min-height: 0; max-height: var(--gl-cap, 420px); }
   .code[data-boxed] { border: 1px solid var(--gl-rule); }

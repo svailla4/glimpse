@@ -5,7 +5,7 @@
 //   const view = renderExpress(`root=Page('T',[t])\nt=DataTable('git.churn',title='Churn')`, {datasets: 'ready'});
 //   const table = await screen.findByRole('table');           // lazy chunks resolve asynchronously: use findBy*
 //   view.send(buildPatch(...)); view.setData('/ui/sel', ...); view.actions; view.host.calls; view.cell('t')
-//   view.reports, view.stateOf('t')    the state each component tells the host (D14): I_/W_/E_ codes; states has OK too
+//   view.reports, view.stateOf('t')    the state each component tells the host (reports-are-component-state): I_/W_/E_ codes; states has OK too
 //
 //   renderSpec(messages, options)      messages as the server would send them (fixtures, hand-written wire JSON)
 //   renderExpress(spec, options)       Express source -> the server's snapshot (refs expanded, /ds /ui /meta filled)
@@ -103,8 +103,8 @@ export interface RenderedSpec {
   /** Everything reported on the processor's error channel ({code, message, ...}): messages rejected by send() and render-time errors. Usually asserted empty. */
   errors: unknown[];
   /**
-   * Every state other than OK a component reported to the host, in order, as the shell would post it (decisions D3,
-   * D14): {code: an I_*, W_* or E_* code, message: 'Name#id: ...', surfaceId, componentId}. A component reports its
+   * Every state other than OK a component reported to the host, in order, as the shell would post it (decisions show-reports-what-tab-drew,
+   * reports-are-component-state): {code: an I_*, W_* or E_* code, message: 'Name#id: ...', surfaceId, componentId}. A component reports its
    * state when its cell mounts, when it changes and again when an update names it (send() does that), so the same
    * state can appear more than once. States arrive at the end of the task: await (findBy, waitFor, settle) first.
    */

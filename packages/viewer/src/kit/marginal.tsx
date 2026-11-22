@@ -21,6 +21,6 @@ export function marginalText(state: DataState<unknown>): string | undefined {
 /** Mono marginal note for truncated data: 'showing 500 of 12,840 · top by score'. Renders nothing when nothing is cut. */
 export function Marginal(p: {state: DataState<unknown>}): JSX.Element | null {
   const text = marginalText(p.state);
-  // The header cuts a note that does not fit with an ellipsis (design rule D11): the tooltip always has all of it.
+  // The header cuts a note that does not fit with an ellipsis (design rule header-keeps-title): the tooltip always has all of it.
   return text ? <span className="gl-marginal" data-gl-marginal="" title={text}>{text}</span> : null;
 }

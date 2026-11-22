@@ -185,7 +185,7 @@ describe('CodeView', () => {
     await waitFor(() => expect(line(cell, 1)).not.toBeNull());
     expect(cell.querySelector('.gl-frame-head [data-gl-path]')?.textContent).toBe('src/auth/service.ts');
     expect(cell.querySelector('.gl-frame-body [data-gl-path]')).toBeNull();
-    // D20: a sized code view is as tall as its lines up to the size step (280 px for m), it no longer fills the cell
+    // content-sized-plates: a sized code view is as tall as its lines up to the size step (280 px for m), it no longer fills the cell
     const view_ = cell.querySelector<HTMLElement>('[data-gl-code="view"]')!;
     expect(view_.getAttribute('data-fit')).toBe('cap');
     expect(view_.style.getPropertyValue('--gl-cap')).toBe('280px');

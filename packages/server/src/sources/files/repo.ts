@@ -111,7 +111,7 @@ export function repoSources(options: SourceOptions): Source[] {
     // A path counts what lies under it, each number as the source of the same plate counts it for that path.
     const {files, where} = scopedFiles(model, scope, meta.name);
     const lines = files.reduce((sum, file) => sum + codeLines(file), 0);
-    // Each number is the count another plate on the same page shows (decision D16): the Languages KPI the rows of
+    // Each number is the count another plate on the same page shows (decision numbers-on-a-page-agree): the Languages KPI the rows of
     // files.langs (its catch-all of unknown text files aside), Modules the modules deps.modules and deps.matrix cut
     // the repository into before a graph folds the smaller ones ("20 of N"), File cycles the rows of deps.cycles.
     const languages = languageMix(files).filter(row => row.lang !== UNCLASSIFIED).length;

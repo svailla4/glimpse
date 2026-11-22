@@ -269,7 +269,7 @@ describe('LineChart', () => {
     expect(closed.all('[data-chart-note]')).toHaveLength(0);
   });
 
-  it('keeps the last segment of a long series name and never ticks a count at a fraction (D12, F007)', async () => {
+  it('keeps the last segment of a long series name and never ticks a count at a fraction (paths-keep-file-name, F007)', async () => {
     const names = ['typescript/core/web_core', 'typescript/renderers/lit', 'samples/community'];
     const rows = names.flatMap((module, i) => [{t: 1, module, n: i}, {t: 2, module, n: i + 1}]);
     const view = await chart(`LineChart($/d,'t','n','module')`, {rows, size: {width: 400, height: 600}});

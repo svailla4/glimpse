@@ -1,4 +1,4 @@
-// The diagram engine without a DOM (decisions D19, D20): the ELK graph a diagram asks for and what is made of ELK's
+// The diagram engine without a DOM (decisions diagram-engine-in-worker, content-sized-plates): the ELK graph a diagram asks for and what is made of ELK's
 // answer (ELK itself runs here in-process, as in the worker), the height and opening view, and the geometry, text and
 // position helpers the diagrams still use.
 import type {ElkExtendedEdge, ElkNode} from 'elkjs/lib/elk-api.js';
@@ -113,7 +113,7 @@ describe('fromElk: ELK lays the diagram out (in-process here, in the worker in t
     expect(laid.dir).toBe('TB');
   });
 
-  // D19: a group is sized around its children, and an edge is never drawn through a group it does not belong to.
+  // diagram-engine-in-worker: a group is sized around its children, and an edge is never drawn through a group it does not belong to.
   it('sizes every group around its members, below its label band, and routes no edge through a group it does not belong to', async () => {
     const groups = [{id: 'api'}, {id: 'core'}, {id: 'ui'}, {id: 'ui/forms', parent: 'ui'}];
     const nodes = [
@@ -161,7 +161,7 @@ describe('fromElk: ELK lays the diagram out (in-process here, in the worker in t
     }
   });
 
-  // D19: an ER relation ends at the row of its column, on the table's side.
+  // diagram-engine-in-worker: an ER relation ends at the row of its column, on the table's side.
   it('connects table columns at their ports: the route starts and ends at the rows, on the sides', async () => {
     const HEAD = 26;
     const ROW = 22;
@@ -244,7 +244,7 @@ describe('fromElk: ELK lays the diagram out (in-process here, in the worker in t
   });
 });
 
-describe('sizeDiagram: the height and the opening view (D20)', () => {
+describe('sizeDiagram: the height and the opening view (content-sized-plates)', () => {
   const sized = (bounds: Box, width: number, cap: number, floor = READABLE_ZOOM, extra: Partial<Parameters<typeof sizeDiagram>[0]> = {}) =>
     sizeDiagram({bounds, width, cap, floor, readable: Math.max(READABLE_ZOOM, floor), dir: 'LR', ...extra});
 
@@ -768,7 +768,7 @@ describe('flowkit.module.css', () => {
   });
 });
 
-// The layout runs in ELK, never on the page: the page side has no ELK code at all (decision D19).
+// The layout runs in ELK, never on the page: the page side has no ELK code at all (decision diagram-engine-in-worker).
 describe('no ELK on the page side', () => {
   it('builds ELK JSON on the page; the ELK engine itself is only in the worker', async () => {
     const {readFileSync, readdirSync} = await import('node:fs');

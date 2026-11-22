@@ -110,7 +110,7 @@ describe('DataTable: columns and cells', () => {
     expect(cell('path').querySelector('.gl-path')!.textContent).toContain('a.ts:3');
     expect(cell('symbol').querySelector('[data-entity-type="symbol"]')!.textContent).toBe('login');
     expect(cell('module').querySelector('[data-entity-type="module"]')!.getAttribute('data-entity-id')).toBe('auth');
-    // a module that is a directory keeps its last segment on screen (D12), like a path
+    // a module that is a directory keeps its last segment on screen (paths-keep-file-name), like a path
     expect(cell('module').querySelector('.gl-path')).toBeNull();
     expect(cell('author').querySelector('[data-entity-type="author"]')!.textContent).toBe('Mira');
     expect(cell('commit').querySelector('[data-entity-type="commit"]')!.textContent).toBe('4f2a91c');
@@ -158,7 +158,7 @@ describe('DataTable: columns and cells', () => {
     expect(view.stateOf('t')).toBe('OK');
   });
 
-  it('reports W_COLUMNS for columns bound to a $/path it cannot read, and draws the rest (D22)', async () => {
+  it('reports W_COLUMNS for columns bound to a $/path it cannot read, and draws the rest (no-invented-string-formats)', async () => {
     const view = renderExpress(page('DataTable($/rows,$/cols)'), {
       data: {'/rows': [{name: 'one', n: 1}], '/cols': ['name', {key: 'n', kind: 'sparkle'}, {kind: 'bar'}]},
     });
@@ -214,9 +214,9 @@ describe('DataTable: columns and cells', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
-  // Decision D20: the size step is the most a table may take, not a height it fills: a short table leaves no blank
+  // Decision content-sized-plates: the size step is the most a table may take, not a height it fills: a short table leaves no blank
   // paper under its rows. Shell hands the cap to the view as --gl-cap; the root's max-height reads it.
-  it('takes the cap of its size step (D20), and keeps its toolbar in place when there is no plate', async () => {
+  it('takes the cap of its size step (content-sized-plates), and keeps its toolbar in place when there is no plate', async () => {
     const many = Array.from({length: 30}, (_, i) => ({name: `n${i}`}));
     const view = renderExpress(`root=Page('T',[t,u])\nt=DataTable($/many,size='m')\nu=DataTable($/many,title='Framed')`, {data: {'/many': many}});
     await ready(view);

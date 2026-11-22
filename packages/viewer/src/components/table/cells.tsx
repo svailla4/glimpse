@@ -14,7 +14,7 @@ export interface CellContext {
   componentId: string;
   ds: Dataset | undefined;
   /**
-   * Categorical ink per kind of category, from the kit (D6): a key the session knows wears its ink, the others take
+   * Categorical ink per kind of category, from the kit (stable-category-colours): a key the session knows wears its ink, the others take
    * the free inks in order of first appearance in this table. A cell never picks or greys out a colour itself.
    */
   cat: Readonly<Record<'lang' | 'module' | 'chip', (key: string | undefined) => string>>;
@@ -213,7 +213,7 @@ export const CellContent = memo(function CellContent(p: {column: Column; row: Da
       return (
         <Entity column={column} row={row} ctx={ctx}>
           <Dot color={ctx.cat.module(typeof value === 'string' ? value : undefined)} />
-          {/* A module is a directory ('typescript/renderers'): its last segment tells the rows apart (D12). */}
+          {/* A module is a directory ('typescript/renderers'): its last segment tells the rows apart (paths-keep-file-name). */}
           {typeof value === 'string' && value.includes('/') ? <PathText file={value} /> : <span className={s.mono}>{text}</span>}
         </Entity>
       );

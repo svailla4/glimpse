@@ -143,7 +143,7 @@ describe('Layers', () => {
     expect(view.errors).toEqual([]);
   });
 
-  it('names a band by name, label or title, and an item by label, name or title (D5, F040)', async () => {
+  it('names a band by name, label or title, and an item by label, name or title (accept-familiar-variants, F040)', async () => {
     const clean = cleanLayers([
       {title: 'Interface', items: [{title: 'ui'}, {name: 'api', file: 'src/api.ts'}]},
       {label: 'Domain', items: ['auth']},
@@ -158,7 +158,7 @@ describe('Layers', () => {
   });
 });
 
-// Decision D20: the tiers take their natural height, up to the plate's maximum height; past that they scroll.
+// Decision content-sized-plates: the tiers take their natural height, up to the plate's maximum height; past that they scroll.
 describe('Layers: content-sized', () => {
   it.each([
     ['no size: the diagram family\'s 640 px', SPEC, () => 640],

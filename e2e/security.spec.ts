@@ -135,7 +135,7 @@ test.describe('request guards', () => {
     expect(script.body).not.toContain(TOKEN);
     expectNoLeak(script);
     // A dedicated worker runs under the CSP of its own response: every asset, the layout workers included, carries
-    // the shell's policy, relaxed nowhere (decision D19: ELK needs no eval).
+    // the shell's policy, relaxed nowhere (decision diagram-engine-in-worker: ELK needs no eval).
     expect(script.headers['content-security-policy']).toBe(CSP);
     const workers = (await readdir(join(DIST, 'viewer', 'assets'))).filter(name => /\.worker-[\w-]{8}\.js$/.test(name));
     expect(workers.some(name => name.startsWith('elk.worker-')), 'the ELK layout worker is built').toBe(true);
@@ -252,7 +252,7 @@ test.describe('containment', () => {
       expect(result.isError, spec).toBe(true);
       expect(result.lines[0]).toMatch(/^E_PATH /);
     }
-    // Decision D2: an id is letters, digits, - and _ (at most 48). Path characters become the slug they plainly meant,
+    // Decision hyphenated-surface-ids: an id is letters, digits, - and _ (at most 48). Path characters become the slug they plainly meant,
     // said in a fix note, so they never reach a path or another surface; what has no usable slug, or would name a
     // prototype, is refused.
     for (const id of ['...', '///', 'x'.repeat(49), '__proto__', 'constructor', 'prototype']) {
@@ -273,7 +273,7 @@ test.describe('containment', () => {
 });
 
 test.describe('prototype pollution', () => {
-  // Decision D10: no data path a spec writes may name __proto__, constructor or prototype, in the server or in the tab.
+  // Decision untrusted-input-contained: no data path a spec writes may name __proto__, constructor or prototype, in the server or in the tab.
   test('a $/__proto__ spec is refused and the server goes on answering', async ({page, glimpse, watched}) => {
     const created = await glimpse.call('show', {id: 'proto', spec: "root=Page('Proto',[Text($/msg)])\n$/msg='before'"});
     expect(created.isError, created.text).toBe(false);
@@ -325,7 +325,7 @@ test.describe('hostile content', () => {
     expect(dom.frames).toBe(0);
     expect(dom.images).toEqual([]);
     expect(dom.handlers).toBe(0);
-    // Since D26 no component turns agent text into a link (`[ok](https://...)` stays text); a link the page does draw
+    // Since no-markdown-component no component turns agent text into a link (`[ok](https://...)` stays text); a link the page does draw
     // is still http(s) only and opens without an opener or a referrer.
     for (const link of dom.links) {
       expect(link.href, 'links are http(s) only').toMatch(/^https?:\/\//);
@@ -338,7 +338,7 @@ test.describe('hostile content', () => {
     expect(await watched.csp()).toEqual([]);
   });
 
-  // Decision D19: ELK runs in a same-origin module worker. A dedicated worker gets the CSP of its own script's response,
+  // Decision diagram-engine-in-worker: ELK runs in a same-origin module worker. A dedicated worker gets the CSP of its own script's response,
   // not the page's, and reports violations to itself; the watch records both. The worker must lay diagrams out under
   // the shell's policy unchanged: no eval anywhere, and nothing it does is refused.
   test('the ELK layout worker runs under the shell CSP, with no eval, and lays diagrams out without a violation', async ({page, glimpse, watched}) => {

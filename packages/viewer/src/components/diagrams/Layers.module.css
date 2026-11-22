@@ -1,6 +1,6 @@
 /* Layers: horizontal bands separated by hairlines; a 140 px band label, boxes in a wrapping row, an italic note. */
 @layer gl.components {
-  /* As tall as the tiers, up to the plate's maximum height (set inline from useSizeCap, decision D20). */
+  /* As tall as the tiers, up to the plate's maximum height (set inline from useSizeCap, decision content-sized-plates). */
   .root {
     display: flex;
     flex-direction: column;

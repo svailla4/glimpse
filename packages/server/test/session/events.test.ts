@@ -63,7 +63,7 @@ describe('EventQueue', () => {
     expect(queue.drain()).toEqual([]);
   });
 
-  // Decision D14: a report is the component's current state, kept in a store of its own.
+  // Decision reports-are-component-state: a report is the component's current state, kept in a store of its own.
   it('keeps the latest state per component; only untold problems are delivered, after the queued events', () => {
     const queue = new EventQueue();
     queue.reports.set('overview', 'DataTable#impact', 'W_EMPTY', 'no rows');

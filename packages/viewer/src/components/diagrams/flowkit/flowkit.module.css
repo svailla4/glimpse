@@ -1,4 +1,4 @@
-/* The stage shared by Graph, Flowchart and ERDiagram (decision D19): React Flow drawn in the Linework style. React
+/* The stage shared by Graph, Flowchart and ERDiagram (decision diagram-engine-in-worker): React Flow drawn in the Linework style. React
    Flow's own stylesheet (base.css) sits in @layer xyflow, below every gl.* layer, so these rules win without
    !important. Its --xy-* properties are set from the --gl-* tokens here, on the stage only. */
 @layer gl.components {

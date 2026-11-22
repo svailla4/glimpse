@@ -1,4 +1,4 @@
-// How tall a diagram is and what it opens on (decision D20). ELK gives the size of the drawing before anything is
+// How tall a diagram is and what it opens on (decision content-sized-plates). ELK gives the size of the drawing before anything is
 // drawn, so this is one pass with no measuring loop. The diagram is a canvas with the controls bar under it:
 //   - The canvas is as tall as the drawing at the scale that fits the width (never above 100%), and the whole is
 //     clamped to [MIN_HEIGHT, cap], where cap is the size step's maximum (useSizeCap: 640 px without one).
@@ -17,7 +17,7 @@ export const PAD = 16;
 /** The bar under the canvas that holds the zoom controls. */
 export const CONTROLS = 32;
 export const MIN_HEIGHT = 140;
-/** On-screen text is never smaller than this when a diagram opens (design rule D18). */
+/** On-screen text is never smaller than this when a diagram opens (design rule diagrams-open-readable). */
 export const MIN_SCREEN_TEXT = 10;
 /** 12 px text is 10 px on screen at this zoom (rounded up to a whole percent). */
 export const READABLE_ZOOM = readableZoom(12);

@@ -8,7 +8,7 @@ export const SESSION: SessionInfo = {id: 'test', project: 'demo', repo: {name: '
 export interface ScriptedTransport extends Transport {
   /** Every A2UI message the viewer posted, in order. */
   sent: RendererMessage[];
-  /** Every component state the viewer posted beside them (I_*, OK: decision D27), in order. */
+  /** Every component state the viewer posted beside them (I_*, OK: decision only-problems-are-errors), in order. */
   states: ComponentState[];
   /** Every component report in the order it was posted: a problem (an A2UI error) or a state, as `Name#id`. */
   reports: Array<{label: string; code: string}>;

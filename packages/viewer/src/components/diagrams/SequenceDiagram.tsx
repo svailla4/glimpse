@@ -1,4 +1,4 @@
-// SequenceDiagram: lifelines, messages, notes and blocks written as data (design 5.6, decision D21). No layout
+// SequenceDiagram: lifelines, messages, notes and blocks written as data (design 5.6, decision diagrams-are-data). No layout
 // library: columns are actors, rows are steps, a block is a frame round its rows.
 import type * as C from '@glimpse/catalog';
 import {cleanSequence, seqLeaves, type SeqArrow, type SeqAst} from '@glimpse/catalog';
@@ -25,7 +25,7 @@ const MAX_WRAP_COL = 400;
 const TIGHT = 0.68;
 /**
  * ...then the whole drawing is scaled down, to this at most: its smallest text (11 px step numbers and notes) stays
- * 10 px on screen (design rule D18). After that it scrolls.
+ * 10 px on screen (design rule diagrams-open-readable). After that it scrolls.
  */
 const MIN_SCALE = 0.91;
 /** A message label too long for its gap takes a second line before it is cut. */
@@ -380,7 +380,7 @@ function messageRow(row: Extract<RowDraw, {kind: 'message'}>): ReactNode {
 
 function SequenceBody(p: {ast: SeqAst}) {
   const {ast} = p;
-  // As tall as its steps, up to the plate's maximum height (decision D20); past that it scrolls under sticky actors.
+  // As tall as its steps, up to the plate's maximum height (decision content-sized-plates); past that it scrolls under sticky actors.
   const cap = useSizeCap();
   const boxRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);

@@ -48,7 +48,7 @@ Before calling work done: `check`, `test`, `build` and `budgets` pass, and `e2e`
 ## Releasing
 
 An installed plugin runs neither this checkout nor `plugin/dist`: the marketplace entry installs the `release` branch,
-which `.github/workflows/release.yml` writes (decision D23):
+which `.github/workflows/release.yml` writes (decision `release-every-merge`):
 
 - Every merge into `main` is released as the next patch version. The workflow runs check, test and build, and only
   then pushes the tag (`v0.1.2` after `v0.1.1`) and the built plugin. A failed run leaves no tag: fix `main` and the
@@ -70,7 +70,7 @@ which `.github/workflows/release.yml` writes (decision D23):
   `SHAPES` (docs.ts); prop docs point at them instead of repeating them.
 - **Accept a reasonable guess, and say so.** Aliases are rewritten with a `fixed` line; what cannot be drawn becomes a
   `warn` line or a `W_*` render report. Never drop what the author wrote without telling the model.
-- **No invented string formats (D22).** A value an author writes is data (objects and lists), or follows a convention
+- **No invented string formats (`no-invented-string-formats`).** A value an author writes is data (objects and lists), or follows a convention
   models already know: `path#L10-20` (GitHub), `main..HEAD` (git), `'git.churn src top=20'` (a command line). A new
   prop never gets a grammar of its own. Every string format that exists reads what it can, says what it corrected
   (`fixed`) and says what it could not read (`warn`, or a `W_*` report from the tab); it never falls back silently.
@@ -79,9 +79,39 @@ which `.github/workflows/release.yml` writes (decision D23):
 
 ## Decision log
 
-Decisions are cited by number in code comments (`decision D19`). Earlier ones are described where they are cited.
+Each decision has a short name that says what was decided, and code comments cite it by that name
+(`decision content-sized-plates`), so a reader finds the reason with one search. A new decision gets a new name, never a
+number: names read as words, and two branches cannot take the same one (numbers did, 2026-11-21). Until 2026-11-22
+decisions were numbered D1 to D28; "was D20" keeps old commit messages and pull requests traceable. In anything people
+read, write the decision in plain words and give the name beside it.
 
-- **D21: diagrams are data, not a text notation (2026-11-21).** `Flowchart` and `SequenceDiagram` take structured
+Decisions explained in the code that cites them:
+
+| Name | Was | What was decided | Explained in |
+|---|---|---|---|
+| `drill-has-way-back` | D1 | A drill into a dataset is kept by the server and survives a reload; the scope row is the one way back | server `session/session.ts` (`drillOf`) |
+| `hyphenated-surface-ids` | D2 | A view id may use letters, digits, `_` and `-`, because models write kebab-case first | server `mcp/show.ts` |
+| `show-reports-what-tab-drew` | D3 | A `show` result says what the tab drew instead of a component, not a bare "ok" | server `mcp/show.ts` |
+| `patch-sends-whole-slot` | D4 | A patch below a top-level slot is published as the whole slot, so bound views redraw | server `session/surfaces.ts` |
+| `accept-familiar-variants` | D5 | Variants models commonly write (enum synonyms, 1-based steps, list-form ER) are read, not refused | server `test/spec/repair.test.ts` |
+| `stable-category-colours` | D6 | A category keeps its colour on every plate; colours do not move as rows change | viewer `kit/color.ts` |
+| `readable-module-graph` | D7 | The module graph is cut to what a plate shows legibly (about 24 nodes) | catalog `sources.ts` |
+| `fresh-tree-every-call` | D8 | Every call checks HEAD, the working tree and the index first, tab or no tab | server `session/freshness.ts` |
+| `untrusted-input-contained` | D10 | Repository and tab text cannot reach outside the inventory, pollute objects or forge result lines | server `mcp/result.ts`, `session/env.ts` |
+| `header-keeps-title` | D11 | A plate header never loses its title or lets its controls out of the frame | viewer `kit/Frame.tsx` |
+| `paths-keep-file-name` | D12 | A path cut for space keeps its file name: whole directories give way first | viewer `kit/entity.tsx` |
+| `budgets-keep-headroom` | D13 | Every size budget keeps headroom under its hard limit, so the next component fits | `scripts/budgets.mjs` |
+| `reports-are-component-state` | D14 | What the tab drew is each component's current state, not an event; only problems reach the model, once | server `session/reports.ts` |
+| `guessed-fields-repaired` | D15 | A field name the author plainly meant is rewritten; anything else is dropped and said | server `spec/expand.ts` |
+| `numbers-on-a-page-agree` | D16 | Each number on a page counts what the other plates on that page show | server `sources/files/repo.ts` |
+| `layout-does-the-obvious` | D17 | `span` is always the 12-column grid, rows stay full, wide windows keep the spec's spans | viewer `components/layout/Grid.tsx`, `kit/arrange.tsx` |
+| `diagrams-open-readable` | D18 | Every diagram opens with on-screen text of at least 10 px | viewer `components/diagrams/flowkit/sizing.ts` |
+| `diagram-engine-in-worker` | D19 | One diagram engine: ELK lays out in a same-origin worker, React Flow draws | viewer `components/diagrams/flowkit/Diagram.tsx` |
+| `content-sized-plates` | D20 | A plate is as tall as its content; `size` is a maximum; plates are not stretched to their row | viewer `kit/sizeCap.ts`, `styles/base.css` |
+
+Decisions explained here:
+
+- **`diagrams-are-data`: diagrams are data, not a text notation (was D21, 2026-11-21).** `Flowchart` and `SequenceDiagram` take structured
   data (`FlowData`, `SeqData` in `packages/catalog/src/diagrams.ts`) instead of Mermaid-style text.
   Why: Glimpse had its own parser for a subset of Mermaid. Models write full Mermaid from memory, so any syntax outside
   the subset either failed the whole page (`[[subroutine]]` cost a full resend of an 11.7k-character spec) or was
@@ -92,9 +122,9 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   server (inline data in `expandComponent`, bound data in `diagramNotes`) and in the viewer (which reports `W_DROPPED`
   for data a patch wrote). Mermaid text is refused with `E_SHAPE` and an example of the data to write instead.
   Flowchart groups are drawn as nested frames by flowkit. Sequence blocks (loop, alt, opt, par, critical, break, with
-  `else` branches) are written nested and drawn by the renderer from #5 (merged the day before D21), which `cleanSequence`
+  `else` branches) are written nested and drawn by the renderer from #5 (merged the day before `diagrams-are-data`), which `cleanSequence`
   feeds balanced open/else/end frame steps; #5's Mermaid block parsing and repair went with the parser.
-- **D22: no invented string formats; no silent fallbacks (2026-11-21).** After D21, every prop whose string Glimpse
+- **`no-invented-string-formats`: no invented string formats; no silent fallbacks (was D22, 2026-11-21).** After D21, every prop whose string Glimpse
   takes apart was audited. One was an invented grammar; four read what they could and dropped the rest without a word.
   Why: the cost of a format is not its syntax but what happens when a model gets it wrong. A wrong value that is
   reported is fixed in one step; one that is dropped silently is never fixed. Now:
@@ -114,36 +144,36 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   (`'git.churn src top=20'`), view refs, `path#L10-20`, git ranges, `sort='-field'`, ERDiagram `fk:'users.id'`.
   Not done: `[[...]]` refs in text bound to a `$/path` and in Steps notes are not checked, and a file ref past the
   last line is reported nowhere.
-- **D23: every merge into main is released (2026-11-21).** `release.yml` runs on pushes to `main` as well as on
+- **`release-every-merge`: every merge into main is released (was D23, 2026-11-21).** `release.yml` runs on pushes to `main` as well as on
   version tags, and releases a merge as the next patch version.
-  Why: installs come from the `release` branch, and nothing had been tagged for a day of merges, so D21 and D22 were
+  Why: installs come from the `release` branch, and nothing had been tagged for a day of merges, so `diagrams-are-data` and `no-invented-string-formats` were
   on `main` but not installable, and the owner tested an old build without knowing it. The tag is pushed by the same
   run after the build passes, not by a separate workflow: a tag pushed with `GITHUB_TOKEN` starts no other run, and a
   broken `main` should get no version. A commit that already has a version tag is left to that tag's run. Runs are
   serialized (`concurrency: release`), so each counts from the tag the last one pushed.
-- **D26: no Markdown component; Text is the one text component (2026-11-21).** The owner's call: Markdown was only
+- **`no-markdown-component`: no Markdown component; Text is the one text component (was D26, 2026-11-21).** The owner's call: Markdown was only
   used for text. `Text` draws inline `code`, *em*, **strong** and `[[path#L10]]` refs and keeps line breaks; headings
   are a `Section`, tables a `DataTable`, code a `CodeBlock`. A spec that still writes `Markdown(...)` is drawn as Text
   with a `fixed` line that says what Text does not draw (`REMOVED_COMPONENTS`, server `spec/errors.ts`).
   Why: Markdown was a way around the catalog. A table or a code fence in it drew as plain HTML: no checks, dead paths,
   no sorting, no entity ids, so nothing could be selected, patched or (later) commented row by row, and a Markdown
   table hugged its content and left two thirds of its frame empty beside a DataTable that does all of that. Same
-  reasoning as D21. Gone with it: `markdown-to-jsx`, its lazy chunk, and the fenced-block mode of `replaceFileRefs`.
+  reasoning as `diagrams-are-data`. Gone with it: `markdown-to-jsx`, its lazy chunk, and the fenced-block mode of `replaceFileRefs`.
   Long text is set in columns (`Text.tsx`, `Text.module.css`): over 400 characters, not `mono`, columns of at least
   34em once the box is 992 px wide. Why: Markdown capped prose at 72ch, so a full-width plate was half empty beside
   its text ("there is nothing next to it"), and Text had no measure at all. Short text is never set in columns: one
   filled column beside an empty one is the same hole.
   Tried and dropped: placing a lone text plate beside the next plate (a shared `pairProse` in the viewer, a `fixed`
   line from the server). It moved the hole below the text and halved the neighbour (a graph opened zoomed, with a
-  minimap). Stretching plates to the height of their row would undo D20.
-- **D27: only a problem is an A2UI renderer error (2026-11-21).** The tab posts a W_* or E_* report as an A2UI
+  minimap). Stretching plates to the height of their row would undo `content-sized-plates`.
+- **`only-problems-are-errors`: only a problem is an A2UI renderer error (was D27, 2026-11-21).** The tab posts a W_* or E_* report as an A2UI
   `error` message (`Name#id: text`), and I_* and OK as Glimpse `ComponentState`s in `RendererPost.states` (catalog
   `transport.ts`), beside the A2UI messages. The server refuses a problem posted as a state, and an I_* or OK posted
   as an `error` is only logged, never stored as the component's state (`ActionRouter.state`, server `actions.ts`).
   Why: the A2UI docs use `error` for validation and rendering failures. A truthful empty state ("no import cycles")
   or "draws as asked" is neither, so sending them as `error` bent the protocol (found by checking Glimpse against
   a2ui.org through context7). The model sees no change: the same report store, the same `viewer:` lines.
-- **D28: no A2UI over MCP (2026-11-21).** The owner's call. The a2ui.org guide "A2UI over MCP" has the MCP server
+- **`no-a2ui-over-mcp`: no A2UI over MCP (was D28, 2026-11-21).** The owner's call. The a2ui.org guide "A2UI over MCP" has the MCP server
   serve layout templates as `a2ui://` resources (`application/a2ui+json`), return `updateDataModel` in tool results
   with `_meta.ui.resourceUri`, and take clicks and errors as `a2ui_action` and `a2ui_error` tool calls, so that the
   MCP host draws the UI inline. Glimpse does not do this, and should not be made to.

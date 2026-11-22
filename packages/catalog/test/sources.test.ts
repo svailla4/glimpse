@@ -65,14 +65,14 @@ describe('source refs', () => {
     // top means nothing on a tree or a graph unless the source lists it, and since only where it is listed
     expect(acceptsArg(meta('files.tree'), 'top')).toBe(false);
     expect(acceptsArg(meta('deps.files'), 'top')).toBe(false);
-    // D7: the module graph is cut to about 24 nodes by default, and top= raises it
+    // readable-module-graph: the module graph is cut to about 24 nodes by default, and top= raises it
     expect(acceptsArg(meta('deps.modules'), 'top')).toBe(true);
     expect(sourceDoc('deps.modules')).toContain("'deps.modules [path] [top=] [focus=] [depth=]'");
     expect(acceptsArg(meta('code.todos'), 'since')).toBe(false);
     expect(acceptsArg(meta('git.churn'), 'toString')).toBe(false);
   });
 
-  // D8 / F060: deps.* and repo.* read the working tree but were cached per HEAD, so an agent that had just edited
+  // fresh-tree-every-call / F060: deps.* and repo.* read the working tree but were cached per HEAD, so an agent that had just edited
   // imports saw the pre-edit graph until someone committed.
   it('every source computed from the working tree says so: files.*, repo.*, deps.*, code.*, diff.* and the git.* sources that join history with it', () => {
     // git.hotspots takes complexity, sloc and generated flags from the working-tree index; git.timeline names its
@@ -85,7 +85,7 @@ describe('source refs', () => {
     expect(SOURCES.filter(s => s.wt).map(s => s.name)).toEqual(expect.arrayContaining(['repo.stack', 'repo.packages', 'repo.scripts', 'deps.modules', 'deps.files', 'deps.cycles', 'deps.external', 'deps.matrix']));
   });
 
-  // V008 / D15: 'git.churn by=module' returns module rows, so a field name asked of it is checked against those.
+  // V008 / guessed-fields-repaired: 'git.churn by=module' returns module rows, so a field name asked of it is checked against those.
   it('fieldsFor gives the fields and roles of the rows a ref returns, a variant when an argument selects one', () => {
     const churn = SOURCE_BY_NAME.get('git.churn')!;
     expect(acceptsArg(churn, 'by')).toBe(true);

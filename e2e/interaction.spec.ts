@@ -93,7 +93,7 @@ test('the feature view follows a replaced plan', async ({page, glimpse}) => {
   await expect(page.locator('.gl-cell[data-id="design"] svg [data-node]')).toHaveCount(3);
 });
 
-// Decision D4 (was known defect E2E-01): design 7 patches one step with `$/plan/1/status='done'`. The server
+// Decision patch-sends-whole-slot (was known defect E2E-01): design 7 patches one step with `$/plan/1/status='done'`. The server
 // publishes the whole top-level slot, so views bound to the container (Steps here) re-render.
 test('a patch of one plan step updates the Steps view', async ({page, glimpse}) => {
   await glimpse.call('show', {view: 'feature', spec: PLAN('done', 'doing')});

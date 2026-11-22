@@ -156,7 +156,7 @@ describe('DataTable: text columns get the spare width first (integrator list: Pa
   });
 });
 
-describe('DataTable: a field the data lacks (D14, D15 for inline data)', () => {
+describe('DataTable: a field the data lacks (reports-are-component-state, guessed-fields-repaired for inline data)', () => {
   const ROWS = [{name: 'auth', loc: 1200, lang: 'TypeScript'}, {name: 'api', loc: 800, lang: 'Go'}];
   const heads = (view: RenderedSpec) => [...view.cell('t').querySelectorAll('[data-head]')].map(head => head.getAttribute('data-head'));
 
@@ -279,7 +279,7 @@ describe('FileTree: the followed file is shown when the tree opens (integrator l
     await waitFor(() => expect(rowAt(view, 'README.md')!.getAttribute('data-selected')).toBe('exact'));
   });
 
-  it('an empty directory is a truthful empty (I_EMPTY), not a problem (D14)', async () => {
+  it('an empty directory is a truthful empty (I_EMPTY), not a problem (reports-are-component-state)', async () => {
     const view = renderExpress(`$/tree=[]\nroot=Page('T',[t])\nt=FileTree($/tree)`, {data: {'/tree': {name: 'gen', path: 'gen', dir: true, children: []}}});
     await waitFor(() => expect(view.cell('t').textContent).toContain('gen is an empty directory'));
     await view.settle();

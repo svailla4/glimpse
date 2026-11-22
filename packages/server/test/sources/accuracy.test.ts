@@ -622,7 +622,7 @@ describe('code.refs', () => {
   });
 });
 
-describe('module graphs and the numbers beside them (D16, V059)', () => {
+describe('module graphs and the numbers beside them (numbers-on-a-page-agree, V059)', () => {
   let root: string;
   beforeAll(async () => {
     // 24 heavy top-level directories keep the repository cut at its 20 clusters, so `lib` stays one of them; the
@@ -662,7 +662,7 @@ describe('module graphs and the numbers beside them (D16, V059)', () => {
     expect((await run<GraphData>(ctx, 'deps.files lib/a/*')).data).toEqual(rest.data);
   });
 
-  it('the KPIs count what the plates beside them show (D16)', async () => {
+  it('the KPIs count what the plates beside them show (numbers-on-a-page-agree)', async () => {
     const ctx = await context(root);
     const [kpis, langs, graph, matrix] = await Promise.all([run<StatItem[]>(ctx, 'repo.kpis'), run(ctx, 'files.langs'), run<GraphData>(ctx, 'deps.modules'), run(ctx, 'deps.matrix')]);
     expect(stat(kpis, 'Languages')).toBe(langs.data.filter(row => row.lang !== 'Unclassified').length);

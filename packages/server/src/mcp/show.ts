@@ -23,13 +23,13 @@ export const SHOW_SCHEMA = {
 
 export interface ShowArgs { view?: string; spec?: string; id?: string; path?: string }
 
-/** Decision D2: letters, digits, `_` and `-`, at most 48, not starting with a hyphen. */
+/** Decision hyphenated-surface-ids: letters, digits, `_` and `-`, at most 48, not starting with a hyphen. */
 export const SURFACE_ID = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,47}$/;
 /** Far above any real spec (the gallery, inline fixture data included, is about 12,000 characters). */
 export const MAX_SPEC_CHARS = 200_000;
 const GALLERY = 'gallery';
 export const DEFAULT_SETTLE_MS = 1500;
-/** Decision D3: how long a `show` goes on listening to a live tab after its datasets have settled. */
+/** Decision show-reports-what-tab-drew: how long a `show` goes on listening to a live tab after its datasets have settled. */
 export const REPORT_GRACE_MS = 300;
 /** Keyword spellings of a preset's one positional target (`hotspots path=src`), by what the preset takes. */
 const TARGET_KEYS = ['path', 'target', 'dir', 'file', 'range', 'name', 'symbol'];
@@ -74,7 +74,7 @@ function surfaceId(given: string, fixes: string[]): string {
   if (!SURFACE_ID.test(slug)) {
     throw new SpecError([problem('E_ID', `id "${given.slice(0, 40)}" is not a slug: use letters, digits, - and _ (at most 48), e.g. "auth-flow".`)]);
   }
-  // Decision D10: an id is a key in the viewer and in the server's maps; these three would name a prototype instead.
+  // Decision untrusted-input-contained: an id is a key in the viewer and in the server's maps; these three would name a prototype instead.
   if (UNSAFE_KEYS.has(slug)) throw new SpecError([problem('E_ID', `id "${slug}" is reserved: __proto__, constructor and prototype cannot name a view.`)]);
   if (slug !== given) fixes.push(`id "${given.slice(0, 48)}" -> ${slug}`);
   return slug;
@@ -134,7 +134,7 @@ async function report(session: Session, request: ShowRequest, outcome: ShowOutco
       ])
     : Promise.resolve();
   await withTimeout(Promise.all([repoRun, outcome.checks, ...outcome.datasets.map(dataset => dataset.settled)]), settleMs);
-  // Decision D3: a connected tab draws within moments and says what it drew instead of a component.
+  // Decision show-reports-what-tab-drew: a connected tab draws within moments and says what it drew instead of a component.
   if (session.tabs() > 0) await sleep(Math.min(REPORT_GRACE_MS, Math.max(0, settleMs)));
 
   const {repo} = session.meta();
@@ -179,7 +179,7 @@ export async function showTool(session: Session, args: ShowArgs, settleMs = DEFA
   try {
     const fixes: string[] = [];
     request = showRequest(args, fixes);
-    // Decision D8: HEAD, the revision and the file index are looked at before anything is computed.
+    // Decision fresh-tree-every-call: HEAD, the revision and the file index are looked at before anything is computed.
     await session.revalidate();
     request = await canonicalView(session, args, request, fixes);
     if (request.view === GALLERY) {

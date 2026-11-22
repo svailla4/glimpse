@@ -1,6 +1,6 @@
 // SegmentedBar (design 5.3): part-to-whole in one 16 px bar, segments separated by 2 px surface gaps, with a legend
 // beneath (swatch, label, percentage). Segments under 2% and those past the eighth ink merge into "other".
-// Colours come from the kit (D6): a category keeps its session ink, the others take the free inks in order, and
+// Colours come from the kit (stable-category-colours): a category keeps its session ink, the others take the free inks in order, and
 // only the merged remainder is grey, so two different categories are never the same colour side by side.
 // Clicking a segment or a legend entry selects it; the legend is one tab stop with roving focus.
 import type {EntityRef, Field, FieldKind, Roles, Rows} from '@glimpse/catalog';

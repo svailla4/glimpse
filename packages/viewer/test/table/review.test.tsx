@@ -25,7 +25,7 @@ async function ready(view: RenderedSpec, role = 'grid'): Promise<HTMLElement> {
   return found;
 }
 
-describe('DataTable: path cells and column widths (F004, F019, F088, D12)', () => {
+describe('DataTable: path cells and column widths (F004, F019, F088, paths-keep-file-name)', () => {
   const ROWS = [
     {path: 'typescript/core/web_core/tests/conformance/conformance_test.mjs', commits: 41, loc: 1280, last: '2026-11-01T10:00:00Z'},
     {path: 'typescript/core/web_core/src/processing/message-processor.ts', commits: 7, loc: 96, last: '2026-10-01T10:00:00Z'},
@@ -101,7 +101,7 @@ describe('DataTable: values (F013, F072)', () => {
   });
 });
 
-describe('DataTable: category colours (F006, D6)', () => {
+describe('DataTable: category colours (F006, stable-category-colours)', () => {
   const inkOf = (element: Element | null | undefined) => (element as HTMLElement).style.background;
 
   it('gives languages without a session slot the free inks in order of first appearance, never one shared grey', async () => {
@@ -210,7 +210,7 @@ describe('table family: the scroll cue (F014, F016)', () => {
   });
 });
 
-describe('CommitList: refs, change counts and authors (F013, D6)', () => {
+describe('CommitList: refs, change counts and authors (F013, stable-category-colours)', () => {
   const commit = (sha: string, extra: Record<string, unknown> = {}) => ({sha, subject: `Subject of ${sha}`, author: 'Mira Okafor', date: '2026-11-01T00:00:00Z', ...extra});
 
   it('draws two ref chips at most, each with its full name as the tooltip, and counts the rest', async () => {

@@ -26,7 +26,7 @@ const MAX_LIMIT = 200;
 const MAX_CELL = 200;
 
 /**
- * What the lines of a tool result start with (decision D10): a row whose first cell reads like one of these could
+ * What the lines of a tool result start with (decision untrusted-input-contained): a row whose first cell reads like one of these could
  * pass for the result's own framing, e.g. a file named `warn the source failed` or `total=0 returned=0`. Tested on
  * the skeleton of the cell (finding V016), so look-alike letters and invisible characters do not get past it.
  */
@@ -120,7 +120,7 @@ export async function queryTool(session: Session, args: QueryArgs): Promise<Tool
     if (!refText) throw new SpecError([problem('E_ARGS', `ref is required, e.g. "git.hotspots src top=10".`)]);
     const limit = Number.isInteger(args.limit) ? Math.min(MAX_LIMIT, Math.max(1, args.limit!)) : DEFAULT_LIMIT;
     const wanted = typeof args.fields === 'string' ? args.fields.split(/[\s,]+/).filter(Boolean) : undefined;
-    // Decision D8: HEAD, the revision and the file index are looked at before anything is computed.
+    // Decision fresh-tree-every-call: HEAD, the revision and the file index are looked at before anything is computed.
     await session.revalidate();
     const {ref, outcome} = await session.runRef(refText);
     if (!outcome.ok) throw new SpecError([problem(sourceCode(outcome.error.code), `${refText}: ${outcome.error.message}`)]);

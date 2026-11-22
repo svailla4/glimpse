@@ -1,4 +1,4 @@
-// Decision D10 and blocker F047: nothing a spec says may reach Object.prototype. The attack was
+// Decision untrusted-input-contained and blocker F047: nothing a spec says may reach Object.prototype. The attack was
 //   $/__proto__/GLIMPSE_EDITOR='/bin/sh -c ...'
 // which the Express compiler's path setter wrote into Object.prototype while compiling: every later JSON-RPC message
 // then failed validation (a hung server) and the editor command came from the polluted prototype.

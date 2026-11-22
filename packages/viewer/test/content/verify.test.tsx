@@ -41,7 +41,7 @@ describe('KeyValue and Stats share their row shapes (V002)', () => {
     await waitFor(() => expect(state(cell)).toBe('empty'));
     expect(cell.textContent).toContain('{Label: value} or [{label, value}]');
     expect(cell.textContent).toContain('got [{foo, bar, baz}]');
-    // the report says the same, as a shape problem, so the model can fix its spec from the result alone (D14)
+    // the report says the same, as a shape problem, so the model can fix its spec from the result alone (reports-are-component-state)
     await view.settle();
     expect(view.reports.at(-1)?.message).toContain('[{label, value}]');
     expect(view.stateOf('a')).toBe('W_SHAPE');

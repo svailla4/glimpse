@@ -57,7 +57,7 @@ afterEach(() => {
   Object.defineProperty(window, 'scrollY', {configurable: true, value: 0});
 });
 
-describe('surface ids with hyphens (D2, F031)', () => {
+describe('surface ids with hyphens (hyphenated-surface-ids, F031)', () => {
   it('round-trip through the address bar, the session, the tabs and the arrangement key', () => {
     expect(parseRoute(formatRoute('show-call-flow'))).toBe('show-call-flow');
     expect(parseRoute('#/my-view_2')).toBe('my-view_2');
@@ -81,7 +81,7 @@ describe('surface ids with hyphens (D2, F031)', () => {
   });
 });
 
-describe('a component state is state, not an event (D14, V051, V060, V061)', () => {
+describe('a component state is state, not an event (reports-are-component-state, V051, V060, V061)', () => {
   /** States arrive at the end of the task that rendered them. */
   const flush = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   const statesOf = (transport: ScriptedTransport, label: string) => transport.reports.filter(report => report.label === label).map(report => report.code);
@@ -94,7 +94,7 @@ describe('a component state is state, not an event (D14, V051, V060, V061)', () 
     expect(errorsOf(transport.sent).find(error => error.message.startsWith('List#l: '))).toEqual({code: 'W_EMPTY', message: 'List#l: no items', surfaceId: 'a'});
     expect(statesOf(transport, 'Text#t')).toEqual(['OK']);
     expect(statesOf(transport, 'Page#root')).toEqual(['OK']);
-    // D27: only the problem is an A2UI renderer error; OK goes beside the messages, as data
+    // only-problems-are-errors: only the problem is an A2UI renderer error; OK goes beside the messages, as data
     expect(transport.sent.filter(message => 'error' in message)).toHaveLength(1);
     expect(transport.sent.every(message => message.version === '1.0')).toBe(true);
     expect(transport.states).toEqual(expect.arrayContaining([

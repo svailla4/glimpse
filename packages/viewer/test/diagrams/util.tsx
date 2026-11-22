@@ -2,7 +2,7 @@
 // fake storage, and readers for the drawn diagram (nodes, edges, the viewport).
 //
 // Importing this file sets every test of the file up: ELK answers in-process through the page's own worker protocol
-// (configureElkWorker, decision D19), each test starts with no remembered layouts, and jsdom gets DOMMatrixReadOnly
+// (configureElkWorker, decision diagram-engine-in-worker), each test starts with no remembered layouts, and jsdom gets DOMMatrixReadOnly
 // (React Flow reads the viewport's zoom through it when it measures a node).
 import {act, fireEvent, waitFor, within} from '@testing-library/react';
 import {afterEach, beforeEach} from 'vitest';
@@ -101,7 +101,7 @@ export function viewOf(stage: Element): {x: number; y: number; k: number} {
   return {x: Number(m[1]), y: Number(m[2] ?? 0), k: Number(m[3])};
 }
 
-/** Height of the drawing area (decision D20): the stage's sized parent. */
+/** Height of the drawing area (decision content-sized-plates): the stage's sized parent. */
 export function stageHeight(stage: Element): number {
   return Number.parseFloat((stage.parentElement as HTMLElement).style.height);
 }

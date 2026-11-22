@@ -1,4 +1,4 @@
-// Configuration comes from the process environment as it was at start-up and from nowhere else (decision D10).
+// Configuration comes from the process environment as it was at start-up and from nowhere else (decision untrusted-input-contained).
 // `process.env.NAME` on the live object falls through to Object.prototype when NAME is not set, so anything that
 // managed to add a property there could supply a setting, such as the editor command. The copy made here has no
 // prototype and is frozen: a lookup finds what the user set, or nothing.

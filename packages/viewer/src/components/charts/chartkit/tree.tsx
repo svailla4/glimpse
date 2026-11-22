@@ -153,7 +153,7 @@ export interface Painter {
 }
 
 /**
- * Ink slots for the languages of a tree, from the kit's assignment (design D6). A language the session gave a slot
+ * Ink slots for the languages of a tree, from the kit's assignment (design stable-category-colours). A language the session gave a slot
  * keeps it; the others take the lowest free slots in order of first appearance in the WHOLE tree, so zooming or
  * switching the metric repaints nothing; only a ninth language is `other`, and so is a language the server could
  * not name ('Other'), which never takes a hue.

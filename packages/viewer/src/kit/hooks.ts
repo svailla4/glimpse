@@ -45,7 +45,7 @@ export interface DataState<T> {
   /** Second, dimmer line of an empty state: the source, when `message` is the reason the dataset gave. */
   detail?: string;
   /**
-   * The report code (decision D14): the redline code of an error; for an empty state I_EMPTY when the dataset says
+   * The report code (decision reports-are-component-state): the redline code of an error; for an empty state I_EMPTY when the dataset says
    * why it is empty (a truthful answer of the source), W_EMPTY when nothing is bound, the inline data is empty or the
    * source gave no reason.
    */
@@ -161,7 +161,7 @@ export function useChildIds(componentId: string, prop = 'children'): string[] {
 
 /**
  * The `span` each child of `componentId` names in the spec (undefined where it names none), in spec order: what a
- * container needs to read spans written for the 12-column grid (Grid, decision D17). Follows updateComponents of
+ * container needs to read spans written for the 12-column grid (Grid, decision layout-does-the-obvious). Follows updateComponents of
  * the container and of its children.
  */
 export function useChildSpans(componentId: string): Array<number | undefined> {
@@ -311,7 +311,7 @@ export function useSelection(componentId: string) {
 export type SlotKind = 'lang' | 'module' | 'author';
 
 /**
- * Colours for the categories one component shows (design rule D6). `keys` are the categories in order of first
+ * Colours for the categories one component shows (design rule stable-category-colours). `keys` are the categories in order of first
  * appearance; `kind` names the /meta/slots table that knows them (several are tried in order; undefined for
  * categories the session has no slots for, such as package ecosystems). A category with a session slot wears it; the
  * others take the lowest inks still free in this component, in order of first appearance, and keep them for the life

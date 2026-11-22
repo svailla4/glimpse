@@ -24,7 +24,7 @@ export interface Expansion {
   ranges: Array<{where: string; range: string}>;
   /** Field names a component asks of a dataset, checked against the dataset's fields once it has settled. */
   fields: Array<{where: string; key: string; names: string[]}>;
-  /** What expansion corrected, as the text of `fixed` lines (field names, decision D15). */
+  /** What expansion corrected, as the text of `fixed` lines (field names, decision guessed-fields-repaired). */
   fixes: string[];
   /**
    * Finding V071: the paths the spec writes (literal file props, path targets of refs), as written, for the session to
@@ -50,7 +50,7 @@ function kindWarning(component: string, id: string, meta: SourceMeta, kinds: Rea
 }
 
 /**
- * Split's ratio as Split draws it, said (D22): a share rewritten to 'a:b' is a `fixed` line, and a value Split cannot
+ * Split's ratio as Split draws it, said (no-invented-string-formats): a share rewritten to 'a:b' is a `fixed` line, and a value Split cannot
  * read (it then opens the panes half and half) is a `warn` line.
  */
 function splitRatioChecked(comp: WireComponent, out: Expansion): void {
@@ -192,7 +192,7 @@ function proseRefs(comp: WireComponent, name: string, out: Expansion, names: Pat
   if (next !== text) comp[prop] = next;
 }
 
-// ---------------------------------------------------------------- field names (decision D15)
+// ---------------------------------------------------------------- field names (decision guessed-fields-repaired)
 /**
  * What people write for a field, and the fields it may stand for, in order of preference: the first one the dataset
  * has wins. Keys are lower case with everything but letters and digits removed. Gathered from the field names cold
@@ -300,7 +300,7 @@ function variantMeant(comp: WireComponent, name: string, props: Record<string, P
 }
 
 /**
- * Decision D15: every field a component bound to a source names is one the source returns. An exact name stays; a
+ * Decision guessed-fields-repaired: every field a component bound to a source names is one the source returns. An exact name stays; a
  * name the author plainly meant is rewritten (`ScatterPlot.x 'churn' -> 'commits'`); anything else is dropped so the
  * component draws its default encoding (`... 'zzz' dropped (fields: a b c)`). Never an empty plate for a guess.
  */
@@ -409,7 +409,7 @@ function focusAsTarget(comp: WireComponent, name: string, text: string, registry
 }
 
 /**
- * Decision D22: a literal `mark` (CodeView, CodeBlock) is read here. A part written another plain way ('lines 10-20',
+ * Decision no-invented-string-formats: a literal `mark` (CodeView, CodeBlock) is read here. A part written another plain way ('lines 10-20',
  * '10..20', '20-10') is rewritten as a fix; a part that names no line is a `warn` line (the tab notes it too).
  */
 function checkMark(comp: WireComponent, name: string, out: Expansion): void {

@@ -260,7 +260,7 @@ export function viewGroups(): string {
 
 /** The budget test/docs.test.ts and scripts/budgets.mjs hold the instructions to (the host cuts at 4,096). */
 export const INSTRUCTIONS_BUDGET = 4000;
-/** What serverInstructions() must stay under so that new components and sources still fit (decision D13). */
+/** What serverInstructions() must stay under so that new components and sources still fit (decision budgets-keep-headroom). */
 export const INSTRUCTIONS_TARGET = 3750;
 /**
  * The longest line serverInstructions() may have. A longer one is split in two: a newline costs what a space does,

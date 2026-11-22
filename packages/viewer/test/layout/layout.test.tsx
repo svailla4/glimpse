@@ -181,7 +181,7 @@ describe('Grid', () => {
     expect([...g.querySelectorAll('.gl-cell')].map(cell => cell.getAttribute('data-span'))).toEqual([null, null, null]);
   });
 
-  it('reads span on 12 columns, as the page does: span=6 twice is two halves, not two full rows (D17, V034)', async () => {
+  it('reads span on 12 columns, as the page does: span=6 twice is two halves, not two full rows (layout-does-the-obvious, V034)', async () => {
     const view = renderExpress(
       `root=Page('T',[g,h,i,j])\ng=Grid([Text('a',span=6),Text('b',span=6)])\nh=Grid([Text('c',span=6),Text('d',span=6)],'1:1')\ni=Grid([Text('map',span=8),Text('tree',span=4)],'2:1')\nj=Grid([Text('files'),Text('code',span=8)],'1:2')`,
     );

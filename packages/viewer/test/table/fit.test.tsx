@@ -1,4 +1,4 @@
-// Round 5 (decision D20 and the table polish of the review list): content-sized scrollers, labels that tell rows
+// Round 5 (decision content-sized-plates and the table polish of the review list): content-sized scrollers, labels that tell rows
 // apart, the sign that a table goes on sideways, value-sniffed path columns and a tree that opens on whole rows.
 // Invented generic fixtures only.
 import type {DataRow} from '@glimpse/catalog';
@@ -206,7 +206,7 @@ describe('a table that scrolls sideways says so (round 4: TREND, DELTA and OK hi
   });
 });
 
-describe('content-sized scrollers (D20)', () => {
+describe('content-sized scrollers (content-sized-plates)', () => {
   it('every table-family view and code view takes its cap from the size step, not a fixed height', async () => {
     const view = renderExpress(
       `root=Page('T',[a,b,c,d])\na=FileTree('files.tree',size='s')\nb=JsonView($/json,size='xl')\nc=CommitList('git.log')\nd=CodeView('src/auth/service.ts',size='l')`,

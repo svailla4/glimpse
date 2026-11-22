@@ -37,7 +37,7 @@
   @keyframes gl-arrive {
     from { opacity: 0; transform: translateY(4px); }
   }
-  /* The header (design rule D11). One row while the title and the aside fit side by side; otherwise the aside
+  /* The header (design rule header-keeps-title). One row while the title and the aside fit side by side; otherwise the aside
      moves to a second row. The title is only ever cut when it alone is longer than the plate, and nothing in the
      header can be wider than the frame. */
   .gl-frame-head {
@@ -95,7 +95,7 @@
   :is(.gl-frame-aside, .gl-aside) > :is(span, .gl-marginal):not(:has(button, input, select, a)) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   :is(.gl-frame-aside, .gl-aside) input { min-width: 0; }
 
-  /* The scope row: what a drilled dataset is looking at, and the way back (design rule D1). */
+  /* The scope row: what a drilled dataset is looking at, and the way back (design rule drill-has-way-back). */
   .gl-frame-scope, .gl-scope {
     display: flex;
     flex: none;
@@ -206,7 +206,7 @@
   .gl-frame[data-flush] > .gl-frame-body .gl-state { margin: 14px; }
   .gl-frame[data-flush] > .gl-frame-body :is(.gl-drafting, .gl-empty) { height: calc(100% - 28px); }
   /* While a sized component drafts, what it will show is not known yet: it holds its size step, the most it may take
-     (a table of a real dataset usually reaches it), as it did before plates became content-sized (D20). The step is
+     (a table of a real dataset usually reaches it), as it did before plates became content-sized (content-sized-plates). The step is
      the most the view box may take: the plate body's padding, or the inset a flush plate gives its states, is 14 px a
      side. The drafting is the body's child (the chunk loads) or the only child of the view's root (the data loads). */
   .gl-cell[data-size] > .gl-body > .gl-drafting,
@@ -234,7 +234,7 @@
   .gl-marginal { font: 400 11px/16px var(--gl-font-mono); color: var(--gl-ink-3); white-space: nowrap; }
 
   /* ---- entity text ----------------------------------------------------------------------------------------- */
-  /* A path keeps its file name (D12): the row is capped at its container, the directory gives way first and is
+  /* A path keeps its file name (paths-keep-file-name): the row is capped at its container, the directory gives way first and is
      elided at its start (an rtl box around ltr text puts the ellipsis on the left), then the name itself.
      The directory takes ALL of the squeeze before the name loses anything: a flex item that loses even a fraction
      of a pixel shows its ellipsis ("model.t…" beside a directory that still has room), so the directory's shrink

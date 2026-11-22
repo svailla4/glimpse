@@ -173,7 +173,7 @@ describe('all or nothing', () => {
     expect(dump(t)).toBe(before);
   });
 
-  it('a patch that writes the data a stored diagram binds is checked like inline data (D21)', async () => {
+  it('a patch that writes the data a stored diagram binds is checked like inline data (diagrams-are-data)', async () => {
     const t = start();
     await t.session.show(spec('seq', `$/seq={steps:[['A','B','hi']]}\nroot=Page('S',[s])\ns=SequenceDiagram($/seq)`));
     const dropped = await t.session.show(spec('seq', `$/seq/steps/1={note:'lost'}`));

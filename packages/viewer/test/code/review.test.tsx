@@ -16,7 +16,7 @@ const slice = (q: FileQuery, total: number, note = ''): FileSlice => {
 const marked = (cell: HTMLElement) => [...cell.querySelectorAll('[data-marked]')].map(line => Number(line.getAttribute('data-line')));
 const text = (cell: HTMLElement, n: number) => cell.querySelector(`[data-line="${n}"]`)?.lastElementChild?.textContent;
 
-describe('mark (F041, D5)', () => {
+describe('mark (F041, accept-familiar-variants)', () => {
   it('reads line ranges written like file locations, and says which segments name no line', () => {
     expect(readLineMarks('3,7-9').ranges).toEqual([[3, 3], [7, 9]]);
     // what a writer who has just typed 'path#L1-60' reaches for
@@ -48,7 +48,7 @@ describe('mark (F041, D5)', () => {
     expect([...block.querySelectorAll('[data-hl]')].map(line => line.getAttribute('data-line'))).toEqual(['2']);
   });
 
-  // Decision D14: what the view cannot mark is told to the model, not only noted in the header.
+  // Decision reports-are-component-state: what the view cannot mark is told to the model, not only noted in the header.
   it('reports W_MARK for parts that name no line and for lines past the end, and OK for a mark it draws', async () => {
     const view = renderExpress(
       `root=Page('T',[a,b,c,d,e])\na=CodeView('big.ts',mark='the loop, 2')\nb=CodeView('big.ts',mark='95-110,120')\nc=CodeView('big.ts',mark='L2-3')\nd=CodeBlock('a\\nb\\nc','ts',mark='L2, nope')\ne=CodeBlock('a\\nb\\nc','ts',mark='3-4')`,
