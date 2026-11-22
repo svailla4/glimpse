@@ -33,7 +33,7 @@ describe('file anchors and line ranges', () => {
     expect(readLineMarks(spec)).toEqual({ranges, ignored: []});
   });
 
-  // Decision D22: a plain guess is read and the reading is said; it is never dropped in silence.
+  // Decision no-invented-string-formats: a plain guess is read and the reading is said; it is never dropped in silence.
   it.each([
     ['lines 10-20', [[10, 20]], '10-20'],
     ['line 7', [[7, 7]], '7'],
@@ -70,7 +70,7 @@ describe('[[path]] file refs in prose', () => {
     expect(fileRefs('[[ a.ts]] [[a.ts ]] [[]] [[a\nb]] [[a[b]] [a.ts] [[ok.ts]]')).toEqual(['ok.ts']);
     expect(fileRefs('`[[in/code.ts]]` then [[out.ts]] and **[[bold.ts]]**')).toEqual(['out.ts', 'bold.ts']);
     expect(fileRefs(`[[${'x'.repeat(401)}]] [[${'y'.repeat(400)}]]`)).toEqual(['y'.repeat(400)]);
-    // Text has inline code spans only (decision D26): a fence is not code, so a ref between fences is a link
+    // Text has inline code spans only (decision no-markdown-component): a fence is not code, so a ref between fences is a link
     expect(fileRefs('```\n[[a.ts]]\n```')).toEqual(['a.ts']);
   });
 
@@ -103,7 +103,7 @@ describe('gallery', () => {
     expect(galleryRoot()).toBe(GALLERY_ROOT);
   });
 
-  // The forms decision D5 accepts beyond the canonical one are in the showcase, so every screenshot run and the
+  // The forms decision accept-familiar-variants accepts beyond the canonical one are in the showcase, so every screenshot run and the
   // end-to-end gallery test exercise them.
   it('exercises the accepted forms: 1-based Steps.current, ER as a table list with fk strings, Layers title and label, mark L-ranges', () => {
     const steps = props(one('Steps'));

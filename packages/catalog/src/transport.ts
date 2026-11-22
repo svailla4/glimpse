@@ -28,7 +28,7 @@ export type RendererMessage =
 
 // ---- render reports: the state a Glimpse tab posts about one component ----
 // A report is the component's CURRENT state, not an event: the tab re-sends it whenever the component is (re)defined
-// by an update, and withdraws it with REPORT_OK once the component draws normally. Decision D27: a problem (W_*, E_*)
+// by an update, and withdraws it with REPORT_OK once the component draws normally. Decision only-problems-are-errors: a problem (W_*, E_*)
 // is a rendering error and goes as an A2UI v1.0 renderer `error` message whose message is `Name#id: text`; a state
 // that is not an error (I_*, OK) is not an A2UI message at all and goes in `RendererPost.states`.
 //   I_*  a truthful empty or waiting state (no import cycles, no uncommitted changes, waiting for a selection):
@@ -70,7 +70,7 @@ export type ServerEvent =
   | {type: 'bye'; reason: 'shutdown'};
 
 // ---- POST /api/renderer  (content-type application/json, body RendererPost, answers 204) ----
-/** A component state that is not an error (I_* or OK, decision D27), posted beside the A2UI messages. */
+/** A component state that is not an error (I_* or OK, decision only-problems-are-errors), posted beside the A2UI messages. */
 export interface ComponentState { surfaceId: string; component: string; id: string; code: string; message: string }
 export interface RendererPost { messages: RendererMessage[]; states?: ComponentState[] }
 

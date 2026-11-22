@@ -1,5 +1,5 @@
 // packages/viewer/src/kit/report.ts
-// What a component draws, told to the host as the component's CURRENT state (decision D14; codes in
+// What a component draws, told to the host as the component's CURRENT state (decision reports-are-component-state; codes in
 // packages/catalog/src/transport.ts). One holder per component cell collects what its view puts on screen in place of
 // content (an Empty, a Redline, a problem the view names while it still draws) and sends ONE state for the component:
 //   I_*  a truthful empty or waiting state (the dataset says why it is empty, the view waits for a selection)
@@ -8,7 +8,7 @@
 //   OK   none of these: the component draws normally. Withdraws whatever was said before.
 // The state is sent when the cell mounts, whenever it changes, and again (OK included) each time an update
 // (re)defines the component, so the host can forget what it knew at every definition and still hear the truth.
-// W_* and E_* reach the host as A2UI renderer errors; I_* and OK, which are not errors, as Glimpse states (D27).
+// W_* and E_* reach the host as A2UI renderer errors; I_* and OK, which are not errors, as Glimpse states (only-problems-are-errors).
 // Only component-level states count: whatever renders inside <Subpart> (a borrowed view, one file of a diff, one stop
 // of a tour) never speaks for the component.
 import {REPORT_OK} from '@glimpse/catalog';
@@ -16,7 +16,7 @@ import {createContext, createElement, useContext, useEffect, useRef, useState, t
 
 /**
  * One state of one component. The shell posts a problem (W_*, E_*) as an A2UI v1.0 renderer `error` message and any
- * other state (I_*, OK) as a Glimpse ComponentState (decision D27).
+ * other state (I_*, OK) as a Glimpse ComponentState (decision only-problems-are-errors).
  */
 export interface RenderReport {
   /** 'OK', or an I_*, W_* or E_* code. */

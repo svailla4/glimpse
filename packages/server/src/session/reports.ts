@@ -1,4 +1,4 @@
-// Render reports (decision D14): what a tab says about one component is that component's CURRENT state, kept here
+// Render reports (decision reports-are-component-state): what a tab says about one component is that component's CURRENT state, kept here
 // per (surface, component) and never in the event queue, so no number of reports can push out a press, an answer or
 // a selection. A state is `OK`, `I_*` (a truthful empty or waiting state), `W_*` or `E_*`; only the last two are
 // problems the model hears about, and each one once: in the result of the show that drew it, or else as one

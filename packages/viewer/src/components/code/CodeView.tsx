@@ -70,7 +70,7 @@ export interface CodeFileProps {
   file?: string;
   mark?: string;
   notes?: DataInput<CodeNote[]>;
-  /** `cap`: as tall as its lines up to the cell's cap (D20); `fill`: fills the pane of the view it is part of. */
+  /** `cap`: as tall as its lines up to the cell's cap (content-sized-plates); `fill`: fills the pane of the view it is part of. */
   fit: 'fill' | 'cap';
   /** Where the header goes: into the plate header, into a boxed body, or into a body that sits inside another view. */
   chrome: 'plate' | 'boxed' | 'bare';
@@ -141,7 +141,7 @@ export function CodeFile(props: CodeFileProps): ReactNode {
     }
   }, [current, total, path, targetFrom, targetTo]);
 
-  // Decision D14: waiting for a selection, and a file that cannot be shown, are truthful states; a file the spec names
+  // Decision reports-are-component-state: waiting for a selection, and a file that cannot be shown, are truthful states; a file the spec names
   // that is not there is a fault the agent can fix.
   if (!path) return <Empty message="no file selected" code={REPORT_CODES.waiting} />;
   if (lines.error) {

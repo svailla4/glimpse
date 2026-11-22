@@ -1,5 +1,5 @@
-// The cross-area decisions as the session keeps them, on fakes: the way back from a drill (D1), what the viewer
-// reported (D3), whole-slot data patches (D4), freshness on every call (D8) and what may be read or opened (D10).
+// The cross-area decisions as the session keeps them, on fakes: the way back from a drill (drill-has-way-back), what the viewer
+// reported (show-reports-what-tab-drew), whole-slot data patches (patch-sends-whole-slot), freshness on every call (fresh-tree-every-call) and what may be read or opened (untrusted-input-contained).
 // Each block names the review finding it guards.
 import {execFileSync} from 'node:child_process';
 import {mkdir, mkdtemp, realpath, rm, symlink, writeFile} from 'node:fs/promises';
@@ -44,15 +44,15 @@ const dataUpdates = (frames: Frame[]) => frames.flatMap(f => f.messages).flatMap
 const created = (frame: Frame) => (frame.messages.find(m => 'createSurface' in m) as Extract<A2uiMessage, {createSurface: unknown}>).createSurface;
 const action = (name: string, context: Record<string, unknown> = {}, source = 'root', surfaceId = 'demo') =>
   ({version: '1.0', action: {name, surfaceId, sourceComponentId: source, timestamp: '2026-11-20T00:00:00Z', context}});
-/** What a tab posts (D27): a problem or any other renderer error as an A2UI `error`; I_* and OK beside the messages. */
+/** What a tab posts (only-problems-are-errors): a problem or any other renderer error as an A2UI `error`; I_* and OK beside the messages. */
 const tell = (router: ActionRouter, code: string, message: string, surfaceId = 'demo'): boolean => {
   if (code !== 'OK' && !code.startsWith('I_')) return router.handle({version: '1.0', error: {code, message, surfaceId}});
   const [, component = '', id = '', text = ''] = /^(\w+)#([^:]+):\s?([\s\S]*)$/.exec(message) ?? [];
   return router.state({surfaceId, component, id, code, message: text});
 };
 
-// ---------------------------------------------------------------- D8: blocker F059, major F048
-describe('D8: every call looks at the tree first, tab or no tab', () => {
+// ---------------------------------------------------------------- fresh-tree-every-call: blocker F059, major F048
+describe('fresh-tree-every-call: every call looks at the tree first, tab or no tab', () => {
   it('a change made while no tab is connected is picked up by the next look', async () => {
     const t = start();
     const outcome = await t.session.show(spec('demo', BASE));
@@ -273,8 +273,8 @@ describe('D8: every call looks at the tree first, tab or no tab', () => {
   });
 });
 
-// ---------------------------------------------------------------- D1: blocker F017, majors F018 and F074
-describe('D1: a drilled dataset says where it is and what is one level out', () => {
+// ---------------------------------------------------------------- drill-has-way-back: blocker F017, majors F018 and F074
+describe('drill-has-way-back: a drilled dataset says where it is and what is one level out', () => {
   it.each([
     ['', 'src', {target: 'src', up: ''}],
     ['', 'packages/server/src', {target: 'packages/server/src', up: 'packages/server'}],
@@ -345,8 +345,8 @@ describe('D1: a drilled dataset says where it is and what is one level out', () 
   });
 });
 
-// ---------------------------------------------------------------- D3 and D14: majors F032, V003, V051, V060, V061; minors V018, V046, V054
-describe('D14: the model learns what the viewer rendered, as component state', () => {
+// ---------------------------------------------------------------- show-reports-what-tab-drew and reports-are-component-state: majors F032, V003, V051, V060, V061; minors V018, V046, V054
+describe('reports-are-component-state: the model learns what the viewer rendered, as component state', () => {
   async function setup() {
     const t = start();
     const logged: string[] = [];
@@ -376,7 +376,7 @@ describe('D14: the model learns what the viewer rendered, as component state', (
     expect(t.session.events.reports.get('demo', 'DataTable#table')?.code).toBe('OK');
   });
 
-  it('takes a problem only as an A2UI error and any other state only beside the messages (D27)', async () => {
+  it('takes a problem only as an A2UI error and any other state only beside the messages (only-problems-are-errors)', async () => {
     const {t, router, logged} = await setup();
     // a truthful state or OK posted as an A2UI error is not a component report: it is only logged
     expect(router.handle({version: '1.0', error: {code: 'I_EMPTY', message: 'Text#notes: nothing yet', surfaceId: 'demo'}})).toBe(true);
@@ -618,7 +618,7 @@ c=Callout('Keys in [[.env]].','risk')`));
     ]);
   });
 
-  // Decision D15: a guessed field never draws an empty plate.
+  // Decision guessed-fields-repaired: a guessed field never draws an empty plate.
   it('a field a source does not return is rewritten to the one meant, or dropped for the default encoding', async () => {
     const t = start();
     const outcome = await t.session.show(spec('plot', `root=Page('Plot',[ScatterPlot('fake.rows',x='churn',y='N',label='file'),DataTable('fake.rows','path n zzz',sort='n desc')])`));
@@ -655,8 +655,8 @@ c=Callout('Keys in [[.env]].','risk')`));
   });
 });
 
-// ---------------------------------------------------------------- D4: majors F073 and F087
-describe('D4: a patch below a slot is published as the whole slot', () => {
+// ---------------------------------------------------------------- patch-sends-whole-slot: majors F073 and F087
+describe('patch-sends-whole-slot: a patch below a slot is published as the whole slot', () => {
   it('nested assignments reach the tab as one fresh value of the top-level slot', async () => {
     const t = start();
     await t.session.show(spec('feature', `$/plan=[{title:'Add limiter',status:'done'},{title:'Wire router',status:'doing'},{title:'Tests',status:'todo'}]\n$/info={owner:'me'}\nroot=Page('Feature',[Steps($/plan),KeyValue($/info)])`));
@@ -764,7 +764,7 @@ describe('a replace that keeps every part is sent in place', () => {
   const frameOf = (t: TestSession, from: number) => t.host.frames.slice(from).find(frame => frame.focus === 'demo')!;
   const componentsIn = (frame: Frame) => frame.messages.flatMap(m => ('updateComponents' in m ? m.updateComponents.components.map(c => c.id) : []));
 
-  it('a new root over the same parts: only what changed is sent, the drill is still cleared (D1)', async () => {
+  it('a new root over the same parts: only what changed is sent, the drill is still cleared (drill-has-way-back)', async () => {
     const t = start();
     const router = new ActionRouter(t.session, () => {});
     const outcome = await t.session.show(spec('demo', BASE));
@@ -783,13 +783,13 @@ describe('a replace that keeps every part is sent in place', () => {
     expect(kinds(frame)).not.toContain('deleteSurface');
     expect(kinds(frame)).not.toContain('createSurface');
     expect(componentsIn(frame).sort()).toEqual(['extra', 'notes', 'root']);
-    // decision D1: the drilled dataset is back at the spec's scope, sent as a fresh envelope
+    // decision drill-has-way-back: the drilled dataset is back at the spec's scope, sent as a fresh envelope
     expect(t.session.surfaces.get('demo')!.drills.size).toBe(0);
     const envelope = dataUpdates([frame]).find(u => u.path === `/ds/${key}`)!.value as Dataset;
     expect(envelope.drill).toBeUndefined();
     expect(envelope.source).toBe('fake.rows src top=5');
     expect(dataUpdates([frame]).map(u => u.path)).toContain('/meta');
-    // decision D14: the state of the unchanged table stays; that of the redefined notes is reported afresh
+    // decision reports-are-component-state: the state of the unchanged table stays; that of the redefined notes is reported afresh
     expect(t.session.events.reports.get('demo', 'DataTable#slow')?.code).toBe('E_SHAPE');
     expect(t.session.events.reports.get('demo', 'Text#notes')).toBeUndefined();
     expect(t.session.events.drain()).toEqual(['viewer: error demo DataTable#slow: E_SHAPE expected rows']);
@@ -804,7 +804,7 @@ describe('a replace that keeps every part is sent in place', () => {
     const again = await t.session.show({id: 'demo', sources: [overview], fresh: true, view: 'overview'});
     expect(again.mode).toBe('replace');
     expect(kinds(frameOf(t, from))).not.toContain('createSurface');
-    // decision D14 (finding V051): the preset defines every part again, so every part is sent and says its state again
+    // decision reports-are-component-state (finding V051): the preset defines every part again, so every part is sent and says its state again
     expect(componentsIn(frameOf(t, from)).sort()).toEqual([...t.session.surfaces.get('demo')!.components.keys()].sort());
 
     from = t.host.frames.length;
@@ -847,8 +847,8 @@ describe('a replace that keeps every part is sent in place', () => {
   });
 });
 
-// ---------------------------------------------------------------- D10: blocker F047, majors F050, minors F052 and F095
-describe('D10: what may be read or opened', () => {
+// ---------------------------------------------------------------- untrusted-input-contained: blocker F047, majors F050, minors F052 and F095
+describe('untrusted-input-contained: what may be read or opened', () => {
   it('only files of the inventory are servable; .git, ignored files and links are refused; a typo is missing', async () => {
     const t = start();
     expect(await t.session.servable('src/a.ts')).toBe('ok');

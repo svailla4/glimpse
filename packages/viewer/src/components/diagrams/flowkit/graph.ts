@@ -1,4 +1,4 @@
-// What a diagram asks ELK for, and what it does with the answer (decision D19). Pure functions on the page side
+// What a diagram asks ELK for, and what it does with the answer (decision diagram-engine-in-worker). Pure functions on the page side
 // (about 1 ms at the 150-node cap); ELK itself runs in the worker (elk.ts).
 //   toElk(spec)        nodes, edges and groups -> an ELK JSON graph: layered, orthogonal edges, one run over the
 //                      whole hierarchy (a group is a compound node, sized around its children; an edge that leaves a

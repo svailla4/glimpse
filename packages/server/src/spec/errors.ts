@@ -290,7 +290,7 @@ export function componentNearest(name: string, n = 3): string[] {
 
 /**
  * Components that were removed, the one that now draws what they drew, and what the rename does not carry over.
- * Decision D26: Markdown became Text, so a spec written from habit or from an older skill still draws.
+ * Decision no-markdown-component: Markdown became Text, so a spec written from habit or from an older skill still draws.
  */
 export const REMOVED_COMPONENTS: Readonly<Record<string, {to: string; note: string}>> = {
   Markdown: {to: 'Text', note: 'headings, tables and code fences show as written: use Section, DataTable, CodeBlock'},

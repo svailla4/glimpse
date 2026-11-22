@@ -1,7 +1,7 @@
 // Treemap: squarified nested rectangles sized by a metric. Click selects, double-click or Enter zooms into a
 // directory, Backspace zooms out; rollup cells ("(N more)") drill the dataset. A small toolbar switches the size
 // metric and the fill locally. Zoom is local and has its breadcrumb here; a drill re-scopes the dataset on the
-// server, and its way back is the scope crumb the kit shows for every bound component (design D1): this view only
+// server, and its way back is the scope crumb the kit shows for every bound component (design drill-has-way-back): this view only
 // dispatches gl_drill (a rollup, or Backspace at the top of a drilled tree).
 import type {DirNode} from '@glimpse/catalog';
 import type * as C from '@glimpse/catalog';

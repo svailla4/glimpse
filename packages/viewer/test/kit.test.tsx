@@ -381,7 +381,7 @@ describe('PlateAside: view content in the plate header (design 5.1, 12.1.B)', ()
   });
 });
 
-// Decision D3: React.lazy suspended on the first render of every component type even when its chunk had arrived, and
+// Decision show-reports-what-tab-drew: React.lazy suspended on the first render of every component type even when its chunk had arrived, and
 // React 19 holds a revealed boundary back by 300 ms, so the first DataTable of a tab reported its empty state after
 // the grace of the `show` that drew it.
 describe('lazy chunks: a view of a chunk that has arrived renders in the same frame', () => {

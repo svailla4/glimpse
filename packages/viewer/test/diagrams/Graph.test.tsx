@@ -54,7 +54,7 @@ describe('Graph: states', () => {
     }
 
     expect(cell.querySelector('[data-group="srv"]')!.textContent).toBe('server');
-    // decision D16: the external packages are not counted as modules (the Modules KPI does not count them either)
+    // decision numbers-on-a-page-agree: the external packages are not counted as modules (the Modules KPI does not count them either)
     expect(cell.querySelector('[data-gl-note]')!.textContent).toBe('3 modules · 2 packages · 6 edges · 2 modules in cycles');
     expect(stageOf(view, 'g').getAttribute('aria-label')).toBe('Graph, 3 modules, 2 packages, 6 edges, 2 modules in cycles, most connected auth');
     expect(view.errors).toEqual([]);
@@ -149,7 +149,7 @@ describe('Graph: states', () => {
     expect(view.cell('g').querySelector('[data-node]')).toBeNull();
   });
 
-  // D19: the 150-node cap is laid out off the main thread. The page sends ELK JSON to the worker and draws what comes
+  // diagram-engine-in-worker: the 150-node cap is laid out off the main thread. The page sends ELK JSON to the worker and draws what comes
   // back; nothing is laid out during render, so the drafting frame is on screen first.
   it('lays a 150-node, 400-edge graph out in the worker, after the drafting frame is on screen', async () => {
     const view = renderExpress(INLINE, {data: {'/g': bigGraph(150, 400)}});
@@ -334,7 +334,7 @@ describe('Graph: selection and keyboard', () => {
     expect(view.actions.map(a => a.name)).toEqual(['gl_open', 'gl_open']);
   });
 
-  it('drills into a cluster on double-click and on Shift+Enter, and only dispatches (D1)', async () => {
+  it('drills into a cluster on double-click and on Shift+Enter, and only dispatches (drill-has-way-back)', async () => {
     const view = await ready();
     click(nodeOf(view, 'g', 'api'));
     click(nodeOf(view, 'g', 'api'));
@@ -407,7 +407,7 @@ describe('Graph: pan and zoom', () => {
     expect(within(view.cell('g')).queryByRole('button', {name: /Re-layout/})).toBeNull();
   });
 
-  // D20: an unsized graph is as tall as its content, up to 640 px.
+  // content-sized-plates: an unsized graph is as tall as its content, up to 640 px.
   it('scales a wide graph down to the plate and makes an unsized graph as tall as its content', async () => {
     const chain = {nodes: Array.from({length: 8}, (_, i) => ({id: `n${i}`, label: `n${i}`})), edges: Array.from({length: 7}, (_, i) => ({from: `n${i}`, to: `n${i + 1}`}))};
     const view = await ready(`root=Page('T',[g])\ng=Graph($/g,dir='LR',title='Deps')`, {data: {'/g': chain}});
@@ -561,7 +561,7 @@ describe('Graph: arranging nodes', () => {
   });
 });
 
-// What the stage opens with (decisions D18, D20; review findings F001, F020, F089).
+// What the stage opens with (decisions diagrams-open-readable, content-sized-plates; review findings F001, F020, F089).
 describe('Graph: a readable opening view', () => {
   const WIDTH = 960;
   const nodesOf = (view: View) => [...view.cell('g').querySelectorAll<SVGGElement>('[data-node]')];
@@ -871,7 +871,7 @@ describe('Graph: a readable opening view', () => {
 });
 
 describe('Graph: review findings', () => {
-  it('gives categories without a session slot the free inks in order, and only a ninth the other ink (D6)', async () => {
+  it('gives categories without a session slot the free inks in order, and only a ninth the other ink (stable-category-colours)', async () => {
     const nodes = Array.from({length: 10}, (_, i) => ({id: `m${i}`, label: `m${i}`, slotKey: `key${i}`}));
     const view = await ready(INLINE, {data: {'/g': {nodes: [...nodes, {id: 'plain', label: 'plain'}], edges: [{from: 'm0', to: 'm1'}]}}});
     const spine = (id: string) => nodeOf(view, 'g', id).querySelector('rect[style]')!.getAttribute('style')!;
@@ -931,7 +931,7 @@ describe('Graph: review findings', () => {
     expect(view.actions.at(-1)).toMatchObject({name: 'gl_drill', context: {ds: 'deps_modules', target: '(root)'}});
   });
 
-  it('drills into a directory group on a double-click on its label or frame line, and only dispatches (D1, F027)', async () => {
+  it('drills into a directory group on a double-click on its label or frame line, and only dispatches (drill-has-way-back, F027)', async () => {
     const graph = {level: 'module', groups: [{id: 'dir:typescript', label: 'typescript'}, {id: 'misc', label: 'misc'}], nodes: [
       {id: 'typescript/core', label: 'core', kind: 'cluster', group: 'dir:typescript'},
       {id: 'typescript/web', label: 'web', kind: 'cluster', group: 'dir:typescript'},
@@ -961,7 +961,7 @@ describe('Graph: review findings', () => {
     expect(view.actions.filter(action => action.name === 'gl_drill')).toHaveLength(2);
   });
 
-  it('shows the scope row of the plate while the dataset is drilled, and keeps it across a re-render (D1)', async () => {
+  it('shows the scope row of the plate while the dataset is drilled, and keeps it across a re-render (drill-has-way-back)', async () => {
     const base = buildSurface('test', SPEC, {datasets: 'ready'});
     const view = renderSpec(base);
     await screen.findAllByRole('img', {name: /^Graph/});
@@ -991,7 +991,7 @@ describe('Graph: review findings', () => {
     expect(await note('server/spec')).toBe('2 modules · 1 package · 2 edges · focus server/spec · 1 hop');
   });
 
-  it('cuts a path label at its directories and keeps the last segment (D12)', () => {
+  it('cuts a path label at its directories and keeps the last segment (paths-keep-file-name)', () => {
     const cut = fitLabel('typescript/renderers/react/generic-binder', 120, UI_12);
     expect(cut.startsWith('…')).toBe(true);
     expect(cut.endsWith('generic-binder')).toBe(true);
@@ -1017,7 +1017,7 @@ describe('Graph: review findings', () => {
   });
 });
 
-describe('Graph: what the model hears and what the person reads (D14, D16, V007, V048, V059)', () => {
+describe('Graph: what the model hears and what the person reads (reports-are-component-state, numbers-on-a-page-agree, V007, V048, V059)', () => {
   const modules = {level: 'module', nodes: [
     {id: 'packages/server/src/host', label: 'host', kind: 'cluster'},
     {id: 'packages/server/src/mcp', label: 'mcp', kind: 'cluster'},
@@ -1052,7 +1052,7 @@ describe('Graph: what the model hears and what the person reads (D14, D16, V007,
     await waitFor(() => expect(inline.stateOf('g')).toBe('W_EMPTY'));
   });
 
-  it('says how many of how many modules a cut graph shows, once (D16)', async () => {
+  it('says how many of how many modules a cut graph shows, once (numbers-on-a-page-agree)', async () => {
     const view = renderExpress(SPEC, {datasets: 'ready'});
     await screen.findAllByRole('img', {name: /^Graph/});
     view.setData('/ds/deps_modules', {...datasetFixture('deps.modules'), data: modules, truncated: {total: 90, returned: 3, strategy: 'treecut'}});

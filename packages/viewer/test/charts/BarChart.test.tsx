@@ -132,7 +132,7 @@ describe('BarChart', () => {
     expect(header).toContain('top 5 of 30 files');
   });
 
-  it('draws a catch-all category of the data as a bar of its own, apart from the fold (D16)', async () => {
+  it('draws a catch-all category of the data as a bar of its own, apart from the fold (numbers-on-a-page-agree)', async () => {
     const langs = [{lang: 'TypeScript', loc: 900}, {lang: 'Unclassified', loc: 40}, ...Array.from({length: 6}, (_, i) => ({lang: `L${i}`, loc: 10 - i}))];
     const view = await chart(`BarChart($/d,'lang','loc',limit=3)`, {rows: langs});
     expect(view.all('[data-bar-label]').map(el => el.textContent)).toEqual(['TypeScript', 'Unclassified', 'L0', 'other (5)']);
@@ -245,7 +245,7 @@ describe('BarChart', () => {
     expect(ticks.every(text => !text.includes('.'))).toBe(true);
   });
 
-  it('draws the folded other series in the light neutral and keeps the last segment of a module name (F005, D12)', async () => {
+  it('draws the folded other series in the light neutral and keeps the last segment of a module name (F005, paths-keep-file-name)', async () => {
     const rows = Array.from({length: 10}, (_, s) => ({q: 'Q1', team: `team-${s}`, n: 10 - s}));
     const stacked = await chart(`BarChart($/d,'q','n','team',mode='stacked')`, {rows});
     const fills = stacked.all('path[data-i]').map(el => (el as SVGElement).style.fill);
@@ -256,7 +256,7 @@ describe('BarChart', () => {
     const view = await chart(`BarChart($/d,'module','n')`, {rows: modules, size: {width: 300, height: 600}});
     expect(view.all('[data-bar-label]').map(el => el.textContent)).toEqual(['…/angular', 'typescript/…/lit', 'swift/core/Tests/*']);
   });
-  it('keeps the ink a series took when the rows change under it (D6)', async () => {
+  it('keeps the ink a series took when the rows change under it (stable-category-colours)', async () => {
     const rows = ['x', 'y', 'z'].map((team, i) => ({q: 'Q1', team, n: i + 1}));
     const view = await chart(`BarChart($/d,'q','n','team',mode='stacked')`, {rows});
     const inks = () => Object.fromEntries(view.all('[data-chart-legend] [data-series]').map(el => [el.getAttribute('data-series'), (el.querySelector('span') as HTMLElement).style.background]));

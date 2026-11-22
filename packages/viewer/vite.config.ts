@@ -47,7 +47,7 @@ export const SHIMS = [
 export const LAYER_ORDER = '@layer xyflow,gl.tokens,gl.base,gl.kit,gl.components;';
 
 /**
- * React Flow (D19) and the runtime it brings, in a lazy chunk of its own (assets/xyflow-<hash>.js and .css): measured
+ * React Flow (diagram-engine-in-worker) and the runtime it brings, in a lazy chunk of its own (assets/xyflow-<hash>.js and .css): measured
  * on its own line in scripts/budgets.mjs, and cached across releases that change only diagram code. Only the d3
  * modules React Flow alone uses are captured: d3-interpolate and d3-color are shared with the charts' d3-scale and
  * stay where rolldown puts them, so loading a chart never loads React Flow. `includeDependenciesRecursively: false`

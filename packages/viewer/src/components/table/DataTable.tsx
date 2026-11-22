@@ -82,7 +82,7 @@ function columnStats(rows: readonly DataRow[], columns: readonly Column[], into:
 interface CategoryKeys { lang: string[]; module: string[]; chip: string[] }
 const MAX_CATEGORY_KEYS = 256;
 
-/** The categories the rows name, per kind, in order of first appearance: what the kit hands colours out by (D6). */
+/** The categories the rows name, per kind, in order of first appearance: what the kit hands colours out by (stable-category-colours). */
 function categoryKeys(rows: readonly DataRow[], columns: readonly Column[], after?: CategoryKeys): CategoryKeys {
   const out: CategoryKeys = {lang: [...(after?.lang ?? [])], module: [...(after?.module ?? [])], chip: [...(after?.chip ?? [])]};
   const seen = {lang: new Set(out.lang), module: new Set(out.module), chip: new Set(out.chip)};
@@ -306,10 +306,10 @@ function Table({id, props, normal, state, remote}: TableProps): JSX.Element {
   const remoteQuery = useDebounced(query.trim(), 200);
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
 
-  // A field the spec names that the data lacks is left out and told to the agent (decisions D14, D15): a column of
+  // A field the spec names that the data lacks is left out and told to the agent (decisions reports-are-component-state, guessed-fields-repaired): a column of
   // dashes, a sort that does nothing or one group of everything would say nothing true.
   // The columns prop is a list or the presets' shorthand string, read as the server reads it (catalog readColumns).
-  // What it cannot read is told to the agent (decision D22): columns bound to a $/path reach the tab unchecked.
+  // What it cannot read is told to the agent (decision no-invented-string-formats): columns bound to a $/path reach the tab unchecked.
   const wanted = useMemo(() => readColumns(props.columns), [props.columns]);
   useReportState(wanted.problems.length > 0 ? 'W_COLUMNS' : undefined, `columns: ${wanted.problems.map(problem => problem.message).join('; ')}`);
   const checked = useMemo(() => checkColumns(wanted.fields, state.fields, rows), [wanted, state.fields, rows]);

@@ -7,7 +7,7 @@
   :global(.gl-frame) .root {
     --sq-paper: var(--gl-surface);
   }
-  /* As tall as the steps, up to the plate's maximum height (set inline from useSizeCap, decision D20). */
+  /* As tall as the steps, up to the plate's maximum height (set inline from useSizeCap, decision content-sized-plates). */
   .scroll {
     overflow: auto;
     outline: none;

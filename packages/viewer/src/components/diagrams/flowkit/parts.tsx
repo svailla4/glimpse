@@ -1,4 +1,4 @@
-// The React Flow pieces of a diagram (decision D19), drawn in the Linework style: a node is the diagram's own SVG
+// The React Flow pieces of a diagram (decision diagram-engine-in-worker), drawn in the Linework style: a node is the diagram's own SVG
 // drawing in a box of its size (Graph's spine and status glyph, a Flowchart shape, an ER table); a frame is a group's
 // dashed outline with its label; an edge is ELK's orthogonal route with 6 px elbows, its end marks and its label.
 // Selection, the keyboard's node and the zoom-dependent level of detail come from DiagramContext, so a change to
@@ -241,7 +241,7 @@ export type FlowEdge = Edge<ElkEdgeData, 'elk'>;
 
 /**
  * The zoom edge labels are sized for: 1 from FULL_ZOOM up (11 px text is 10 px on screen at 91%); further out the
- * zoom in 5% steps, and a label grows so its text stays 10 px on screen (D18), like group labels and Graph's names.
+ * zoom in 5% steps, and a label grows so its text stays 10 px on screen (diagrams-open-readable), like group labels and Graph's names.
  */
 function useLabelZoom(): number {
   return useViewportStore(s => (s.transform[2] < FULL_ZOOM ? zoomStep(s.transform[2]) : 1));

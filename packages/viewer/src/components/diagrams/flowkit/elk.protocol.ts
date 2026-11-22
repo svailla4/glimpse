@@ -1,7 +1,7 @@
 // The one request and the one reply between the page (elk.ts) and the ELK layout worker (elk.worker.ts), and what
 // the worker does with a request. Kept apart from the worker module so tests run the very same answer() with an
 // in-process ELK (jsdom has no Worker), and so nothing on the page side imports ELK itself: the engine is 449 kB
-// gzip and lives only in the worker file (decision D19).
+// gzip and lives only in the worker file (decision diagram-engine-in-worker).
 import type {ELK, ElkNode} from 'elkjs/lib/elk-api.js';
 
 /** An ELK JSON graph to lay out; every option travels in its `layoutOptions` (and those of its elements). */

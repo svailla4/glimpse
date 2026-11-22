@@ -72,7 +72,7 @@ function need(method: string, req: IncomingMessage): void {
 }
 
 /**
- * Decision D10: only files of the inventory are read for the viewer. `refused` covers everything else that exists
+ * Decision untrusted-input-contained: only files of the inventory are read for the viewer. `refused` covers everything else that exists
  * (.git, ignored files, symbolic links, paths outside the root); `missing` is a path with no file, which the
  * services answer themselves ("does not exist", or the old side of a diff).
  */
@@ -99,7 +99,7 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, api: A
     const body = await readJson(req) as {messages?: unknown; states?: unknown};
     if (typeof body !== 'object' || body === null || !Array.isArray(body.messages)) throw new HttpError(400, 'E_ARGS', 'expected {messages: [...]}');
     for (const message of body.messages.slice(0, MAX_MESSAGES)) api.router.handle(message);
-    // Decision D27: component states that are not errors (I_*, OK) come beside the A2UI messages, not as messages.
+    // Decision only-problems-are-errors: component states that are not errors (I_*, OK) come beside the A2UI messages, not as messages.
     if (Array.isArray(body.states)) for (const state of body.states.slice(0, MAX_MESSAGES)) api.router.state(state);
     res.writeHead(204, {'cache-control': 'no-store'});
     res.end();

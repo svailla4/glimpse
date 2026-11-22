@@ -73,7 +73,7 @@ function Tour({id, data, framed}: {id: string; data: unknown[]; framed: boolean}
   const {width, height} = useSize(root);
   const capStyle = useCapStyle();
   const cap = useSizeCap();
-  // As tall as its stops and the stop's file, up to the cap (D20). It never shrinks while the reader steps through
+  // As tall as its stops and the stop's file, up to the cap (content-sized-plates). It never shrinks while the reader steps through
   // it: a stop with a shorter file would otherwise pull the page up under the reader at every step.
   const ratchetKey = `${cap}|${width > 0 && width < STACK_BELOW}|${stops.length}`;
   const [tallest, setTallest] = useState({key: ratchetKey, px: 0});
@@ -142,7 +142,7 @@ function Tour({id, data, framed}: {id: string; data: unknown[]; framed: boolean}
         </div>
       </div>
       <div className={s.code}>
-        {/* One stop's file is a part of the tour: a stop whose file cannot be shown is not the tour's state (D14). */}
+        {/* One stop's file is a part of the tour: a stop whose file cannot be shown is not the tour's state (reports-are-component-state). */}
         <Subpart>
           <CodeFile id={id} file={stop.file} fit="fill" chrome="bare" />
         </Subpart>

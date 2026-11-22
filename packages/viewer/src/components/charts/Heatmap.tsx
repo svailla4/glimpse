@@ -334,7 +334,7 @@ function Cells(p: {id: string; model: Model; skipped: number; props: C.ViewProps
   const hotRow = at === undefined ? -1 : Math.floor(at / nCols);
   const hotCol = at === undefined ? -1 : at % nCols;
   const gridWidth = layout ? layout.left + nCols * layout.cw : 0;
-  // names keep their last segment (D12): 'typescript/renderers/lit' gives way in the middle, not at the end
+  // names keep their last segment (paths-keep-file-name): 'typescript/renderers/lit' gives way in the middle, not at the end
   const axisLabel = (name: string, room: number, hot: boolean) => {
     const parts = clipName(name, room);
     return (

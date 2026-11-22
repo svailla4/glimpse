@@ -143,7 +143,7 @@ describe('expandMessages: diagram data, columns, paths', () => {
     expect(out.lines[0]).toMatch(/^E_ENUM DataTable#root_children_0\.columns column 2: unknown kind "bars" for column "n"\. Kinds: text num /);
   });
 
-  it('the list form of columns is checked entry by entry: an unknown kind is E_ENUM, the rest is warn and draws (D22)', () => {
+  it('the list form of columns is checked entry by entry: an unknown kind is E_ENUM, the rest is warn and draws (no-invented-string-formats)', () => {
     const bad = expand(`root=Page('x',[DataTable('fake.rows',['path',{key:'n',kind:'bars'}])])`);
     expect(bad.lines).toEqual([expect.stringMatching(/^E_ENUM DataTable#root_children_0\.columns column 2: unknown kind "bars" for column "n"\. Kinds: text num /)]);
     const partly = expand(`root=Page('x',[DataTable('fake.rows',['path',{kind:'bar'},{key:'n',width:80}])])`);
@@ -179,7 +179,7 @@ describe('expandMessages: diagram data, columns, paths', () => {
     expect(out.codes).toEqual(['E_SOURCE', 'E_SHAPE', 'E_ENUM', 'E_ARGS']);
   });
 
-  it('a reserved path segment in a compiled message is E_PATH (decision D10)', () => {
+  it('a reserved path segment in a compiled message is E_PATH (decision untrusted-input-contained)', () => {
     const out = expandMessages([{version: '1.0', updateDataModel: {surfaceId: 's', path: '/a/__proto__/b', value: 1}}], registry);
     expect(out.problems.map(p => `${p.code} ${p.message}`)).toEqual(['E_PATH "__proto__" cannot be used as a data path segment: __proto__, constructor and prototype are reserved. Rename it.']);
   });
@@ -309,7 +309,7 @@ e=Text($/n)`);
   });
 });
 
-// Decision D15 (finding V001): a guessed field name never produces an empty plate.
+// Decision guessed-fields-repaired (finding V001): a guessed field name never produces an empty plate.
 describe('expandMessages: field names', () => {
   const fixesOf = (spec: string) => expand(spec).fixes;
   const propsOf = (spec: string, name: string) => expand(spec).byComponent(name);
@@ -388,7 +388,7 @@ describe('expandMessages: field names', () => {
     expect(out.byComponent('Split').ratio).toBe('3:7');
   });
 
-  it("says what it did to Split's ratio: a share rewritten is fixed, a value Split cannot read is warn (D22)", () => {
+  it("says what it did to Split's ratio: a share rewritten is fixed, a value Split cannot read is warn (no-invented-string-formats)", () => {
     const out = expand(`root=Page('x',[Split(Text('a'),Text('b'),'0.3'),Split(Text('c'),Text('d'),'1:2'),Split(Text('e'),Text('f'),'wide')])`);
     expect(out.problems).toEqual([]);
     expect(out.fixes).toEqual(["Split.ratio '0.3' -> '3:7'"]);
@@ -421,7 +421,7 @@ describe('expandMessages: field names', () => {
   });
 });
 
-// Decision D22: a mark that reads as a guess is rewritten and said; a part that names no line is a warn line.
+// Decision no-invented-string-formats: a mark that reads as a guess is rewritten and said; a part that names no line is a warn line.
 describe('expandMessages: mark', () => {
   it('rewrites a guessed mark and says it as a fix', () => {
     const out = expand(`root=Page('x',[a,b,c,d,e,f])\na=CodeView('src/a.ts',mark='lines 10-20')\nb=CodeView('src/a.ts',mark='L10:L20')\nc=CodeView('src/a.ts',mark='#L10-L20')\nd=CodeBlock('x','ts',mark='10..20')\ne=CodeView('src/a.ts',mark='10\u201320')\nf=CodeView('src/a.ts',mark='20-10')`);

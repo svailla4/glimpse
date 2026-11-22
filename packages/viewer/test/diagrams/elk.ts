@@ -2,7 +2,7 @@
 // in this thread, replying asynchronously as a worker would:
 //   beforeEach(() => configureElkWorker(inProcessElk()));
 //   afterEach(() => configureElkWorker(undefined));
-// Test-only: the page bundle never imports ELK (decision D19), only the worker file does.
+// Test-only: the page bundle never imports ELK (decision diagram-engine-in-worker), only the worker file does.
 import ELK from 'elkjs/lib/elk.bundled.js';
 import {answer, type ElkRequest} from '../../src/components/diagrams/flowkit/elk.protocol.ts';
 import type {ElkWorker} from '../../src/components/diagrams/flowkit/elk.ts';

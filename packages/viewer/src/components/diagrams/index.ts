@@ -1,6 +1,6 @@
 // packages/viewer/src/components/diagrams/index.ts
 // The `diagrams` chunk: component name -> view. flowkit/ holds what the diagrams share: ELK in a worker and React Flow
-// for Graph, Flowchart and ERDiagram (decision D19), the content-sized height (D20), text and path helpers.
+// for Graph, Flowchart and ERDiagram (decision diagram-engine-in-worker), the content-sized height (content-sized-plates), text and path helpers.
 import type {GlView} from '../../kit/index.ts';
 import {ERDiagramView} from './ERDiagram.tsx';
 import {FlowchartView} from './Flowchart.tsx';

@@ -1,4 +1,4 @@
-// Flowchart: nodes, edges and groups written as data, drawn as shapes on the dot grid (design 5.6, decision D21).
+// Flowchart: nodes, edges and groups written as data, drawn as shapes on the dot grid (design 5.6, decision diagrams-are-data).
 import type * as C from '@glimpse/catalog';
 import {cleanFlow, type FlowAst, type FlowShape} from '@glimpse/catalog';
 import {useMemo, type ReactNode} from 'react';

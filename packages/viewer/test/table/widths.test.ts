@@ -129,7 +129,7 @@ describe('a short value is never cut while a number column has room it does not 
 describe('a long name in a few rows is whole before a path shows more of its directories', () => {
   // With widths estimated at 6.7 px a character these names happened to be over-estimated and were whole; measured
   // truly, the outlier gave way while the path column grew past what its labels need (stack 'Packages' at 760 px,
-  // hotspots 'Ranking' at 1440 px). A path gives way at its directories by design (D12); a name is just cut.
+  // hotspots 'Ranking' at 1440 px). A path gives way at its directories by design (paths-keep-file-name); a name is just cut.
   it('the longest package name is whole beside a dir column (694 px)', () => {
     const columns = [col('name', 'text', 'Package'), col('ecosystem', 'chip'), col('version', 'code'), col('dir', 'path'), col('deps', 'num')];
     const names = ['ledger-core', 'ledger-site', 'ledger-cli', 'ledger-conformance-tests', 'ledger-web', 'ledger-agent', 'ledger-docs', 'ledger-repo (requirements-docs.txt)', 'ledger-bench', 'ledger-tools', 'ledger-schema', 'ledger-server'];

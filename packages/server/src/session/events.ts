@@ -49,7 +49,7 @@ export class EventQueue {
   private entries: Entry[] = [];
   private waiters = new Set<() => void>();
   /**
-   * Decision D14: what the tabs said about each component, in a store of its own. It never takes a place in the
+   * Decision reports-are-component-state: what the tabs said about each component, in a store of its own. It never takes a place in the
    * queue, so a flood of reports cannot push out a press; its untold problems follow the queued lines on delivery.
    */
   readonly reports = new ReportStore(() => this.wakeAll());
@@ -82,7 +82,7 @@ export class EventQueue {
 
   /**
    * Delivers pending lines, oldest first, and forgets them: the queued events, then the render problems not told yet
-   * (decision D14). With `maxChars` (the prompt hook), only as many whole event lines as fit are delivered (always at
+   * (decision reports-are-component-state). With `maxChars` (the prompt hook), only as many whole event lines as fit are delivered (always at
    * least one), the rest stay queued, and render problems wait for the next tool result.
    */
   drain(maxChars = Infinity): string[] {

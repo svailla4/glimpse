@@ -196,7 +196,7 @@ describe('DatasetStore: pending runs are capped and timed', () => {
   });
 });
 
-describe('a drilled dataset carries its scope in every state (decision D1)', () => {
+describe('a drilled dataset carries its scope in every state (decision drill-has-way-back)', () => {
   it('pending, ready and error envelopes take the drill; without one the field is absent', async () => {
     const {store, fakes} = setup();
     const drill = {target: 'src/deep', up: 'src'};

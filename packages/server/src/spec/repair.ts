@@ -192,7 +192,7 @@ function stringList(src: string, open: SpecToken): {start: number; end: number; 
 }
 
 /**
- * Rewrites what the author plainly meant, in one pass over every call, before anything is compiled (decision D15:
+ * Rewrites what the author plainly meant, in one pass over every call, before anything is compiled (decision guessed-fields-repaired:
  * deterministic, and not limited by the number of repair passes):
  * - an enum value given as one of the catalog's aliases, a synonym or a near miss becomes the value it stands for
  *   (`Callout.kind warning -> warn`), however many there are (finding V069);

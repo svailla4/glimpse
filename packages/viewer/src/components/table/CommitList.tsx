@@ -226,7 +226,7 @@ function List({id, props, rows, skipped, ds, remote}: ListProps): JSX.Element {
   const countsWidth = useMemo(() => Math.ceil(countChars(rows, remote) * COUNT_CHAR) + 2, [rows, remote]);
   const malformed = useMemo(() => skipped + rows.reduce((n, row) => n + (toCommit(row) ? 0 : 1), 0), [rows, skipped]);
 
-  // Authors are coloured by the kit (D6): a session ink where there is one, else the free inks in order of first
+  // Authors are coloured by the kit (stable-category-colours): a session ink where there is one, else the free inks in order of first
   // appearance; the dataset's own rows first, then the rows paged in.
   const authors: string[] = [];
   {

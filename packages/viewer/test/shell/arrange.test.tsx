@@ -128,7 +128,7 @@ describe('arranging the plates of a container', () => {
     alt(header(view, 'a'), 'ArrowLeft', true);
     expect(view.cell('a').getAttribute('data-span')).toBe('5');
     expect(view.cell('a').style.getPropertyValue('--gl-span')).toBe('5');
-    // the row-mate takes the column: 5 + 7, no hole (D17, V037)
+    // the row-mate takes the column: 5 + 7, no hole (layout-does-the-obvious, V037)
     expect(view.cell('b').getAttribute('data-span')).toBe('7');
     expect(stored(storage)).toEqual({[KEY]: {root: {order: [], span: {a: 5, b: 7}}}});
     expect(header(view, 'a').querySelector('[role="status"]')?.textContent).toBe('Span 5 of 12');
@@ -148,7 +148,7 @@ describe('arranging the plates of a container', () => {
     expect(cells(view).map(([, order]) => order)).toEqual(['', '', '', '']);
   });
 
-  it('rebalance keeps every row full: what a plate gains or gives up, its row-mates give or take (D17, V037)', () => {
+  it('rebalance keeps every row full: what a plate gains or gives up, its row-mates give or take (layout-does-the-obvious, V037)', () => {
     const span = (spans: Record<string, number>) => (id: string) => spans[id] ?? 12;
     const overview = {kpis: 12, map: 7, langs: 5, deps: 8, side: 4};
     const order = ['kpis', 'map', 'langs', 'deps', 'side'];
@@ -185,7 +185,7 @@ describe('arranging the plates of a container', () => {
     }
   });
 
-  it('relocate keeps every row full when a plate moves to another row (D17)', () => {
+  it('relocate keeps every row full when a plate moves to another row (layout-does-the-obvious)', () => {
     const overview: Record<string, number> = {kpis: 12, map: 7, langs: 5, deps: 8, side: 4, activity: 6, hot: 6, pkgs: 12};
     const order = Object.keys(overview);
     const span = (spans: Record<string, number>) => (id: string) => spans[id] ?? 12;
@@ -262,7 +262,7 @@ describe('arranging the plates of a container', () => {
     expect(relocate(order, span(overview), 'nope', 1, 12)).toEqual({order, span: {}});
   });
 
-  it('a plate dragged or stepped into another row joins it and every row stays full; stepping back restores the spec (D17)', async () => {
+  it('a plate dragged or stepped into another row joins it and every row stays full; stepping back restores the spec (layout-does-the-obvious)', async () => {
     const spec = `root=Page('T',[map,langs,deps,side,activity,hot,pkgs])
 map=Plate('Map',[Text('m')],span=7)
 langs=Plate('Langs',[Text('l')],span=5)

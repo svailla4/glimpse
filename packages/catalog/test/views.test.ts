@@ -135,14 +135,14 @@ describe('preset views', () => {
     for (const path of ['src/core/index.ts', 'tools/stats.py', 'cmd/main.go']) expect(compiled(`file ${path}`).surface.components.find(c => c.id === 'near'), path).toBeDefined();
   });
 
-  // D20: size is a maximum, so the overview's module graph may take the tallest step. At 'l' (420 px) a 24-node module
+  // content-sized-plates: size is a maximum, so the overview's module graph may take the tallest step. At 'l' (420 px) a 24-node module
   // graph of a large polyglot repository could only open in part (13 of 24 nodes in view); at 'xl' it opens whole with
   // its text at 10 px or more, and a small graph still keeps the height of its drawing.
   it('overview lets the module graph grow to the xl step', () => {
     expect(compiled('overview').surface.components.find(c => c.id === 'deps')).toMatchObject({component: 'Graph', size: 'xl', span: 8});
   });
 
-  // Review finding (swap round): presets, the gallery and the recipes gave diagrams size='l'. Under D20 that is a
+  // Review finding (swap round): presets, the gallery and the recipes gave diagrams size='l'. Under content-sized-plates that is a
   // maximum of 420 px, below the 640 px a diagram grows to with no size: the file preset's graph opened with 18 of 44
   // nodes cut, the gallery's ERD sliced through a table. What Glimpse writes itself teaches the model; none of it may
   // cut a diagram short.
@@ -176,7 +176,7 @@ describe('preset views', () => {
     expect((surface.components[0] as unknown as {children: string[]}).children).toContain(plate!.id);
   });
 
-  // D16 (V011, V036): the overview put 'CYCLES 0' (files) above a module graph with red cycle marks, and a count of
+  // numbers-on-a-page-agree (V011, V036): the overview put 'CYCLES 0' (files) above a module graph with red cycle marks, and a count of
   // manifests under 'Modules'. The plates now say which cycles they list and what a Packages row is.
   it('cycle plates say they list file cycles, and package tables say a row is a manifest', () => {
     const overview = compiled('overview').surface.components;

@@ -45,7 +45,7 @@ describe('Heatmap', () => {
     expect(blank.getAttribute('d')!.match(/M/g)).toHaveLength(2);
   });
 
-  it('cuts long names in the middle so the last segment stays, and brings the hovered row and column forward (F010, D12)', async () => {
+  it('cuts long names in the middle so the last segment stays, and brings the hovered row and column forward (F010, paths-keep-file-name)', async () => {
     const names = ['typescript/renderers/angular', 'typescript/renderers/lit', 'typescript/renderers/react', 'swift/core/Tests/A2UICoreTests', 'swift/core/Tests/*'];
     const rows = names.flatMap((from, i) => names.filter((_, j) => j !== i).map(to => ({from, to, weight: i + 1})));
     const view = await chart(`Heatmap($/d,'to','from','weight')`, {rows, size: {width: 420, height: 600}});

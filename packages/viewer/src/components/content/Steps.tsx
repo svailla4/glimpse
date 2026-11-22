@@ -89,7 +89,7 @@ export const StepsView: GlView<typeof C.Steps> = ({id, props}) => {
   const shown = expanded ? steps : steps.slice(0, FOLD);
   const roving = useRoving<HTMLOListElement>(shown.length);
   const rows = useEntityRows(id);
-  // `current` counts the way the numerals on screen do: 1 is the first step (D5). 0 or no value marks none.
+  // `current` counts the way the numerals on screen do: 1 is the first step (accept-familiar-variants). 0 or no value marks none.
   const currentProp = toNumber(props.current);
   const current = currentProp !== undefined && Number.isInteger(currentProp) ? currentProp - 1 : -1;
   const tracked = steps.some(step => step.status !== undefined);

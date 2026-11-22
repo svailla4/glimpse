@@ -4,7 +4,7 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    /* min(rows, cap): the cap comes from the cell's size step (table/shell.tsx, decision D20) */
+    /* min(rows, cap): the cap comes from the cell's size step (table/shell.tsx, decision content-sized-plates) */
     max-height: var(--gl-cap, 420px);
     font: 12px/20px var(--gl-font-mono);
     font-feature-settings: 'tnum' 1, 'zero' 1;

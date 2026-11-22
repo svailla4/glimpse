@@ -247,7 +247,7 @@ function layoutLines(model: Model, mode: Mode, log: boolean, width: number, heig
   const fmtTick = tickFormat(probe.ticks, mode === 'pct' ? 'pct' : formatOf(model.valueInfo));
   const left = Math.min(width * 0.3, widest(probe.ticks.map(fmtTick)) + 14);
 
-  // names keep their last segment (design D12): 'typescript/core/web_core' gives way in the middle, not at the end
+  // names keep their last segment (design paths-keep-file-name): 'typescript/core/web_core' gives way in the middle, not at the end
   const names = series.map(s => clipName(s.label, Math.min(220, Math.max(96, width * 0.3))));
   const labelW = widest(names.map(name => name.dir + name.base));
   const column = k > 1 && width >= 360 && k * ROW <= bottom - top + 8;

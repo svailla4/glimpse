@@ -48,7 +48,7 @@ describe('Histogram', () => {
     const words = await chart('Histogram($/d)', {rows: ['a', 'b']});
     expect(words.state()).toBe('empty');
     words.unmount();
-    // a value field the data does not have: the default field is counted and the plate says which name it missed (D15)
+    // a value field the data does not have: the default field is counted and the plate says which name it missed (guessed-fields-repaired)
     const missing = await chart(`Histogram($/d,'nope')`, {rows: [{loc: 4}]});
     expect(missing.state()).toBeNull();
     expect(missing.root.querySelector('[data-chart-note]')?.textContent).toBe('no field "nope"');

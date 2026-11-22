@@ -1,7 +1,7 @@
 // Tool results (design 6.1, 6.6): always one text block. Never structuredContent or an outputSchema: Claude Code would
 // hand the model the structured value and drop the text.
 //
-// Two rules hold for every result (decision D10). Text that comes from the repository (file names, author names,
+// Two rules hold for every result (decision untrusted-input-contained). Text that comes from the repository (file names, author names,
 // commit subjects, dataset summaries, rows) passes through shield(), so it can never start a line with `viewer:`;
 // only the lines of the event queue do, and they are appended after the shielded body. And once a `show` has
 // committed, formatting its result cannot turn it into a failure.
@@ -85,7 +85,7 @@ export function repoLine(facts: RepoFacts): string {
 
 /**
  * Size a `show` result stays under, viewer lines aside (design 10 allows 1,200 characters for a preset result; the
- * target leaves headroom, decision D13).
+ * target leaves headroom, decision budgets-keep-headroom).
  */
 export const RESULT_BUDGET = 1100;
 const MIN_SUMMARY = 48;
@@ -148,7 +148,7 @@ export function showText(report: ShowReport): string {
   let unchanged = 0;
   // Finding V003: what a source says about its own data ('4 files over 2 MB counted by size only', 'graph cut to 150
   // of 900 nodes') is a caveat of that dataset, not a part the tab could not draw; it rides on the dataset's line,
-  // once per result, and never on the `warn` channel, which is for what the model can fix (decision D14).
+  // once per result, and never on the `warn` channel, which is for what the model can fix (decision reports-are-component-state).
   const caveats = new Set<string>();
   for (const {ref, state, told} of report.datasets) {
     if (state?.status === 'error') warnings.push(`${ref}: ${state.error?.code ?? 'E_INTERNAL'} ${state.error?.message ?? ''}`.trim());

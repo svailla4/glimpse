@@ -31,7 +31,7 @@ function normalize(items: readonly unknown[]): ChipModel[] {
 export const ChipsView: GlView<typeof C.Chips> = ({id, props}) => {
   const state = useDataset(props.data);
   const chips = useMemo(() => (Array.isArray(state.data) ? normalize(state.data) : []), [state.data]);
-  // A slot key the session knows wears its ink; the others take the free inks in order of appearance (D6).
+  // A slot key the session knows wears its ink; the others take the free inks in order of appearance (stable-category-colours).
   const keys = useMemo(() => chips.flatMap(chip => (chip.slotKey ? [chip.slotKey] : [])), [chips]);
   const cat = useCatSlots(SLOT_TABLES, keys);
   return (

@@ -1,5 +1,5 @@
 // What a node-link diagram opens on, and what dragging does, after the review of the ELK + React Flow swap (decisions
-// D19, D20): labelled graphs open whole when they read, long flows wrap into rows, a part view always has a minimap,
+// diagram-engine-in-worker, content-sized-plates): labelled graphs open whole when they read, long flows wrap into rows, a part view always has a minimap,
 // charts and schemas without a direction take the one that reads larger, a dragged node's edges go round what is in
 // the way, a drill opens unselected, names are not cut while there is room, and sequence heads never touch.
 // Every fixture is invented and inline.

@@ -1,6 +1,6 @@
 // The contract decisions of the third round, end to end against the bundled server: render reports are component
-// state (D14), guessed field names never draw an empty plate (D15), layouts do what a model obviously means (D17)
-// and every diagram opens readable (D18). D16 (numbers on one page agree) is in overview.spec.ts and the unit tests.
+// state (reports-are-component-state), guessed field names never draw an empty plate (guessed-fields-repaired), layouts do what a model obviously means (layout-does-the-obvious)
+// and every diagram opens readable (diagrams-open-readable). numbers-on-a-page-agree is in overview.spec.ts and the unit tests.
 import type {Page} from '@playwright/test';
 import {expectSettled, openViewer, type Glimpse} from './support/glimpse.ts';
 import {EXTRA_REPO, ROOT} from './support/paths.ts';
@@ -17,7 +17,7 @@ async function warm(page: Page, glimpse: Glimpse): Promise<void> {
 
 const warnings = (lines: readonly string[]) => lines.filter(line => line.startsWith('warn ') || line.startsWith('viewer: '));
 
-test.describe('D14: render reports are component state', () => {
+test.describe('reports-are-component-state: render reports are component state', () => {
   test('a truthful empty state and a view waiting for a selection add no warn line, then or later', async ({page, glimpse}) => {
     await warm(page, glimpse);
     // Nothing is staged in the fixture: the source says so, which is a true answer, not a problem. CodeView() waits
@@ -56,7 +56,7 @@ test.describe('D14: render reports are component state', () => {
   });
 });
 
-test.describe('D15: guessed field names', () => {
+test.describe('guessed-fields-repaired: guessed field names', () => {
   test("ScatterPlot('git.hotspots', x='churn') draws, and the result says what was fixed", async ({page, glimpse}) => {
     const shown = await glimpse.call('show', {id: 'hot', spec: "root=Page('Hot',[s])\ns=ScatterPlot('git.hotspots',x='churn',title='Churn')"});
     expect(shown.isError, shown.text).toBe(false);
@@ -69,7 +69,7 @@ test.describe('D15: guessed field names', () => {
   });
 });
 
-for (const [label, dir] of [['fixture', undefined], ['this repository', ROOT], ...(EXTRA_REPO ? [['GLIMPSE_E2E_REPO', EXTRA_REPO]] : [])] as Array<[string, string | undefined]>) test.describe(`D16: numbers on one page agree (${label})`, () => {
+for (const [label, dir] of [['fixture', undefined], ['this repository', ROOT], ...(EXTRA_REPO ? [['GLIMPSE_E2E_REPO', EXTRA_REPO]] : [])] as Array<[string, string | undefined]>) test.describe(`numbers-on-a-page-agree: numbers on one page agree (${label})`, () => {
   test.use({projectDir: dir});
 
   test('the overview KPIs count what the plates beside them show', async ({page, glimpse}) => {
@@ -104,7 +104,7 @@ for (const [label, dir] of [['fixture', undefined], ['this repository', ROOT], .
   });
 });
 
-test.describe('D17: layout', () => {
+test.describe('layout-does-the-obvious: layout', () => {
   test.use({viewport: {width: 1440, height: 900}});
 
   test('a two-column Grid with span=6 children is side by side at 1440 px', async ({page, glimpse}) => {
@@ -123,7 +123,7 @@ test.describe('D17: layout', () => {
   });
 });
 
-test.describe('D18: diagrams open readable', () => {
+test.describe('diagrams-open-readable: diagrams open readable', () => {
   test.use({viewport: {width: 1440, height: 900}});
 
   test('Flowchart and ERDiagram draw their text at 10 px or more at the default view', async ({page, glimpse}) => {

@@ -1,4 +1,4 @@
-// ActionRouter (design 2.7): what the viewer posts to /api/renderer, A2UI messages and Glimpse component states (D27).
+// ActionRouter (design 2.7): what the viewer posts to /api/renderer, A2UI messages and Glimpse component states (only-problems-are-errors).
 // Host actions (gl_*) are handled here and never reach the model; every other action is queued as one `viewer:` line.
 // Everything in a post is untrusted input: the shape is checked, the surface and the source component must exist,
 // and only then is anything done.
@@ -47,7 +47,7 @@ export class ActionRouter {
   }
 
   /**
-   * Decision D27: one component state that is not an error, I_* (a truthful empty or waiting state) or OK (the
+   * Decision only-problems-are-errors: one component state that is not an error, I_* (a truthful empty or waiting state) or OK (the
    * component draws as asked), posted beside the A2UI messages. A problem code here is refused: problems are A2UI
    * renderer errors. Returns false when it was malformed or names nothing that exists.
    */
@@ -64,9 +64,9 @@ export class ActionRouter {
   handle(message: unknown): boolean {
     if (!isRecord(message) || message.version !== '1.0') return false;
     if (isRecord(message.error)) {
-      // Decision D14: a tab reports a problem with a component (W_*, E_*) as an A2UI v1.0 renderer error whose
+      // Decision reports-are-component-state: a tab reports a problem with a component (W_*, E_*) as an A2UI v1.0 renderer error whose
       // message starts with `Name#id:`; those are kept per component. A state that is not an error (I_*, OK) is not
-      // an A2UI message (D27, state() below). Anything else is only logged. A long message is cut, not refused, so a
+      // an A2UI message (only-problems-are-errors, state() below). Anything else is only logged. A long message is cut, not refused, so a
       // problem is never lost to its length.
       const {code, surfaceId} = message.error;
       const detail = typeof message.error.message === 'string' ? message.error.message.slice(0, MAX_TEXT) : undefined;

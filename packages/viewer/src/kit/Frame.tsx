@@ -6,7 +6,7 @@
 // Contract (KitSlots.Frame in implement.tsx): `children` go inside a `.gl-body` that takes the height left under the
 // header, `aside` (the <PlateAside> slot of the view) goes in the header and `scope` (the drill crumb) in a row of
 // its own at the bottom of the header.
-// The header never loses its title and never lets its controls out of the frame (design rule D11): the aside wraps
+// The header never loses its title and never lets its controls out of the frame (design rule header-keeps-title): the aside wraps
 // to a second row when the two do not fit side by side, and text in it is cut with an ellipsis and a tooltip.
 import {useCallback, useContext, useId, useState, type JSX, type KeyboardEvent, type PointerEvent, type ReactNode} from 'react';
 import {useArrangeHandle} from './arrange.tsx';

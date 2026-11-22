@@ -1,4 +1,4 @@
-// Lays a diagram out in the ELK worker (decision D19) and keeps the results: one or more specs in (two when the
+// Lays a diagram out in the ELK worker (decision diagram-engine-in-worker) and keeps the results: one or more specs in (two when the
 // diagram lets the direction be chosen), their layouts out, or pending while the worker works, or the error. Nothing
 // is laid out on the main thread. Results are remembered by signature, so remounting a diagram (a tab switch, a
 // surface replaced with the same data) shows it at once. The reveal is a transition: React may yield while it builds

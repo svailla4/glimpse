@@ -1,7 +1,7 @@
 /* packages/viewer/src/styles/base.css - Linework base: page, the 12-column grid and the cell every component is
    rendered in (design 8.3, 8.4). Kit looks (plate frame, states, entity text, tooltip) are in kit.css.
 
-   Sizing contract with kit/implement.tsx (decision D20, content-sized plates): the direct child of a .gl-cell is the
+   Sizing contract with kit/implement.tsx (decision content-sized-plates): the direct child of a .gl-cell is the
    plate frame (.gl-frame) or, without a title, a plain .gl-body; a view always sits in a .gl-body (the frame's body
    is one). That box is as tall as the view and, with a size step, never taller than it: `max-height: var(--gl-h)`,
    the number useSizeCap() gives the view. A view that scrolls sizes itself to min(its content, useSizeCap()), so it
@@ -19,7 +19,7 @@
      --gl-c0          grid-column of a cell without `span` (Grid: `span 1`); the default is the full row
      --gl-c1 .. 12    grid-column of a cell with that `span` (Grid clamps the span to its track count)
      --gl-cell-fit    1 where the cells sit side by side in rows (the page grid, a Grid, a Row): a plate keeps the
-                      height of what it shows instead of growing to the tallest of its row (D20)
+                      height of what it shows instead of growing to the tallest of its row (content-sized-plates)
 
    Layers: every stylesheet of the viewer puts its rules in a layer declared by tokens.css. Component CSS Modules
    (Name.module.css) wrap their whole content in `@layer gl.components { ... }`; kit modules use `@layer gl.kit`.
@@ -80,7 +80,7 @@
     --gl-c0: initial; --gl-c1: initial; --gl-c2: initial; --gl-c3: initial; --gl-c4: initial; --gl-c5: initial; --gl-c6: initial;
     --gl-c7: initial; --gl-c8: initial; --gl-c9: initial; --gl-c10: initial; --gl-c11: initial; --gl-c12: initial;
   }
-  /* Content-sized plates (decision D20). A component's box is as tall as what it shows, and its size step is the most
+  /* Content-sized plates (decision content-sized-plates). A component's box is as tall as what it shows, and its size step is the most
      its view may take (`--gl-h` here, useSizeCap() in the view): the view's box is the plate's body (under the
      header) or, without a plate, the cell's .gl-body. A scroller (table, tree, code view) is min(content, cap) tall
      and a diagram works its height out from its layout, so a short one leaves no blank paper under it.
@@ -114,7 +114,7 @@
   }
 
   /* Below 1000 px of page width (a window under about 1064 px) a plate is half or full width; below 720 px everything
-     is one column. A window of 1100 px and wider keeps the spans the spec asked for (decision D17). */
+     is one column. A window of 1100 px and wider keeps the spans the spec asked for (decision layout-does-the-obvious). */
   @container page (max-width: 999px) {
     .gl-cell[data-span='1'] { grid-column: var(--gl-c1, span 6); }
     .gl-cell[data-span='2'] { grid-column: var(--gl-c2, span 6); }

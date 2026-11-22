@@ -24,7 +24,7 @@ const Gated: GlView<any> = ({id, props}) => {
 };
 const drilled = (extra: Partial<Dataset> = {}): Dataset => ({...datasetFixture('git.churn'), drill: {target: 'src/auth/session', up: 'src/auth'}, ...extra});
 
-describe('PathText keeps the file name (D12, F083)', () => {
+describe('PathText keeps the file name (paths-keep-file-name, F083)', () => {
   it('splits the directory from the name so the stylesheet can cut the directory first, at its start', () => {
     const {container} = render(<PathText file="typescript/renderers/react/src/resolution/generic-binder.ts#L12" />);
     const path = container.querySelector<HTMLElement>('.gl-path')!;
@@ -37,7 +37,7 @@ describe('PathText keeps the file name (D12, F083)', () => {
     expect([...path.children].map(child => child.className)).toEqual(['gl-path-dir', 'gl-path-base', 'gl-path-line', 'gl-path-ext']);
   });
 
-  it('drops whole leading directories before it cuts inside one (D17)', () => {
+  it('drops whole leading directories before it cuts inside one (paths-keep-file-name)', () => {
     const dir = 'typescript/renderers/react/src/resolution/';
     expect(dropDirs(dir, 60)).toBe(0);
     // room for `…/` and the last three directories: src/resolution/ needs 15, react/ 6 more
@@ -67,7 +67,7 @@ describe('PathText keeps the file name (D12, F083)', () => {
     expect(path.title).toBe(`${dir}generic-binder.ts#L12`);
   });
 
-  // Decision D17: in a table, a path measured before the table knew its width was never measured again when its
+  // Decision paths-keep-file-name: in a table, a path measured before the table knew its width was never measured again when its
   // column narrowed (the plate kept its width), so 'dart/a2ui_core/…' was cut inside 'dart/'. It follows its cell.
   it('a path re-measures when its table cell changes width, not only its plate', () => {
     const plate = document.createElement('div');
@@ -80,7 +80,7 @@ describe('PathText keeps the file name (D12, F083)', () => {
     plate.remove();
   });
 
-  // Decision D17: 'dart/a2ui_core/lib/src/core/' measured 202 px in a 201 px box, was taken as fitting, and the
+  // Decision paths-keep-file-name: 'dart/a2ui_core/lib/src/core/' measured 202 px in a 201 px box, was taken as fitting, and the
   // stylesheet's ellipsis then cut it inside 'dart/'. One pixel over is over.
   it('drops a directory when the path is one pixel too wide', () => {
     const dir = 'dart/a2ui_core/lib/src/core/';
@@ -96,7 +96,7 @@ describe('PathText keeps the file name (D12, F083)', () => {
     expect(container.querySelector('.gl-path-dir')?.textContent).toBe('…/a2ui_core/lib/src/core/');
   });
 
-  // Decision D17: the code views' header (CodeView, SymbolOutline, DiffView) cut 'typescript/core/web_…' inside a
+  // Decision paths-keep-file-name: the code views' header (CodeView, SymbolOutline, DiffView) cut 'typescript/core/web_…' inside a
   // directory; it now gives way the same way as PathText.
   it('the code header crumbs drop whole leading directories before cutting one', () => {
     const dir = 'typescript/core/web_core/src/processing/';
@@ -172,7 +172,7 @@ describe('PathText keeps the file name (D12, F083)', () => {
   });
 });
 
-describe('plate header (D11, F002)', () => {
+describe('plate header (header-keeps-title, F002)', () => {
   const Table: GlView<any> = () => (
     <>
       <PlateAside><input aria-label="Filter" /><span data-note="">27 files · 76 edges · 3 in cycles</span></PlateAside>
@@ -252,7 +252,7 @@ describe('plate header (D11, F002)', () => {
   });
 });
 
-describe('scope crumb: the way back from a drill (D1, F074, F017, F018)', () => {
+describe('scope crumb: the way back from a drill (drill-has-way-back, F074, F017, F018)', () => {
   it('shows nothing while the dataset is not drilled', () => {
     const view = renderStub(page("DataTable('git.churn',title='Churn')"), {DataTable: Gated}, {datasets: 'ready'});
     expect(view.cell('a').querySelector('[data-gl-scope]')).toBeNull();
@@ -342,7 +342,7 @@ describe('scope crumb: the way back from a drill (D1, F074, F017, F018)', () => 
   });
 });
 
-describe('what a component draws is its state for the host (D3, D14, F032, V060-V062)', () => {
+describe('what a component draws is its state for the host (show-reports-what-tab-drew, reports-are-component-state, F032, V060-V062)', () => {
   /** A Gated view that also follows the selection, so writing /ui/sel really renders it again (V066). */
   let gatedRenders = 0;
   const Following: GlView<any> = ({id, props}) => {
@@ -520,7 +520,7 @@ describe('empty states say why (F008)', () => {
   });
 });
 
-describe('category colours without a session slot (D6, F006)', () => {
+describe('category colours without a session slot (stable-category-colours, F006)', () => {
   it('assignSlots: session slots first, then the lowest free ink in order of first appearance, grey only beyond eight', () => {
     const slots = assignSlots(['Go', 'TypeScript', 'SQL', 'CSS'], {TypeScript: 1, CSS: 4});
     expect(Object.fromEntries(slots)).toEqual({TypeScript: 1, CSS: 4, Go: 2, SQL: 3});

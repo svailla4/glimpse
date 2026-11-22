@@ -89,7 +89,7 @@ test.describe('fixture repository', () => {
 
     await test.step('8. a bad spec is an error that names the valid kinds and changes nothing', async () => {
       const before = {cells: await page.locator('.gl-cell').count(), title: await page.locator('[data-gl="Page"] h1').first().textContent()};
-      // ('danger' is a guess decision D5 repairs to 'risk'; a word that means no allowed value stays an error)
+      // ('danger' is a guess decision accept-familiar-variants repairs to 'risk'; a word that means no allowed value stays an error)
       const bad = await glimpse.call('show', {spec: "root=Page('x',[Callout('y','purple')])"});
       expect(bad.isError).toBe(true);
       expect(bad.lines[0]).toBe('E_ENUM Callout.kind: "purple" is not allowed. Use: note tip warn risk decision question');
@@ -189,7 +189,7 @@ test.describe('legibility on this repository', () => {
     expect(hidden, 'file names that are clipped away').toEqual([]);
   });
 
-  // Decision D7 (was known defect E2E-06): the module graph was fitted into its plate whatever its size, about 20%
+  // Decision readable-module-graph (was known defect E2E-06): the module graph was fitted into its plate whatever its size, about 20%
   // zoom with labels two or three pixels tall. Its default view now draws every label it shows at 10 px or more.
   test('the module graph opens with node labels of at least 10 px', async ({page, glimpse}) => {
     await glimpse.call('show', {view: 'overview'});
@@ -213,7 +213,7 @@ test.describe('legibility on this repository', () => {
     expect(smallest, 'smallest node label on screen, in px').toBeGreaterThanOrEqual(10);
   });
 
-  // Decisions D19 and D20: the same holds for every text the drawing shows, not only node names: second lines, group
+  // Decisions diagram-engine-in-worker and content-sized-plates: the same holds for every text the drawing shows, not only node names: second lines, group
   // labels and edge labels too. Each is measured as its font size times the zoom of the drawing (the scale of the
   // React Flow viewport), so a label the stage shrinks cannot pass on its own font size.
   test('the module graph opens with all of its text at 10 px or more: names, second lines, group and edge labels', async ({page, glimpse}) => {

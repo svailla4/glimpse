@@ -75,7 +75,7 @@ test('gallery: every component renders; a screenshot per section, theme and widt
   // the gallery's buttons are live
   await page.setViewportSize({width: 1320, height: 900});
   await page.locator('[data-gl="Button"] button', {hasText: 'Queue an event'}).click();
-  // (decision D3: a render report, `viewer: error ...`, may ride along with the press, so the line is looked for)
+  // (decision show-reports-what-tab-drew: a render report, `viewer: error ...`, may ride along with the press, so the line is looked for)
   await expect.poll(async () => (await glimpse.call('events', {})).lines, {timeout: 5000}).toContain('viewer: press gallery demo_pressed {"from":"gallery"}');
   expect(watched.problems).toEqual([]);
   expect(await watched.csp()).toEqual([]);

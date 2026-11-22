@@ -23,7 +23,7 @@ export function isOtherKey(key: string): boolean {
 }
 
 /**
- * Colour slots for the categories one component shows (design rule D6). `keys` are the categories in order of first
+ * Colour slots for the categories one component shows (design rule stable-category-colours). `keys` are the categories in order of first
  * appearance. A key the session already gave a slot (`known`, one table of /meta/slots) keeps it, so an entity wears
  * the same ink on every plate. Every other key takes the lowest slot that is still free in THIS component, in order
  * of first appearance, and only a category beyond the eight inks gets 0 (the "other" ink). `held` is what an earlier

@@ -48,7 +48,7 @@ export function preloadChunks(types: Iterable<string>): void {
 /**
  * Loads every lazy chunk not asked for yet: main.tsx calls it once the tab is idle after its first view. A component
  * of a chunk that has arrived renders in the frame that names it, with no drafting flash, and its render report
- * reaches the `show` that drew it within the server's grace (decision D3). The chunks stay out of the eager budget
+ * reaches the `show` that drew it within the server's grace (decision show-reports-what-tab-drew). The chunks stay out of the eager budget
  * and out of the way of the first plate.
  */
 export function warmChunks(): void {

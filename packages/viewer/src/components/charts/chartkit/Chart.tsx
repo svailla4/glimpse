@@ -430,7 +430,7 @@ export function Legend(p: {items: readonly LegendItem[]; onPick?: (item: LegendI
     <div className={css.legend} data-chart-legend="">
       {p.start ? <span className={css.legendValue} data-chart-summary="">{p.start}</span> : null}
       {p.items.map(item => {
-        // a long name gives way in the middle and keeps its last segment (design D12); the tooltip has all of it
+        // a long name gives way in the middle and keeps its last segment (design paths-keep-file-name); the tooltip has all of it
         const name = clipName(item.label, LEGEND_LABEL_PX);
         const body = (
           <>
@@ -494,7 +494,7 @@ export function ShapeError(p: {name: string; id: string; expected: string; value
 
 /**
  * A chart that has nothing to draw: the kit's empty look, reported under the code that says why (W_FIELD for a
- * field the data does not have, W_SHAPE for data with nothing the chart can draw; decision D14) instead of the
+ * field the data does not have, W_SHAPE for data with nothing the chart can draw; decision reports-are-component-state) instead of the
  * kit's W_EMPTY, which is about missing data.
  */
 export function Unable(p: Unfit): JSX.Element {
@@ -502,8 +502,8 @@ export function Unable(p: Unfit): JSX.Element {
 }
 
 /**
- * A chart that drew its default encoding for field names the data does not have (decision D15) still tells the
- * model which names it could not find (W_FIELD, D14); the plate header says it to the person (missNote). It is the
+ * A chart that drew its default encoding for field names the data does not have (decision guessed-fields-repaired) still tells the
+ * model which names it could not find (W_FIELD, reports-are-component-state); the plate header says it to the person (missNote). It is the
  * component's state while the chart draws that way, and goes when the spec names fields the data has.
  */
 export function MissReport(p: {misses: readonly FieldMiss[]; fields: FieldSet; source?: string}): null {
@@ -627,7 +627,7 @@ export function useSlots(): SurfaceMeta['slots'] | undefined {
 export type Slotter = (names: readonly string[], known?: Record<string, number>) => Map<string, number>;
 
 /**
- * The kit's slot assignment for one chart, remembering what it gave last time (design D6): a series without a
+ * The kit's slot assignment for one chart, remembering what it gave last time (design stable-category-colours): a series without a
  * session slot keeps the ink it took when it first appeared, so a refresh that adds, drops or re-orders series does
  * not repaint the ones that stay.
  */

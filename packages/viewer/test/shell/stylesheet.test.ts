@@ -18,7 +18,7 @@ function modules(dir: string): string[] {
 }
 
 describe('kit.css', () => {
-  it('lets the directory of a path take all of the squeeze, down to "…/" and no further (D12)', () => {
+  it('lets the directory of a path take all of the squeeze, down to "…/" and no further (paths-keep-file-name)', () => {
     const declarations = rule(read('styles/kit.css'), '.gl-path-dir');
     expect(declarations).toContain('flex: 0 1000000 auto');
     expect(declarations).toContain('min-width: 2.5ch');
@@ -56,10 +56,10 @@ describe('kit.css', () => {
 });
 
 describe('base.css', () => {
-  // Decision D20 (content-sized plates). Before it, a size step was a fixed height and a plate in a row grew to the
+  // Decision content-sized-plates. Before it, a size step was a fixed height and a plate in a row grew to the
   // tallest neighbour, plus up to 64 px past its content: empty bodies beside tall plates on the overview, history,
   // deps and gallery pages and on the owner's demo pages.
-  it('does not stretch a plate to the tallest neighbour of its row, sized or not (F009, D20)', () => {
+  it('does not stretch a plate to the tallest neighbour of its row, sized or not (F009, content-sized-plates)', () => {
     const css = read('styles/base.css');
     // a chart never; any other component not in a row (the page grid, a Grid, a Row say so with --gl-cell-fit)
     expect(rule(css, ".gl-cell[data-family='chart'] > :is(.gl-frame, .gl-body)")).toBe('flex: 0 0 auto;');
@@ -73,7 +73,7 @@ describe('base.css', () => {
     expect(css).not.toContain('calc-size(');
   });
 
-  it('makes a size step a maximum for the view box, and a height only for charts and Split (D20)', () => {
+  it('makes a size step a maximum for the view box, and a height only for charts and Split (content-sized-plates)', () => {
     const css = read('styles/base.css');
     const flat = css.replace(/\/\*[\s\S]*?\*\//g, '');
     expect(rule(css, '.gl-cell[data-size] > .gl-frame > .gl-frame-body,\n  .gl-cell[data-size] > .gl-body')).toBe('max-height: var(--gl-h);');
@@ -93,7 +93,7 @@ describe('base.css', () => {
     expect(read('components/table/shell.module.css')).toContain('.shell > :not(:global(.gl-state))');
   });
 
-  it('gives every scroller its cap from useSizeCap, never a fixed 420 px or a fill (D20)', () => {
+  it('gives every scroller its cap from useSizeCap, never a fixed 420 px or a fill (content-sized-plates)', () => {
     for (const name of ['DataTable', 'FileTree', 'CommitList', 'JsonView']) {
       const css = read(`components/table/${name}.module.css`);
       expect(rule(css, '.root'), name).toContain('max-height: var(--gl-cap, 420px)');
@@ -108,7 +108,7 @@ describe('base.css', () => {
     expect(rule(read('styles/kit.css'), ':root[data-gl-arranging] .gl-tooltip')).toBe('display: none;');
   });
 
-  it('keeps the spans the spec asked for in a window of 1100 px and wider (D17)', () => {
+  it('keeps the spans the spec asked for in a window of 1100 px and wider (layout-does-the-obvious)', () => {
     const css = read('styles/base.css');
     // the page container is the window less 64 px of padding: 1036 px at 1100
     expect(css).toContain('@container page (max-width: 999px)');

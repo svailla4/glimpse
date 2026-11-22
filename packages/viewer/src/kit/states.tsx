@@ -3,7 +3,7 @@
 // Frozen test hooks: each state root carries data-gl-state="drafting" | "empty" | "redline"; a redline also carries
 // data-code. Tests and the e2e suite select on these, never on class names.
 //
-// What the person sees, the agent hears (decisions D3, D14): an Empty and a Redline that stand in for a component are
+// What the person sees, the agent hears (decisions show-reports-what-tab-drew, reports-are-component-state): an Empty and a Redline that stand in for a component are
 // the component's state, told to the host through its cell (report.ts): `W_EMPTY` (or the `code` given) for an empty
 // state, the redline code for a redline, nothing yet while it drafts, OK once it draws. A state inside <Subpart>, or
 // with `part`, belongs to a part of the component and is not told. Nothing is told outside a component cell.
@@ -34,7 +34,7 @@ export function Drafting(p: {label?: string; part?: boolean}): JSX.Element {
 /**
  * No data: a centred mono line that says why (the reason the dataset gives, else the binding or source), with an
  * optional dimmer second line (`detail`, usually the source). Outside a plate it draws its own hairline frame.
- * `code` is what the component's report says (decision D14), W_EMPTY by default: I_EMPTY for a truthful empty answer
+ * `code` is what the component's report says (decision reports-are-component-state), W_EMPTY by default: I_EMPTY for a truthful empty answer
  * (the source says why; emptyCodeOf(state) knows), I_WAITING for a view that follows a selection nobody has made,
  * W_FIELD for a field the spec names that the data lacks. `part`: this empty is one part of a component that shows
  * other content (one file of a diff), so it is not the component's state.
@@ -82,7 +82,7 @@ function parkFocus(from: Element | null): void {
 const lostFocus = () => document.activeElement === null || document.activeElement === document.body;
 
 /**
- * The way back from a drill (design rule D1). While the server has re-scoped a dataset (`dataset.drill`), every
+ * The way back from a drill (design rule drill-has-way-back). While the server has re-scoped a dataset (`dataset.drill`), every
  * component bound to it shows the scope it is looking at with two controls: one level up, and back to the scope the
  * spec asked for. It lives in a row of its own under the plate header (in place above the content without a plate),
  * survives a reload because it is read from the envelope, and is the only back control: components dispatch
@@ -164,7 +164,7 @@ function ScopeCrumb(p: {ds: Dataset; componentId: string}): JSX.Element | null {
  * <Marginal> themselves unless they describe a different state, such as the page a table is showing.
  * While the dataset is drilled (state.ds.drill) the gate shows the scope and the way back, in every state: a view
  * only dispatches useHostActions(id).drill(key, target) and draws no back control of its own.
- * `marginal={false}`: the view says what was cut in its own words ('24 of 90 modules', decision D16), once.
+ * `marginal={false}`: the view says what was cut in its own words ('24 of 90 modules', decision numbers-on-a-page-agree), once.
  */
 export function DataGate<T>(p: {state: DataState<T>; id: string; marginal?: boolean; children: (data: T, state: DataState<T>) => ReactNode}): JSX.Element {
   const {state} = p;

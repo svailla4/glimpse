@@ -232,7 +232,7 @@ describe('Flowchart', () => {
   });
 });
 
-describe('Flowchart: content-sized and readable (decisions D18, D20, V005)', () => {
+describe('Flowchart: content-sized and readable (decisions diagrams-open-readable, content-sized-plates, V005)', () => {
   const LOGIN = "{nodes:{Start:{label:'Open login page',shape:'pill'},Form:'Enter email and password',Submit:'Submit credentials',Check:{label:'Credentials valid?',shape:'diamond'},Session:'Create session',Done:{label:'Signed in',shape:'pill'},Fail:'Show error and count the attempt'},edges:[['Start','Form'],['Form','Submit'],['Submit','Check'],['Check','Session','yes'],['Session','Done'],['Check','Fail','no'],['Fail','Form','retry']]}";
   const STATES = "{nodes:{Start:{label:'start',shape:'circle'}},edges:[['Start','Created','show with root='],['Created','Patched','show without root='],['Patched','Patched','show without root='],['Created','Replaced','show with root='],['Patched','Replaced','show with root='],['Replaced','Patched','show without root='],['Created','Deleted','removed'],['Patched','Deleted','removed'],['Replaced','Deleted','removed']]}";
 

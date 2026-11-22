@@ -3,7 +3,7 @@
 // @a2ui/web_core imports that package for one job: writing a catalog out as JSON Schema, which a renderer does when
 // it advertises its capabilities to an agent. The Glimpse viewer never does: the server owns the catalog and its
 // documents, and the viewer only validates and renders the messages it is sent. Bundling the converter anyway cost
-// about 6 kB gzip of the eager script (budget: 200 kB, design rule D13).
+// about 6 kB gzip of the eager script (budget: 200 kB, design rule budgets-keep-headroom).
 // The functions keep their names and shapes so the importing modules link. Should a future @a2ui/web_core call one
 // on the render path, it gets a permissive schema instead of a crash, and one console warning says what happened;
 // test/build.test.ts fails first, because it checks that the real package is not needed by what the viewer does.
