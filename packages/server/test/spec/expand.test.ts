@@ -336,6 +336,27 @@ describe('expandMessages: Slider and calls', () => {
     expect(calcNotes([stat, slider], {w: {seats: 50000, secs: 120}}, ids, new Set())).toEqual([]);
   });
 
+  // Review S5: a seed outside the Slider's own limits was accepted without a word.
+  it('calcNotes says when a Slider seed lies outside its own min and max', () => {
+    const slider = (min?: number, max?: number): WireComponent =>
+      ({id: 'x', component: 'Slider', label: 'Seats', value: {'@path': '/w/seats'}, ...(min !== undefined ? {min} : {}), ...(max !== undefined ? {max} : {})});
+    const notes = (comp: WireComponent, seats: number) => calcNotes([comp], {w: {seats}}, new Set(['x']), new Set());
+    expect(notes(slider(0, 100), 50000)).toEqual(['Slider#x: $/w/seats is 50000, outside 0..100']);
+    expect(notes(slider(10, 100), 5)).toEqual(['Slider#x: $/w/seats is 5, outside 10..100']);
+    expect(notes(slider(10), 5)).toEqual(['Slider#x: $/w/seats is 5, below min 10']);
+    expect(notes(slider(undefined, 100), 500)).toEqual(['Slider#x: $/w/seats is 500, above max 100']);
+    for (const seats of [0, 50, 100]) expect(notes(slider(0, 100), seats)).toEqual([]);
+    // min >= max has its own line (no range is drawn), not this one
+    expect(notes(slider(10, 5), 50)).toEqual([]);
+  });
+
+  // Review S6: a relative $path inside a call was 'not set', which no unbound line names, so nothing was said.
+  it('calcNotes says a relative $path inside a call is relative', () => {
+    const rel: WireComponent = {id: 'r', component: 'Stat', value: {'@call': 'div', args: {a: {'@path': 'w/seats'}, b: 2}}};
+    expect(calcNotes([rel], {w: {seats: 50000}}, new Set(['r']), new Set())).toEqual(['Stat#r: value: div: a = $w/seats is relative; write an absolute $/path']);
+    expect(unboundPaths([rel], {w: {seats: 50000}})).toEqual([]);
+  });
+
   it('inline diagram data is checked as the tab draws it: a call is its number, not an object "not drawn"', () => {
     const out = expand(`root=Page('x',[f,s,l,e])
 f=Flowchart({nodes:{A:{label:div(4,2),note:mul(2,2)},B:'b'},edges:[['A','B',mul(2,3)]]})
@@ -394,6 +415,19 @@ describe('linkNotes', () => {
     expect(notes([flow, tiers('PGG', 'PG')])).toEqual(["Layers#tiers: node 'PGG' links to nothing on this view (nearest: PG)"]);
     const seq: WireComponent = {id: 'checkout', component: 'SequenceDiagram', data: {actors: {U: 'User', G: {label: 'Gateway', node: 'Gateway'}, I: {label: 'Inventory', node: 'Inv2'}}, steps: [['U', 'G', 'hi'], {from: 'G', to: 'I', label: 'hold', via: ['Q']}]}};
     expect(notes([flow, seq])).toEqual(["SequenceDiagram#checkout: nodes 'Gateway' (the label of node 'GW'), 'Inv2' (nearest: Inv) link to nothing on this view"]);
+  });
+
+  // Review S3: the nearest-id hint compared every pair of ids in full; two 20,000-character ids took 7 s.
+  it('keeps the hint cheap for long ids: only near lengths are compared, and none past 64 characters', () => {
+    const long = (c: string) => c.repeat(20000);
+    const big: WireComponent = {id: 'big', component: 'Flowchart', data: {nodes: {[long('A')]: 'a', [long('B')]: 'b'}, edges: []}};
+    const started = performance.now();
+    expect(notes([big, tiers(long('C'))])).toEqual([`Layers#tiers: node '${'C'.repeat(39)}…' links to nothing on this view`]);
+    expect(performance.now() - started).toBeLessThan(200);
+    // a typo of a long id is still hinted up to 64 characters
+    const id = 'x'.repeat(60);
+    const named: WireComponent = {id: 'named', component: 'Flowchart', data: {nodes: {[id]: 'a'}, edges: []}};
+    expect(notes([named, tiers(`${id}yy`)])).toEqual([`Layers#tiers: node '${'x'.repeat(39)}…' links to nothing on this view (nearest: ${'x'.repeat(39)}…)`]);
   });
 
   it('is silent when another part declares or links the id, and never hints a one-letter id', () => {

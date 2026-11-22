@@ -194,8 +194,9 @@ describe('calls (decision D25)', () => {
   });
 
   it('a named call nothing in the text uses is a warning; one that is used is not', () => {
+    // review S9: a whole spec has no other parts to resend, so it is told that nothing uses the name
     expect(compile(`root=Page('x',[Stat(1,'n')])\nrps=div(1,2)`).warnings)
-      .toEqual(['line 2: rps=div(...) is copied into the arguments that use rps, so on its own it changes nothing; resend the parts that use rps.']);
+      .toEqual([`line 2: nothing uses rps, so rps=div(...) computes nothing; use it as an argument, e.g. Stat(rps,'label').`]);
     const used = compile(`root=Page('x',[s])\ns=Stat(rps,'n')\nrps=div(1,2)`);
     expect(used.warnings).toEqual([]);
     expect(created(used.messages).find(c => c.id === 's')!.value).toEqual({'@call': 'div', args: {a: 1, b: 2}});

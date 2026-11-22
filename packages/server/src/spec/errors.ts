@@ -308,17 +308,24 @@ export function calcTarget(name: string): CalcName | undefined {
 }
 
 /**
- * True when an unknown callee is a function, not a component: one a function name stands for, a lower-case name that
- * no component has in any case (components are written Capitalised, functions not: 'pow', 'round'), or a capitalised
- * near miss of a function that is near no component ('Mull').
+ * What an unknown callee most plausibly is (decision D25). A name one of the four stands for is a function ('multiply',
+ * 'Div', 'mult'), unless it is capitalised and near a component. A lower-case name that is a component or one word
+ * of a single component in another case ('text', 'table' -> DataTable, 'tree' -> FileTree), or a longer near miss of
+ * one ('tabel'), is that component. Any other lower-case name is a function ('pow', 'round': components are written
+ * Capitalised, so pow is not read as Row) or, when it is a word of several components ('chart', 'code'), either. A
+ * capitalised name is a component.
  */
-function meansFunction(name: string): boolean {
-  if (calcName(name) !== undefined) return true;
-  if (/^[a-z]/.test(name)) return !COMPONENT_NAMES.some(candidate => candidate.toLowerCase() === name.toLowerCase());
-  return calcTarget(name) !== undefined && componentMatch(name) === undefined;
+export function calleeKind(name: string): 'function' | 'component' | 'either' {
+  if (COMPONENT_BY_NAME.has(name)) return 'component';
+  if (calcName(name) !== undefined) return 'function';
+  const match = componentMatch(name);
+  if (!/^[a-z]/.test(name)) return calcTarget(name) !== undefined && match === undefined ? 'function' : 'component';
+  if (calcTarget(name) !== undefined) return 'function';
+  if (match !== undefined && (componentDistance(name, match) < 1 || name.length > 4)) return 'component';
+  return COMPONENT_NAMES.some(candidate => componentDistance(name, candidate) < 1) ? 'either' : 'function';
 }
 
-const FUNCTION_LIST = `Functions: ${CALC_NAMES.join(' ')}, each (a, b).`;
+export const FUNCTION_LIST = `Functions: ${CALC_NAMES.join(' ')}, each (a, b).`;
 const CALL_EXAMPLE = 'a and b are numbers, $/paths or calls, e.g. div($/w/seats,60).';
 /** Express has no operators: what the lexer refuses when a model writes arithmetic (`$/x*2`, `$/a+$/b`). */
 const OPERATOR = /token recognition error at: '[*+]/;
@@ -371,9 +378,11 @@ export function classifyCompileError(error: unknown, ctx: ClassifyContext): Prob
   const unknown = /^(?:Function|Component) '([^']+)' is not defined in the catalog/.exec(text);
   if (unknown) {
     const name = unknown[1]!;
-    if (!COMPONENT_BY_NAME.has(name) && meansFunction(name)) {
+    const kind = calleeKind(name);
+    if (kind === 'function') {
       return problem('E_UNKNOWN', `"${name}" is not a function. ${FUNCTION_LIST}`, calcTarget(name) !== undefined ? {repair: {kind: 'call', name}} : {});
     }
+    if (kind === 'either') return problem('E_UNKNOWN', `"${name}" is not a component or a function. Nearest: ${componentNearest(name).join(' ')}. ${FUNCTION_LIST}`);
     return problem('E_UNKNOWN', `"${name}" is not a component. Nearest: ${componentNearest(name).join(' ')}`, {repair: {kind: 'component', name}});
   }
 

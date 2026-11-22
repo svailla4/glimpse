@@ -4,7 +4,7 @@
 // (Grid cols=4); an unexpected end of input closes the open brackets. Everything else stays an error. A repair
 // edits the normalized Express text and is reported to the model as `fixed A -> B`, so it learns the right spelling.
 import {COMPONENT_BY_NAME, enumValue, type Prop} from '@glimpse/catalog';
-import {calcTarget, closeMatch, componentMatch, type RepairHint} from './errors.ts';
+import {calcTarget, calleeKind, closeMatch, componentMatch, type RepairHint} from './errors.ts';
 import {stringValue, tokenize, type SpecToken} from './guard.ts';
 
 export interface Repair {
@@ -30,6 +30,25 @@ function renameComponent(src: string, name: string): Repair | undefined {
   const {tokens} = tokenize(src);
   const edits = tokens.filter((t, i) => t.kind === 'ident' && t.text === name && tokens[i + 1]?.text === '(').map(t => ({start: t.start, end: t.end, text: target}));
   return edits.length > 0 ? {text: replaceAt(src, edits), note: `${name} -> ${target}`} : undefined;
+}
+
+/**
+ * Review S7: every function written another way, renamed before the first compile, one fixed line per name, so seven
+ * aliases do not spend the repair passes a typo of a component needs.
+ */
+function callNames(src: string): Rewrite {
+  const {tokens} = tokenize(src);
+  const edits: Array<{start: number; end: number; text: string}> = [];
+  const fixes: string[] = [];
+  tokens.forEach((t, i) => {
+    if (t.kind !== 'ident' || tokens[i + 1]?.text !== '(' || calleeKind(t.text) !== 'function') return;
+    const target = calcTarget(t.text);
+    if (!target || target === t.text) return;
+    edits.push({start: t.start, end: t.end, text: target});
+    const note = `${t.text} -> ${target}`;
+    if (!fixes.includes(note)) fixes.push(note);
+  });
+  return edits.length > 0 ? {text: replaceAt(src, edits), fixes} : {text: src, fixes};
 }
 
 /** Decision D25: a function written another way ('multiply', 'Div', 'mult') takes the name it means: `multiply -> mul`. */
@@ -209,12 +228,14 @@ function stringList(src: string, open: SpecToken): {start: number; end: number; 
  *   (`Callout.kind warning -> warn`), however many there are (finding V069);
  * - a number where the prop takes a string is quoted, silently: its meaning is unchanged (finding V015);
  * - a plain string where the prop takes an action becomes Event('that name') (finding V042);
- * - hyphenated part names take underscores (finding V043).
+ * - hyphenated part names take underscores (finding V043);
+ * - a function written another way takes the name it means, at every call (`multiply -> mul`, decision D25).
  */
 export function rewrite(src: string): Rewrite {
   const named = hyphenatedNames(src);
-  const fixes = [...named.fixes];
-  const text = named.text;
+  const calls = callNames(named.text);
+  const fixes = [...named.fixes, ...calls.fixes];
+  const text = calls.text;
   const edits: Array<{start: number; end: number; text: string}> = [];
   for (const arg of callArguments(tokenize(text).tokens)) {
     const def = COMPONENT_BY_NAME.get(arg.callee);

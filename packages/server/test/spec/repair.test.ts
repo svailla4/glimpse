@@ -198,6 +198,23 @@ describe('function names (decision D25)', () => {
     expect(() => compile(`root=Page('x',[Stat(pow(2,3))])`)).toThrow(/^E_UNKNOWN "pow" is not a function\. Functions: add sub mul div, each \(a, b\)\.$/);
     expect(() => compile(`root=Page('x',[Stat(mod(2,3))])`)).toThrow(/^E_UNKNOWN "mod" is not a function\./);
   });
+
+  // Review S7: each alias spent one of the six repair passes, so the seventh was 'not a function'.
+  it('renames every function alias before the first compile, one fixed line per name, however many there are', () => {
+    const stat = (call: string) => `Stat(${call}($/w/seats,2),'n')`;
+    const {fixes} = compile(`root=Page('T',[r])\n$/w={seats:50000}\nr=Row([Stat(divide(multiply($/w/seats,0.6),2),'a'),${['Mul', 'times', 'minus', 'plus', 'subtract', 'times'].map(stat).join(',')}])`);
+    expect(fixes).toEqual(['divide -> div', 'multiply -> mul', 'Mul -> mul', 'times -> mul', 'minus -> sub', 'plus -> add', 'subtract -> sub']);
+  });
+
+  // Review S1: every lower-case unknown name was called 'not a function', so table and tree lost their repair.
+  it('a lower-case component name is still repaired; a function-like one is a function; a word of several is either', () => {
+    expect(compile(`root=Page('x',[a])\na=table('fake.rows')`).fixes).toEqual(['table -> DataTable']);
+    expect(compile(`root=Page('x',[a])\na=tree()`).fixes).toEqual(['tree -> FileTree']);
+    expect(compile(`root=Page('x',[a])\na=tabel('fake.rows')`).fixes).toEqual(['tabel -> DataTable']);
+    expect(() => compile(`root=Page('x',[a])\na=pow(2,3)`)).toThrow(/^E_UNKNOWN "pow" is not a function\. Functions: add sub mul div, each \(a, b\)\.$/);
+    expect(() => compile(`root=Page('x',[a])\na=chart('fake.rows')`))
+      .toThrow(/^E_UNKNOWN "chart" is not a component or a function\. Nearest: BarChart LineChart \w+\. Functions: add sub mul div, each \(a, b\)\.$/);
+  });
 });
 
 describe('errors that point at the mistake', () => {

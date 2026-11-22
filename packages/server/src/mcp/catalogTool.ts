@@ -3,7 +3,7 @@
 import {
   CALC_NAMES, calcDoc, calcName, componentDoc, componentIndex, COMPONENT_BY_NAME, examplesDoc, parseViewRef, SOURCE_BY_NAME, sourceDoc, sourceIndex, VIEW_BY_NAME, VIEW_INDEX, viewDoc,
 } from '@glimpse/catalog';
-import {closeMatch, nearest} from '../spec/errors.ts';
+import {calleeKind, closeMatch, FUNCTION_LIST, nearest} from '../spec/errors.ts';
 import {refSignature} from '../spec/expand.ts';
 import type {SourceRegistry} from '../sources/registry.ts';
 import {failed, text, type ToolResult} from './result.ts';
@@ -65,6 +65,19 @@ function lookup(name: string, registry: SourceRegistry | undefined): string | un
   return undefined;
 }
 
+/** A lower-case name that is near no component ('round', 'pow'): read as a function, as the show pipeline does. */
+const readsAsFunction = (name: string): boolean => /^[a-z]\w*$/.test(name) && calleeKind(name) === 'function';
+
+/**
+ * The answer for a name the tool does not know. One that reads as a function is told the four and pointed at no
+ * component (decision D25: pow is not Row); sources and views stay in its Nearest list.
+ */
+function unknown(name: string, registry: SourceRegistry | undefined): string {
+  if (!readsAsFunction(name)) return `unknown "${name.slice(0, 60)}". Nearest: ${nearest(name, vocabulary(registry)).join(' ')}`;
+  const words = vocabulary(registry).filter(word => !COMPONENT_BY_NAME.has(word) && !(CALC_NAMES as readonly string[]).includes(word));
+  return `unknown "${name.slice(0, 60)}". Nearest: ${nearest(name, words).join(' ')}. ${FUNCTION_LIST}`;
+}
+
 /** `registry` adds sources the catalog does not list (none in production); undefined before the services are loaded. */
 export async function catalogTool(args: {names?: unknown}, registry: SourceRegistry | undefined): Promise<ToolResult> {
   const names = Array.isArray(args.names) ? args.names.filter((name): name is string => typeof name === 'string' && name.trim() !== '').map(name => name.trim()) : [];
@@ -75,13 +88,15 @@ export async function catalogTool(args: {names?: unknown}, registry: SourceRegis
   for (const name of [...new Set(names)].slice(0, MAX_NAMES)) {
     let doc = lookup(name, registry);
     if (doc === undefined) {
-      const words = vocabulary(registry);
+      const words = vocabulary(registry).filter(word => !readsAsFunction(name) || !COMPONENT_BY_NAME.has(word));
       // A bare or misspelt name: try the closest catalog name, with and without the view: prefix.
       const guess = closeMatch(name, words) ?? closeMatch(`view:${name}`, words);
       doc = guess ? lookup(guess, registry) : undefined;
       if (doc !== undefined) doc = `"${name}" -> ${guess}\n${doc}`;
     }
-    if (doc === undefined) blocks.push(`unknown "${name.slice(0, 60)}". Nearest: ${nearest(name, vocabulary(registry)).join(' ')}`);
+    // Review S8: the four functions are one block, given once however many of their names are asked for.
+    if (doc !== undefined && doc.endsWith(calcDoc()) && blocks.some(block => block.endsWith(calcDoc()))) doc = `"${name}": the functions, above`;
+    if (doc === undefined) blocks.push(unknown(name, registry));
     else { blocks.push(doc); found++; }
   }
   if (names.length > MAX_NAMES) blocks.push(`(${names.length - MAX_NAMES} more names ignored: ask for at most ${MAX_NAMES} at a time)`);

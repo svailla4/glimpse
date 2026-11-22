@@ -17,11 +17,11 @@ function boundPath(raw: unknown): string | undefined {
 /**
  * The first reason, in component order, that a call reading the path `componentId`'s `value` binds gives no number:
  * 'division by zero', 'not a number', 'too large', 'unknown'. undefined when every such call computes, or when the
- * component binds no absolute path. 'not set' is never the answer: a value nobody wrote yet is the server's report
- * (an unbound path), not something the user caused. It is worked out again whenever a path one of those calls reads
+ * component binds no absolute path. 'not set' and 'relative' are never the answer: a value nobody wrote yet and a
+ * relative $path are the server's report (an unbound path, a calc line), not something the user caused. It is worked out again whenever a path one of those calls reads
  * changes; a component the spec redefines is read again at the next data change.
  */
-export function useCalcNote(componentId: string): Exclude<CalcReason, 'not set'> | undefined {
+export function useCalcNote(componentId: string): Exclude<CalcReason, 'not set' | 'relative'> | undefined {
   const surface = useA2uiSurface();
   if (!surface) throw new Error('Glimpse views must render inside an A2uiSurface');
   // Read on each render of the caller, so a Slider bound to another path is followed.
@@ -36,12 +36,12 @@ export function useCalcNote(componentId: string): Exclude<CalcReason, 'not set'>
           for (const {call} of callsIn(model.properties)) {
             if (!reads(call, path)) continue;
             const got = explainValue(call, read);
-            if ('problem' in got && got.reason !== 'not set') return got.reason;
+            if ('problem' in got && got.reason !== 'not set' && got.reason !== 'relative') return got.reason;
           }
         }
         return undefined;
       }),
     [surface, path],
   );
-  return useSignalValue(note) as Exclude<CalcReason, 'not set'> | undefined;
+  return useSignalValue(note) as Exclude<CalcReason, 'not set' | 'relative'> | undefined;
 }

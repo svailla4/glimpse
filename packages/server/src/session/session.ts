@@ -634,7 +634,8 @@ export class Session {
     const links = linkNotes(components, draft.record.data, defined, compiledData);
     const calcs = calcNotes(components, draft.record.data, defined, compiledData);
     // Decision D25: a number the user set that this call's own, unchanged seed would have undone.
-    const kept = draft.kept.map(({path, value}) => `$${path} stays ${value} (set in the tab); write $${path}=... itself to change it`);
+    const kept = draft.kept.map(({path, value, typed}) =>
+      `$${path} stays ${value} (set in the tab${typed === undefined ? '' : ` to ${typed}, held to the Slider's range`}); write $${path}=... itself to change it`);
     return {
       draft,
       fixes: [...compiled.fixes, ...expansion.fixes, ...diagrams.fixes, ...kept],
@@ -730,10 +731,17 @@ export class Session {
     const out: string[] = [];
     let candidates: string[] | undefined;
     // the files of props first, then those named inside data (FileCheck.nested, decision D24)
-    for (const {where, file} of [...expansion.files.filter(entry => !entry.nested), ...expansion.files.filter(entry => entry.nested)]) {
+    for (const {where, file, nested} of [...expansion.files.filter(entry => !entry.nested), ...expansion.files.filter(entry => entry.nested)]) {
       if (out.length >= MAX_CHECK_WARNINGS) break;
       const path = parseFileLoc(file).path;
       const state = await this.servable(path);
+      // Review S10: a file inside data in another case opens where the file system ignores case, but the selection
+      // then carries a name no FileTree row has. Props are renamed before the call (finding V071); data is said.
+      if (state === 'ok' && nested && isCaseVariant(this.root, path)) {
+        const name = await canonicalTarget(ctx, path);
+        if (name !== path) out.push(`${where}: "${path.slice(0, 120)}" is "${name.slice(0, 120)}" on disk; write that.`);
+        continue;
+      }
       if (state === 'ok') continue;
       if (state === 'refused') { out.push(`${where}: "${path.slice(0, 120)}" is not a file of this project (outside it, ignored, or not a regular file).`); continue; }
       const target = await resolveInside(this.root, path);

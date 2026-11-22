@@ -468,6 +468,23 @@ describe('host actions', () => {
     expect((await t.session.show(spec('demo', what))).fixes).toEqual([]);
   });
 
+  // Review S2: the kept number was not held to a Slider whose max the re-show narrowed.
+  it('gl_set: a kept number is held to the min and max of the Slider shown again, and the fixed line says so', async () => {
+    const what = (max: number) => `root=Page('What if',[seats,rps])\n$/w={seats:50000,secs:120}\nseats=Slider('Seats',$/w/seats,1000,${max})\nrps=Stat(div($/w/seats,$/w/secs),'req/s')`;
+    const {t, router} = await withRouter(what(200000));
+    expect(router.handle(action('gl_set', {value: 80000}, 'seats'))).toBe(true);
+    const narrowed = await t.session.show(spec('demo', what(60000)));
+    expect(narrowed.fixes).toEqual([`$/w/seats stays 60000 (set in the tab to 80000, held to the Slider's range); write $/w/seats=... itself to change it`]);
+    expect(t.session.surfaces.get('demo')!.data.w).toEqual({seats: 60000, secs: 120});
+    expect(t.session.surfaces.get('demo')!.typed?.get('/w/seats')).toEqual({value: 60000, seed: 50000});
+    // a patch that narrows only the Slider holds the number in the data too, and republishes it
+    const {t: t2, router: router2} = await withRouter(what(200000));
+    router2.handle(action('gl_set', {value: 80000}, 'seats'));
+    const patched = await t2.session.show(spec('demo', `seats=Slider('Seats',$/w/seats,1000,70000)`));
+    expect(patched.fixes).toEqual([`$/w/seats stays 70000 (set in the tab to 80000, held to the Slider's range); write $/w/seats=... itself to change it`]);
+    expect(t2.session.surfaces.get('demo')!.data.w).toEqual({seats: 70000, secs: 120});
+  });
+
   // Decision D25: a call checked against the data after the call: what gives no number is a warning.
   it('a call that gives no number at show time is a warning; one reading a path not set is the unbound line', async () => {
     const {outcome} = await withRouter(`root=Page('x',[a,b])\n$/w={secs:0}\na=Stat(div(100,$/w/secs),'rps')\nb=Stat(mul($/w/none,2),'n')`);

@@ -98,7 +98,14 @@ async function route(req: IncomingMessage, res: ServerResponse, url: URL, api: A
     need('POST', req);
     const body = await readJson(req) as {messages?: unknown};
     if (typeof body !== 'object' || body === null || !Array.isArray(body.messages)) throw new HttpError(400, 'E_ARGS', 'expected {messages: [...]}');
-    for (const message of body.messages.slice(0, MAX_MESSAGES)) api.router.handle(message);
+    // Review S4: one message that throws is logged and skipped; the rest of the batch is still handled.
+    for (const message of body.messages.slice(0, MAX_MESSAGES)) {
+      try {
+        api.router.handle(message);
+      } catch (error) {
+        api.log(`glimpse: a renderer message failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     res.writeHead(204, {'cache-control': 'no-store'});
     res.end();
     return;

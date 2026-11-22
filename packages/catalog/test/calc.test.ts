@@ -83,8 +83,10 @@ describe('explainValue', () => {
   });
 
   it('a relative path is not read, and says to write an absolute one', () => {
-    expect(explainValue(call('mul', at('w/seats'), 2), w)).toEqual({problem: '$w/seats is relative; write an absolute $/path', reason: 'not set'});
-    expect(explainValue(at('seats'), w)).toEqual({problem: '$seats is relative; write an absolute $/path', reason: 'not set'});
+    // review S6: a reason of its own, so calcNotes says it (no unbound line names a relative path)
+    expect(explainValue(call('mul', at('w/seats'), 2), w)).toEqual({problem: 'mul: a = $w/seats is relative; write an absolute $/path', reason: 'relative'});
+    expect(explainValue(call('add', 1, call('div', 4, at('n'))), w)).toEqual({problem: 'div: b = $n is relative; write an absolute $/path', reason: 'relative'});
+    expect(explainValue(at('seats'), w)).toEqual({problem: '$seats is relative; write an absolute $/path', reason: 'relative'});
   });
 
   it('the innermost reason wins: a named call copied into mul(rps,4) says division by zero, not "not a number"', () => {

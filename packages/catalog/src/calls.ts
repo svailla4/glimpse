@@ -6,8 +6,11 @@
 import {applyCalc, CALC_NAMES, isCall} from './calc.ts';
 import type {Bind, Call} from './props.ts';
 
-/** Why a call gives no number. 'not set' is a value not written yet, which the server reports as an unbound path. */
-export type CalcReason = 'not set' | 'unknown' | 'not a number' | 'division by zero' | 'too large';
+/**
+ * Why a call gives no number. 'not set' is a value not written yet, which the server reports as an unbound path;
+ * 'relative' is a $path with no leading slash, which no unbound line names (review S6), so it is said as a call's.
+ */
+export type CalcReason = 'not set' | 'relative' | 'unknown' | 'not a number' | 'division by zero' | 'too large';
 export type Explained = {value: unknown} | {problem: string; reason: CalcReason};
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -27,7 +30,7 @@ function shown(v: unknown): string {
 export function explainValue(node: unknown, read: (path: string) => unknown): Explained {
   if (isBinding(node)) {
     const path = node['@path'];
-    if (!path.startsWith('/')) return {problem: `$${path} is relative; write an absolute $/path`, reason: 'not set'};
+    if (!path.startsWith('/')) return {problem: `$${path} is relative; write an absolute $/path`, reason: 'relative'};
     return {value: read(path)};
   }
   if (!isCall(node)) return {value: node};
@@ -39,8 +42,8 @@ export function explainValue(node: unknown, read: (path: string) => unknown): Ex
   for (const key of ['a', 'b'] as const) {
     const arg = args[key];
     const got = explainValue(arg, read);
-    if ('problem' in got) return got;
     const named = isBinding(arg) ? `${key} = $${arg['@path']}` : key;
+    if ('problem' in got) return got.reason === 'relative' && isBinding(arg) ? {problem: `${name}: ${named} is relative; write an absolute $/path`, reason: 'relative'} : got;
     if (got.value === undefined) return {problem: `${name}: ${named} is not set`, reason: 'not set'};
     if (typeof got.value !== 'number' || !Number.isFinite(got.value)) return {problem: `${name}: ${named} is ${shown(got.value)}, not a number`, reason: 'not a number'};
     values.push(got.value);

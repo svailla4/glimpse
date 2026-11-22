@@ -94,8 +94,10 @@ export const SERVER_PATH = /^\/(?:ds|meta|ui)(?:\/|$)/;
 export function lookup(data: unknown, path: string): unknown {
   let node = data;
   for (const segment of path.split('/').filter(Boolean)) {
-    if (typeof node !== 'object' || node === null) return undefined;
-    node = (node as Record<string, unknown>)[segment.replace(/~1/g, '/').replace(/~0/g, '~')];
+    // Review S4: own properties only, as setPath writes them: $/w/toString is not set, not a native function.
+    const key = segment.replace(/~1/g, '/').replace(/~0/g, '~');
+    if (typeof node !== 'object' || node === null || !Object.hasOwn(node, key)) return undefined;
+    node = (node as Record<string, unknown>)[key];
   }
   return node;
 }
@@ -248,7 +250,10 @@ export function linkNotes(
     const hint = (id: string): string => {
       const labelled = known.find(([other, entry]) => other !== id && entry.label !== undefined && entry.label.toLowerCase() === id.toLowerCase());
       if (labelled) return ` (the label of node '${oneLine(labelled[0], 40)}')`;
-      const best = nearest(id, known.map(([other]) => other), 1)[0];
+      // Review S3: only ids that can be within two edits, and none past 64 characters: the distance is quadratic in
+      // the lengths, and ids have no length limit (two 20,000-character ids took 7 s).
+      if (id.length > 64) return '';
+      const best = nearest(id, known.map(([other]) => other).filter(other => Math.abs(other.length - id.length) <= 2), 1)[0];
       // As close as a typo, and not merely as short as the id itself ('A' is not a typo of 'B').
       return best !== undefined && looseDistance(id, best) <= Math.min(2, id.length - 1) ? ` (nearest: ${oneLine(best, 40)})` : '';
     };

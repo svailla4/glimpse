@@ -207,8 +207,8 @@ function statementStarts(tokens: readonly SpecToken[]): number[] {
 /**
  * What the compiler does with calls in silence, said (decision D25): a third argument is dropped (`div($/a,2,3)`
  * computes $/a/2), a call written as a statement of its own computes nothing, and a named call (`rps=div(...)`) is
- * copied into the arguments that use its name, so sent alone it changes nothing. The first is refused; the others
- * are `warn` lines. `source` is the text as written, for line numbers.
+ * copied into the arguments that use its name, so sent alone (or never used) it changes nothing. The first is
+ * refused; the others are `warn` lines. `source` is the text as written, for line numbers.
  */
 export function calcText(text: string, source: string): {problem?: Problem; warnings: string[]} {
   const {tokens} = tokenize(text);
@@ -237,7 +237,11 @@ export function calcText(text: string, source: string): {problem?: Problem; warn
     const value = tokens[i + 2];
     if (token.kind !== 'ident' || tokens[i + 1]?.text !== '=' || !value || !bareCalc(tokens, i + 2)) continue;
     const used = tokens.some((other, j) => j !== i && other.kind === 'ident' && other.text === token.text);
-    if (!used) warnings.push(`line ${line}: ${token.text}=${value.text}(...) is copied into the arguments that use ${token.text}, so on its own it changes nothing; resend the parts that use ${token.text}.`);
+    if (used) continue;
+    // Review S9: a text with a root of its own holds every part, so nothing uses the name; a patch may resend it for
+    // parts sent earlier, which took a copy of the call and must be sent again to take the new one.
+    if (definesRoot(text)) warnings.push(`line ${line}: nothing uses ${token.text}, so ${token.text}=${value.text}(...) computes nothing; use it as an argument, e.g. Stat(${token.text},'label').`);
+    else warnings.push(`line ${line}: ${token.text}=${value.text}(...) is copied into the arguments that use ${token.text}, so on its own it changes nothing; resend the parts that use ${token.text}.`);
   }
   return {warnings: warnings.slice(0, 3)};
 }

@@ -157,8 +157,11 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   (`link:'pg'`, a second key space); a shortest path inferred through the Flowchart (a guess drawn as fact, where
   `via` says it); hiding a DataTable `node` column (it would hide real data); a global line-overlap rule for file
   identity. Budgets: the diagrams chunk limit went from 36 to 43 kB by the D19 rule (measured plus about 15%).
-  Not done: a case fix inside nested files (a wrong case is only warned), `fixed` lines for Steps status synonyms,
-  links on List, charts and Stats, edge selection, and `[[refs]]` in diagram notes.
+  Not done: the rename of a file in diagram or Steps data written in another case. Where the file system ignores
+  case it opens, so the check says it (`"CALC.ts" is "src/calc.ts" on disk; write that`, `checkNamed`), but the
+  selection keeps the spelling written until the model fixes it; where case matters it is a missing file. Also not
+  done: `fixed` lines for Steps status synonyms, links on List, charts and Stats, edge selection, and `[[refs]]` in
+  diagram notes.
 - **D25: what-if inputs and computed values are A2UI calls (2026-11-21).** `add|sub|mul|div(a, b)`, written
   `div($/a,2)`, are A2UI function calls that the tab recomputes when a `$/path` they read changes; each argument is a
   number, an absolute `$/path` or another call, in any component argument and in inline rows. There are no operators
@@ -179,18 +182,25 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
     to its min and max, so a tab can set only the numbers the model bound; `setInput` refuses a path it cannot write.
     The number goes into `record.data`, not `/ui` (writing `/ui` drops the selection), so a reload, a patch and a
     replace keep it. A spec that writes the exact path wins; re-sending an enclosing value whose leaf is unchanged
-    keeps what the user set, with a `fixed $/w/seats stays 80000 (set in the tab)` line. The server recomputes what
+    keeps what the user set, with a `fixed $/w/seats stays 80000 (set in the tab)` line, held to the min and max of
+    the Slider shown now (the line then says `set in the tab to 80000, held to the Slider's range`). Only own
+    properties of the data are read (`lookup`), so `$/w/toString` is an unset path. The server recomputes what
     reads the path and puts it, or why it failed, in one coalesced `viewer: set` line (`events.latest`): per
     component the values that computed, then one group per distinct problem.
-  - Checks, for what the upstream compiler does silently or reports in its own words (D22): an unknown function is
-    `E_UNKNOWN` with the four names (a name is a function when `calcName` reads it, or it starts with a lower-case
-    letter and no component has that name in any case, or it is a capitalised near miss of a function with no
-    component near it, so `pow` is never repaired to `Row`); a missing or wrong-typed operand is `E_TYPE`, an unknown
-    keyword `E_PROP`; `*` and `+` get the "no operators" hint; a third positional argument is `E_TYPE`; a bare call
-    statement and a named call nothing uses are `warn` lines (a patch of only such a call is the `E_REF` with that
-    text); a call in `$/data` or as an action, a Slider bound to a literal, a call, a relative path or a path under
-    `/ui`, `/ds` or `/meta`, and `min >= max` are reported; `calcNotes` warns about a call that cannot compute from
-    the model's own data. Inline diagram, Steps and table data is checked as the tab draws it (`asDrawn`,
+  - Checks, for what the upstream compiler does silently or reports in its own words (D22): a function written
+    another way (`multiply`, `Div`, `mult`) is renamed at every call before the first compile, one `fixed` line per
+    name, so aliases never spend repair passes. An unknown callee is read by `calleeKind` (errors.ts): a lower-case
+    name that is a component or a word of one in another case (`table` -> DataTable, `tree` -> FileTree), or a near
+    miss of one longer than four letters (`tabel`), is that component; a word of several (`chart`) is `E_UNKNOWN ...
+    not a component or a function` with both lists; any other lower-case name is `E_UNKNOWN` with the four names, so
+    `pow` is never repaired to `Row`; `catalog{}` answers such a name with the four too, and gives their doc once per
+    call. A missing or wrong-typed operand is `E_TYPE`, an unknown keyword `E_PROP`; `*` and `+` get the "no
+    operators" hint; a third positional argument is `E_TYPE`; a bare call statement and a named call nothing uses are
+    `warn` lines (in a whole spec `nothing uses rps`; in a patch, resend the parts that use it; a patch of only such a
+    call is the `E_REF` with that text); a call in `$/data` or as an action, a Slider bound to a literal, a call, a
+    relative path or a path under `/ui`, `/ds` or `/meta`, `min >= max` and a seed outside min..max are reported;
+    `calcNotes` warns about a call that cannot compute from the model's own data, and about a relative `$path` inside
+    a call (reason `relative`). Inline diagram, Steps and table data is checked as the tab draws it (`asDrawn`,
     authored.ts): A2UI computes the calls and resolves the `$/paths` inside a component's arguments before the view
     reads them, so a call is checked as its number, and inline data with `$/paths` inside is checked by
     `diagramNotes` against the data model. Judging the call or binding objects themselves gave `not drawn` lines for

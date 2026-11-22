@@ -613,11 +613,24 @@ export function expandMessages(messages: A2uiMessage[], registry: SourceRegistry
 
 const topOf = (path: string) => (path.split('/').filter(Boolean)[0] ?? '').replace(/~1/g, '/').replace(/~0/g, '~');
 
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** Review S5: how a Slider's number lies outside its own limits ('outside 0..100', 'below min 10'), or undefined. */
+function outsideRange(value: number, min: unknown, max: unknown): string | undefined {
+  const low = finite(min) ? min : undefined;
+  const high = finite(max) ? max : undefined;
+  if (low !== undefined && high !== undefined) return low < high && (value < low || value > high) ? `outside ${low}..${high}` : undefined;
+  if (low !== undefined && value < low) return `below min ${low}`;
+  if (high !== undefined && value > high) return `above max ${high}`;
+  return undefined;
+}
+
 /**
  * Decision D25: the calls of the components a call defines, and of those reading a path whose top segment it wrote,
  * computed against the data after the call. One that gives no number (division by zero, an operand that is not a
  * number, a result too large) is a `warn` line: `Stat#rps: value: div: b = $/w/secs is 0 (division by zero)`. An
- * operand not set is left to the unbound line. A Slider whose path holds something other than a number is said too.
+ * operand not set is left to the unbound line; a relative one is said (review S6). A Slider whose path holds
+ * something other than a number, or a number outside its own min..max (review S5), is said too.
  */
 export function calcNotes(
   components: Iterable<WireComponent>, data: Record<string, unknown>, defined: ReadonlySet<string>, written: ReadonlySet<string>,
@@ -635,6 +648,10 @@ export function calcNotes(
     if (slider !== undefined) {
       const value = read(slider);
       if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) lines.push(`${where}: $${oneLine(slider, 80)} is ${shown(value)}, not a number`);
+      else if (typeof value === 'number') {
+        const range = outsideRange(value, comp.min, comp.max);
+        if (range) lines.push(`${where}: $${oneLine(slider, 80)} is ${value}, ${range}`);
+      }
     }
     for (const {at, call} of calls) {
       const got = explainValue(call, read);

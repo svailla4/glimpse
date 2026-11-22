@@ -231,6 +231,31 @@ describe('showTool', () => {
     }
   });
 
+  // Review S10: a file named inside diagram or Steps data in another case opened, so nothing was said, and the
+  // selection then carried a name no FileTree row has.
+  it.skipIf(!CASE_INSENSITIVE)('a file inside diagram and Steps data written in another case is named with its spelling on disk', async () => {
+    const own = await tempRoot();
+    try {
+      await mkdir(join(own.root, 'Docs'), {recursive: true});
+      await writeFile(join(own.root, 'Docs', 'README.md'), '# r\n');
+      const deps = fakeDeps();
+      const index = deps.createRepoIndex;
+      deps.createRepoIndex = (...args) => ({...index(...args), canonical: async (path: string) => (path.toLowerCase() === 'docs/readme.md' ? 'Docs/README.md' : undefined)});
+      const t = testSession(own.root, {deps});
+      live.push(t);
+      const spec = "root=Page('x',[f,l,s])\nf=Flowchart({nodes:{A:{label:'A',file:'docs/readme.md#L1'},B:{label:'B',file:'Docs/README.md'}},edges:[]})\n"
+        + "l=Layers([{name:'D',items:[{label:'r',file:'DOCS/readme.md'}]}])\ns=Steps([{title:'r',file:'docs/README.md'}])";
+      const lines = body(await showTool(t.session, {id: 'n', spec}, 100)).split('\n').filter(line => line.startsWith('warn'));
+      expect(lines).toEqual([
+        'warn Flowchart#f node A: "docs/readme.md" is "Docs/README.md" on disk; write that.',
+        'warn Layers#l item \'r\': "DOCS/readme.md" is "Docs/README.md" on disk; write that.',
+        'warn Steps#s step 1: "docs/README.md" is "Docs/README.md" on disk; write that.',
+      ]);
+    } finally {
+      await own.cleanup();
+    }
+  });
+
   // Finding V071 for the [[path]] refs of prose: drawn under the inventory's spelling where the file system ignores
   // case, and named as a missing file, with the file meant, where it does not.
   it('a [[path]] ref written in another case is rewritten to the inventory spelling, or reported missing', async () => {
@@ -542,6 +567,21 @@ describe('catalogTool', () => {
     for (const name of ['div', 'multiply', 'Div', 'sum']) expect(body(await catalogTool({names: [name]}, undefined)), name).toBe(calcDoc());
     expect(body(await catalogTool({names: ['mult']}, undefined))).toBe(`"mult" -> mul\n${calcDoc()}`);
     expect(body(await catalogTool({}, undefined)).split('\n').at(-1)).toBe('catalog{names:[...]} for details: a component, a function ("div"), a source, "view:<name>", "grammar" or "examples".');
+  });
+
+  // Review S8: calcDoc was printed once per function name, and 'round' was pointed at Row Grid Column.
+  it('gives the functions once per call, and answers a function-like unknown name with the four, not a component', async () => {
+    const blocks = body(await catalogTool({names: ['div', 'multiply', 'round', 'add', 'pow']}, undefined)).split('\n\n');
+    expect(blocks[0]).toBe(calcDoc());
+    expect(blocks.slice(1)).toEqual([
+      '"multiply": the functions, above',
+      expect.stringMatching(/^unknown "round"\. Nearest: \S+ \S+ \S+\. Functions: add sub mul div, each \(a, b\)\.$/),
+      '"add": the functions, above',
+      expect.stringMatching(/^unknown "pow"\. Nearest: \S+ \S+ \S+\. Functions: add sub mul div, each \(a, b\)\.$/),
+    ]);
+    for (const block of blocks.slice(1)) expect(block).not.toMatch(/\b(?:Row|Grid|Column)\b/);
+    // a capitalised near miss still gets its component
+    expect(body(await catalogTool({names: ['Tabel']}, undefined))).toMatch(/^"Tabel" -> /);
   });
 
   // The examples the grammar gives, rule by rule, written together as one spec: it compiles as Glimpse accepts it.

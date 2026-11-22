@@ -2,7 +2,7 @@
 // a detached next version of one record; only commit() touches the store. A call that fails anywhere before commit
 // therefore leaves every surface exactly as it was.
 import {
-  CATALOG_ID, COMPONENT_BY_NAME, PROTOCOL_VERSION,
+  CATALOG_ID, COMPONENT_BY_NAME, inputValue, PROTOCOL_VERSION,
   type A2uiMessage, type Dataset, type EntityRef, type Prop, type SourceRef, type SurfaceInfo, type SurfaceMeta, type WireComponent,
 } from '@glimpse/catalog';
 import {isBinding} from '../spec/authored.ts';
@@ -69,8 +69,11 @@ export interface Draft {
   newKeys: string[];
   /** /ds bindings that name no dataset of this surface. */
   unknownKeys: string[];
-  /** Decision D25: numbers set in the tab that this call sent its old seed over, and that were kept. */
-  kept: Array<{path: string; value: number}>;
+  /**
+   * Decision D25: numbers set in the tab that this call sent its old seed over, and that were kept; `typed` is the
+   * number set in the tab when the Slider's new min or max held it to `value` (review S2).
+   */
+  kept: Array<{path: string; value: number; typed?: number}>;
 }
 
 export interface DraftOptions {
@@ -245,23 +248,25 @@ export function inPlaceMessages(previous: SurfaceRecord, record: SurfaceRecord, 
  * Decision D25: the numbers set with a Slider that the next version keeps, written into `data` where a re-sent seed
  * covered them. A number is forgotten when no Slider binds its path any more, and when the call wrote that path
  * itself (`$/w/seats=50000`: the spec wins) or a value other than the old seed over it. `kept` lists the numbers a
- * re-sent, unchanged seed would have undone.
+ * re-sent, unchanged seed would have undone. A kept number is held to the min and max of the Sliders that bind it now
+ * (review S2), as gl_set holds it, and `kept` says so when that changed it.
  */
 function keepTyped(current: SurfaceRecord | undefined, messages: readonly A2uiMessage[], components: ReadonlyMap<string, WireComponent>, data: Record<string, unknown>) {
   const typed = new Map<string, {value: number; seed: unknown}>();
-  const kept: Array<{path: string; value: number}> = [];
+  const kept: Array<{path: string; value: number; typed?: number}> = [];
   if (!current?.typed) return {typed, kept};
   const exact = new Set(messages.flatMap(message => ('updateDataModel' in message ? [`/${segmentsOf(message.updateDataModel.path).join('/')}`] : [])));
-  const bound = new Set([...components.values()].flatMap(comp => (comp.component === 'Slider' && isBinding(comp.value) ? [comp.value['@path']] : [])));
+  const sliders = [...components.values()].filter(comp => comp.component === 'Slider' && isBinding(comp.value));
   for (const [path, entry] of current.typed) {
-    if (!bound.has(path) || exact.has(path)) continue;
+    const own = sliders.filter(comp => (comp.value as {'@path': string})['@path'] === path);
+    if (own.length === 0 || exact.has(path)) continue;
     const now = lookup(data, path);
-    if (sameJson(now, entry.value)) typed.set(path, entry);
-    else if (sameJson(now, entry.seed)) {
-      setPath(data, path, entry.value);
-      typed.set(path, entry);
-      kept.push({path, value: entry.value});
-    }
+    if (!sameJson(now, entry.value) && !sameJson(now, entry.seed)) continue;
+    const value = own.reduce((held, comp) => inputValue(held, {min: comp.min, max: comp.max}) ?? held, entry.value);
+    typed.set(path, {value, seed: entry.seed});
+    if (sameJson(now, value)) continue;
+    setPath(data, path, value);
+    kept.push({path, value, ...(value !== entry.value ? {typed: entry.value} : {})});
   }
   return {typed, kept};
 }
