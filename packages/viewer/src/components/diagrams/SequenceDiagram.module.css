@@ -3,6 +3,8 @@
   .root {
     position: relative;
     --sq-paper: var(--gl-bg);
+    /* The zoom bar under the drawing: as tall as flowkit's (CONTROLS in flowkit/sizing.ts). */
+    --sq-bar: 32px;
   }
   :global(.gl-frame) .root {
     --sq-paper: var(--gl-surface);
@@ -30,6 +32,11 @@
   }
   .steps {
     display: block;
+  }
+  /* Zoomed out narrower than its cell, the drawing sits in the middle, as a fitted flowkit diagram does. */
+  .head,
+  .steps {
+    margin-inline: auto;
   }
 
   .lifeline {
@@ -210,7 +217,7 @@
   .more {
     position: absolute;
     top: 0;
-    bottom: 0;
+    bottom: var(--sq-bar);
     width: 40px;
     pointer-events: none;
     z-index: 2;
@@ -240,6 +247,53 @@
     white-space: nowrap;
   }
 
+  /* The zoom controls and readouts, drawn as flowkit draws its own (flowkit.module.css), so every diagram has the same bar. */
+  .bar {
+    height: var(--sq-bar);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    padding-right: 6px;
+  }
+  .inView,
+  .zoom {
+    font: 10.5px/16px var(--gl-font-mono);
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+    letter-spacing: 0.04em;
+    color: var(--gl-ink-3);
+    white-space: nowrap;
+  }
+  .inView {
+    margin-right: 8px;
+    text-transform: uppercase;
+  }
+  .zoom {
+    margin-right: 6px;
+  }
+  .control {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid var(--gl-rule);
+    border-radius: var(--gl-r-1);
+    background: var(--gl-surface);
+    color: var(--gl-ink-2);
+    cursor: pointer;
+    transition: border-color var(--gl-t-hover) var(--gl-ease), color var(--gl-t-hover) var(--gl-ease);
+  }
+  .control:hover {
+    border-color: var(--gl-ink);
+    color: var(--gl-ink);
+  }
+  .control svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+  }
+
   .live {
     position: absolute;
     width: 1px;
@@ -256,7 +310,8 @@
 
   @media (prefers-reduced-motion: reduce) {
     .line,
-    .step {
+    .step,
+    .control {
       transition: none;
     }
   }

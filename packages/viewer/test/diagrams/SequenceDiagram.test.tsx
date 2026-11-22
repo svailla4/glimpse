@@ -335,7 +335,8 @@ describe('planSequence', () => {
   });
 });
 
-// Decision content-sized-plates: a sequence diagram is as tall as its steps, up to the plate's maximum height; past that it scrolls.
+// Decision content-sized-plates: a sequence diagram is as tall as its steps, up to the plate's maximum height (its zoom bar
+// included); past that it scrolls.
 describe('SequenceDiagram: content-sized', () => {
   it.each([
     ['no size: the diagram family\'s 640 px', '', 640],
@@ -344,9 +345,45 @@ describe('SequenceDiagram: content-sized', () => {
   ])('takes %s as its maximum height', async (_name, size, cap) => {
     const view = renderExpress(`root=Page('T',[s])\ns=SequenceDiagram(${GALLERY},title='Seq'${size})`);
     const scroll = await screen.findByRole('img', {name: /^Sequence diagram/});
-    expect(scroll.style.maxHeight).toBe(`${cap}px`);
+    expect(scroll.style.maxHeight).toBe(`${cap - 32}px`);
     // no fixed height of its own: as tall as its steps up to that
     expect(scroll.style.height).toBe('');
+    expect(view.errors).toEqual([]);
+  });
+});
+
+// The sequence diagram has the zoom bar every flowkit diagram has: buttons, the readout and + - 0 1 on the drawing.
+describe('SequenceDiagram: zoom', () => {
+  it('zooms with the buttons, the keys and a pinch, and draws at the zoom it reads out', async () => {
+    const view = await ready(GALLERY);
+    const cell = view.cell('s');
+    const drawing = screen.getByRole('img', {name: /^Sequence diagram/});
+    const readout = () => cell.querySelector('[data-zoom]')!.textContent;
+    const steps = () => cell.querySelectorAll('svg')[1]!;
+    const natural = Number(steps().getAttribute('width'));
+    expect(screen.getByRole('toolbar', {name: 'Zoom'})).toBeTruthy();
+    focus(drawing);
+    key(drawing, '1');
+    expect(readout()).toBe('100%');
+    const base = Number(steps().getAttribute('width'));
+    expect(base).toBe(natural);
+    fireEvent.click(screen.getByRole('button', {name: 'Zoom in'}));
+    expect(readout()).toBe('125%');
+    expect(Number(steps().getAttribute('width'))).toBeCloseTo(base * 1.25, 0);
+    key(drawing, '-');
+    expect(readout()).toBe('100%');
+    fireEvent.click(screen.getByRole('button', {name: 'Zoom out'}));
+    expect(readout()).toBe('80%');
+    // a pinch is a wheel with Ctrl held; the wheel alone scrolls
+    fireEvent.wheel(drawing, {deltaY: 10});
+    expect(readout()).toBe('80%');
+    fireEvent.wheel(drawing, {deltaY: -50, ctrlKey: true});
+    expect(Number.parseInt(readout()!)).toBeGreaterThan(80);
+    fireEvent.click(screen.getByRole('button', {name: 'Actual size'}));
+    expect(readout()).toBe('100%');
+    // never further out than 20%
+    for (let i = 0; i < 12; i++) key(drawing, '-');
+    expect(readout()).toBe('20%');
     expect(view.errors).toEqual([]);
   });
 });

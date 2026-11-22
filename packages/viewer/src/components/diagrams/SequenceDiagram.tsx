@@ -1,12 +1,13 @@
 // SequenceDiagram: lifelines, messages, notes and blocks written as data (design 5.6, decision diagrams-are-data). No layout
-// library: columns are actors, rows are steps, a block is a frame round its rows.
+// library: columns are actors, rows are steps, a block is a frame round its rows. It opens fitted to its cell (MIN_SCALE)
+// and scrolls under sticky actors; the bar under it zooms as flowkit's does (buttons, + - 0 1, a pinch).
 import type * as C from '@glimpse/catalog';
 import {cleanSequence, seqLeaves, type EntityRef, type SeqArrow, type SeqAst} from '@glimpse/catalog';
-import {useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode} from 'react';
+import {useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode} from 'react';
 import {
-  DataGate, Empty, Redline, fmtNum, marksSelection, useDataset, useReportState, useSelection, useSize, useSizeCap, useTooltip, type GlView,
+  DataGate, Empty, Icon, Redline, fmtNum, marksSelection, useDataset, useReportState, useSelection, useSize, useSizeCap, useTooltip, type GlView,
 } from '../../kit/index.ts';
-import {MONO_11, UI_12, fitText, markPath, roundedPath, textWidth, wrapText, type Face} from './flowkit/index.ts';
+import {CONTROLS, MONO_11, UI_12, fitText, markPath, roundedPath, textWidth, wrapText, type Face} from './flowkit/index.ts';
 import css from './SequenceDiagram.module.css';
 
 const PAD = 16;
@@ -30,6 +31,12 @@ const TIGHT = 0.68;
  * 10 px on screen (design rule diagrams-open-readable). After that it scrolls.
  */
 const MIN_SCALE = 0.91;
+/** The reader's zoom (the controls under the drawing, + - 0 1, a pinch) goes this far either way, as in flowkit. */
+const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 2.5;
+/** A bar narrower than this says "n/m" instead of "n of m in view", as in flowkit. */
+const IN_VIEW_MIN_WIDTH = 520;
+const clampZoom = (k: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, k));
 /** A message label too long for its gap takes a second line before it is cut. */
 const LABEL_LINES = 2;
 const LABEL_LINE = 15;
@@ -420,7 +427,10 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
   const plan = useMemo(() => planSequence(ast, Math.floor(width)), [ast, width]);
   const [active, setActive] = useState<number>();
   const activeRow = active !== undefined ? plan.rows[active] : undefined;
-  const {scale} = plan;
+  // The drawing opens at the plan's scale (fitted to the cell, never below MIN_SCALE); the controls set the reader's
+  // own zoom, kept while the cell resizes or a patch changes the steps, as a flowkit diagram keeps its viewport.
+  const [zoom, setZoom] = useState<number>();
+  const scale = zoom ?? plan.scale;
   const {selected, select} = useSelection(id);
   const entities = useMemo(() => entitiesOf(id, ast, plan), [id, ast, plan]);
   // The row of this diagram's message that is the selection, matched by its number and its words: a patch that
@@ -463,15 +473,61 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
 
   // A diagram that is still wider than its cell scrolls sideways: say so at the edge that has more.
   const [more, setMore] = useState({left: false, right: false});
+  // While the drawing is taller than its window: the part of the steps it shows (drawing units, under the sticky actors).
+  const [shown, setShown] = useState<{top: number; bottom: number}>();
   const measure = useCallback(() => {
     const scroll = scrollRef.current;
     if (!scroll) return;
     const left = scroll.scrollLeft > 1;
     const right = scroll.scrollLeft + scroll.clientWidth < scroll.scrollWidth - 1;
     setMore(prev => (prev.left === left && prev.right === right ? prev : {left, right}));
-  }, []);
+    const tall = scroll.scrollHeight > scroll.clientHeight + 1;
+    const top = scroll.scrollTop / scale;
+    const bottom = (scroll.scrollTop + scroll.clientHeight) / scale - HEAD_H;
+    setShown(prev => (!tall ? undefined : prev && prev.top === top && prev.bottom === bottom ? prev : {top, bottom}));
+  }, [scale]);
   // Measured again whenever the drawing or the cell changes size.
-  useEffect(measure, [measure, plan.width, scale, width]);
+  useEffect(measure, [measure, plan.width, plan.height, width]);
+
+  // A zoom keeps the point at the middle of the window (or under the pinch) where it was.
+  const anchor = useRef<{x: number; y: number; at: {x: number; y: number}}>(undefined);
+  const zoomTo = useCallback((next: number, at?: {x: number; y: number}) => {
+    const scroll = scrollRef.current;
+    const k = clampZoom(next);
+    if (scroll) {
+      const point = at ?? {x: scroll.clientWidth / 2, y: scroll.clientHeight / 2};
+      anchor.current = {x: (scroll.scrollLeft + point.x) / scale, y: (scroll.scrollTop + point.y) / scale, at: point};
+    }
+    setZoom(k);
+  }, [scale]);
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    const a = anchor.current;
+    if (!scroll || !a) return;
+    anchor.current = undefined;
+    scroll.scrollLeft = a.x * scale - a.at.x;
+    scroll.scrollTop = a.y * scale - a.at.y;
+  }, [scale]);
+  const zoomBy = (factor: number) => zoomTo(scale * factor);
+  // Fit to view: the whole drawing in the cell's width and the plate's height; actual size: 100%.
+  const fit = () => zoomTo(Math.min(width / plan.width, (cap - CONTROLS) / (plan.height + HEAD_H)));
+  // A pinch (or Ctrl and the wheel) zooms; the wheel alone scrolls, as in flowkit. Not passive, so the page does not zoom too.
+  const pinch = useRef(zoomTo);
+  pinch.current = zoomTo;
+  const zoomRef = useRef(scale);
+  zoomRef.current = scale;
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const box = scroll.getBoundingClientRect();
+      pinch.current(zoomRef.current * Math.exp(-event.deltaY * 0.01), {x: event.clientX - box.left, y: event.clientY - box.top});
+    };
+    scroll.addEventListener('wheel', onWheel, {passive: false});
+    return () => scroll.removeEventListener('wheel', onWheel);
+  }, []);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -483,6 +539,10 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
     else if (event.key === 'End') next = lastRow;
     else if (event.key === 'PageDown') next = Math.min(lastRow, (active ?? -1) + 8);
     else if (event.key === 'PageUp') next = Math.max(0, (active ?? 8) - 8);
+    else if (event.key === '+' || event.key === '=') zoomBy(1.25);
+    else if (event.key === '-' || event.key === '_') zoomBy(0.8);
+    else if (event.key === '0') fit();
+    else if (event.key === '1') zoomTo(1);
     else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
       if (scrollRef.current) scrollRef.current.scrollLeft += event.key === 'ArrowRight' ? 80 : -80;
     } else if (event.key === 'Escape' && (active !== undefined || selected)) {
@@ -523,11 +583,12 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
 
   const messages = plan.rows.filter(row => row.kind === 'message').length;
   const names = plan.actors.slice(0, 8).map(actor => actor.label.slice(0, 40)).join(', ');
+  const inView = shown ? plan.rows.filter(row => row.y >= shown.top - 0.5 && row.y + row.h <= shown.bottom + 0.5).length : 0;
   const ariaLabel = `Sequence diagram, ${plan.actors.length} ${plan.actors.length === 1 ? 'participant' : 'participants'}, ${messages} ${messages === 1 ? 'message' : 'messages'}: ${names}${plan.actors.length > 8 ? ' and more' : ''}`;
 
   return (
     <div ref={boxRef} className={css.root}>
-      <div ref={scrollRef} className={css.scroll} style={{maxHeight: cap}} role="img" aria-label={ariaLabel} tabIndex={0} onKeyDown={onKeyDown} onScroll={measure}>
+      <div ref={scrollRef} className={css.scroll} style={{maxHeight: Math.max(0, cap - CONTROLS)}} role="img" aria-label={ariaLabel} tabIndex={0} onKeyDown={onKeyDown} onScroll={measure}>
         {width > 0 ? (
           <>
             <svg className={css.head} width={plan.width * scale} height={HEAD_H * scale} viewBox={`0 0 ${plan.width} ${HEAD_H}`} aria-hidden="true" onClick={onActorClick}>
@@ -571,6 +632,18 @@ function SequenceBody(p: {id: string; ast: SeqAst}) {
       </div>
       {more.left ? <div className={css.more} data-more="left" aria-hidden="true" /> : null}
       {more.right ? <div className={css.more} data-more="right" aria-hidden="true"><span className={css.moreHint}>scroll →</span></div> : null}
+      <div className={css.bar} role="toolbar" aria-label="Zoom">
+        {shown ? (
+          <span className={css.inView} data-in-view="" title={`${inView} of ${plan.rows.length} steps in view. Scroll for the rest; Fit to view shows everything`}>
+            {width >= IN_VIEW_MIN_WIDTH ? `${inView} of ${plan.rows.length} in view` : `${inView}/${plan.rows.length}`}
+          </span>
+        ) : null}
+        <span className={css.zoom} data-zoom="">{Math.round(scale * 100)}%</span>
+        <button type="button" className={css.control} tabIndex={-1} aria-label="Zoom out" title="Zoom out (−)" onClick={() => zoomBy(0.8)}><Icon name="zoom-out" /></button>
+        <button type="button" className={css.control} tabIndex={-1} aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoomBy(1.25)}><Icon name="zoom-in" /></button>
+        <button type="button" className={css.control} tabIndex={-1} aria-label="Fit to view" title="Fit to view (0)" onClick={fit}><Icon name="fit" /></button>
+        <button type="button" className={css.control} tabIndex={-1} aria-label="Actual size" title="Actual size (1)" onClick={() => zoomTo(1)}><Icon name="reset" /></button>
+      </div>
       <div className={css.live} aria-live="polite">{activeRow?.said ?? ''}</div>
     </div>
   );
