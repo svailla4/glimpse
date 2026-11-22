@@ -186,6 +186,28 @@ test.describe('diagram-engine-in-worker/content-sized-plates: diagrams open whol
     await expect(plate.locator('[data-in-view]')).toHaveCount(0);
     await expect(plate.locator('.react-flow__minimap')).toHaveCount(0);
   });
+
+  // Boxes sized to their own text, up to 240 px, beside a 140 px name column cut with an ellipsis, drew a ragged pile:
+  // 'HOST (LOOPBACK HTT…', two-line boxes beside empty room, and a third line cut off.
+  test('Layers lines its boxes up in equal columns from tier to tier and shows every tier name whole', async ({page, glimpse}) => {
+    const data = `[{name:'MCP tool',items:['showRequest: arguments to spec texts','showTool: wait, then write the result']},
+{name:'Host (loopback HTTP)',items:['SseHub.publish: one frame to every tab','POST /api/renderer: reports and clicks']},
+{name:'Viewer (the tab)',items:['hub: EventSource and fetch','apply: messages into the MessageProcessor','implement: grid cell, title frame and error boundary around each component']}]`;
+    await showSettled(page, glimpse, 'tiers', `root=Page('Tiers',[l])\nl=Layers(${data},title='Tiers')`);
+    const plate = page.locator('.gl-cell[data-id="l"]');
+    const boxes = await plate.locator('[data-layer-item]').evaluateAll(items => items.map(item => {
+      const box = item.getBoundingClientRect();
+      return {x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.width), h: Math.round(box.height)};
+    }));
+    expect(new Set(boxes.map(box => box.x)).size, JSON.stringify(boxes)).toBe(3);
+    expect(new Set(boxes.map(box => box.w)).size, JSON.stringify(boxes)).toBe(1);
+    // the last tier's three boxes are one row, as tall as its tallest
+    expect(new Set(boxes.slice(4).map(box => `${box.y} ${box.h}`)).size, JSON.stringify(boxes)).toBe(1);
+    const cut = await plate.locator('[data-text]').evaluateAll(texts => texts
+      .filter(text => text.scrollHeight > text.clientHeight + 1 || text.scrollWidth > text.clientWidth + 1)
+      .map(text => text.textContent));
+    expect(cut).toEqual([]);
+  });
 });
 
 // Decision links-through-node-ids: diagrams and lists the model writes link through node ids (node:'PG'), and a selected message lights
