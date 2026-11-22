@@ -358,6 +358,8 @@ export function useHostActions(componentId: string) {
       refresh: () => send('gl_refresh', {}),
       /** Queue an agent event (Ask). */
       emit: (name: string, context: Record<string, unknown>) => send(name, context),
+      /** Keep the number a Slider set; the server takes the path from the Slider's own binding (decision D25). */
+      set: (value: number) => send('gl_set', {value}),
     };
   }, [surface, componentId]);
 }

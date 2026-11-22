@@ -257,3 +257,52 @@ test('a dragged graph node stays where it was put until Re-layout (design 12.1.B
     return Math.abs(reset.x - start.x) + Math.abs(reset.y - start.y);
   }).toBeLessThan(12);
 });
+
+// Decision D25: a Slider writes its $/path in the tab, the calls reading it recompute there at once, and on commit
+// the server keeps the number and tells the agent what it computed. A reload and a re-show of the same spec keep it;
+// a write to the exact path resets it.
+test('what-if: a number set with a Slider recomputes in the tab and is kept by the server', async ({page, glimpse, watched}) => {
+  const spec = [
+    `root=Page('Ticketing: on-sale what-if',[inputs,peak])`,
+    '$/w={seats:50000,secs:120,conv:0.6}',
+    `inputs=Row([Slider('Seats on sale',$/w/seats,1000,200000,step=1000),Slider('Sale window',$/w/secs,10,600,step=10,unit='s'),Slider('Checkout conversion',$/w/conv,0.05,1,step=0.05)])`,
+    'rps=div(mul($/w/seats,$/w/conv),$/w/secs)',
+    `peak=Stats([{label:'Peak checkout',value:rps,unit:'req/s'},{label:'Redis',value:mul(rps,4),unit:'ops/s'},{label:'Postgres writes',value:mul(rps,2),unit:'/s'}],title='Load at peak')`,
+  ].join('\n');
+  const shown = await glimpse.call('show', {id: 'what-if', spec});
+  expect(shown.isError, shown.text).toBe(false);
+  expect(shown.lines.filter(line => /^(warn|fixed) /.test(line))).toEqual([]);
+  await openViewer(page, glimpse);
+  await expectSettled(page);
+  const values = page.locator('.gl-cell[data-id="peak"] [data-gl-stat-value]');
+  const seats = page.getByRole('spinbutton', {name: 'Seats on sale'});
+  await expect(values).toHaveText(['250', '1,000', '500']);
+
+  await seats.fill('80000');
+  await seats.press('Enter');
+  await expect(values).toHaveText(['400', '1,600', '800']);
+  await expect.poll(async () => (await glimpse.call('events', {})).text, {timeout: 5000})
+    .toBe('viewer: set $/w/seats 80000 (what-if) -> Stats#peak data/0/value=400 data/1/value=1600 data/2/value=800');
+
+  await page.reload();
+  await expectSettled(page);
+  await expect(seats).toHaveValue('80000');
+  await expect(values).toHaveText(['400', '1,600', '800']);
+
+  // The same spec again: the seed is unchanged, so what the user set stands, and the agent is told how to change it.
+  const again = await glimpse.call('show', {id: 'what-if', spec});
+  expect(again.isError, again.text).toBe(false);
+  expect(again.lines).toContain('fixed $/w/seats stays 80000 (set in the tab); write $/w/seats=... itself to change it');
+  await expect(seats).toHaveValue('80000');
+  await expect(values).toHaveText(['400', '1,600', '800']);
+
+  // A patch of another number in the same slot keeps it; a write to the exact path resets it.
+  expect((await glimpse.call('show', {id: 'what-if', spec: '$/w/conv=0.5'})).isError).toBe(false);
+  await expect(values.first()).toHaveText('333.33');
+  await expect(seats).toHaveValue('80000');
+  expect((await glimpse.call('show', {id: 'what-if', spec: '$/w/seats=50000'})).isError).toBe(false);
+  await expect(seats).toHaveValue('50000');
+  // 50,000 x 0.5 / 120: conversion is 0.5 since the patch above.
+  await expect(values.first()).toHaveText('208.33');
+  expect(watched.problems).toEqual([]);
+});
