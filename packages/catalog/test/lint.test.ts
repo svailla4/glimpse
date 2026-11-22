@@ -10,9 +10,9 @@ const propsOf = (def: (typeof COMPONENTS)[number]) => Object.entries(def.props) 
 const propOf = (component: string, key: string): Prop => (COMPONENT_BY_NAME.get(component)!.props as Record<string, Prop>)[key]!;
 
 describe('catalog lint', () => {
-  it('has 44 uniquely named components and none is called Surface', () => {
-    expect(COMPONENTS).toHaveLength(44);
-    expect(COMPONENT_BY_NAME.size).toBe(44);
+  it('has 43 uniquely named components and none is called Surface', () => {
+    expect(COMPONENTS).toHaveLength(43);
+    expect(COMPONENT_BY_NAME.size).toBe(43);
     expect(COMPONENT_BY_NAME.has('Surface')).toBe(false);
     for (const def of COMPONENTS) expect(def.name, def.name).toMatch(/^[A-Z][A-Za-z0-9]*$/);
   });

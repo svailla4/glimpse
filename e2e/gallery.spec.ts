@@ -11,8 +11,8 @@ const catalog = JSON.parse(readFileSync(join(ROOT, 'packages', 'catalog', 'gener
 const COMPONENTS = Object.keys(catalog.components);
 const SECTIONS = ['layout', 'content', 'data', 'charts', 'diagrams', 'code', 'input'];
 
-test('the catalog has 44 components', () => {
-  expect(COMPONENTS).toHaveLength(44);
+test('the catalog has 43 components', () => {
+  expect(COMPONENTS).toHaveLength(43);
 });
 
 test('gallery: every component renders; a screenshot per section, theme and width', async ({page, glimpse, watched}, testInfo) => {

@@ -36,7 +36,7 @@ Paths are relative to the plugin directory (`plugin/` in the repository).
 ## Where each component ships
 
 - `dist/server.mjs` (the MCP server): @a2ui/agent 0.1.0, @a2ui/web_core 0.15.0, @lit-labs/ssr-dom-shim 1.6.0, @lit/context 1.1.6, @lit/reactive-element 2.1.2, @modelcontextprotocol/core 2.4.0, @modelcontextprotocol/server 2.4.0, @preact/signals-core 1.14.5, @shikijs/core 4.6.0, @shikijs/engine-javascript 4.6.0, @shikijs/langs 4.6.0, @shikijs/primitive 4.6.0, @shikijs/types 4.6.0, @shikijs/vscode-textmate 10.1.0, antlr4ng 3.0.16, ccount 2.0.1, character-entities-html4 2.1.0, character-entities-legacy 3.0.0, comma-separated-tokens 2.0.3, diff 9.0.0, esbuild 0.28.2, hast-util-to-html 9.0.7, hast-util-whitespace 3.0.0, html-void-elements 3.0.0, ignore 7.0.16, lit 3.3.3, lit-element 4.2.2, lit-html 3.3.3, oniguruma-parser 0.12.2, oniguruma-to-es 4.3.6, property-information 7.2.0, redos-detector 6.1.4, regex 6.1.0, regex-recursion 6.0.2, regex-utilities 2.3.0, shiki 4.6.0, smol-toml 1.9.1, space-separated-tokens 2.0.2, stringify-entities 4.0.4, validate-color 2.2.4, yaml 2.9.1, zod 3.25.76, zod 4.6.7, zod-to-json-schema 3.25.2, zwitch 2.0.4.
-- `dist/viewer/assets/*.js` and `*.css` (the viewer, except the ELK worker): @a2ui/react 0.15.0, @a2ui/web_core 0.15.0, @preact/signals-core 1.14.5, @tanstack/react-virtual 3.14.26, @tanstack/virtual-core 3.19.11, @xyflow/react 13.0.2, @xyflow/system 1.0.0, classcat 5.0.5, d3-array 3.2.5, d3-color 3.1.1, d3-dispatch 3.0.2, d3-drag 3.0.1, d3-ease 3.0.2, d3-format 3.1.3, d3-hierarchy 3.1.3, d3-interpolate 3.0.2, d3-path 3.1.1, d3-scale 4.0.3, d3-selection 3.0.1, d3-shape 3.2.1, d3-time 3.1.1, d3-time-format 4.1.1, d3-timer 3.0.2, d3-transition 3.0.2, d3-zoom 3.0.1, lucide-react 1.76.0, markdown-to-jsx 9.10.6, react 19.3.1, react-compiler-runtime 1.0.0, react-dom 19.3.1, rolldown 1.2.19, scheduler 0.28.0, vite 8.3.8, zod 3.25.76, zustand 5.1.0.
+- `dist/viewer/assets/*.js` and `*.css` (the viewer, except the ELK worker): @a2ui/react 0.15.0, @a2ui/web_core 0.15.0, @preact/signals-core 1.14.5, @tanstack/react-virtual 3.14.26, @tanstack/virtual-core 3.19.11, @xyflow/react 13.0.2, @xyflow/system 1.0.0, classcat 5.0.5, d3-array 3.2.5, d3-color 3.1.1, d3-dispatch 3.0.2, d3-drag 3.0.1, d3-ease 3.0.2, d3-format 3.1.3, d3-hierarchy 3.1.3, d3-interpolate 3.0.2, d3-path 3.1.1, d3-scale 4.0.3, d3-selection 3.0.1, d3-shape 3.2.1, d3-time 3.1.1, d3-time-format 4.1.1, d3-timer 3.0.2, d3-transition 3.0.2, d3-zoom 3.0.1, lucide-react 1.76.0, react 19.3.1, react-compiler-runtime 1.0.0, react-dom 19.3.1, rolldown 1.2.19, scheduler 0.28.0, vite 8.3.8, zod 3.25.76, zustand 5.1.0.
 - `dist/viewer/assets/elk.worker-*.js` (the ELK layout worker): elkjs 0.12.1, rolldown 1.2.19.
 - `dist/viewer/assets/*.woff`, `*.woff2` (the fonts): @fontsource-variable/ibm-plex-sans 5.3.0, @fontsource-variable/newsreader 5.3.0, @fontsource/ibm-plex-mono 5.3.0.
 
@@ -2572,26 +2572,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-```
-
-### markdown-to-jsx 9.10.6
-
-- Licence: MIT
-- Ships in: `dist/viewer/assets/*.js` and `*.css` (the viewer, except the ELK worker)
-- Project: https://markdown-to-jsx.quantizor.dev
-
-`LICENSE`:
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2015-present Evan Jacobs
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
 ### oniguruma-parser 0.12.2

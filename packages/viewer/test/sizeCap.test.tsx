@@ -60,7 +60,7 @@ describe('useSizeCap (D20: size is a maximum height)', () => {
       {id: 's', component: 'DataTable', data: [{a: 1}], size: 's'},
       {id: 'm', component: 'Graph', size: 'm'},
       {id: 'l', component: 'CodeView', size: 'l'},
-      {id: 'xl', component: 'Markdown', text: 'x', size: 'xl'},
+      {id: 'xl', component: 'Text', text: 'x', size: 'xl'},
     ]);
     expect([await capOf('s'), await capOf('m'), await capOf('l'), await capOf('xl')]).toEqual([160, 280, 420, 640]);
     for (const id of ['s', 'm', 'l', 'xl']) expect(cellOf(container, id).style.getPropertyValue('--gl-h'), id).toBe(`${await capOf(id)}px`);
@@ -73,7 +73,7 @@ describe('useSizeCap (D20: size is a maximum height)', () => {
       {id: 'erd', component: 'ERDiagram', data: {tables: []}},
       {id: 'table', component: 'DataTable', data: [{a: 1}]},
       {id: 'code', component: 'CodeView'},
-      {id: 'prose', component: 'Markdown', text: 'x'},
+      {id: 'prose', component: 'Text', text: 'x'},
       {id: 'spark', component: 'Sparkline', data: [1, 2, 3]},
     ]);
     expect([await capOf('graph'), await capOf('flow'), await capOf('erd')]).toEqual([640, 640, 640]);

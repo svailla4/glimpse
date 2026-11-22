@@ -171,27 +171,25 @@ function nameFiles(comp: WireComponent, name: string, props: Record<string, Prop
   }
 }
 
-/** The text props that draw `[[path#L10]]` refs as file links (shared/inline.tsx, MarkdownProse.tsx), by component. */
-const PROSE: Readonly<Record<string, {prop: string; markdown: boolean}>> = {
-  Text: {prop: 'text', markdown: false}, Callout: {prop: 'text', markdown: false}, Ask: {prop: 'prompt', markdown: false}, Markdown: {prop: 'text', markdown: true},
-};
+/** The text prop that draws `[[path#L10]]` refs as file links (shared/inline.tsx), by component. */
+const PROSE: Readonly<Record<string, string>> = {Text: 'text', Callout: 'text', Ask: 'prompt'};
 
 /**
  * The `[[path#L10]]` refs of a literal text, checked as a file prop is (the session says which name no file) and
  * written under the inventory's name in the text (V071). A ref to a directory (`[[src/auth/]]`) is not a file to check.
  */
 function proseRefs(comp: WireComponent, name: string, out: Expansion, names: PathNames | undefined): void {
-  const prose = PROSE[name];
-  const text = prose ? comp[prose.prop] : undefined;
-  if (!prose || typeof text !== 'string') return;
+  const prop = PROSE[name];
+  const text = prop ? comp[prop] : undefined;
+  if (!prop || typeof text !== 'string') return;
   const where = `${name}#${comp.id}`;
-  const next = replaceFileRefs(text, prose.markdown, written => {
+  const next = replaceFileRefs(text, written => {
     if (parseFileLoc(written).path.endsWith('/')) return undefined;
     const meant = named(written, out, names);
     if (out.files.length < MAX_CHECKS && !out.files.some(entry => entry.where === where && entry.file === meant)) out.files.push({where, file: meant});
     return meant === written ? undefined : meant;
   });
-  if (next !== text) comp[prose.prop] = next;
+  if (next !== text) comp[prop] = next;
 }
 
 // ---------------------------------------------------------------- field names (decision D15)

@@ -106,12 +106,12 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   - CodeView and CodeBlock `mark` (`readLineMarks`, catalog `datasets.ts`): `'lines 10-20'`, `'10..20'`, `'20-10'` are
     rewritten with a `fixed` line; unreadable parts are a `warn` line; the tab reports `W_MARK`, also for marks past
     the last line.
-  - `[[path#L10]]` refs in literal Text, Callout, Ask and Markdown (`FILE_REF`, `fileRefs`, catalog `datasets.ts`) are
-    checked like file props: missing files, directories and wrong case are reported at show time.
+  - `[[path#L10]]` refs in literal Text, Callout and Ask (`FILE_REF`, `fileRefs`, catalog `datasets.ts`) are checked
+    like file props: missing files, directories and wrong case are reported at show time.
   Kept as they are, because models already know them and errors come back with suggestions: source refs
   (`'git.churn src top=20'`), view refs, `path#L10-20`, git ranges, `sort='-field'`, ERDiagram `fk:'users.id'`.
-  Not done: `[[...]]` refs in text bound to a `$/path`, in Steps notes and in Markdown links are not checked, and a
-  file ref past the last line is reported nowhere.
+  Not done: `[[...]]` refs in text bound to a `$/path` and in Steps notes are not checked, and a file ref past the
+  last line is reported nowhere.
 - **D23: every merge into main is released (2026-11-21).** `release.yml` runs on pushes to `main` as well as on
   version tags, and releases a merge as the next patch version.
   Why: installs come from the `release` branch, and nothing had been tagged for a day of merges, so D21 and D22 were
@@ -119,3 +119,18 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   run after the build passes, not by a separate workflow: a tag pushed with `GITHUB_TOKEN` starts no other run, and a
   broken `main` should get no version. A commit that already has a version tag is left to that tag's run. Runs are
   serialized (`concurrency: release`), so each counts from the tag the last one pushed.
+- **D26: no Markdown component; Text is the one text component (2026-11-21).** The owner's call: Markdown was only
+  used for text. `Text` draws inline `code`, *em*, **strong** and `[[path#L10]]` refs and keeps line breaks; headings
+  are a `Section`, tables a `DataTable`, code a `CodeBlock`. A spec that still writes `Markdown(...)` is drawn as Text
+  with a `fixed` line that says what Text does not draw (`REMOVED_COMPONENTS`, server `spec/errors.ts`).
+  Why: Markdown was a way around the catalog. A table or a code fence in it drew as plain HTML: no checks, dead paths,
+  no sorting, no entity ids, so nothing could be selected, patched or (later) commented row by row, and a Markdown
+  table hugged its content and left two thirds of its frame empty beside a DataTable that does all of that. Same
+  reasoning as D21. Gone with it: `markdown-to-jsx`, its lazy chunk, and the fenced-block mode of `replaceFileRefs`.
+  Long text is set in columns (`Text.tsx`, `Text.module.css`): over 400 characters, not `mono`, columns of at least
+  34em once the box is 992 px wide. Why: Markdown capped prose at 72ch, so a full-width plate was half empty beside
+  its text ("there is nothing next to it"), and Text had no measure at all. Short text is never set in columns: one
+  filled column beside an empty one is the same hole.
+  Tried and dropped: placing a lone text plate beside the next plate (a shared `pairProse` in the viewer, a `fixed`
+  line from the server). It moved the hole below the text and halved the neighbour (a graph opened zoomed, with a
+  minimap). Stretching plates to the height of their row would undo D20.

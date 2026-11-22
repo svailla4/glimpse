@@ -34,12 +34,12 @@ const pick = (args: Record<string, string>, ...keys: string[]) =>
 export const VIEWS: readonly ViewMeta[] = [
   {
     name: 'overview', doc: 'Atlas of the repo: KPIs, stack, treemap, languages, module graph, file cycles, activity, hotspots, packages.',
-    slots: {'/notes': 'Markdown commentary shown under the stack chips.'},
+    slots: {'/notes': 'Commentary shown under the stack chips.'},
     build: () => `$/notes=''
 root=Page($/meta/repo/name,[kpis,stack,notes,map,langs,deps,Plate('File cycles and external packages',[side],span=4),activity,hot,pkgs],'an atlas of the codebase')
 kpis=Stats()
 stack=Chips()
-notes=Markdown($/notes)
+notes=Text($/notes)
 map=Treemap(title='Where the code is',size='l',span=7)
 langs=Plate('Languages',[SegmentedBar(),DataTable('files.langs')],span=5)
 deps=Graph(title='How modules depend on each other',size='xl',span=8)
@@ -58,10 +58,10 @@ map=Treemap(${r('files.tree', t)},size='fill')`,
   },
   {
     name: 'deps', doc: 'Architecture map: module graph, heaviest edges, file cycles, dependency matrix, external packages.', target: 'path',
-    slots: {'/notes': 'Markdown commentary.'},
+    slots: {'/notes': 'Commentary.'},
     build: t => `$/notes=''
 root=Page('Dependencies',[notes,graph,edges,cycles,matrix,ext]${t ? `,'${s(t)}'` : ''})
-notes=Markdown($/notes)
+notes=Text($/notes)
 graph=Graph(${r('deps.modules', t)},title='Module dependencies',size='xl',span=8)
 edges=DataTable(${r('deps.matrix', t)},'from to weight:bar',sort='-weight',title='Heaviest edges',size='xl',span=4)
 cycles=DataTable(${r('deps.cycles', t)},title='File cycles',note='Import cycles between files; the graph marks cycles between modules.',span=6)
@@ -70,10 +70,10 @@ ext=BarChart(${r('deps.external', t, {top: '20'})},title='External packages')`,
   },
   {
     name: 'hotspots', doc: 'Where change and complexity meet: scatter, churn treemap, ranking, co-change pairs.', target: 'path',
-    slots: {'/notes': 'Markdown commentary.'},
+    slots: {'/notes': 'Commentary.'},
     build: (t, a) => `$/notes=''
 root=Page('Hotspots',[notes,scatter,map,table,coupling]${t ? `,'${s(t)}'` : ''})
-notes=Markdown($/notes)
+notes=Text($/notes)
 scatter=ScatterPlot(${r('git.hotspots', t, pick(a, 'since'))},'commits','complexity',r='sloc',label='path',quadrants=true,title='Churn x complexity',note='Complexity is summed indentation depth, a proxy; dot size is non-blank lines.',size='l',span=7)
 map=Treemap(${r('files.tree', t)},color='churn',title='Churn on the tree',size='l',span=5)
 table=DataTable(${r('git.hotspots', t, {top: '50', ...pick(a, 'since')})},sort='-score',title='Ranking',span=7)
@@ -90,14 +90,14 @@ log=CommitList(${r('git.log', t)},title='Log',size='l',span=6)`,
   },
   {
     name: 'file', doc: 'One file in depth: code, outline, imports and importers, recent commits.', target: 'path', targetRequired: true,
-    slots: {'/notes': 'Markdown commentary.', '/marks': "CodeNote[] shown in the code gutter: [{line,text,kind?}]."},
+    slots: {'/notes': 'Commentary.', '/marks': "CodeNote[] shown in the code gutter: [{line,text,kind?}]."},
     build: t => {
       const path = parseFileLoc(t!).path;
       const imports = !NO_IMPORTS.test(path);
       return `$/notes=''
 $/marks=[]
 root=Page('${s(path)}',[notes,Grid([code,Column([outline,log])],'2:1')${imports ? ',near' : ''}])
-notes=Markdown($/notes)
+notes=Text($/notes)
 code=CodeView('${s(t!)}',notes=$/marks,size='fill')
 outline=SymbolOutline('${s(path)}',title='Outline',size='l')${imports ? `
 near=Graph(${r('deps.files', path)},focus='${s(path)}',title='Imports and importers')` : ''}
@@ -121,13 +121,13 @@ todos=DataTable('code.todos',title='TODO / FIXME',span=6)`,
   },
   {
     name: 'diff', doc: "Review a change: stats, the diff with its file list, blast radius, commits. Range 'wt' (default), 'staged' or 'main..HEAD'.", target: 'range',
-    slots: {'/notes': 'Markdown review notes.'},
+    slots: {'/notes': 'Review notes.'},
     build: t => {
       const range = t ?? 'wt';
       return `$/notes=''
 root=Page('Changes',[kpis,notes,diff,impact,log],'${s(range)}')
 kpis=Stats(${r('diff.stats', range)})
-notes=Markdown($/notes)
+notes=Text($/notes)
 diff=DiffView('${s(range)}',title='Diff',size='fill')
 impact=Graph(${r('diff.impact', range)},title='Blast radius',span=7)
 log=${range === 'wt' || range === 'staged' ? `List('code.todos top=8',title='Open TODOs',span=5)` : `CommitList(${r('git.log', range)},title='Commits',size='l',span=5)`}`;
@@ -135,14 +135,14 @@ log=${range === 'wt' || range === 'staged' ? `List('code.todos top=8',title='Ope
   },
   {
     name: 'feature', doc: 'Follow a feature while it is built: plan, design, notes, live working-tree diff, blast radius.',
-    slots: {'/plan': "StepItem[]: [{title,note?,status?,file?}] with status todo|doing|done|blocked|skipped.", '/notes': 'Markdown notes.'},
+    slots: {'/plan': "StepItem[]: [{title,note?,status?,file?}] with status todo|doing|done|blocked|skipped.", '/notes': 'Notes.'},
     replace: {design: "the design drawing: $/design={nodes:{A:'Request',B:{label:'OK?',shape:'diamond'}},edges:[['A','B']]}; design=Flowchart($/design,title='Design'), or design=SequenceDiagram({steps:[...]})"},
     build: () => `$/plan=[]
 $/notes=''
 root=Page('Feature',[Grid([plan,design],'1:2'),notes,changes,impact],'working tree')
 plan=Steps($/plan,title='Plan')
-design=Markdown('_No design drawn yet._',title='Design')
-notes=Markdown($/notes)
+design=Text('No design drawn yet.','dim',title='Design')
+notes=Text($/notes)
 changes=DiffView(title='Working tree',size='xl')
 impact=Graph('diff.impact wt',title='Blast radius')`,
   },

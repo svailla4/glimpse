@@ -51,7 +51,7 @@ describe('normalizer, as the compiler receives it', () => {
 
 describe('compileSpec', () => {
   it('a spec with root creates the surface in one message, data folded in', () => {
-    const {messages, fixes} = compile(`$/notes='hello'\nroot=Page('Title',[notes])\nnotes=Markdown($/notes)`);
+    const {messages, fixes} = compile(`$/notes='hello'\nroot=Page('Title',[notes])\nnotes=Text($/notes)`);
     expect(messages.map(kind)).toEqual(['createSurface']);
     expect(fixes).toEqual([]);
     const first = messages[0]!;
@@ -60,7 +60,7 @@ describe('compileSpec', () => {
     expect(first.createSurface.dataModel).toEqual({notes: 'hello'});
     expect(created(messages)).toEqual([
       {id: 'root', component: 'Page', title: 'Title', children: ['notes']},
-      {id: 'notes', component: 'Markdown', text: {'@path': '/notes'}},
+      {id: 'notes', component: 'Text', text: {'@path': '/notes'}},
     ]);
   });
 
@@ -100,16 +100,16 @@ describe('compileSpec', () => {
 
 // Finding F036: both cold writers added a part to a preset and got E_REF with nothing they could resend.
 describe('a new part nobody refers to', () => {
-  const stored = () => seedOf(compile(`root=Page($/meta/repo/name,[kpis,notes],subtitle='Overview')\nkpis=Stats()\nnotes=Markdown('n')`).messages);
+  const stored = () => seedOf(compile(`root=Page($/meta/repo/name,[kpis,notes],subtitle='Overview')\nkpis=Stats()\nnotes=Text('n')`).messages);
 
   it('is appended to the stored root on a patch, and the fix says so', () => {
-    const {messages, fixes} = compile(`notes=Markdown('changed')\ntodos=DataTable('code.todos',title='TODO comments')`, stored());
+    const {messages, fixes} = compile(`notes=Text('changed')\ntodos=DataTable('code.todos',title='TODO comments')`, stored());
     expect(fixes).toEqual(['todos appended to root (resend root=... to place it elsewhere)']);
     expect(messages.map(kind)).toEqual(['updateComponents', 'updateComponents']);
     const [rootUpdate, patch] = messages as Array<Extract<A2uiMessage, {updateComponents: unknown}>>;
     // the root keeps everything it had: the bound title, the subtitle, the children in order
     expect(rootUpdate!.updateComponents.components).toEqual([{id: 'root', component: 'Page', title: {'@path': '/meta/repo/name'}, children: ['kpis', 'notes', 'todos'], subtitle: 'Overview'}]);
-    expect(patch!.updateComponents.components.map(c => [c.id, c.component])).toEqual([['notes', 'Markdown'], ['todos', 'DataTable']]);
+    expect(patch!.updateComponents.components.map(c => [c.id, c.component])).toEqual([['notes', 'Text'], ['todos', 'DataTable']]);
   });
 
   it('works for several parts at once and for a preset patched in the same call', () => {
@@ -182,7 +182,7 @@ describe('originalLine', () => {
   });
 
   it('is used for syntax errors', () => {
-    const source = `root=Page('x',[a])\na=Markdown('one\ntwo')\nb=Text('y',,)`;
+    const source = `root=Page('x',[a])\na=Text('one\ntwo')\nb=Text('y',,)`;
     expect(() => compile(source)).toThrow(/^E_SYNTAX line 4 col /);
   });
 });

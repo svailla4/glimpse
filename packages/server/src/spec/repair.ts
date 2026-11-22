@@ -4,7 +4,7 @@
 // (Grid cols=4); an unexpected end of input closes the open brackets. Everything else stays an error. A repair
 // edits the normalized Express text and is reported to the model as `fixed A -> B`, so it learns the right spelling.
 import {COMPONENT_BY_NAME, enumValue, type Prop} from '@glimpse/catalog';
-import {closeMatch, componentMatch, type RepairHint} from './errors.ts';
+import {closeMatch, componentMatch, REMOVED_COMPONENTS, type RepairHint} from './errors.ts';
 import {stringValue, tokenize, type SpecToken} from './guard.ts';
 
 export interface Repair {
@@ -29,7 +29,8 @@ function renameComponent(src: string, name: string): Repair | undefined {
   if (!target) return undefined;
   const {tokens} = tokenize(src);
   const edits = tokens.filter((t, i) => t.kind === 'ident' && t.text === name && tokens[i + 1]?.text === '(').map(t => ({start: t.start, end: t.end, text: target}));
-  return edits.length > 0 ? {text: replaceAt(src, edits), note: `${name} -> ${target}`} : undefined;
+  const removed = Object.hasOwn(REMOVED_COMPONENTS, name) ? `: ${REMOVED_COMPONENTS[name]!.note}` : '';
+  return edits.length > 0 ? {text: replaceAt(src, edits), note: `${name} -> ${target}${removed}`} : undefined;
 }
 
 /** One argument written directly inside a call: `value` is its first token. */

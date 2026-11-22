@@ -288,8 +288,17 @@ export function componentNearest(name: string, n = 3): string[] {
     .sort((x, y) => x.d - y.d || x.index - y.index).slice(0, n).map(x => x.candidate);
 }
 
-/** The single component a misspelt name most plausibly meant (same limits as closeMatch), or undefined. */
+/**
+ * Components that were removed, the one that now draws what they drew, and what the rename does not carry over.
+ * Decision D26: Markdown became Text, so a spec written from habit or from an older skill still draws.
+ */
+export const REMOVED_COMPONENTS: Readonly<Record<string, {to: string; note: string}>> = {
+  Markdown: {to: 'Text', note: 'headings, tables and code fences show as written: use Section, DataTable, CodeBlock'},
+};
+
+/** The single component a misspelt or removed name most plausibly meant (same limits as closeMatch), or undefined. */
 export function componentMatch(name: string): string | undefined {
+  if (Object.hasOwn(REMOVED_COMPONENTS, name)) return REMOVED_COMPONENTS[name]!.to;
   const limit = name.length <= 4 ? 1 : 2;
   const ranked = COMPONENT_NAMES.map(candidate => ({candidate, d: componentDistance(name, candidate)})).sort((x, y) => x.d - y.d);
   const [best, second] = ranked;

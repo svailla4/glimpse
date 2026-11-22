@@ -175,7 +175,7 @@ describe('show', () => {
       [{id: '¿?', spec: "root=Page('x',[])"}, /^E_ID id "¿\?" is not a slug/],
       [{id: 'nope', spec: "$/x=1"}, /^E_REF there is no view "nope" to patch/],
       [{spec: "root=Page('x',[DataTable('git.chrun')])"}, /^E_SOURCE DataTable#root_children_0\.data: unknown source "git\.chrun"\. Nearest: git\.churn /],
-      [{spec: "root=Page('x',[Markdown('a'),,])"}, /^E_SYNTAX line 1 col \d+: /],
+      [{spec: "root=Page('x',[Text('a'),,])"}, /^E_SYNTAX line 1 col \d+: /],
     ] as Array<[Record<string, unknown>, RegExp]>) {
       const result = await call(client, 'show', args);
       expect(result.isError, JSON.stringify(args)).toBe(true);

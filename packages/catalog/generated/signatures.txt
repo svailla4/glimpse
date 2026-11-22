@@ -9,7 +9,6 @@ A Tabs(labels*:str[], children*:children)
 C Split(start*:child, end*:child, ratio:str, dir:row|col, size:s|m|l|xl|fill)
 # content
 A Text(text*~, tone:body|lead|dim|caption|mono) +frame
-A Markdown(text*~) +frame
 A Callout(text*~, kind:note|tip|warn|risk|decision|question, title~, file~)
 A KeyValue(data*~:KeyValueData, cols:int) +frame
 A Chips(data~:ChipItem[]='repo.stack') +frame
