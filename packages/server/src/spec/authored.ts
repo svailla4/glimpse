@@ -3,7 +3,7 @@
 // cleaners (diagrams.ts), so the server checks exactly what the tab draws. From it come the checks of inline data
 // (expand.ts), of data bound to a $/path (diagramNotes) and of the links between components (linkNotes).
 import {
-  cleanFlow, cleanItems, cleanLayers, cleanSchema, cleanSequence, type Clean, type FileLoc, type LayersItem, type WireComponent,
+  cleanFlow, cleanItems, cleanLayers, cleanSchema, cleanSequence, explainValue, isCall, type Clean, type FileLoc, type LayersItem, type WireComponent,
 } from '@glimpse/catalog';
 import {looseDistance, nearest, oneLine} from './errors.ts';
 import type {FileCheck} from './expand.ts';
@@ -97,11 +97,62 @@ function boundData(comp: WireComponent, data: Record<string, unknown>): {path: s
   return path.startsWith('/') && !SERVER_PATH.test(path) ? {path, value: lookup(data, path)} : undefined;
 }
 
+/** The $/paths bound inside inline data, outside calls (the paths a call reads are calcNotes' to check). */
+export function inlinePaths(value: unknown, into: string[] = []): string[] {
+  if (isBinding(value)) into.push(value['@path']);
+  else if (!isCall(value) && typeof value === 'object' && value !== null) for (const item of Object.values(value)) inlinePaths(item, into);
+  return into;
+}
+
+/**
+ * Inline data as the tab's view reads it (decision D25): A2UI computes each call and resolves each $/path inside a
+ * component's arguments, inline data included, before the view sees them, so the cleaners must not judge the call or
+ * binding objects themselves (a call in a Layers item is drawn as its number, not "no label"). A call is its number,
+ * or 0 when it has none (calcNotes says why); a $/path is what `read` finds there. Undefined when a path cannot be read
+ * here (relative, or the server's or the viewer's): what draws is then the tab's to report.
+ */
+export function asDrawn(value: unknown, read: (path: string) => unknown = () => undefined): {value: unknown} | undefined {
+  let unknown = false;
+  const walk = (v: unknown): unknown => {
+    if (isBinding(v)) {
+      const path = v['@path'];
+      if (path.startsWith('/') && !SERVER_PATH.test(path)) return read(path);
+      unknown = true;
+      return v;
+    }
+    if (isCall(v)) {
+      const got = explainValue(v, read);
+      return 'value' in got && typeof got.value === 'number' ? got.value : 0;
+    }
+    if (Array.isArray(v)) return v.map(walk);
+    if (isRecord(v)) return Object.fromEntries(Object.entries(v).map(([key, item]) => [key, walk(item)]));
+    return v;
+  };
+  const drawn = walk(value);
+  return unknown ? undefined : {value: drawn};
+}
+
+/**
+ * What a component's data draws from the data model, for the checks run after the call: data bound to a $/path, and
+ * inline data with $/paths inside it, read as the tab reads it (asDrawn). `at` names it in a message, `paths` are the
+ * paths it reads. Undefined for inline data that reads no path (expandComponent checks it) and for data that cannot
+ * be read here.
+ */
+function dataRead(comp: WireComponent, data: Record<string, unknown>): {at: string; paths: string[]; value: unknown} | undefined {
+  const bound = boundData(comp, data);
+  if (bound) return {at: `$${bound.path}`, paths: [bound.path], value: bound.value};
+  if (comp.data === undefined || typeof comp.data === 'string' || isBinding(comp.data) || isCall(comp.data)) return undefined;
+  const paths = inlinePaths(comp.data);
+  const drawn = paths.length > 0 ? asDrawn(comp.data, path => lookup(data, path)) : undefined;
+  return drawn && {at: 'data', paths, value: drawn.value};
+}
+
 /**
  * What the components bound to a $/path draw from the data model after a call, as `fixed` and `warn` lines, and the
  * files their data names (decision D24), for the session to check: those the call defines, and those whose path the
- * call wrote (`$/arch/nodes/G/group='api'` changes a diagram the call does not name). Inline data was checked by
- * expandComponent. `written` holds the top segments of the paths written.
+ * call wrote (`$/arch/nodes/G/group='api'` changes a diagram the call does not name). Inline data with $/paths inside
+ * it is checked here too, as the tab reads it (dataRead); the rest of inline data was checked by expandComponent.
+ * `written` holds the top segments of the paths written.
  */
 export function diagramNotes(
   components: Iterable<WireComponent>, data: Record<string, unknown>, defined: ReadonlySet<string>, written: ReadonlySet<string>,
@@ -109,15 +160,15 @@ export function diagramNotes(
   const notes = {fixes: [] as string[], warnings: [] as string[], files: [] as FileCheck[]};
   for (const comp of components) {
     const read = AUTHORED[comp.component];
-    const bound = read ? boundData(comp, data) : undefined;
-    if (!read || !bound) continue;
-    if (!defined.has(comp.id) && !written.has(topSegment(bound.path))) continue;
+    const drawn = read ? dataRead(comp, data) : undefined;
+    if (!read || !drawn) continue;
+    if (!defined.has(comp.id) && !drawn.paths.some(path => written.has(topSegment(path)))) continue;
     // Nothing there is reported as an unbound path.
-    if (bound.value === undefined) continue;
+    if (drawn.value === undefined) continue;
     const where = `${comp.component}#${comp.id}`;
-    const cleaned = read(bound.value);
+    const cleaned = read(drawn.value);
     if (!cleaned.ok) {
-      notes.warnings.push(`${where}: E_SHAPE $${bound.path}: ${cleaned.error}`);
+      notes.warnings.push(`${where}: E_SHAPE ${drawn.at}: ${cleaned.error}`);
       continue;
     }
     notes.fixes.push(...cleaned.fixes.map(fix => `${where}: ${fix}`));
@@ -153,10 +204,11 @@ export function linkNotes(
   for (const comp of components) {
     const read = AUTHORED[comp.component];
     if (!read) continue;
-    const bound = boundData(comp, data);
     // A Graph drawn from a source has node ids nobody here can see: any link may be to one of them.
-    if (comp.component === 'Graph' && isBinding(comp.data) && !bound) return [];
-    const value = bound ? bound.value : isBinding(comp.data) ? undefined : comp.data;
+    if (comp.component === 'Graph' && isBinding(comp.data) && !boundData(comp, data)) return [];
+    // Inline data is read as the tab reads it, its calls computed and its $/paths resolved (asDrawn).
+    const drawn = dataRead(comp, data);
+    const value = drawn ? drawn.value : isBinding(comp.data) ? undefined : asDrawn(comp.data)?.value;
     // Text is a source ref (or Mermaid, already refused): it declares and links nothing the server can read.
     if (value === undefined || typeof value === 'string') continue;
     const cleaned = read(value);
@@ -164,7 +216,7 @@ export function linkNotes(
     for (const {id, label} of cleaned.ast.declares) key(id, comp.id, label);
     const ids = [...new Set(cleaned.ast.links.flatMap(link => link.ids))];
     for (const id of ids) key(id, comp.id);
-    if (ids.length > 0 && (defined.has(comp.id) || (bound !== undefined && written.has(topSegment(bound.path))))) linking.push({comp, ids});
+    if (ids.length > 0 && (defined.has(comp.id) || (drawn?.paths.some(path => written.has(topSegment(path))) ?? false))) linking.push({comp, ids});
   }
   const lines: string[] = [];
   for (const {comp, ids} of linking) {

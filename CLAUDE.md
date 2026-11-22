@@ -180,7 +180,11 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
     statement and a named call nothing uses are `warn` lines (a patch of only such a call is the `E_REF` with that
     text); a call in `$/data` or as an action, a Slider bound to a literal, a call, a relative path or a path under
     `/ui`, `/ds` or `/meta`, and `min >= max` are reported; `calcNotes` warns about a call that cannot compute from
-    the model's own data.
+    the model's own data. Inline diagram, Steps and table data is checked as the tab draws it (`asDrawn`,
+    authored.ts): A2UI computes the calls and resolves the `$/paths` inside a component's arguments before the view
+    reads them, so a call is checked as its number, and inline data with `$/paths` inside is checked by
+    `diagramNotes` against the data model. Judging the call or binding objects themselves gave `not drawn` lines for
+    parts that drew.
   Why: `fn(args)` is A2UI's own convention, so there is no grammar of ours (D22), and A2UI already does reactivity and
   two-way binding. Outputs stay ordinary props, so any Stat, Stats row or table cell can show one and D24 links can
   reach them. Rejected: a formula string (a grammar, refused as Mermaid was under D21); a self-contained what-if
@@ -189,10 +193,10 @@ Decisions are cited by number in code comments (`decision D19`). Earlier ones ar
   arguments and no `sub`; `round`; storing inputs under `/ui`.
   Budgets: instructions 3,748 (`Components (? optional):` paid for the Slider index entry). The eager script did not
   fit: the 45 component `example` strings moved from `ComponentMeta` to `COMPONENT_EXAMPLES` in docs.ts, since the tab
-  never reads them (about 1.4 kB gzip); it is 194,149 of 195,000 bytes with the Slider. GRAMMAR rule 9 is shorter
+  never reads them (about 1.4 kB gzip); it is 194,159 of 195,000 bytes with the Slider. GRAMMAR rule 9 is shorter
   than designed, to stay under F043's 1,600 characters.
   Not done: a call reading `/ds` is not checked at show time; the model resets a number only by writing its leaf
   path; a second tab sees a set number at its next snapshot; a number set after the session ended changes only the
-  tab; a step of 0 or less is read as no step without a report. A call inside diagram data is not computed: a Layers
-  item or ER entry holding one is left out with a warning, but a Flowchart or sequence label holding one is drawn as
-  the id (or empty) with no report, a D22 gap in `labelOf` and the message reader that predates D25.
+  tab; a step of 0 or less is read as no step without a report. A call in data bound to a `$/path` is not computed
+  (the `$/data` warning says so), and the tab then draws a diagram label holding one as its id, without a report of
+  its own.

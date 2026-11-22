@@ -7,9 +7,9 @@
 // cleanFlow, cleanSequence, cleanLayers and cleanSchema, about 6 kB gzip, in the eager script).
 import {MAX_ENTITY_NODES} from './datasets.ts';
 
-/** What a value is, for the messages: 'a string', 'an array', 'null'. */
+/** What a value is, for the messages: 'a string', 'an array', 'null'; 'nothing' for a $/path that is not set. */
 export const describeValue = (v: unknown): string =>
-  v === null ? 'null' : Array.isArray(v) ? 'an array' : typeof v === 'object' ? 'an object' : `a ${typeof v}`;
+  v === null ? 'null' : v === undefined ? 'nothing' : Array.isArray(v) ? 'an array' : typeof v === 'object' ? 'an object' : `a ${typeof v}`;
 // diagrams.ts has its own copies of these two: they are not part of the catalog's interface.
 const textOf = (v: unknown): string | undefined =>
   typeof v === 'string' && v.trim() !== '' ? v.trim() : typeof v === 'number' && Number.isFinite(v) ? String(v) : undefined;

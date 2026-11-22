@@ -130,6 +130,15 @@ describe('Layers', () => {
     );
   });
 
+  // Decision D25: the server checks inline data as drawn here (asDrawn), calls computed and $/paths resolved.
+  it('draws a call or a $/path inside inline items as its value, with nothing reported', async () => {
+    const view = await ready(`$/w={name:'cache'}\nroot=Page('T',[l])\nl=Layers([{name:'T',items:[div(1,2),{label:add(1,1)},$/w/name,{label:$/w/name,note:mul(2,3)}]}])`);
+    expect(bands(view.cell('l')).map(items)).toEqual([['0.5', '2', 'cache', 'cache']]);
+    expect(within(view.cell('l')).getByText('6')).toBeTruthy();
+    expect(view.stateOf('l')).toBe('OK');
+    expect(view.errors).toEqual([]);
+  });
+
   it('reports unknown keys of data a patch wrote (W_DROPPED)', async () => {
     const view = await ready(BOUND, {data: {'/layers': [{name: 'Data', items: [{label: 'pg', colour: 'blue'}]}]}});
     await waitFor(() => expect(view.stateOf('l')).toBe('W_DROPPED'));

@@ -310,6 +310,51 @@ describe('expandMessages: Slider and calls', () => {
     // a value that computes is no line at all
     expect(calcNotes([stat, slider], {w: {seats: 50000, secs: 120}}, ids, new Set())).toEqual([]);
   });
+
+  it('inline diagram data is checked as the tab draws it: a call is its number, not an object "not drawn"', () => {
+    const out = expand(`root=Page('x',[f,s,l,e])
+f=Flowchart({nodes:{A:{label:div(4,2),note:mul(2,2)},B:'b'},edges:[['A','B',mul(2,3)]]})
+s=SequenceDiagram({steps:[['A','B',add(1,2)],{from:'B',to:'A',label:sub(5,1)},{note:add(1,1),over:'A'}]})
+l=Layers([{name:'T',items:[div(1,2),{label:add(1,1),colour:'red'}]}])
+e=ERDiagram([{name:'t',columns:[{name:'c',type:add(1,1)}]}])`);
+    expect(out.problems).toEqual([]);
+    expect(out.fixes).toEqual([]);
+    // what is wrong beside a call is still said
+    expect(out.warnings).toEqual(['Layers#l: not drawn: ignored item key colour']);
+    // a call with no number is calcNotes' to explain, once
+    const zero = expand(`root=Page('x',[l])\nl=Layers([{name:'T',items:[div(1,0)]}])`);
+    expect(zero.warnings).toEqual([]);
+    expect(calcNotes(zero.components, {}, new Set(['l']), new Set())).toEqual(['Layers#l: data/0/items/0: div: b is 0 (division by zero)']);
+  });
+
+  it('inline diagram data with $/paths inside is checked by diagramNotes, against the data model', () => {
+    const out = expand(`$/w={x:'bx',y:'by'}\nroot=Page('x',[l])\nl=Layers([{name:'T',items:[$/w/x,{label:$/w/y,file:$/w/f}]},{name:'U',items:$/w/list}])`);
+    expect(out.problems).toEqual([]);
+    expect(out.warnings).toEqual([]);
+    expect(out.files).toEqual([]);
+    const layers = out.byComponent('Layers');
+    const ids = new Set(['l']);
+    expect(diagramNotes([layers], {w: {x: 'bx', y: 'by', f: 'db/a.sql', list: ['c']}}, ids, new Set())).toEqual({
+      fixes: [], warnings: [], files: [{where: "Layers#l item 'by'", file: 'db/a.sql', nested: true}],
+    });
+    expect(diagramNotes([layers], {w: {x: 'bx', y: {}, list: 'c'}}, ids, new Set()).warnings).toEqual([
+      'Layers#l: not drawn: tier 1 item 2: no label',
+      'Layers#l: not drawn: tier 2: items: expected a list, received a string',
+    ]);
+    // in scope through a path it reads, out of scope otherwise; a path not set is also an unbound line, as the tab draws it
+    expect(diagramNotes([layers], {w: {x: 'bx', y: {}}}, new Set(), new Set(['w'])).warnings).toEqual(['Layers#l: not drawn: tier 1 item 2: no label']);
+    expect(diagramNotes([layers], {w: {x: 'bx', y: {}}}, new Set(), new Set(['other'])).warnings).toEqual([]);
+    expect(diagramNotes([layers], {w: {y: 'by'}}, ids, new Set()).warnings).toEqual(["Layers#l: not drawn: tier 1 item 1: expected 'label' or {label}, received nothing"]);
+    expect(unboundPaths([layers], {w: {y: 'by'}})).toEqual(['$/w/x', '$/w/f', '$/w/list']);
+    // a path the server cannot read here leaves it to the tab
+    const ui: WireComponent = {id: 'l', component: 'Layers', data: [{name: 'T', items: [{'@path': '/ui/file'}]}]};
+    expect(diagramNotes([ui], {}, ids, new Set())).toEqual({fixes: [], warnings: [], files: []});
+    // a shape the data model makes wrong is said as the bound form says it
+    const flow: WireComponent = {id: 'f', component: 'Flowchart', data: {'@call': 'div', args: {a: 1, b: 2}}};
+    expect(diagramNotes([flow], {}, new Set(['f']), new Set()).warnings).toEqual([]);
+    const er: WireComponent = {id: 'e', component: 'ERDiagram', data: {tables: {'@path': '/w/t'}}};
+    expect(diagramNotes([er], {w: {t: 'users'}}, new Set(['e']), new Set()).warnings).toEqual(['ERDiagram#e: E_SHAPE data: expected tables to be an array, received a string']);
+  });
 });
 
 // Findings F032 and F090: an `ok` whose view shows a redline. What the spec alone gives away is said at once.
@@ -345,6 +390,15 @@ describe('linkNotes', () => {
     expect(linkNotes([flow, bound], data, new Set(), new Set(['tiers']))).toEqual(["Layers#tiers: node 'PGG' links to nothing on this view (nearest: PG)"]);
     // a part defined by an earlier call still declares what it declares
     expect(linkNotes([flow, tiers('PG')], {}, new Set(['tiers']), new Set())).toEqual([]);
+  });
+
+  it('reads inline data as the tab draws it: calls computed, $/paths resolved (decision D25)', () => {
+    const items = (label: unknown) => ({id: 'tiers', component: 'Layers', data: [{name: 'Data', items: [{label, node: 'PGG'}]}]}) as WireComponent;
+    const warning = "Layers#tiers: node 'PGG' links to nothing on this view (nearest: PG)";
+    expect(notes([flow, items({'@call': 'add', args: {a: 1, b: 1}})])).toEqual([warning]);
+    expect(notes([flow, items({'@path': '/w/name'})], {w: {name: 'Postgres'}})).toEqual([warning]);
+    // in scope through a path its inline data reads
+    expect(linkNotes([flow, items({'@path': '/w/name'})], {w: {name: 'Postgres'}}, new Set(), new Set(['w']))).toEqual([warning]);
   });
 
   it('says nothing beside a Graph drawn from a source; an inline Graph declares its nodes', () => {

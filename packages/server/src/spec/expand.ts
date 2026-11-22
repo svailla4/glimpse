@@ -10,7 +10,7 @@ import {
 import {ignoredMarksWarning, readLineMarks} from '@glimpse/catalog';
 import {AS_ROWS, NODE_FIELDS, readsAsRows} from '../session/datasets.ts';
 import {resolveSource, type SourceRegistry} from '../sources/registry.ts';
-import {AUTHORED, isBinding, lookup, SERVER_PATH, TEXT_DIAGRAMS} from './authored.ts';
+import {asDrawn, AUTHORED, inlinePaths, isBinding, lookup, SERVER_PATH, TEXT_DIAGRAMS} from './authored.ts';
 import {closeMatch, nearest, oneLine, problem, type Problem} from './errors.ts';
 import {pathProblem} from './guard.ts';
 
@@ -547,11 +547,12 @@ function expandComponent(comp: WireComponent, registry: SourceRegistry, out: Exp
     if (isCall(call)) out.problems.push(problem('E_TYPE', `${where(key)}: ${oneLine(call['@call'], 40)}(...) computes a number; an action is Event('name',{...}).`, {component: def.name}));
   }
   // Inline authored data (decision D24, authored.ts): what is not the shape at all is refused, the rest draws and says
-  // what it corrected or left out, and the files it names are checked like file props. Data bound to a $/path is
-  // checked against the data model after the call (diagramNotes).
+  // what it corrected or left out, and the files it names are checked like file props. It is read as the tab reads it,
+  // each call computed (decision D25, asDrawn). Data bound to a $/path, or with $/paths inside it, is checked against
+  // the data model after the call (diagramNotes).
   const authored = AUTHORED[def.name];
-  if (authored && comp.data !== undefined && typeof comp.data !== 'string' && !isDynamic(comp.data)) {
-    const cleaned = authored(comp.data);
+  if (authored && comp.data !== undefined && typeof comp.data !== 'string' && !isDynamic(comp.data) && inlinePaths(comp.data).length === 0) {
+    const cleaned = authored(asDrawn(comp.data)?.value);
     if (!cleaned.ok) out.problems.push(problem('E_SHAPE', `${where('data')}: ${cleaned.error}`, {component: def.name}));
     else {
       out.fixes.push(...cleaned.fixes.map(fix => `${def.name}#${comp.id}: ${fix}`));
