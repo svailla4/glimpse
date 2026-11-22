@@ -3,11 +3,11 @@
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {readFile, stat} from 'node:fs/promises';
+import {readdir, readFile, stat} from 'node:fs/promises';
 import {isBuiltin} from 'node:module';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {SKILL_DESCRIPTION, skillMarkdown} from '@glimpse/catalog';
+import {SKILL_DESCRIPTION, pluginFiles} from '@glimpse/catalog';
 import {afterAll, beforeAll, describe, expect, it} from 'vitest';
 import {PENDING_CONTEXT_DESCRIPTION} from '../../src/mcp/pendingContext.ts';
 import {VERSION} from '../../src/mcp/version.ts';
@@ -50,10 +50,16 @@ describe('plugin manifests', () => {
     expect(typeof marketplace.owner.name).toBe('string');
   });
 
-  it('SKILL.md is the generated skill, not a stale or hand-edited copy', async () => {
+  it('the skill, its guides and its commands are the generated files, not stale or hand-edited copies', async () => {
+    const files = pluginFiles();
+    for (const [path, text] of Object.entries(files)) expect(await readFile(join(repo, 'plugin', path), 'utf8'), path).toBe(text);
     const skill = await readFile(join(repo, 'plugin/skills/glimpse/SKILL.md'), 'utf8');
-    expect(skill).toBe(skillMarkdown());
     expect(skill.startsWith(`---\nname: glimpse\ndescription: ${SKILL_DESCRIPTION}\n---\n`)).toBe(true);
+    // and nothing else: a guide or command the catalog no longer generates is not shipped
+    for (const dir of ['skills/glimpse', 'skills/glimpse/references', 'commands']) {
+      const onDisk = (await readdir(join(repo, 'plugin', dir), {withFileTypes: true})).filter(e => e.isFile()).map(e => `${dir}/${e.name}`);
+      expect(onDisk.sort(), dir).toEqual(Object.keys(files).filter(path => path.slice(0, path.lastIndexOf('/')) === dir).sort());
+    }
   });
 
   it('the plugin README is long enough for the plugin directory and mentions every tool', async () => {
@@ -63,7 +69,7 @@ describe('plugin manifests', () => {
   });
 
   it('no plugin file contains a local path, an address or a token', async () => {
-    for (const file of ['plugin/.claude-plugin/plugin.json', 'plugin/.mcp.json', 'plugin/hooks/hooks.json', 'plugin/README.md', 'plugin/skills/glimpse/SKILL.md', '.claude-plugin/marketplace.json', 'plugin/LICENSE.md', 'plugin/NOTICE.md']) {
+    for (const file of ['plugin/.claude-plugin/plugin.json', 'plugin/.mcp.json', 'plugin/hooks/hooks.json', 'plugin/README.md', ...Object.keys(pluginFiles()).map(path => `plugin/${path}`), '.claude-plugin/marketplace.json', 'plugin/LICENSE.md', 'plugin/NOTICE.md']) {
       const text = await readFile(join(repo, file), 'utf8');
       expect(text, file).not.toMatch(/\/Users\/|\/home\/[a-z]|[\w.+-]+@[\w-]+\.[a-z]{2,}\b(?!\/)/i);
     }

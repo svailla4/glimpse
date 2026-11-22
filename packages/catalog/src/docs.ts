@@ -392,34 +392,64 @@ export function viewDoc(name: string, target?: string, args: Record<string, stri
   return lines.join('\n');
 }
 
-/** One worked `show` call. `spec` alone is a new view; with `view` it patches the preset. */
-export interface Example { title: string; when: string; view?: string; id?: string; spec?: string }
+/**
+ * One worked `show` call. `spec` alone is a new view; with `view` it patches the preset. `guide` is the skill reference
+ * that teaches it (decision views-are-blueprints, skill.ts); without one it is a quick recipe in SKILL.md itself.
+ */
+export interface Example { title: string; when: string; view?: string; id?: string; spec?: string; guide?: GuideName }
 
-/** Six recipes: catalog({names:['examples']}) and the plugin skill. Every spec compiles (test/docs.test.ts). */
+/** The skill's task guides, plugin/skills/glimpse/references/<name>.md (skill.ts). */
+export type GuideName = 'design' | 'review' | 'explain';
+
+/**
+ * Six recipes: catalog({names:['examples']}) and the plugin skill. Every spec compiles (test/support.ts corpus). The
+ * first four are the worked examples of the skill's guides (decision views-are-blueprints): models copy an example
+ * more faithfully than a rule, so each one is the page its guide describes, in its order, with little code.
+ */
 export const EXAMPLES: readonly Example[] = [
   {
-    title: 'Explain a module', when: 'The user asks how a part of the codebase works.', id: 'auth',
-    spec: `root=Page('How auth works',[intro,deps,churn,tour],'src/auth')
-intro=Text('Login goes through **AuthService**; tokens are cached for 15 minutes. See [[src/auth/service.ts#L20]].')
-deps=Graph('deps.modules src/auth',title='What it depends on',span=7)
-churn=DataTable('git.churn src/auth top=15',title='Most changed files',span=5)
-tour=CodeTour([{file:'src/auth/service.ts#L20-58',title:'Entry point',note:'Validates credentials and issues the token.'},{file:'src/auth/cache.ts#L5-30',note:'Token cache with a TTL.'}],title='Reading order')`,
+    title: 'Design a feature', when: 'Before something is built: a blueprint the user reviews and the builders work from.', id: 'limits', guide: 'design',
+    spec: `root=Page('Rate limits per API key',[lead,does,shape,why,scope,plan,ask],'Design, before building')
+lead=Text('**What:** each API key may make 100 requests a minute; past that, the API answers 429 with the seconds to wait. **Why:** the batch jobs of one client slowed every other client last week. **Unchanged:** clients under the limit, and the admin routes.')
+does=Steps([{title:'A key over 100 requests in a minute gets 429 and a Retry-After header'},{title:'A key under the limit sees no added latency'},{title:'The count resets every minute, per key'},{title:'Admin routes are never limited'}],title='What it will do')
+$/shape={groups:{new:'New'},nodes:{Req:'Request',RL:{label:'Limiter',group:'new',note:'Counts requests per key per minute'},C:{label:'Counter store',shape:'store',group:'new'},H:{label:'Route handlers',file:'src/api/routes.ts#L12-40'},E:{label:'429 + Retry-After',shape:'pill',group:'new'}},edges:[['Req','RL','every request'],['RL','C','count +1'],['RL','H','under the limit'],['RL','E','over the limit']]}
+shape=Flowchart($/shape,title='Every request passes the limiter before a handler',span=7)
+why=Column([Callout('Counts live in memory: there is one instance today. The store is an interface, so Redis can replace it when we run more.','decision','Counter store'),Callout('A fixed one-minute window rather than a sliding one: simpler to reason about. A burst of 200 across a window edge is accepted.','decision','Window'),Callout('The admin router is mounted before the API router, so it skips the limiter. That is wanted; a test pins it.','risk','Admin routes')],span=5)
+scope=Callout('Limits per user, quotas per plan, and a report of who was limited.','note','Not in this change')
+plan=Steps([{title:'Limiter and counter store',file:'src/api/limiter.ts',note:'Checked by behaviours 1 and 3'},{title:'Mount it in front of the API router',file:'src/api/routes.ts#L12',note:'Checked by behaviour 2'},{title:'Test that admin routes skip it',file:'test/api/admin.test.ts',note:'Behaviour 4'}],title='Work plan')
+ask=Ask('What limit should a key get? The first is what I would build.',['100 a minute','1,000 an hour','Set per key'],'limit')`,
   },
   {
-    title: 'Review a branch', when: 'The user asks what a branch or the working tree changes.', view: 'diff main..HEAD',
-    spec: `$/notes='**Risk:** the limiter is not wired into the admin routes. See [[src/api/routes.ts#L12]].'`,
+    title: 'Review a change', when: 'The user asks for a review of a branch, a pull request or the working tree.', id: 'review', guide: 'review',
+    spec: `root=Page('Review: rate limits per API key',[lead,shape,risk,warn,good,look,why,diff],'main..HEAD')
+lead=Text('**Verdict:** ready after one fix. The limiter counts and resets correctly and is tested, but it also limits the admin routes, which the design ruled out. **What it does:** a key over 100 requests a minute now gets 429 and the seconds to wait.')
+$/shape={groups:{before:'Before',after:'After'},nodes:{R1:{label:'Request',group:'before'},H1:{label:'Handlers',group:'before'},R2:{label:'Request',group:'after'},L:{label:'Limiter (new)',group:'after',file:'src/api/limiter.ts'},H2:{label:'Handlers',group:'after'},E:{label:'429',shape:'pill',group:'after'}},edges:[['R1','H1','every request'],['R2','L','every request'],['L','H2','under the limit'],['L','E','over the limit']]}
+shape=Flowchart($/shape,title='Requests now pass the limiter before any handler')
+risk=Callout('An admin running a bulk export is cut off after 100 requests: the limiter is mounted before the admin router, not after it. **Fix:** mount it after the admin router, and add the test the design asked for.','risk','Must fix: admin routes are limited',file='src/api/routes.ts#L14')
+warn=Callout('A limited client never learns its limit, because the 429 body is empty. **Fix:** return the limit and the seconds to wait as JSON.','warn','Should fix: empty 429 body',file='src/api/limiter.ts#L31')
+good=Callout('The counter store sits behind an interface, so moving to Redis is one new class.','tip','Done well')
+look=Steps([{title:'The limiter',file:'src/api/limiter.ts',note:'The window reset and the Retry-After value'},{title:'Where it is mounted',file:'src/api/routes.ts#L10-20',note:'Its order against the admin router'},{title:'The tests',file:'test/api/limiter.test.ts',note:'They cover the window; no admin case yet'}],title='Where to look, in order')
+why=Callout('A fixed one-minute window rather than a sliding one, for simplicity (the commit message says so).','decision','A choice the change makes')
+diff=Plate('Every line',[DiffView('main..HEAD')],collapsed=true)`,
   },
   {
-    title: 'Plan a feature', when: 'Before and while building something: the plan, the design and the live diff.', view: 'feature',
-    spec: `$/plan=[{title:'Add limiter middleware',status:'doing',file:'src/api/limiter.ts'},{title:'Wire into the router'},{title:'Tests'}]
-$/design={nodes:{Req:'Request',RL:{label:'Over limit?',shape:'diamond'},H:'Handler',E:{label:'429',shape:'pill'}},edges:[['Req','RL'],['RL','H','no'],['RL','E','yes']]}
-design=Flowchart($/design,title='Design')`,
+    title: 'Explain a module', when: 'The user asks how a part of the codebase works, or is new to it.', id: 'auth', guide: 'explain',
+    spec: `root=Page('How auth works',[lead,terms,map,code,path,rule,start],'src/auth')
+lead=Text('Auth turns a login into a session token, then checks that token on every later request. The rest of the API trusts the user it puts on the request.')
+terms=KeyValue([{label:'Session token',value:'A signed string the client sends with each request; valid for 15 minutes.'},{label:'Guard',value:'The middleware that checks the token before a route runs.'}],title='Words used here')
+map=Layers([{name:'API',items:[{label:'login route',file:'src/api/routes.ts#L12-30'},{label:'guard',file:'src/auth/guard.ts'}]},{name:'Auth',items:[{label:'AuthService',file:'src/auth/service.ts'},{label:'token cache',file:'src/auth/cache.ts'}]},{name:'Storage',items:[{label:'users table',file:'src/db/users.ts'}]}],title='Only the Auth layer reads the users table',span=7)
+code=CodeView(title='Click a box to read its code',span=5)
+path=SequenceDiagram({steps:[['Client','API','POST /login'],['API','Auth','verify(password)'],['Auth','DB','find user'],['DB','Auth','row','reply'],['Auth','API','token','reply'],['API','Client','200 + token','reply']]},title='A login, end to end')
+rule=Callout('Nothing outside src/auth reads the users table or signs a token: the guard is the only way a request gets a user.','warn','A rule not to break',file='src/auth/guard.ts#L5-25')
+start=Steps([{title:'The login route',file:'src/api/routes.ts#L12-30',note:'How the body becomes a verify call'},{title:'verify',file:'src/auth/service.ts#L20-58',note:'A constant-time compare, then the token'},{title:'The guard',file:'src/auth/guard.ts#L5-25',note:'What every later request goes through'}],title='Where to start reading')`,
   },
   {
-    title: 'Trace a request', when: 'The user asks what happens when something is called.', id: 'login',
-    spec: `root=Page('Login request',[seq,tour])
-seq=SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify(password)'],['Auth','DB','find user'],['DB','Auth','row','reply'],['Auth','API','token','reply'],['API','User','200','reply']]},title='Sequence',span=6)
-tour=CodeTour([{file:'src/api/routes.ts#L12-30',title:'Route',note:'Parses the body and calls the service.'},{file:'src/auth/service.ts#L20-58',title:'Service',note:'Constant-time compare, then issues the token.'}],title='In the code',span=6)`,
+    title: 'Trace a request', when: 'The user asks what happens when something is called.', id: 'login', guide: 'explain',
+    spec: `root=Page('What happens on POST /login',[lead,seq,code,stops])
+lead=Text('A login is checked against the stored hash and answered with a token; nothing else is written. The password never leaves the Auth service.')
+seq=SequenceDiagram({steps:[['User','API','POST /login'],['API','Auth','verify(password)'],['Auth','DB','find user'],['DB','Auth','row','reply'],['Auth','API','token','reply'],['API','User','200 + token','reply']]},title='One database read, then a token',span=7)
+code=CodeView(title='Click a stop to read it',span=5)
+stops=Steps([{title:'Route',file:'src/api/routes.ts#L12-30',note:'Parses the body and calls the service'},{title:'Service',file:'src/auth/service.ts#L20-58',note:'A constant-time compare, then the token'}],title='In the code')`,
   },
   {
     title: 'Find hotspots', when: 'The user asks where the risk or the technical debt is.', view: 'hotspots src since=180d',
@@ -448,44 +478,3 @@ export function examplesDoc(): string {
   return EXAMPLES.map(e => [`# ${e.title} - ${e.when}`, ...(e.view ? [`view: ${e.view}`] : []), ...(e.id ? [`id: ${e.id}`] : []), ...(e.spec ? [e.spec] : [])].join('\n')).join('\n\n');
 }
 
-export const SKILL_NAME = 'glimpse';
-export const SKILL_DESCRIPTION =
-  'Render interactive views of a codebase (overview, dependency graph, hotspots, diffs, code tours) in the local Glimpse viewer. Use when the user asks to see, visualize, map, explore or review a repo or a change.';
-
-/** plugin/skills/glimpse/SKILL.md: the server instructions plus the six recipes. Written by scripts/build.mjs. */
-export function skillMarkdown(): string {
-  const recipes = EXAMPLES.map(e => {
-    const lines = [`### ${e.title}`, '', e.when, ''];
-    if (e.view) lines.push(`Call \`show\` with \`view\`: \`${e.view}\`${e.spec ? ' and this `spec`:' : '.'}`, '');
-    else lines.push(`Call \`show\` with \`id\`: \`${e.id ?? 'main'}\` and this \`spec\`:`, '');
-    if (e.spec) lines.push('```', e.spec, '```', '');
-    return lines.join('\n');
-  });
-  return `---
-name: ${SKILL_NAME}
-description: ${SKILL_DESCRIPTION}
----
-
-# Glimpse
-
-Glimpse draws views of the repository in a local browser tab through the \`show\` tool of the \`glimpse\` MCP server. You describe the view; the server computes the data and the viewer paints it.
-
-\`\`\`
-${serverInstructions()}
-\`\`\`
-
-## Recipes
-
-Each recipe is a complete \`show\` call. Paths are examples: use real ones from the repository.
-
-${recipes.join('\n')}
-## Rules of thumb
-
-- Start from a preset (\`show{view:"overview"}\`) and patch it by id (\`show{id:"overview", spec:"$/notes='...'"}\`); write a full spec only when no preset fits.
-- Name sources instead of pasting data. \`query{ref}\` returns a few rows as text when you need facts to talk about.
-- Give every part you may change later a name (\`notes=Text(...)\`), then patch it by name. A new name in a patch is added at the end of the page.
-- Before writing rows by hand for a component you have not used, ask \`catalog{names:["Steps"]}\`: the answer shows the shape with an example.
-- Read the result. An \`E_\` line means nothing was rendered: resend only the failing part. A \`warn\` line (or a \`viewer: error\` line on a later result) means the view is up but one part could not draw what you asked: fix that part. A truthful empty state, such as no import cycles or a clean working tree, is not reported.
-- Field names you guess are checked against the source: a near miss is corrected (\`fixed x 'churn' -> 'commits'\`), an unknown one is dropped and the chart picks its own axis. For churn per module, use \`'git.churn by=module'\`.
-`;
-}

@@ -39,7 +39,7 @@ claude plugin install glimpse@glimpse
 
 Then start Claude Code in any project and ask for something: "show me an overview of this repo", "what does this branch change?", "walk me through `src/auth/service.ts`". The first view opens a browser tab.
 
-The plugin brings the MCP server, a skill that tells Claude when and how to use Glimpse, and a `UserPromptSubmit` hook that passes along what you clicked in the tab since your last prompt. Nothing is built on your machine: the install comes from the `release` branch, which the release workflow builds from each version tag.
+The plugin brings the MCP server, a skill that tells Claude when to use Glimpse and what a good view of a design, a review or an explanation looks like, the commands `/glimpse:design`, `/glimpse:review` and `/glimpse:explain`, and a `UserPromptSubmit` hook that passes along what you clicked in the tab since your last prompt. Nothing is built on your machine: the install comes from the `release` branch, which the release workflow builds from each version tag.
 
 To update: `claude plugin update glimpse@glimpse` (or turn on auto-update for the marketplace under `/plugin`), then `/reload-plugins` in an open session.
 
@@ -51,7 +51,7 @@ To update: `claude plugin update glimpse@glimpse` (or turn on auto-update for th
 git clone <this repository> glimpse
 cd glimpse
 npm install          # .npmrc sets ignore-scripts: no dependency runs code at install time
-npm run build        # writes plugin/dist/server.mjs, plugin/dist/viewer/ and plugin/skills/glimpse/SKILL.md
+npm run build        # writes plugin/dist/server.mjs, plugin/dist/viewer/, the skill and the commands
 ```
 
 The build also writes the third-party notices, `plugin/dist/THIRD_PARTY_NOTICES.md`, and the licence files that the fonts and the ELK layout engine need next to them (see [Licence](#licence)).
@@ -272,7 +272,7 @@ packages/
              generated docs and catalog.json, fixtures. DOM-free.
   viewer/    the React single-page app: the kit that binds views to A2UI, and the component library
   server/    the MCP server, the loopback viewer host, the repository analyzers
-plugin/      the Claude Code plugin: manifest, skill, hook, and dist/ (build output, not committed)
+plugin/      the Claude Code plugin: manifest, skill, commands, hook, and dist/ (build output, not committed)
 e2e/         the end-to-end suite; e2e/README.md lists what it covers and its known failures
 scripts/     build, budgets, demo, generate, check-paths, and the third-party notices (notices.ts, notices/)
 ```

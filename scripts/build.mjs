@@ -10,7 +10,7 @@
 //   plugin/dist/server.mjs            packages/server/src/main.ts and all its dependencies in one ESM file; it runs
 //                                     with no node_modules (the check starts it from an empty directory)
 //   plugin/dist/viewer/               a copy of packages/viewer/dist; the server serves it from next to the bundle
-//   plugin/skills/glimpse/SKILL.md    generated from the catalog (skillMarkdown() in packages/catalog/src/docs.ts)
+//   plugin/skills/glimpse/, commands/ the skill, its guides and commands, generated (pluginFiles() in packages/catalog/src/skill.ts)
 //   plugin/dist/THIRD_PARTY_NOTICES.md  the licences of every third-party component in the bundle and the viewer
 //                                     (scripts/notices.ts), with the licence files the fonts and the ELK worker need
 //                                     next to them in plugin/dist/viewer/assets; the same notices are kept in
@@ -20,7 +20,7 @@
 // previous plugin/dist/viewer (if any) is left in place, and the script says which parts are current and exits 1.
 import {spawn, spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {cp, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -111,16 +111,32 @@ async function buildServer() {
 async function writeSkill() {
   try {
     // Node strips the types of the catalog sources itself (Node 22.18 or newer, as package.json requires).
-    const {skillMarkdown} = await import(pathToFileURL(join(root, 'packages', 'catalog', 'src', 'docs.ts')).href);
-    const file = join(plugin, 'skills', 'glimpse', 'SKILL.md');
-    const text = skillMarkdown();
-    const before = await readFile(file, 'utf8').catch(() => undefined);
-    await mkdir(dirname(file), {recursive: true});
-    if (before !== text) await writeFile(file, text);
-    note('skill', 'ok', `${rel(file)} (${before === text ? 'unchanged' : 'written'})`);
+    const {pluginFiles} = await import(pathToFileURL(join(root, 'packages', 'catalog', 'src', 'skill.ts')).href);
+    const files = pluginFiles();
+    let written = 0;
+    for (const [path, text] of Object.entries(files)) {
+      const file = join(plugin, path);
+      const before = await readFile(file, 'utf8').catch(() => undefined);
+      await mkdir(dirname(file), {recursive: true});
+      if (before !== text) {
+        await writeFile(file, text);
+        written++;
+      }
+    }
+    // A guide or command that is no longer generated is removed, so the plugin never ships a stale one.
+    let removed = 0;
+    for (const dir of ['skills/glimpse/references', 'commands']) {
+      for (const name of await readdir(join(plugin, dir)).catch(() => [])) {
+        if (!(`${dir}/${name}` in files)) {
+          await rm(join(plugin, dir, name), {recursive: true});
+          removed++;
+        }
+      }
+    }
+    note('skill', 'ok', `${Object.keys(files).length} files: the skill, its guides and commands (${written} written, ${removed} removed)`);
     return true;
   } catch (error) {
-    note('skill', 'FAILED', `could not generate SKILL.md from packages/catalog/src/docs.ts: ${String(error?.message ?? error).split('\n')[0]}`);
+    note('skill', 'FAILED', `could not generate the skill from packages/catalog/src/skill.ts: ${String(error?.message ?? error).split('\n')[0]}`);
     return false;
   }
 }
