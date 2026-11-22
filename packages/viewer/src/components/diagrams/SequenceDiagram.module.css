@@ -181,7 +181,7 @@
     fill: var(--gl-ink-3);
   }
 
-  /* alt, opt, loop ...: a hairline frame with its operator in a cut-corner tab, a dashed rule per else. */
+  /* alt, opt, loop ...: a hairline frame with its operator (a group: its heading) in a cut-corner tab, a dashed rule per else. */
   .frameBox {
     fill: none;
     stroke: var(--gl-ink-3);
@@ -196,6 +196,12 @@
     font: 500 10.5px var(--gl-font-mono);
     letter-spacing: 0.04em;
     fill: var(--gl-ink-2);
+    dominant-baseline: central;
+  }
+  /* A group's heading: its label, set in the tab where another block names its kind (decision group-keeps-its-heading). */
+  .frameHeading {
+    font: 600 11.5px var(--gl-font-ui);
+    fill: var(--gl-ink);
     dominant-baseline: central;
   }
   .frameLabel {

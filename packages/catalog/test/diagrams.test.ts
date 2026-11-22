@@ -216,10 +216,17 @@ describe('cleanSequence', () => {
     expect(seqLeaves(ast.steps).map(leaf => leaf.kind === 'message' && leaf.label)).toEqual(['poll', '200', '401', 'x', 'y']);
   });
 
-  it('draws a group (rect, box) as its steps without a frame, and says so', () => {
-    const {ast, fixes} = seq([{group: 'setup', steps: [['A', 'B', 'x']]}, {box: 'z', steps: [['B', 'A', 'y']]}]);
-    expect(ast.steps.map(step => step.kind)).toEqual(['message', 'message']);
-    expect(fixes).toEqual(["step 1: block 'group' drawn without a frame", "step 2: block 'box' drawn without a frame"]);
+  // Decision group-keeps-its-heading: a group's label was dropped, so the model sent the whole diagram again to get it.
+  it('keeps a group (rect, box, an unknown block type) as a frame with its label, and says what it read', () => {
+    const {ast, fixes, dropped} = seq([
+      {group: '1. You ask', steps: [['A', 'B', 'x']]},
+      {box: 'z', steps: [['B', 'A', 'y']]},
+      {type: 'chapter', label: 'later', steps: [['A', 'B', 'w']]},
+    ]);
+    const shape = (step: (typeof ast.steps)[number]) => (step.kind === 'frame' ? (step.edge === 'open' ? `${step.op}[${step.label}]` : step.edge) : step.kind);
+    expect(ast.steps.map(shape)).toEqual(['group[1. You ask]', 'message', 'end', 'group[z]', 'message', 'end', 'group[later]', 'message', 'end']);
+    expect(fixes).toEqual(["step 2: block 'box' -> group", "step 3: block 'chapter' -> group"]);
+    expect(dropped).toEqual([]);
   });
 
   it('draws a guess and says so: arrow and block aliases', () => {
