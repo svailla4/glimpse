@@ -30520,7 +30520,7 @@ var init_sources = __esm({
         fields: [f5("package", "text"), f5("script", "code", void 0, 1), f5("command", "code", void 0, 1)]
       },
       // deps
-      // A graph source, so `top` is listed: by default the graph is cut to what a plate can show legibly (decision D7).
+      // A graph source, so `top` is listed: by default the graph is cut to what a plate can show legibly (decision readable-module-graph).
       {
         name: "deps.modules",
         kind: "graph",
@@ -61567,7 +61567,7 @@ var init_events3 = __esm({
       entries = [];
       waiters = /* @__PURE__ */ new Set();
       /**
-       * Decision D14: what the tabs said about each component, in a store of its own. It never takes a place in the
+       * Decision reports-are-component-state: what the tabs said about each component, in a store of its own. It never takes a place in the
        * queue, so a flood of reports cannot push out a press; its untold problems follow the queued lines on delivery.
        */
       reports = new ReportStore(() => this.wakeAll());
@@ -61594,7 +61594,7 @@ var init_events3 = __esm({
       }
       /**
        * Delivers pending lines, oldest first, and forgets them: the queued events, then the render problems not told yet
-       * (decision D14). With `maxChars` (the prompt hook), only as many whole event lines as fit are delivered (always at
+       * (decision reports-are-component-state). With `maxChars` (the prompt hook), only as many whole event lines as fit are delivered (always at
        * least one), the rest stay queued, and render problems wait for the next tool result.
        */
       drain(maxChars = Infinity) {
@@ -61674,7 +61674,7 @@ var init_actions = __esm({
         this.log = log;
       }
       /**
-       * Decision D27: one component state that is not an error, I_* (a truthful empty or waiting state) or OK (the
+       * Decision only-problems-are-errors: one component state that is not an error, I_* (a truthful empty or waiting state) or OK (the
        * component draws as asked), posted beside the A2UI messages. A problem code here is refused: problems are A2UI
        * renderer errors. Returns false when it was malformed or names nothing that exists.
        */
@@ -62235,7 +62235,7 @@ async function serveStatic(res, pathname, viewerDir) {
     "content-length": info.size,
     "cache-control": "public, max-age=31536000, immutable",
     // A dedicated worker runs under the CSP of its own response, not the page's: without this header the layout
-    // workers (assets/*.worker-<hash>.js; ELK among them, decision D19) would run with no policy at all. They get
+    // workers (assets/*.worker-<hash>.js; ELK among them, decision diagram-engine-in-worker) would run with no policy at all. They get
     // the page's policy unchanged: neither needs eval. Other assets ignore the header.
     "content-security-policy": CSP
   });
@@ -114787,7 +114787,7 @@ var init_session = __esm({
         return outcome;
       }
       /**
-       * Decision D3, the static half: what the server can know without a tab. A literal file that is not a file of the
+       * Decision show-reports-what-tab-drew, the static half: what the server can know without a tab. A literal file that is not a file of the
        * project and a revision git does not know each give one `Name#id: ...` warning.
        */
       async checkNamed(services, expansion) {
@@ -114832,7 +114832,7 @@ var init_session = __esm({
         return out;
       }
       /**
-       * What became known while a `show` waited (decisions D3 and D5): field names the spec asks for that the settled
+       * What became known while a `show` waited (decisions show-reports-what-tab-drew and accept-familiar-variants): field names the spec asks for that the settled
        * dataset does not have, and what the tab reported drawing instead of a component. Reports taken here are not
        * delivered again as `viewer:` lines.
        */
@@ -114858,7 +114858,7 @@ var init_session = __esm({
         return [...out, ...this.events.reports.take(outcome.id, said)];
       }
       /**
-       * Decision D14, the viewer half: a tab reports the current state of component `name#id`: OK, a truthful empty or
+       * Decision reports-are-component-state, the viewer half: a tab reports the current state of component `name#id`: OK, a truthful empty or
        * waiting state (I_*), or a problem (W_*, E_*). The store keeps the latest one; the model hears of a problem once.
        * Returns false for a surface or component that does not exist.
        */
@@ -115045,7 +115045,7 @@ var init_session = __esm({
         return changed || repository || refsMoved;
       }
       /**
-       * Decision D8: looks at HEAD and the working tree before a tool call is served, tab or no tab, and refreshes when
+       * Decision fresh-tree-every-call: looks at HEAD and the working tree before a tool call is served, tab or no tab, and refreshes when
        * they moved, so no answer is computed on a HEAD, a revision or a file index that is out of date. Cheap when
        * nothing changed (two git calls). There is deliberately no "looked a moment ago" shortcut: an agent edits a file
        * and asks in the same breath. Does nothing before the services are loaded: nothing can be stale yet. Never rejects.
@@ -115120,7 +115120,7 @@ var init_session = __esm({
       }
       // ---------------------------------------------------------------- files the viewer may ask for
       /**
-       * Decision D10: whether a repo-relative path names a file of the inventory (tracked, or untracked and not
+       * Decision untrusted-input-contained: whether a repo-relative path names a file of the inventory (tracked, or untracked and not
        * ignored). Everything under .git, ignored files, symbolic links and anything outside the root are `refused`,
        * whether or not they exist; a path with no file at all is `missing`, so a typo still reads "does not exist".
        */
@@ -115154,7 +115154,7 @@ var init_session = __esm({
       }
       /**
        * gl_drill: one dataset of one surface gets a new positional target; "" (or the spec's own target) restores the
-       * spec's scope. The envelope says where it is and what is one level out (decision D1), pending or settled, so
+       * spec's scope. The envelope says where it is and what is one level out (decision drill-has-way-back), pending or settled, so
        * the viewer's way back survives a reload.
        */
       drillTo(surfaceId2, key2, target2) {
