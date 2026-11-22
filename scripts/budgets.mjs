@@ -13,13 +13,17 @@
 //   a preset result              <= 1,200   every preset, on the deterministic fixture repository and on --repo,
 //                                           first call and repeat call (when every dataset has settled)
 // What the browser pays for, gzip (default level, as Vite reports it; 1 kB = 1,000 bytes):
-//   eager viewer JS              <= 195 kB  the entry script and everything it imports statically (200 kB;
-//                                           the same figure as packages/viewer/test/build.test.ts)
+//   eager viewer JS              <= 210 kB  the entry script and everything it imports statically (215 kB;
+//                                           the same figure as packages/viewer/test/build.test.ts). Was 195 kB
+//                                           (200 kB) until decision compiled-viewer: the React Compiler took it from
+//                                           193.8 to 204.6 kB, and the owner raised both figures
 //   lines of their own (decision diagram-engine-in-worker: the diagram engine; each is its measured size plus about 15 %, see OWN_LINES):
 //     ELK layout worker          <= 515 kB  assets/elk.worker-<hash>.js, the whole ELK engine (447.8 kB measured)
 //     React Flow chunk           <=  90 kB  assets/xyflow-<hash>.js, once a view imports React Flow (77.6 kB measured)
 //     React Flow stylesheet      <= 2.5 kB  assets/xyflow-<hash>.css (2.2 kB measured)
-//     diagrams chunk             <=  43 kB  assets/diagrams-<hash>.js (38.0 kB measured, the ELK + React Flow views;
+//     diagrams chunk             <=  52 kB  assets/diagrams-<hash>.js (45.1 kB measured with the React Compiler, decision
+//                                           compiled-viewer; 39.2 kB before it, under a line of 43 kB:
+//                                           38.0 kB measured when that line was set, the ELK + React Flow views;
 //                                           the no-markdown-component merge changed it by 3 bytes: same modules, renamed imports;
 //                                           25.4 kB at the Install phase, before the wrap/widen pass, the window
 //                                           search, routing for dragged edges and the minimap placement; 31.3 kB
@@ -39,7 +43,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // The catalog (and below, the fixture) is TypeScript; Node strips the types itself (22.18 or newer, as package.json
 // requires).
 const {INSTRUCTIONS_TARGET} = await import(pathToFileURL(join(root, 'packages', 'catalog', 'src', 'docs.ts')).href);
-const LIMITS = {instructions: INSTRUCTIONS_TARGET, definitions: 1500, preset: 1200, eager: 195_000, lazy: 120_000};
+const LIMITS = {instructions: INSTRUCTIONS_TARGET, definitions: 1500, preset: 1200, eager: 210_000, lazy: 120_000};
 /**
  * Viewer files with a line of their own, by file name (gzip, like the rest). A script that matches one is held to it
  * instead of the generic lazy line: the ELK worker would never fit that one, and the others get a tighter line so the
@@ -51,7 +55,7 @@ const OWN_LINES = [
   {name: 'ELK layout worker', file: /^elk\.worker-[\w-]{8}\.js$/, limit: 515_000, required: true},
   {name: 'React Flow chunk', file: /^xyflow-[\w-]{8}\.js$/, limit: 90_000, required: false},
   {name: 'React Flow stylesheet', file: /^xyflow-[\w-]{8}\.css$/, limit: 2_500, required: true},
-  {name: 'diagrams chunk', file: /^diagrams-[\w-]{8}\.js$/, limit: 43_000, required: true},
+  {name: 'diagrams chunk', file: /^diagrams-[\w-]{8}\.js$/, limit: 52_000, required: true},
 ];
 
 const argv = process.argv.slice(2);

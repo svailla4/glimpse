@@ -1,6 +1,6 @@
 // packages/viewer/src/kit/hooks.ts
 // Data, selection and host access for views. No view imports @a2ui/* directly.
-import {createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore} from 'react';
+import {createContext, useCallback, useContext, useEffect, useInsertionEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject} from 'react';
 import {useA2uiSurface, useSignalValue} from '@a2ui/react';
 import {
   PATHS, formatFileLoc, isDataset,
@@ -10,6 +10,7 @@ import type {DataInput} from '@glimpse/catalog';
 import type {DataClient, RowsPage} from '@glimpse/catalog';
 import {assignSlots, catVar} from './color.ts';
 import {matchSelection, type SelectionMatch, type SelectionRef} from './select.ts';
+import {subscribeComponent} from './subscribe.ts';
 
 /** Provided once by the shell: <HostContext.Provider value={transport}>. */
 export const HostContext = createContext<DataClient | null>(null);
@@ -106,6 +107,35 @@ export function emptyCodeOf(state: Pick<DataState<unknown>, 'ds'>): 'I_EMPTY' | 
   return state.ds && emptyReason(state.ds) !== undefined ? 'I_EMPTY' : 'W_EMPTY';
 }
 
+/**
+ * Keeps `ref.current` at `value` as of the last committed render, for handlers, timers, promise callbacks and effects
+ * that must see the current value without being recreated:
+ *   const focusRef = useRef(p.focus);
+ *   useLatest(focusRef, p.focus);
+ * The caller makes the ref with useRef, so the React Compiler knows it is a ref: one returned by a hook of ours would
+ * be a frozen value to it, so memos reading it would not compile and writes through it would be refused (decision
+ * compiled-viewer). It is written in an insertion effect, not during render, which the compiler does not compile;
+ * insertion effects run before every layout effect of the tree, so any layout or passive effect reads the new value.
+ * Never read the ref during render: it holds the previous render's value then. A callback may write it, to be current
+ * before React renders again.
+ */
+export function useLatest<T>(ref: RefObject<T>, value: T): void {
+  useInsertionEffect(() => {
+    ref.current = value;
+  });
+}
+
+/**
+ * A function that keeps its identity and always calls the latest `fn`: for handlers given to something that redraws
+ * when a handler changes (React Flow re-renders every node) or that an effect must not depend on. Not to be called
+ * during render.
+ */
+export function useStableCallback<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
+  const fnRef = useRef(fn);
+  useLatest(fnRef, fn);
+  return useCallback((...args: A) => fnRef.current(...args), []);
+}
+
 function useSurface() {
   const surface = useA2uiSurface();
   if (!surface) throw new Error('Glimpse views must render inside an A2uiSurface');
@@ -130,26 +160,7 @@ export function useSurfaceId(): string {
  */
 export function useChildIds(componentId: string, prop = 'children'): string[] {
   const surface = useSurface();
-  const subscribe = useCallback(
-    (notify: () => void) => {
-      const components = surface.componentsModel;
-      let own = components.get(componentId)?.onUpdated.subscribe(notify);
-      // The component may not exist yet, or may be deleted and created again under the same id.
-      const created = components.onCreated.subscribe(model => {
-        if (model.id !== componentId) return;
-        own?.unsubscribe();
-        own = model.onUpdated.subscribe(notify);
-        notify();
-      });
-      const deleted = components.onDeleted.subscribe(id => { if (id === componentId) notify(); });
-      return () => {
-        own?.unsubscribe();
-        created.unsubscribe();
-        deleted.unsubscribe();
-      };
-    },
-    [surface, componentId],
-  );
+  const subscribe = useCallback((notify: () => void) => subscribeComponent(surface.componentsModel, componentId, notify), [surface, componentId]);
   // The snapshot is a string so it is stable between renders; ids are parsed back out below.
   const snapshot = useSyncExternalStore(subscribe, () => {
     const value: unknown = surface.componentsModel.get(componentId)?.properties[prop];
@@ -251,9 +262,11 @@ export function useRows(ds: Dataset | undefined, query: {offset?: number; limit?
   const key = pageable?.$ds;
   const {offset, limit, sort, q} = query;
   // One object per request: what the state holds is known to answer it, or not, by identity.
-  // `pageable` (the envelope object) and `rev` are refetch triggers, not inputs of the request.
+  // `envelope` (a re-run puts a new one under the same key) and `rev` are refetch triggers, not inputs of the query.
+  // They are fields, not only dependencies: the React Compiler memoizes on what the callback reads and drops a
+  // dependency it does not read (decision compiled-viewer).
   const request = useMemo(
-    () => (key === undefined ? undefined : {host, query: {surfaceId: surface.id, key, offset, limit, sort, q}}),
+    () => (key === undefined ? undefined : {host, envelope: pageable, rev, query: {surfaceId: surface.id, key, offset, limit, sort, q}}),
     [host, surface, key, pageable, offset, limit, sort, q, rev],
   );
   type Request = NonNullable<typeof request>;

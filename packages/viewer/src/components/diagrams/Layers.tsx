@@ -2,7 +2,7 @@
 // by the catalog's cleanLayers (decision links-through-node-ids), as on the server; how much of it is drawn is decided here.
 import type * as C from '@glimpse/catalog';
 import {cleanLayers, type EntityRef, type LayerItem, type LayersAst} from '@glimpse/catalog';
-import {useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent} from 'react';
+import {useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent} from 'react';
 import {
   DataGate, EntityLink, PlateAside, Redline, fileEntity, fmtNum, linkedEntity, marksSelection, useDataset, useReportState, useSelection, useSizeCap,
   type GlView,
@@ -140,7 +140,7 @@ function LayersBody(p: {id: string; data: unknown}) {
   return (
     <div ref={rootRef} className={css.root} style={{maxHeight: cap}} role="group" aria-label={ariaLabel} onKeyDown={onKeyDown} onPointerOver={revealCut}>
       {notes.length > 0 ? <PlateAside><span className={css.marginal} data-gl-note="">{notes.join(' · ')}</span></PlateAside> : null}
-      <div className={css.tiers} style={{'--gl-layer-box': `${box}px`} as CSSProperties}>
+      <div className={css.tiers} style={{'--gl-layer-box': `${box}px`}}>
       {bands.map((band, b) => (
         <section key={b} className={css.band} data-layer={band.name} data-first={b === 0 || undefined} aria-label={band.name}>
           <h4 className={css.name} data-full={band.name} data-text="">{band.name}</h4>

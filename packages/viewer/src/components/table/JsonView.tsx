@@ -156,6 +156,20 @@ export const JsonViewView: GlView<typeof C.JsonView> = ({id, props}) => {
   );
 };
 
+/**
+ * Copies a line's value: a string as it is, anything else as indented JSON. A value that cannot be serialised (it
+ * contains itself) is simply not copied. Outside the component: the React Compiler cannot compile a try block holding
+ * a condition (decision compiled-viewer).
+ */
+function copyLine(line: Line): void {
+  const value = line.kind === 'range' ? (line.value as unknown[]).slice(line.from, line.to) : line.value;
+  try {
+    copyText(typeof value === 'string' ? value : (JSON.stringify(value, null, 2) ?? String(value)));
+  } catch {
+    // see above
+  }
+}
+
 function Tree({props, data}: {props: Props; data: unknown}): JSX.Element {
   // `depth` counts the root, which is always open: 1 lists its entries, 2 opens those entries too.
   const autoDepth = Math.max(0, (props.depth ?? 1) - 1);
@@ -170,14 +184,6 @@ function Tree({props, data}: {props: Props; data: unknown}): JSX.Element {
 
   const setOpen = (line: Line, open: boolean) => {
     if (expandable(line)) setToggled(prev => new Map(prev).set(line.id, open));
-  };
-  const copy = (line: Line) => {
-    const value = line.kind === 'range' ? (line.value as unknown[]).slice(line.from, line.to) : line.value;
-    try {
-      copyText(typeof value === 'string' ? value : (JSON.stringify(value, null, 2) ?? String(value)));
-    } catch {
-      // A value that cannot be serialised (it contains itself) is simply not copied.
-    }
   };
 
   const indexOf = (target: EventTarget): number | undefined => {
@@ -217,7 +223,7 @@ function Tree({props, data}: {props: Props; data: unknown}): JSX.Element {
         }
       }
     } else if (event.key === 'c') {
-      copy(line);
+      copyLine(line);
     } else {
       return;
     }

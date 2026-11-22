@@ -272,7 +272,8 @@ export function renderSpec(messages: A2uiMessage | readonly A2uiMessage[], optio
 
   function Host() {
     const tick = useSyncExternalStore(subscribe, () => version);
-    const surface = current();
+    // A snapshot too, not a call during render: the React Compiler would keep the first surface (decision compiled-viewer).
+    const surface = useSyncExternalStore(subscribe, current);
     const node = surface ? <A2uiSurface key={tick} surface={surface} /> : null;
     return <KitProvider host={host} link={options.link} report={report} watch={redefinitions.watch}>{options.wrapper ? options.wrapper(node) : node}</KitProvider>;
   }

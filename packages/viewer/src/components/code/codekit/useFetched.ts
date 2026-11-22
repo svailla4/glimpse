@@ -1,4 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
+import {useLatest} from '../../../kit/index.ts';
 
 export interface Fetched<T> {
   /** The latest answer. It stays on screen while a newer one, for the same key or another, is on its way. */
@@ -20,8 +21,8 @@ export const errorText = (error: unknown): string => (error instanceof Error ? e
  */
 export function useFetched<T>(key: string | undefined, rev: number, load: (signal: AbortSignal) => Promise<T>): Fetched<T> {
   const [state, setState] = useState<{key?: string; data?: T; dataKey?: string; error?: string; loading: boolean}>({loading: false});
-  const loader = useRef(load);
-  loader.current = load;
+  const loaderRef = useRef(load);
+  useLatest(loaderRef, load);
 
   // `rev` is a refetch trigger, not an input of the request.
   useEffect(() => {
@@ -31,7 +32,7 @@ export function useFetched<T>(key: string | undefined, rev: number, load: (signa
     }
     const control = new AbortController();
     setState(prev => ({...prev, key, error: undefined, loading: true}));
-    loader.current(control.signal).then(
+    loaderRef.current(control.signal).then(
       data => {
         if (!control.signal.aborted) setState({key, data, dataKey: key, loading: false});
       },

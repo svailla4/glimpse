@@ -6,7 +6,7 @@
 //    first sorts first. The build repeats the declaration at the top of every CSS file (vite.config.ts), but the
 //    dev server relies on this import order alone.
 // 2. Fixture data is loaded with a dynamic import, and only in dev builds, so it stays out of the eager bundle
-//    (budget: 200 kB gzip) and out of the bundle the host serves.
+//    (budget: 215 kB gzip) and out of the bundle the host serves.
 import './styles/tokens.css';
 import './styles/fonts.css';
 import './styles/base.css';

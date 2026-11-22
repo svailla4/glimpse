@@ -3,7 +3,7 @@
 // seconds; a press that could not leave the tab says "not sent", and one made after the session ended says so.
 import type * as C from '@glimpse/catalog';
 import {useEffect, useRef, useState} from 'react';
-import {useLinkStatus, type GlView} from '../../kit/index.ts';
+import {useLatest, useLinkStatus, type GlView} from '../../kit/index.ts';
 import {textOf} from './shared/inline.tsx';
 import {ENDED_TITLE, Queued, type QueueState} from './shared/Queued.tsx';
 import styles from './Button.module.css';
@@ -17,8 +17,8 @@ export const ButtonView: GlView<typeof C.Button> = ({props}) => {
   // Once the session is over the shell drops whatever a view sends: nothing pressed here can reach the agent.
   const ended = useLinkStatus() === 'ended';
   // Read when the host answers a press, which may be after the session ended.
-  const endedNow = useRef(ended);
-  endedNow.current = ended;
+  const endedRef = useRef(ended);
+  useLatest(endedRef, ended);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -40,7 +40,7 @@ export const ButtonView: GlView<typeof C.Button> = ({props}) => {
     // "queued" is said once the action has been handed over, not before; a rejection means it never left the tab.
     Promise.resolve()
       .then(() => props.action())
-      .then(() => show(endedNow.current ? 'ended' : 'queued'), () => show('failed'));
+      .then(() => show(endedRef.current ? 'ended' : 'queued'), () => show('failed'));
   };
 
   const label = textOf(props.label).trim() || 'Send';

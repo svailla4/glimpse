@@ -3,7 +3,7 @@
 // and applied on top of the automatic layout. Nothing here is sent to the agent. When storage is missing, full or
 // blocked the positions live in memory for the life of the page.
 import {useCallback, useMemo, useRef, useState} from 'react';
-import {useMeta, useSurfaceId} from '../../../kit/index.ts';
+import {useLatest, useMeta, useSurfaceId} from '../../../kit/index.ts';
 import type {Point} from './geometry.ts';
 
 export const POSITIONS_KEY = 'glimpse.pos.v1';
@@ -101,23 +101,24 @@ export function useNodePositions(componentId: string): NodePositions {
   const current = state.key === key ? state : {key, positions: readPositions(key)};
   if (current !== state) setState(current);
   const positions = current.positions;
-  // Event handlers read the latest positions here: a drag moves and commits within one event turn.
-  const latest = useRef(current);
-  latest.current = current;
+  // Event handlers read the latest positions here: a drag moves and commits within one event turn, so move and clear
+  // write it too, before React renders again.
+  const currentRef = useRef(current);
+  useLatest(currentRef, current);
 
   const move = useCallback((id: string, centre: Point) => {
-    const next = {key: latest.current.key, positions: {...latest.current.positions, [id]: centre}};
-    latest.current = next;
+    const next = {key: currentRef.current.key, positions: {...currentRef.current.positions, [id]: centre}};
+    currentRef.current = next;
     setState(next);
   }, []);
   const commit = useCallback(() => {
-    const {key: at, positions: mine} = latest.current;
+    const {key: at, positions: mine} = currentRef.current;
     // Positions of nodes that are not on screen right now (another focus, an earlier dataset) are kept.
     writePositions(at, {...readPositions(at), ...mine});
   }, []);
   const clear = useCallback(() => {
-    const next = {key: latest.current.key, positions: {}};
-    latest.current = next;
+    const next = {key: currentRef.current.key, positions: {}};
+    currentRef.current = next;
     writePositions(next.key, {});
     setState(next);
   }, []);
