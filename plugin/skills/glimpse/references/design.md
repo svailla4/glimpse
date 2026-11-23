@@ -6,15 +6,18 @@ The reader decides whether this gets built, answers your open questions, and the
 
 Hold back on code, never on reasoning. A small feature in an existing codebase may be a lead, a diagram, two decisions and a plan. A whole system, or anything a team approves together, carries what its design review asks for: the targets it must meet, the scale it is sized for, every decision with what it costs and what was turned down, and each risk with how bad it is and what limits it. Bring what you know about systems of its kind: the failure a reviewer asks about first (a double booking, a lost message, a charge made twice) is answered on the page, at the step that prevents it.
 
+- **Walk the guarantee through what breaks it.** For the property the design rests on, say what happens when two requests arrive at once, a request is retried, a step times out or fails halfway, the process stops between two writes, and something held expires before it is used. Shown only on the path where all goes well, a guarantee is a claim.
+- **Size what each part adds.** A load a part brings (a check on every search, a row per night) is sized from the page's own scale, so the reader sees it fits.
+
 ## The page, top to bottom
 
-1. **Lead** (`Text`): what it does for whom and why now, in two or three sentences, then one line on what stays the same.
+1. **Lead** (`Text`): what it does for whom and why now, in two or three sentences, then one line on what stays the same, and for a design a team approves, what is asked of it.
 2. **What it will do** (`Steps`): 3 to 6 behaviours, each one sentence that could turn out to be false ("a comment marked *send* reaches the agent on its next turn"). Split by behaviour, never by file or layer: read aloud, they tell the whole feature, and they are how the work is checked.
    - **How well**, when there are targets (`KeyValue` or `DataTable`): latency, freshness, availability, what must never happen, and the scale with how each number was reached. A number you chose says it is an assumption.
 3. **The shape** (`Flowchart`, `SequenceDiagram` for a conversation between parts, `Layers`, or `ERDiagram` when stored data changes): one diagram of the mechanism, with the new parts in a group named "New" beside the existing parts they touch. A new node gets `note=` (what it does); an existing one gets `file=` (where it lives), so a click opens the code it plugs into.
    - **A whole system** is drawn from the outside in: the people who use it first, short labels, what each box does in `note=`. Then one plate per mechanism worth opening: the main flow as a `SequenceDiagram` with every reply, the stored data as an `ERDiagram`. Where a flow carries a guarantee, a `Steps` beside it says what each stage does and why; the arrows keep short labels.
 4. **Decisions** (`Callout` kind `decision`, beside the diagram): one per choice that shapes what gets built: what you chose, why, and the option you turned down and its reason. Four or more compare better as one `DataTable` of rows `{decision, why, cost, rejected}`.
-   - **Risks** (`Callout` kind `risk`): the title says how bad (High, Medium) and what; the text says what limits it.
+   - **Risks** (`Callout` kind `risk`): every one a reviewer of systems of its kind would raise: an outside provider down, a rush on one item, data out of date, growth past one store, work done twice. The title says how bad (High, Medium) and what; the text says what limits it and how you would know it happened.
 5. **Out of scope** (a `Callout` or a `List`): what this will not do, so nobody builds it.
 6. **Work plan** (`Steps`): ordered by what unblocks what; each step names the files it touches (`file=`) and the behaviour from part 2 that checks it.
 7. **Open questions** (`Ask`): only the forks that change what gets built, 2 to 5, the option you would build first. Each option's `note` says what picking it means or costs: `{label:'Hold the nights 12 h',note:'The guest is sure; the home is off sale meanwhile'}`. A question the code can answer, answer yourself by reading it.
@@ -28,6 +31,8 @@ None, except a contract the parts agree on (an interface, a message shape, a fun
 ## Before you show it
 
 Could the crew start building from this page without asking you anything? What they would ask is the part still missing. Would a reviewer of systems of this kind find their first question answered?
+
+Then check the page against itself, and fix what you find before you draw it: recompute every ratio and total from the page's own figures; count what a title counts ("five services") in its diagram; and look for a part that does what another part's reason rules out (a search that reads the store the search decision keeps it away from).
 
 Then run the reader check in SKILL.md, for the person who decides whether this gets built, and the crew who will build it.
 
